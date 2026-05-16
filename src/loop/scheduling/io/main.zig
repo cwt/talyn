@@ -355,23 +355,45 @@ pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
 }
 
 pub fn register_eventfd_callback(self: *IO) !void {
-    _ = try self.queue(.{
-        .PerformRead = Read.PerformData{
-            .data = .{
-                .buffer = @as([*]u8, @ptrCast(&self.eventfd_val))[0..@sizeOf(u64)],
-            },
-            .fd = self.eventfd,
-            .callback = .{
-                .func = &eventfd_callback,
-                .cleanup = null,
+    // Retry loop: if SubmissionQueueFull, drain SQEs and wake SQPOLL
+    // before retrying.  The eventfd read SQE must always be armed or
+    // the loop will hang waiting for completions that never come.
+    while (true) {
+        _ = self.queue(.{
+            .PerformRead = Read.PerformData{
                 .data = .{
-                    .user_data = self
+                    .buffer = @as([*]u8, @ptrCast(&self.eventfd_val))[0..@sizeOf(u64)],
+                },
+                .fd = self.eventfd,
+                .callback = .{
+                    .func = &eventfd_callback,
+                    .cleanup = null,
+                    .data = .{
+                        .user_data = self
+                    }
                 }
             }
-        }
-    });
+        }) catch |err| {
+            if (err == error.SubmissionQueueFull) {
+                _ = self.ring.flush_sq();
+                if (self.ring.flags & std.os.linux.IORING_SETUP_SQPOLL != 0) {
+                    _ = self.ring.enter(0, 0, std.os.linux.IORING_ENTER_SQ_WAKEUP) catch {};
+                }
+                continue;
+            }
+            return err;
+        };
+        break;
+    }
     // Critical: Submit the eventfd read SQE immediately so the kernel is watching
     _ = try submit_guaranteed(&self.ring);
+    // With SQPOLL, submit() only flush_sq() into shared ring but does NOT call
+    // enter() when the kernel thread is active (no NEED_WAKEUP).  Wake the thread
+    // explicitly so it picks up the eventfd read SQE right away.  If the thread
+    // is already active, SQ_WAKEUP is a kernel no-op — zero extra cost.
+    if (self.ring.flags & std.os.linux.IORING_SETUP_SQPOLL != 0) {
+        _ = try self.ring.enter(0, 0, std.os.linux.IORING_ENTER_SQ_WAKEUP);
+    }
 }
 
 pub fn wakeup_eventfd(self: *IO) !void {
@@ -442,34 +464,48 @@ pub fn queue(self: *IO, event: BlockingOperationData) !usize {
         _ = try self.flush_pending_sqes();
     }
 
-    const data_ptr = try switch (event) {
-        .WaitReadable => |data| Read.wait_ready(&self.ring, set, data),
-        .WaitWritable => |data| Write.wait_ready(&self.ring, set, data),
-        .PerformRead => |data| Read.perform(&self.ring, set, data),
-        .PerformWrite => |data| Write.perform(&self.ring, set, data),
-        .PerformWriteV => |data| Write.perform_with_iovecs(&self.ring, set, data),
-        .PerformRecvMsg => |data| Read.recvmsg(&self.ring, set, data),
-        .PerformSendMsg => |data| Write.sendmsg(&self.ring, set, data),
-        .WaitTimer => |data| Timer.wait(&self.ring, set, data),
-        .SocketShutdown => |data| Socket.shutdown(&self.ring, set, data),
-        .Cancel => |data| Cancel.perform(&self.ring, data),
-        .SocketConnect => |data| Socket.connect(&self.ring, set, data),
-        .SocketAccept => |data| Socket.accept(&self.ring, set, data)
+    const data_ptr = while (true) {
+        const result = switch (event) {
+            .WaitReadable => |data| Read.wait_ready(&self.ring, set, data),
+            .WaitWritable => |data| Write.wait_ready(&self.ring, set, data),
+            .PerformRead => |data| Read.perform(&self.ring, set, data),
+            .PerformWrite => |data| Write.perform(&self.ring, set, data),
+            .PerformWriteV => |data| Write.perform_with_iovecs(&self.ring, set, data),
+            .PerformRecvMsg => |data| Read.recvmsg(&self.ring, set, data),
+            .PerformSendMsg => |data| Write.sendmsg(&self.ring, set, data),
+            .WaitTimer => |data| Timer.wait(&self.ring, set, data),
+            .SocketShutdown => |data| Socket.shutdown(&self.ring, set, data),
+            .Cancel => |data| Cancel.perform(&self.ring, data),
+            .SocketConnect => |data| Socket.connect(&self.ring, set, data),
+            .SocketAccept => |data| Socket.accept(&self.ring, set, data)
+        };
+        break result catch |err| {
+            if (err != error.SubmissionQueueFull) return err;
+            _ = try self.flush_pending_sqes();
+            if (self.ring.flags & std.os.linux.IORING_SETUP_SQPOLL != 0) {
+                _ = try self.ring.enter(0, 0, std.os.linux.IORING_ENTER_SQ_WAKEUP);
+            }
+            continue;
+        };
     };
-
-    if (event != .Cancel and self.ring.sq_ready() >= TotalTasksItems - 2) {
-        _ = try self.flush_pending_sqes();
-    }
 
     return data_ptr;
 }
 
 pub fn submit_guaranteed(ring: *std.os.linux.IoUring) !u32 {
     while (true) {
-        return ring.submit() catch |err| {
+        const submitted = ring.submit() catch |err| {
             if (err == error.SignalInterrupt) continue;
             return err;
         };
+        // With SQPOLL, ring.submit() flushes SQEs to shared memory but does
+        // NOT call enter() when the SQPOLL thread is active (no NEED_WAKEUP).
+        // Call enter(submitted, 0, SQ_WAKEUP) so the kernel thread picks up
+        // SQEs AND advances sq_head.
+        if (submitted > 0 and ring.flags & std.os.linux.IORING_SETUP_SQPOLL != 0) {
+            _ = try ring.enter(submitted, 0, std.os.linux.IORING_ENTER_SQ_WAKEUP);
+        }
+        return submitted;
     }
 }
 
