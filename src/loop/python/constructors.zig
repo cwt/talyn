@@ -93,10 +93,6 @@ pub fn loop_traverse(self: ?*LoopObject, visit: python_c.visitproc, arg: ?*anyop
     const vret_io = loop_data.io.traverse(visit, arg);
     if (vret_io != 0) return vret_io;
 
-    // P15 Phase 1: Visit completion batch (GC safety)
-    const vret_batch = loop_data.completion_batch.traverse(visit, arg);
-    if (vret_batch != 0) return vret_batch;
-
     // Visit watchers
     const vret_rw = traverse_btree(&loop_data.reader_watchers, visit, arg);
     if (vret_rw != 0) return vret_rw;

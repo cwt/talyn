@@ -435,41 +435,49 @@ All 268 tests pass on all 4 Pythons (3.13, 3.14, 3.13t, 3.14t).
 | `leviathan/loop.py` | `_dispatch_completions()`, `_dispatch_completions_with_list()`, `_dispatch_data_received()`, `_dispatch_eof_received()`, `_dispatch_buffer_updated()`, `_dispatch_connection_lost()` |
 | `src/loop/python/constructors.zig` | `loop_traverse`: visits `completion_batch` for GC safety |
 
-### Phase 2: Batch Dispatch — ⚠️ BLOCKED (2026-05-16)
+### Phase 2: Batch Dispatch — ✅ DONE (2026-05-16)
 
-Batch insertion and dispatch infrastructure complete, but both disabled due to fundamental issues.
+Batch dispatch now enabled. **Key insight:** eliminate ALL PyObject pointers from
+`CompletionRecord`. Store only raw Zig pointers — GC never touches the batch.
 
-**Root cause 1 (deadlock - FIXED):** When `protocol.data_received()` is called from `_dispatch_completions`, it tries to
-schedule work on the event loop (e.g., `StreamReader.feed_data()` → `loop.call_soon()`). But the
-loop mutex is already held by the main loop runner, causing a deadlock.
+**Root cause 1 (deadlock — FIXED):** Protocol methods call `loop.call_soon()` which
+needs the mutex. Moved `dispatch_completion_batch` to after `mutex.unlock()`.
 
-**Fix:** Move `dispatch_completion_batch` to after `mutex.unlock()` in the main loop.
-This resolves the deadlock.
+**Root cause 3 (GC segfault):** `CompletionRecord` stored `transport: ?PyObject` and
+`data: ?PyObject`. The GC traversed these. When `batch_clear` decref'd them without
+nullifying the slot first, the GC could visit a dangling pointer during decref's own
+`__del__` if the deallocator triggered a GC collection → segfault.
 
-**Root cause 2 (batch insertion hang):** When batch insertion is enabled (`batch_dispatched = true`),
-the callback skips the Python protocol call. But if dispatch is disabled or incomplete, the data
-is lost and tests hang waiting for responses. Batch insertion and dispatch must be enabled together.
+**Fix:** Replaced PyObject fields with raw Zig pointers:
+- `transport: ?PyObject` → `stream_transport: ?*anyopaque` (Zig pointer to `StreamTransportObject`)
+- `data: ?PyObject` → `buffer_ptr: ?*anyopaque` (raw bytes pointer) + `nbytes: i64`
+- PyBytes created during dispatch from `buffer_ptr + nbytes`
+- Protocol accessed via transport's cached method pointers (`protocol_data_received`, `protocol_buffer_updated`)
+- `batch_clear` simplified to just `reset()` — no decrefs needed (no PyObject stored)
+- No GC `traverse` needed — `CompletionBatch` has zero PyObject pointers
+- Python-side dispatch helpers (`_dispatch_completions`, etc.) retained but bypassed in favor of direct Zig dispatch
 
-**Root cause 3 (GC segfault with full dispatch):** When both batch insertion and dispatch are enabled,
-segfaults occur during Python garbage collection. The batch stores PyObject pointers (protocol, PyBytes)
-that are visited by `tp_traverse`. Despite proper incref/decref, GC corruption occurs.
+**Why the old approach failed:** The fundamental issue was storing PyObject pointers
+in a buffer that can be overwritten between `tp_traverse` visits. Even with proper
+incref/decref, the window between `batch_clear` (which decref'd the pointers) and
+the next `reset()` created a race where GC traversal could visit stale pointers.
 
-**Attempted fixes:**
-- Direct pointer passing + `ctypes.string_at` → heap corruption segfault
-- Building Python list of tuples in Zig → GC segfault during traversal
-- Storing stream transport pointer → can't access protocol from Python (not exposed as attribute)
-- Storing protocol pointer directly → GC segfault
-- Simple Python call (just count, no data) → works, but data is lost (tests hang)
+**New approach (robust):**
+1. `CompletionRecord` stores `stream_transport: ?*anyopaque` — transport is a Zig struct, not a PyObject. GC doesn't visit it.
+2. `buffer_ptr: ?*anyopaque` + `nbytes: i64` — raw bytes from the read transport's internal buffer. No PyBytes until dispatch.
+3. In `fetch_completed_tasks`: push record directly (no incref, no PyBytes creation).
+4. In `dispatch_completion_batch`: read records, create PyBytes + call protocol methods via transport's cached `*anyopaque` pointers.
+5. `batch_clear` is just `batch.reset()` — zero PyObject interaction.
+6. No GC traverse for the batch at all.
 
-**Key finding:** The GC segfault suggests the batch records contain stale pointers by the time GC runs.
-Despite incref'ing, something is corrupting the references. Possibly the batch is being visited by GC
-while the loop is in an inconsistent state, or the records are being overwritten before GC visits them.
+**Files changed:**
+| File | Change |
+|------|--------|
+| `src/loop/completion.zig` | Remove PyObject fields + `traverse()`. Add `stream_transport`, `buffer_ptr` fields |
+| `src/loop/runner.zig` | `fetch_completed_tasks`: enable batch insertion (remove `false and` guard). `dispatch_completion_batch`: create PyBytes from raw buffer + call protocol methods. Remove `batch_clear` |
+| `src/loop/python/constructors.zig` | Remove `completion_batch.traverse()` from `loop_traverse` |
 
-**Next steps:** Need a fundamentally different approach:
-1. Don't store PyObject pointers in the batch — store raw data and recreate Python objects during dispatch
-2. Use a separate GC-safe container for batch records
-3. Have Zig call protocol methods directly without going through Python (bypass Python dispatch entirely)
-4. Consider SQPOLL (Phase 2 of P15) which may change the submission model enough to avoid these issues
+**Impact:** All 268 tests pass on all 4 Pythons + standard asyncio test suites pass on all 4 Pythons + Zig unit tests pass.
 
 ### Root Cause of 0.6-0.8× I/O Performance
 

@@ -1,10 +1,9 @@
 const std = @import("std");
-const python_c = @import("python_c");
-const PyObject = *python_c.PyObject;
 
 /// Lightweight record for IO completions. Replaces the 48-byte Callback
-/// for transport operations. Python reads these in a batch and dispatches
-/// protocol methods directly, eliminating per-completion Zig→Python crossings.
+/// for transport operations. No PyObject pointers — raw Zig pointers only,
+/// so GC does NOT need to traverse the batch. Python objects are created
+/// during dispatch from the raw buffer data + transport cached methods.
 pub const CompletionOp = enum(u8) {
     DataReceived,       // protocol.data_received(bytes)
     EofReceived,        // protocol.eof_received()
@@ -17,16 +16,17 @@ pub const CompletionOp = enum(u8) {
 };
 
 /// Single completion record — 32 bytes (vs 48-byte Callback).
-/// No function pointers: Python switches on `op` to call the right method.
+/// Stores only raw Zig pointers — NO PyObject pointers at all.
+/// GC never touches this batch. PyBytes is created during dispatch.
 pub const CompletionRecord = extern struct {
     op: CompletionOp,
-    transport: ?PyObject,     // StreamTransportObject (for read ops) or DatagramTransportObject
-    data: ?PyObject,          // PyBytes for data_received, PyException for errors, null for EOF
-    nbytes: i64,               // bytes received (for buffered protocol), or error code
+    stream_transport: ?*anyopaque,  // *Stream.StreamTransportObject (Zig ptr, NOT PyObject)
+    buffer_ptr: ?*anyopaque,        // raw bytes from read transport buffer
+    nbytes: i64,
 };
 
-/// Fixed-size batch buffer shared between Zig and Python.
-/// Zig writes records, Python reads and dispatches.
+/// Fixed-size batch buffer shared between Zig and dispatch.
+/// Zig writes records, dispatch reads and calls protocol methods.
 pub const CompletionBatch = struct {
     const MaxRecords = 4096;
 
@@ -51,22 +51,5 @@ pub const CompletionBatch = struct {
 
     pub fn reset(self: *CompletionBatch) void {
         self.ready_count = 0;
-    }
-
-    /// GC traversal: visit all PyObject pointers in the batch.
-    pub fn traverse(self: *const CompletionBatch, visit: python_c.visitproc, arg: ?*anyopaque) c_int {
-        var i: usize = 0;
-        while (i < self.ready_count) : (i += 1) {
-            const rec = &self.records[i];
-            if (rec.transport) |t| {
-                const vret = visit.?(t, arg);
-                if (vret != 0) return vret;
-            }
-            if (rec.data) |d| {
-                const vret = visit.?(d, arg);
-                if (vret != 0) return vret;
-            }
-        }
-        return 0;
     }
 };
