@@ -437,35 +437,39 @@ All 268 tests pass on all 4 Pythons (3.13, 3.14, 3.13t, 3.14t).
 
 ### Phase 2: Batch Dispatch — ⚠️ BLOCKED (2026-05-16)
 
-Batch insertion and dispatch infrastructure complete, but dispatch disabled due to heap corruption.
+Batch insertion and dispatch infrastructure complete, but both disabled due to fundamental issues.
 
-**Root cause 1 (deadlock):** When `protocol.data_received()` is called from `_dispatch_completions`, it tries to
+**Root cause 1 (deadlock - FIXED):** When `protocol.data_received()` is called from `_dispatch_completions`, it tries to
 schedule work on the event loop (e.g., `StreamReader.feed_data()` → `loop.call_soon()`). But the
 loop mutex is already held by the main loop runner, causing a deadlock.
 
-**Fix attempted:** Move `dispatch_completion_batch` to after `mutex.unlock()` in the main loop.
-This resolves the deadlock but exposes a deeper issue.
+**Fix:** Move `dispatch_completion_batch` to after `mutex.unlock()` in the main loop.
+This resolves the deadlock.
 
-**Root cause 2 (heap corruption):** Passing raw `CompletionRecord*` pointer to Python and reading
-via `ctypes.string_at()` causes segfaults after ~60 tests. The corruption manifests in unrelated
-code (pathlib, threading, pytest internals), suggesting Python memory allocator corruption.
+**Root cause 2 (batch insertion hang):** When batch insertion is enabled (`batch_dispatched = true`),
+the callback skips the Python protocol call. But if dispatch is disabled or incomplete, the data
+is lost and tests hang waiting for responses. Batch insertion and dispatch must be enabled together.
+
+**Root cause 3 (GC segfault with full dispatch):** When both batch insertion and dispatch are enabled,
+segfaults occur during Python garbage collection. The batch stores PyObject pointers (protocol, PyBytes)
+that are visited by `tp_traverse`. Despite proper incref/decref, GC corruption occurs.
 
 **Attempted fixes:**
 - Direct pointer passing + `ctypes.string_at` → heap corruption segfault
-- Building Python list of tuples in Zig → no segfault, but BufferedProtocol tests hang (next read not queued)
-- Simple Python call (no pointer passing) → works fine, 268 tests pass
+- Building Python list of tuples in Zig → GC segfault during traversal
+- Storing stream transport pointer → can't access protocol from Python (not exposed as attribute)
+- Storing protocol pointer directly → GC segfault
+- Simple Python call (just count, no data) → works, but data is lost (tests hang)
 
-**Key finding:** The issue is specifically with passing raw struct pointers from Zig to Python.
-Simple Python calls from Zig work fine. The `ctypes.string_at` approach corrupts the heap.
+**Key finding:** The GC segfault suggests the batch records contain stale pointers by the time GC runs.
+Despite incref'ing, something is corrupting the references. Possibly the batch is being visited by GC
+while the loop is in an inconsistent state, or the records are being overwritten before GC visits them.
 
-**Next steps:** Need to either:
-1. Pass data as Python objects (PyTuple/PyList) instead of raw pointers — avoids ctypes entirely
-2. Use `memoryview` or `ctypes.Structure` with proper alignment instead of `string_at`
-3. Have Zig build Python tuples for each record and pass as a list (partially implemented in `_dispatch_completions_with_list`)
-
-**Additional issue:** For batched reads, the next read operation must be queued after dispatch.
-Currently `read_operation_completed` handles this for non-batch path, but batch path skips it.
-Need to queue next read in `dispatch_completion_batch` or `fetch_completed_tasks`.
+**Next steps:** Need a fundamentally different approach:
+1. Don't store PyObject pointers in the batch — store raw data and recreate Python objects during dispatch
+2. Use a separate GC-safe container for batch records
+3. Have Zig call protocol methods directly without going through Python (bypass Python dispatch entirely)
+4. Consider SQPOLL (Phase 2 of P15) which may change the submission model enough to avoid these issues
 
 ### Root Cause of 0.6-0.8× I/O Performance
 

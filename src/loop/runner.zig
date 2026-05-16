@@ -108,9 +108,8 @@ fn dispatch_completion_batch(
     const batch = &self.completion_batch;
     if (batch.is_empty()) return;
 
-    // P15 Phase 2: Batch dispatch disabled - causes heap corruption when
-    // passing raw pointers to Python via ctypes.string_at. Infrastructure
-    // is in place; will fix in Phase 2.1 by using proper PyObject passing.
+    // P15 Phase 2: Batch dispatch disabled - GC issues with batch records.
+    // Infrastructure in place; will fix in Phase 2.1.
     _ = loop_obj;
     batch_clear(self);
 }
@@ -119,6 +118,9 @@ fn batch_clear(self: *Loop) void {
     const batch = &self.completion_batch;
     var i: usize = 0;
     while (i < batch.ready_count) : (i += 1) {
+        if (batch.records[i].transport) |t| {
+            python_c.py_decref(t);
+        }
         if (batch.records[i].data) |d| {
             python_c.py_decref(d);
         }
@@ -152,8 +154,61 @@ fn fetch_completed_tasks(
                 v.data.io_uring_res = cqe.res;
 
                 // P15 Phase 2: Batch read transport completions
-                // DISABLED: batch dispatch causes heap corruption (ctypes.string_at issue)
-                // Infrastructure in place, will fix in Phase 2.1
+                // DISABLED: batch insertion causes hang (callback skips Python call)
+                // Full dispatch causes GC segfault. Need different approach.
+                if (false and v.data.module_ptr != null and err == .SUCCESS and cqe.res > 0) {
+                    const read_transport: *ReadTransport = @alignCast(@ptrCast(v.data.user_data.?));
+                    const bytes_read: usize = @intCast(cqe.res);
+
+                    const stream_transport: *Stream.StreamTransportObject = @ptrCast(read_transport.parent_transport);
+                    const protocol = stream_transport.protocol orelse continue;
+
+                    const record: Completion.CompletionRecord = switch (stream_transport.protocol_type) {
+                        .Buffered => blk: {
+                            // BufferedProtocol: no PyBytes needed, protocol has buffer
+                            python_c.py_incref(protocol);
+                            break :blk Completion.CompletionRecord{
+                                .op = .BufferUpdated,
+                                .transport = protocol,
+                                .data = null,
+                                .nbytes = @as(i64, @intCast(bytes_read)),
+                            };
+                        },
+                        .Legacy => blk: {
+                            const py_bytes = python_c.PyBytes_FromStringAndSize(
+                                read_transport.buffer_to_read[0..bytes_read].ptr, @intCast(bytes_read)
+                            );
+                            if (py_bytes) |pb| {
+                                python_c.py_incref(protocol);
+                                break :blk Completion.CompletionRecord{
+                                    .op = .DataReceived,
+                                    .transport = protocol,
+                                    .data = pb,
+                                    .nbytes = @as(i64, @intCast(bytes_read)),
+                                };
+                            } else {
+                                break :blk Completion.CompletionRecord{
+                                    .op = .DataReceived,
+                                    .transport = null,
+                                    .data = null,
+                                    .nbytes = 0,
+                                };
+                            }
+                        },
+                    };
+
+                    if (record.transport != null) {
+                        if (self.completion_batch.push(record)) {
+                            // Set batch_dispatched on BOTH the callback data and the read transport
+                            v.data.batch_dispatched = true;
+                            read_transport.batch_dispatched = true;
+                        } else {
+                            // Batch full, clean up
+                            python_c.py_decref(record.transport.?);
+                            if (record.data) |d| python_c.py_decref(d);
+                        }
+                    }
+                }
 
                 blocking_task.check_result(err);
                 if (!ready_queue.try_push(v.*)) return error.Overflow;

@@ -20,7 +20,7 @@ pub const CompletionOp = enum(u8) {
 /// No function pointers: Python switches on `op` to call the right method.
 pub const CompletionRecord = extern struct {
     op: CompletionOp,
-    transport: ?PyObject,     // StreamTransportObject or DatagramTransportObject
+    transport: ?PyObject,     // StreamTransportObject (for read ops) or DatagramTransportObject
     data: ?PyObject,          // PyBytes for data_received, PyException for errors, null for EOF
     nbytes: i64,               // bytes received (for buffered protocol), or error code
 };

@@ -201,24 +201,31 @@ class Loop(_Loop):
             elif op == 3:  # ConnectionLost
                 self._dispatch_connection_lost(transport_ptr, data_ptr)
 
-    def _dispatch_completions_with_list(self, records: list) -> None:
-        """Dispatch IO completions from a list of (op, transport_ptr, data, nbytes) tuples."""
-        import _ctypes
-        for op, transport_ptr, data, nbytes in records:
-            if op == 0:  # DataReceived
-                self._dispatch_data_received(transport_ptr, data, nbytes)
-            elif op == 1:  # EofReceived
-                self._dispatch_eof_received(transport_ptr)
-            elif op == 2:  # BufferUpdated
-                self._dispatch_buffer_updated(transport_ptr, nbytes)
-            elif op == 3:  # ConnectionLost
-                self._dispatch_connection_lost(transport_ptr, data)
+    def _test_batch_dispatch(self, count: int) -> None:
+        """Test: just receive count, do nothing."""
+        pass
 
-    def _dispatch_data_received(self, transport_ptr: int, data_ptr: int, nbytes: int) -> None:
-        """Call protocol.data_received on a transport."""
+    def _dispatch_completions_with_list(self, records: list) -> None:
+        """Dispatch IO completions from a list of (op, protocol_ptr, data, nbytes) tuples.
+        
+        protocol_ptr is a raw pointer to the protocol object.
+        """
         import _ctypes
-        protocol = _ctypes.PyObj_FromPtr(transport_ptr)
-        data = _ctypes.PyObj_FromPtr(data_ptr)
+        for op, protocol_ptr, data, nbytes in records:
+            if protocol_ptr is None:
+                continue
+            protocol = _ctypes.PyObj_FromPtr(protocol_ptr)
+            if op == 0:  # DataReceived
+                self._dispatch_data_received(protocol, data, nbytes)
+            elif op == 1:  # EofReceived
+                self._dispatch_eof_received(protocol)
+            elif op == 2:  # BufferUpdated
+                self._dispatch_buffer_updated(protocol, nbytes)
+            elif op == 3:  # ConnectionLost
+                self._dispatch_connection_lost(protocol, data)
+
+    def _dispatch_data_received(self, protocol, data, nbytes: int) -> None:
+        """Call protocol.data_received."""
         try:
             protocol.data_received(data)
         except Exception:
@@ -228,10 +235,8 @@ class Loop(_Loop):
                 "protocol": protocol,
             })
 
-    def _dispatch_eof_received(self, transport_ptr: int) -> None:
-        """Call protocol.eof_received on a transport."""
-        import _ctypes
-        protocol = _ctypes.PyObj_FromPtr(transport_ptr)
+    def _dispatch_eof_received(self, protocol) -> None:
+        """Call protocol.eof_received."""
         try:
             protocol.eof_received()
         except Exception:
@@ -241,10 +246,8 @@ class Loop(_Loop):
                 "protocol": protocol,
             })
 
-    def _dispatch_buffer_updated(self, transport_ptr: int, nbytes: int) -> None:
+    def _dispatch_buffer_updated(self, protocol, nbytes: int) -> None:
         """Call protocol.buffer_updated on a BufferedProtocol."""
-        import _ctypes
-        protocol = _ctypes.PyObj_FromPtr(transport_ptr)
         try:
             protocol.buffer_updated(nbytes)
         except Exception:
@@ -254,11 +257,8 @@ class Loop(_Loop):
                 "protocol": protocol,
             })
 
-    def _dispatch_connection_lost(self, transport_ptr: int, exc_ptr: int) -> None:
+    def _dispatch_connection_lost(self, protocol, exc) -> None:
         """Call protocol.connection_lost on a transport."""
-        import _ctypes
-        exc = _ctypes.PyObj_FromPtr(exc_ptr) if exc_ptr else None
-        protocol = _ctypes.PyObj_FromPtr(transport_ptr)
         try:
             protocol.connection_lost(exc)
         except Exception:
