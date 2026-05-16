@@ -330,7 +330,15 @@ pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
 
     self.loop = loop;
 
-    self.ring = try std.os.linux.IoUring.init(TotalTasksItems, 0);
+    // IORING_SETUP_SQPOLL: Kernel thread polls the submission queue
+    // automatically, eliminating most io_uring_enter syscalls. SQEs are
+    // flushed to the shared ring (user-space atomic store) and the kernel
+    // thread picks them up without a syscall. Only NEED_WAKEUP path (thread
+    // idle > sq_thread_idle ms) requires an enter() with IORING_ENTER_SQ_WAKEUP.
+    self.ring = try std.os.linux.IoUring.init(
+        TotalTasksItems,
+        std.os.linux.IORING_SETUP_SQPOLL,
+    );
     errdefer self.ring.deinit();
 
     _ = std.os.linux.fcntl(self.ring.fd, std.posix.F.SETFD, @intCast(std.posix.FD_CLOEXEC));
@@ -466,3 +474,12 @@ pub fn submit_guaranteed(ring: *std.os.linux.IoUring) !u32 {
 }
 
 const IO = @This();
+
+test "SQPOLL io_uring init" {
+    var ring = std.os.linux.IoUring.init(2, std.os.linux.IORING_SETUP_SQPOLL) catch |err| {
+        if (err == error.PermissionDenied) return error.SkipZigTests;
+        return err;
+    };
+    defer ring.deinit();
+    try std.testing.expect(ring.fd >= 0);
+}

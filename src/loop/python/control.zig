@@ -307,6 +307,15 @@ pub fn loop_test_lru(self: ?*LoopObject, _: ?PyObject) callconv(.c) ?PyObject {
     return python_c.get_py_none();
 }
 
+pub fn loop_get_ring_fd(self: ?*LoopObject, _: ?PyObject) callconv(.c) ?PyObject {
+    const loop_data = utils.get_data_ptr(Loop, self.?);
+    if (!loop_data.initialized) {
+        python_c.raise_python_runtime_error("Loop is not initialized\x00");
+        return null;
+    }
+    return python_c.PyLong_FromLong(loop_data.io.ring.fd);
+}
+
 pub fn loop_close(self: ?*LoopObject, _: ?PyObject) callconv(.c) ?PyObject {
     if (Loop.Python.check_forked(self.?)) return null;
     const instance = self.?;
