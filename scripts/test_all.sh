@@ -129,6 +129,9 @@ ensure_test_cert
 echo "=== Leviathan Test Suite ==="
 echo ""
 
+# Clean once at start — removes all stale build artifacts
+clean
+
 for py in python3.13 python3.14 python3.13t python3.14t; do
     if ! command -v "$py" >/dev/null 2>&1; then
         printf "${YELLOW}[%s]${NC} not found — skipping\n" "$py"
@@ -148,7 +151,11 @@ for py in python3.13 python3.14 python3.13t python3.14t; do
     fi
 
     printf "${YELLOW}[%s]${NC} Building...\n" "$py"
-    clean
+
+    # Clean zig build artifacts between variants (different headers/libs)
+    rm -rf zig-out zig-cache .zig-cache .pytest_cache 2>/dev/null || true
+    find . -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
+    find . -name '*.pyc' -delete 2>/dev/null || true
 
     gilflag=""
     if is_free_threading "$py"; then
