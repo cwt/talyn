@@ -120,6 +120,10 @@ fn cleanup_resources_callback(ptr: ?*anyopaque) void {
 }
 
 fn read_operation_completed(data: *const CallbackManager.CallbackData) !void {
+    if (data.cancelled) {
+        cleanup_resources_callback(data.user_data);
+        return;
+    }
     const self: *ReadTransport = @alignCast(@ptrCast(data.user_data.?));
     const io_uring_err = data.io_uring_err;
     const io_uring_res = data.io_uring_res;

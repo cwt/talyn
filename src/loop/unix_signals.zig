@@ -215,4 +215,34 @@ pub fn deinit(self: *UnixSignals) void {
     self.callbacks.deinit() catch {};
 }
 
+pub fn traverse(self: *const UnixSignals, visit: python_c.visitproc, arg: ?*anyopaque) c_int {
+    if (self.fd < 0) return 0;
+    return traverse_btree_node(self.callbacks.parent, visit, arg);
+}
+
+fn traverse_btree_node(node: anytype, visit: python_c.visitproc, arg: ?*anyopaque) c_int {
+    const nkeys = node.nkeys;
+    for (node.values[0..nkeys]) |*cb| {
+        if (cb.data.user_data) |ud| {
+            const vret = visit.?(@ptrCast(@alignCast(ud)), arg);
+            if (vret != 0) return vret;
+        }
+        if (cb.data.module_ptr) |mp| {
+            const vret = visit.?(@ptrCast(mp), arg);
+            if (vret != 0) return vret;
+        }
+        if (cb.data.callback_ptr) |cp| {
+            const vret = visit.?(@ptrCast(cp), arg);
+            if (vret != 0) return vret;
+        }
+    }
+    for (node.childs[0 .. nkeys + 1]) |maybe_child| {
+        if (maybe_child) |child| {
+            const vret = traverse_btree_node(child, visit, arg);
+            if (vret != 0) return vret;
+        }
+    }
+    return 0;
+}
+
 const UnixSignals = @This();

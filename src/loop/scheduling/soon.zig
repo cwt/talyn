@@ -25,6 +25,10 @@ pub inline fn dispatch_guaranteed_nonthreadsafe(self: *Loop, callback: *const Ca
     self.reserved_slots -= 1;
 
     try ready_queue.push_or_grow(callback.*);
+
+    if (self.io.ring_blocked) {
+        try self.io.wakeup_eventfd();
+    }
 }
 
 pub inline fn dispatch_guaranteed(self: *Loop, callback: *const CallbackManager.Callback) !void {

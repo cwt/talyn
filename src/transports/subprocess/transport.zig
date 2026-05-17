@@ -22,6 +22,7 @@ pub const SubprocessTransportObject = extern struct {
 
 fn subprocess_dealloc(self: ?*SubprocessTransportObject) callconv(.c) void {
     const instance = self.?;
+    python_c.PyObject_GC_UnTrack(@ptrCast(instance));
     if (!instance.closed) {
         if (instance.loop) |loop| {
             const loop_obj: *LoopObject = @alignCast(@ptrCast(loop));
@@ -40,6 +41,41 @@ fn subprocess_dealloc(self: ?*SubprocessTransportObject) callconv(.c) void {
     python_c.py_xdecref(instance.returncode);
     const @"type" = python_c.get_type(@ptrCast(instance)) orelse return;
     @"type".tp_free.?(@ptrCast(instance));
+}
+
+fn subprocess_traverse(self: ?*SubprocessTransportObject, visit: python_c.visitproc, arg: ?*anyopaque) callconv(.c) c_int {
+    const instance = self.?;
+    var vret: c_int = 0;
+    if (instance.loop) |obj| {
+        vret = visit.?(@ptrCast(obj), arg);
+        if (vret != 0) return vret;
+    }
+    if (instance.protocol) |obj| {
+        vret = visit.?(@ptrCast(obj), arg);
+        if (vret != 0) return vret;
+    }
+    if (instance.popen) |obj| {
+        vret = visit.?(@ptrCast(obj), arg);
+        if (vret != 0) return vret;
+    }
+    if (instance.returncode) |obj| {
+        vret = visit.?(@ptrCast(obj), arg);
+        if (vret != 0) return vret;
+    }
+    return 0;
+}
+
+fn subprocess_clear(self: ?*SubprocessTransportObject) callconv(.c) c_int {
+    const instance = self.?;
+    python_c.py_xdecref(instance.loop);
+    instance.loop = null;
+    python_c.py_xdecref(instance.protocol);
+    instance.protocol = null;
+    python_c.py_xdecref(instance.popen);
+    instance.popen = null;
+    python_c.py_xdecref(instance.returncode);
+    instance.returncode = null;
+    return 0;
 }
 
 fn subprocess_get_pid(self: ?*SubprocessTransportObject, _: ?PyObject) callconv(.c) ?PyObject {
@@ -135,6 +171,8 @@ const Py_tp_getset: c_int = 73;
 const SubprocessSlots: []const python_c.PyType_Slot = &[_]python_c.PyType_Slot{
     .{ .slot = python_c.Py_tp_new, .pfunc = @ptrCast(@constCast(&python_c.PyType_GenericNew)) },
     .{ .slot = python_c.Py_tp_dealloc, .pfunc = @ptrCast(@constCast(&subprocess_dealloc)) },
+    .{ .slot = python_c.Py_tp_traverse, .pfunc = @ptrCast(@constCast(&subprocess_traverse)) },
+    .{ .slot = python_c.Py_tp_clear, .pfunc = @ptrCast(@constCast(&subprocess_clear)) },
     .{ .slot = python_c.Py_tp_methods, .pfunc = @ptrCast(@constCast(SubprocessMethods.ptr)) },
     .{ .slot = Py_tp_getset, .pfunc = @ptrCast(@constCast(SubprocessGetSet.ptr)) },
     .{ .slot = python_c.Py_tp_doc, .pfunc = @constCast("Leviathan SubprocessTransport.") },
@@ -145,7 +183,7 @@ var subprocess_spec = python_c.PyType_Spec{
     .name = "leviathan.SubprocessTransport",
     .basicsize = @sizeOf(SubprocessTransportObject),
     .itemsize = 0,
-    .flags = python_c.Py_TPFLAGS_DEFAULT | python_c.Py_TPFLAGS_BASETYPE,
+    .flags = python_c.Py_TPFLAGS_DEFAULT | python_c.Py_TPFLAGS_BASETYPE | python_c.Py_TPFLAGS_HAVE_GC,
     .slots = @constCast(SubprocessSlots.ptr),
 };
 

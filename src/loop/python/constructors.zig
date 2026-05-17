@@ -122,6 +122,10 @@ pub fn loop_traverse(self: ?*LoopObject, visit: python_c.visitproc, arg: ?*anyop
     const vret_cw = loop_data.child_watcher.traverse(visit, arg);
     if (vret_cw != 0) return vret_cw;
 
+    // Visit Unix Signals
+    const vret_us = loop_data.unix_signals.traverse(visit, arg);
+    if (vret_us != 0) return vret_us;
+
     return 0;
 }
 

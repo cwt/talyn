@@ -59,7 +59,26 @@ pub fn close_transports(
 
     if (closed) {
         const ret = python_c.PyObject_CallOneArg(connection_lost, exception);
-        if (ret) |v| python_c.py_decref(v) else python_c.PyErr_Clear();
+        if (ret) |v| {
+            python_c.py_decref(v);
+        } else {
+            const exc = python_c.PyErr_GetRaisedException();
+            if (exc) |e| {
+                defer python_c.py_decref(e);
+                const ctx = python_c.PyDict_New();
+                if (ctx) |c| {
+                    defer python_c.py_decref(c);
+                    const msg = python_c.PyUnicode_FromString("Exception in connection_lost callback\x00");
+                    if (msg) |m| {
+                        _ = python_c.PyDict_SetItemString(c, "message\x00", m);
+                        python_c.py_decref(m);
+                    }
+                    _ = python_c.PyDict_SetItemString(c, "exception\x00", e);
+                    const ret2 = python_c.PyObject_CallMethod(loop_obj, "call_exception_handler\x00", "O\x00", c);
+                    if (ret2) |r2| python_c.py_decref(r2) else python_c.PyErr_Clear();
+                }
+            }
+        }
     } else {
         const call_soon = python_c.PyObject_GetAttrString(loop_obj, "call_soon\x00") orelse {
             python_c.PyErr_Clear();

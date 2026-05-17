@@ -107,6 +107,7 @@ pub fn init(
 }
 
 fn flush_buffered_writes(data: *const CallbackManager.CallbackData) !void {
+    if (data.cancelled) return;
     const self: *WriteTransport = @alignCast(@ptrCast(data.user_data.?));
     if (self.ready_to_queue_write_op and self.buffer_size > 0) {
         try self.queue_buffers_and_swap();

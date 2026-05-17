@@ -245,11 +245,11 @@ fn poll_blocking_events(
                 }
                 return err;
             };
-            nevents = try self.io.ring.copy_cqes(blocking_ready_tasks, 0);
+            nevents = try copy_cqes_eintr_safe(&self.io.ring, blocking_ready_tasks);
         } else {
             // Non-blocking: flush pending SQEs, then peek at CQEs.
             _ = try self.io.flush_pending_sqes();
-            nevents = try self.io.ring.copy_cqes(blocking_ready_tasks, 0);
+            nevents = try copy_cqes_eintr_safe(&self.io.ring, blocking_ready_tasks);
         }
         break;
     }
@@ -258,10 +258,22 @@ fn poll_blocking_events(
         try fetch_completed_tasks(self, blocking_ready_tasks[0..nevents], ready_queue);
 
         if (nevents == blocking_ready_tasks.len) {
-            nevents = try self.io.ring.copy_cqes(blocking_ready_tasks, 0);
+            nevents = try copy_cqes_eintr_safe(&self.io.ring, blocking_ready_tasks);
         } else {
             break;
         }
+    }
+}
+
+fn copy_cqes_eintr_safe(ring: *std.os.linux.IoUring, cqes: []std.os.linux.io_uring_cqe) !u32 {
+    while (true) {
+        return ring.copy_cqes(cqes, 0) catch |err| {
+            if (err == error.SignalInterrupt) {
+                if (python_c.PyErr_Occurred() != null) return error.PythonError;
+                continue;
+            }
+            return err;
+        };
     }
 }
 

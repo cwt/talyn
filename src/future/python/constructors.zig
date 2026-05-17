@@ -93,6 +93,14 @@ pub fn future_traverse(self: ?*PythonFutureObject, visit: python_c.visitproc, ar
         if (vret_q != 0) return vret_q;
     }
 
+    // Visit exceptions_queue (used for ExceptionGroup in happy-eyeballs)
+    for (future_data.exceptions_queue.items) |exc| {
+        if (exc) |e| {
+            const vret = visit.?(@ptrCast(e), arg);
+            if (vret != 0) return vret;
+        }
+    }
+
     return python_c.py_visit(instance, visit, arg);
 }
 
