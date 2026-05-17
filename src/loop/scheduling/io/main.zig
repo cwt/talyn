@@ -357,8 +357,12 @@ pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
     self.ring_blocked = false;
 
     // Initialize fixed file table for IOSQE_FIXED_FILE optimization.
-    // Gracefully fall back if kernel doesn't support sparse file registration.
+    // Raise RLIMIT_NOFILE if needed — fixed file table needs TotalTasksItems slots.
     const nr_files: u32 = TotalTasksItems;
+    var rlim: std.os.linux.rlimit = undefined;
+    _ = std.os.linux.getrlimit(.NOFILE, &rlim);
+    _ = std.os.linux.setrlimit(.NOFILE, &.{ .cur = nr_files + 64, .max = rlim.max });
+
     self.fixed_file_table = try allocator.alloc(std.posix.fd_t, nr_files);
     errdefer allocator.free(self.fixed_file_table);
     @memset(self.fixed_file_table[0..], -1);
