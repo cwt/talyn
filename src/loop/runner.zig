@@ -238,35 +238,10 @@ fn poll_blocking_events(
             const py_thread_state = PyEval_SaveThread();
             defer PyEval_RestoreThread(py_thread_state);
 
-            // Phase 2: Combined submit + wait in one io_uring_enter syscall.
-            // Flush pending SQEs (deferred polls) AND wait for completions.
-            // submit_and_wait calls flush_sq() then enter(to_submit, 1, GETEVENTS).
-            // With SQPOLL, always include SQ_WAKEUP to ensure the kernel thread
-            // processes our SQEs even if NEED_WAKEUP hasn't been set yet (the
-            // thread may be between poll cycles).  If already active, SQ_WAKEUP
-            // is a kernel no-op.
-            // Block if there are SQEs to submit OR operations in-flight.
-            // With SQPOLL and reserved_slots > 0, enter(0, 1, GETEVENTS)
-            // wakes the kernel thread and waits for completions from existing
-            // in-flight operations.  Without this, when submitted==0 but
-            // reserved_slots>0 we skip the syscall entirely, causing a
-            // busy-wait until the kernel thread produces CQEs.
-            //
-            // Always write to the eventfd BEFORE blocking to ensure the
-            // eventfd POLL_ADD completes and produces a CQE.  Without this,
-            // enter(0, 1, GETEVENTS | SQ_WAKEUP) can block forever — the
-            // SQPOLL thread may not respond to SQ_WAKEUP on this kernel
-            // (7.0.6), and the eventfd poll is the only guaranteed way to
-            // produce a CQE that unblocks the loop.
             {
-                _ = try self.io.wakeup_eventfd();
                 const submitted = self.io.ring.flush_sq();
                 if (submitted > 0 or self.reserved_slots > 0) {
-                    var enter_flags: u32 = std.os.linux.IORING_ENTER_GETEVENTS;
-                    if (self.io.ring.flags & std.os.linux.IORING_SETUP_SQPOLL != 0) {
-                        enter_flags |= std.os.linux.IORING_ENTER_SQ_WAKEUP;
-                    }
-                    _ = self.io.ring.enter(submitted, 1, enter_flags) catch |err| {
+                    _ = self.io.ring.enter(submitted, 1, std.os.linux.IORING_ENTER_GETEVENTS) catch |err| {
                         if (err == error.SignalInterrupt) {
                             if (python_c.PyErr_Occurred() != null) return error.PythonError;
                             continue;
@@ -275,7 +250,6 @@ fn poll_blocking_events(
                     };
                 }
             }
-            // Copy CQEs from shared ring — no extra syscall.
             nevents = try self.io.ring.copy_cqes(blocking_ready_tasks, 0);
         } else {
             // Non-blocking: flush pending SQEs, then peek at CQEs.

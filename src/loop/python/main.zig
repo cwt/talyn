@@ -293,14 +293,6 @@ const PythonLoopMethods: []const python_c.PyMethodDef = &[_]python_c.PyMethodDef
     //     .ml_doc = "Stop monitoring the fd file descriptor for write availability\x00",
     //     .ml_flags = python_c.METH_O
     // },
-    // --------------------- Introspection ---------------------
-    python_c.PyMethodDef{
-        .ml_name = "_get_ring_fd\x00",
-        .ml_meth = @ptrCast(&Control.loop_get_ring_fd),
-        .ml_doc = "Return the io_uring ring fd (for testing).\x00",
-        .ml_flags = python_c.METH_NOARGS
-    },
-
     // --------------------- Sentinel ---------------------
     python_c.PyMethodDef{
         .ml_name = null, .ml_meth = null, .ml_doc = null, .ml_flags = 0

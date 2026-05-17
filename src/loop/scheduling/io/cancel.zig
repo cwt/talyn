@@ -11,9 +11,7 @@ pub fn perform(ring: *std.os.linux.IoUring, task_id: usize) !usize {
     }
 
     const ret = try IO.submit_guaranteed(ring);
-    // With SQPOLL, submit() may return 0 if the kernel thread consumed
-    // the cancel SQE before enter() reports it — that's still success.
-    if (ret == 0) {
+    if (ret != 1) {
         return error.SQENotSubmitted;
     }
     return 0;

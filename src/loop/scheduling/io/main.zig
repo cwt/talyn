@@ -148,11 +148,6 @@ fn eventfd_callback(data: *const CallbackManager.CallbackData) !void {
     if (data.cancelled) return;
 
     const io: *IO = @alignCast(@ptrCast(data.user_data.?));
-    // Consume the eventfd count so the next POLL_ADD won't immediately
-    // re-trigger.  The count itself is irrelevant — only the fact that
-    // the fd became readable matters.
-    var val: u64 = 0;
-    _ = std.os.linux.read(io.eventfd, @as([*]u8, @ptrCast(&val)), @sizeOf(u64));
     try io.register_eventfd_callback();
 }
 
@@ -335,14 +330,9 @@ pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
 
     self.loop = loop;
 
-    // IORING_SETUP_SQPOLL: Kernel thread polls the submission queue
-    // automatically, eliminating most io_uring_enter syscalls. SQEs are
-    // flushed to the shared ring (user-space atomic store) and the kernel
-    // thread picks them up without a syscall. Only NEED_WAKEUP path (thread
-    // idle > sq_thread_idle ms) requires an enter() with IORING_ENTER_SQ_WAKEUP.
     self.ring = try std.os.linux.IoUring.init(
         TotalTasksItems,
-        std.os.linux.IORING_SETUP_SQPOLL,
+        0,
     );
     errdefer self.ring.deinit();
 
@@ -360,15 +350,8 @@ pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
 }
 
 pub fn register_eventfd_callback(self: *IO) !void {
-    // Use POLL_ADD instead of READ for the eventfd.  With SQPOLL, a read
-    // SQE that returns -EAGAIN parks the SQPOLL thread on the eventfd's
-    // poll waitqueue.  enter(SQ_WAKEUP) only wakes sqo_sq_wait, NOT the
-    // poll waitqueue, so the thread can't see newly flushed SQEs.
-    //
-    // POLL_ADD sets up a kernel-side poll callback instead — the SQPOLL
-    // thread stays in its main loop, responsive to new SQEs.
     _ = try self.queue(.{
-        .WaitReadable = .{
+        .PerformRead = .{
             .fd = self.eventfd,
             .callback = .{
                 .func = &eventfd_callback,
@@ -376,7 +359,8 @@ pub fn register_eventfd_callback(self: *IO) !void {
                 .data = .{
                     .user_data = self
                 }
-            }
+            },
+            .data = .{ .buffer = @as([]u8, @ptrCast(&self.eventfd_val)) },
         }
     });
     _ = try submit_guaranteed(&self.ring);
@@ -468,9 +452,6 @@ pub fn queue(self: *IO, event: BlockingOperationData) !usize {
         break result catch |err| {
             if (err != error.SubmissionQueueFull) return err;
             _ = try self.flush_pending_sqes();
-            if (self.ring.flags & std.os.linux.IORING_SETUP_SQPOLL != 0) {
-                _ = try self.ring.enter(0, 0, std.os.linux.IORING_ENTER_SQ_WAKEUP);
-            }
             continue;
         };
     };
@@ -484,26 +465,8 @@ pub fn submit_guaranteed(ring: *std.os.linux.IoUring) !u32 {
             if (err == error.SignalInterrupt) continue;
             return err;
         };
-        // With SQPOLL, ring.submit() flushes SQEs to shared memory but does
-        // NOT call enter() when the SQPOLL thread is active (no NEED_WAKEUP).
-        // Always call enter(0, 0, SQ_WAKEUP) to ensure the kernel thread
-        // picks up flushed SQEs even after it goes idle.  flush_sq() may
-        // return 0 (sq_ready after flushing), but SQEs ARE in the shared
-        // ring — the thread just needs to be woken to see them.
-        if (ring.flags & std.os.linux.IORING_SETUP_SQPOLL != 0) {
-            _ = try ring.enter(submitted, 0, std.os.linux.IORING_ENTER_SQ_WAKEUP);
-        }
         return submitted;
     }
 }
 
 const IO = @This();
-
-test "SQPOLL io_uring init" {
-    var ring = std.os.linux.IoUring.init(2, std.os.linux.IORING_SETUP_SQPOLL) catch |err| {
-        if (err == error.PermissionDenied) return error.SkipZigTests;
-        return err;
-    };
-    defer ring.deinit();
-    try std.testing.expect(ring.fd >= 0);
-}

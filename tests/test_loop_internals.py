@@ -613,22 +613,6 @@ def test_run_until_complete_keyboard_interrupt() -> None:
         loop.close()
 
 
-def test_sqpoll_active() -> None:
-    """Verify SQPOLL kernel polling thread is active on the io_uring ring."""
-    loop = Loop()
-    try:
-        fd = loop._get_ring_fd()
-        assert isinstance(fd, int)
-        assert fd >= 0
-        with open(f"/proc/self/fdinfo/{fd}") as f:
-            info = f.read()
-        assert "SqThread:" in info, "SQPOLL kernel thread not found in fdinfo"
-        assert "SqHead:" in info
-        assert "SqTail:" in info
-    finally:
-        loop.close()
-
-
 def test_loop_close_handles_cancelled_throw() -> None:
     """loop.close() handles execute_task_throw with cancelled=true.
 
