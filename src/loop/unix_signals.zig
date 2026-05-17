@@ -213,6 +213,7 @@ pub fn deinit(self: *UnixSignals) void {
 
     std.posix.sigprocmask(std.os.linux.SIG.UNBLOCK, &mask, null);
     self.callbacks.deinit() catch {};
+    self.fd = -1;
 }
 
 pub fn traverse(self: *const UnixSignals, visit: python_c.visitproc, arg: ?*anyopaque) c_int {
