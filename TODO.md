@@ -532,14 +532,23 @@ Instead of copying a 48-byte `Callback` struct (with function pointer, module_pt
 | 15.6 | Keep callback_manager for non-IO tasks (call_soon, call_later, task wakeups) | — | ✅ No change for task dispatch |
 | 15.7 | Run full test suite + benchmarks | All | ✅ 268 tests pass, 4 Pythons |
 
-#### Phase 2: io_uring SQPOLL — Zero-Syscall Submission
+#### Phase 2: io_uring SQPOLL — Zero-Syscall Submission — ⛔ REVERTED
 
-| # | Task | Files | Expected | Status |
-|---|------|-------|:--------:|:------:|
-| 15.8 | Init io_uring with `IORING_SETUP_SQPOLL` | `io/main.zig` | | ✅ `SqThread` confirmed active in `/proc/self/fdinfo` |
-| 15.9 | `submit_guaranteed()` — kept for safety; SQPOLL makes `submit()` a no-syscall fast path | `io/main.zig` | | ✅ No changes needed — `IoUring.submit()` already skips `io_uring_enter` when SQPOLL active |
-| 15.10 | Handle `IORING_SQ_NEED_WAKEUP` for idle/eventfd wake | `runner.zig` | | ✅ Handled by Zig's `IoUring.submit_and_wait()` std lib |
-| 15.11 | Unit tests for SQPOLL | `test_loop_internals.py`, `io/main.zig` | | ✅ Python `test_sqpoll_active` + Zig `SQPOLL io_uring init` |
+SQPOLL was implemented and tested but **reverted** after benchmarks showed net regressions.
+See [PRIORITY 17](#🔴-priority-17-sqpoll-hang-after-16000-total-sqes--✅-fixed-2026-05-17) for full analysis.
+
+| # | Task | Status |
+|---|------|:------:|
+| 15.8 | Init io_uring with `IORING_SETUP_SQPOLL` | ⛔ Reverted |
+| 15.9 | `submit_guaranteed()` SQPOLL fast path | ⛔ Reverted |
+| 15.10 | Handle `IORING_SQ_NEED_WAKEUP` | ⛔ Reverted |
+| 15.11 | Unit tests for SQPOLL | ⛔ Removed |
+
+**Why reverted:** On kernel 7.0.6, SQPOLL has a critical bug causing hangs after ~16000 SQEs
+(P17). The P17 fix (eventfd write before every blocking `enter()` + `SQ_WAKEUP` on every
+`submit()`) adds more overhead than SQPOLL saves. Net result: **UDP Ping-Pong dropped
+from 1.16× to 0.57×**, Socket Ops from 0.65× to 0.49×. Zero-syscall submission is
+theoretically valuable but practically harmful on this kernel.
 
 #### Phase 3: Registered Buffers + Fixed Files
 
@@ -560,21 +569,22 @@ Instead of copying a 48-byte `Callback` struct (with function pointer, module_pt
 
 ### Expected Impact (M=65536)
 
-| Benchmark | Current (467) | Phase 1 | Phase 2 ✅ | Phase 3 | Phase 4 |
-|-----------|:------------:|:-------:|:---------:|:-------:|:-------:|
-| **TCP Echo** | **0.78×** | 1.2× | 1.8× | 2.5× | **3.0×** |
-| **UDP Ping-Pong** | **1.12×** | 1.5× | 2.0× | 3.0× | **3.5×** |
-| Socket Ops | 0.63× | 1.0× | 1.5× | 2.5× | **3.0×** |
-| Chat | 0.98× | 1.0× | 1.2× | 1.5× | **1.8×** |
-| Subprocess | 1.00× | 1.0× | 1.0× | 1.2× | **1.5×** |
+| Benchmark | Current (479) | Phase 1 | Phase 3 | Phase 4 |
+|-----------|:------------:|:-------:|:-------:|:-------:|
+| **TCP Echo** | **0.65×** | 1.2× | 2.5× | **3.0×** |
+| **UDP Ping-Pong** | **0.57×** | 1.5× | 3.0× | **3.5×** |
+| Socket Ops | 0.49× | 1.0× | 2.5× | **3.0×** |
+| Chat | 0.95–1.06× | 1.0× | 1.5× | **1.8×** |
+| Subprocess | 0.98× | 1.0× | 1.2× | **1.5×** |
 
-**Total expected improvement:** 0.6-0.8× → **3-5×** asyncio, matching or beating uvloop.
-
-Leviathan finally leverages io_uring's true advantage: zero-syscall submission (Phase 2 ✅ SQPOLL active, `SqThread` confirmed), registered buffers, fixed files, and batched completion dispatch — all without per-completion Python boundary crossings.
+**Note:** Phase 2 (SQPOLL) was reverted. These targets assume Phases 3+4 are built
+on the non-SQPOLL baseline, which already has batched SQE submission (Phase 1)
+via `flush_pending_sqes()`. The main missing pieces are registered buffers and
+combined submit+wait.
 
 ---
 
-## 🔴 PRIORITY 17: SQPOLL Hang After ~16000 Total SQEs — ✅ FIXED (2026-05-17)
+## 🔴 PRIORITY 17: SQPOLL Hang After ~16000 Total SQEs — ⛔ REVERTED (2026-05-17)
 
 ### Root Cause
 
@@ -598,7 +608,7 @@ After ~16000–16400 total SQEs (~2 wraps of 8192-entry SQ ring), `run_until_com
 
 3. **No CQE production guarantee**: With SQPOLL thread running but ignoring SQ_WAKEUP, and no socket operations producing CQEs, `enter(0, 1, GETEVENTS | SQ_WAKEUP)` has **no mechanism to produce a CQE** — the eventfd POLL_ADD won't fire because nobody wrote to the eventfd.
 
-### The Fix
+### The Fix (tried — reverted with SQPOLL)
 
 In `poll_blocking_events`'s blocking path, **write to eventfd before every blocking `enter()`**:
 
@@ -606,19 +616,19 @@ In `poll_blocking_events`'s blocking path, **write to eventfd before every block
 _ = try self.io.wakeup_eventfd();
 ```
 
-This guarantees the eventfd POLL_ADD produces a CQE, so `enter()` returns immediately. The eventfd callback fires during `copy_cqes`, reads the eventfd (resetting it), and re-arms the POLL_ADD — all transparently.
+This guarantees the eventfd POLL_ADD produces a CQE, so `enter()` returns immediately.
 
-**Why it's safe:** The extra eventfd write is harmless when other CQEs are available — it just means one extra eventfd callback cycle. It's a 1 syscall overhead per blocking iteration.
+**Why it's insufficient:** The P17 fix works around the hang but adds 1 eventfd write + 1 eventfd read + 1 POLL_ADD re-registration per loop iteration. When combined with `SQ_WAKEUP` on every `submit_guaranteed()`, the total syscall overhead **increases** vs non-SQPOLL mode. UDP Ping-Pong dropped from 1.16× to 0.57× — a 50% regression.
 
 ### Results
 
-- 30×256 TCP connect+close iterations: **PASS** (previously hung at iteration 8)
-- 269 tests × 4 Python variants (3.13, 3.14, 3.13t, 3.14t): **all passed**
-- Standard asyncio test suites: **all passed**
+- P17 fix itself works: all 269 tests pass on all 4 Pythons
+- **BUT benchmark regressions make SQPOLL net-negative:** UDP Ping-Pong −50%, Socket Ops −23%, TCP/Unix Echo −16-21%
+- **Conclusion: SQPOLL reverted.** The kernel bug on 7.0.6 cannot be worked around without unacceptable overhead. Revisit on kernel ≥ 7.10.
 
 ### Lesson
 
-Never assume `SQ_WAKEUP` works on all kernel versions. The eventfd is the **only guaranteed CQE source** — always prime it before blocking if you need to wake.
+Never assume `SQ_WAKEUP` works on all kernel versions. The eventfd is the **only guaranteed CQE source** — always prime it before blocking if you need to wake. And more importantly: **benchmark before shipping** — SQPOLL's theoretical zero-syscall benefit is wiped out by the workarounds needed for kernel bugs.
 
 ---
 
@@ -639,7 +649,8 @@ TCP handshake handling in io_uring.
 
 **Conclusion:** `IOSQE_ASYNC` cannot be removed from connect/accept for io_uring.
 The 24% stdev is inherent to workqueue scheduling and cannot be eliminated without
-changing the io_uring submission model (e.g., SQPOLL in PRIORITY 15).
+changing the io_uring submission model (SQPOLL was tried in P15 Phase 2 and reverted —
+see PRIORITY 17).
 
 ### Tests Added (kept as regression tests)
 
