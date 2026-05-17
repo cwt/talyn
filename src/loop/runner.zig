@@ -238,18 +238,13 @@ fn poll_blocking_events(
             const py_thread_state = PyEval_SaveThread();
             defer PyEval_RestoreThread(py_thread_state);
 
-            {
-                const submitted = self.io.ring.flush_sq();
-                if (submitted > 0 or self.reserved_slots > 0) {
-                    _ = self.io.ring.enter(submitted, 1, std.os.linux.IORING_ENTER_GETEVENTS) catch |err| {
-                        if (err == error.SignalInterrupt) {
-                            if (python_c.PyErr_Occurred() != null) return error.PythonError;
-                            continue;
-                        }
-                        return err;
-                    };
+            _ = self.io.ring.submit_and_wait(1) catch |err| {
+                if (err == error.SignalInterrupt) {
+                    if (python_c.PyErr_Occurred() != null) return error.PythonError;
+                    continue;
                 }
-            }
+                return err;
+            };
             nevents = try self.io.ring.copy_cqes(blocking_ready_tasks, 0);
         } else {
             // Non-blocking: flush pending SQEs, then peek at CQEs.

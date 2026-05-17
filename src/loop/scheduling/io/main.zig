@@ -360,7 +360,7 @@ pub fn register_eventfd_callback(self: *IO) !void {
                     .user_data = self
                 }
             },
-            .data = .{ .buffer = @as([]u8, @ptrCast(&self.eventfd_val)) },
+            .data = .{ .buffer = @as([*]u8, @ptrCast(&self.eventfd_val))[0..@sizeOf(u64)] },
         }
     });
     _ = try submit_guaranteed(&self.ring);
@@ -434,27 +434,24 @@ pub fn queue(self: *IO, event: BlockingOperationData) !usize {
         _ = try self.flush_pending_sqes();
     }
 
-    const data_ptr = while (true) {
-        const result = switch (event) {
-            .WaitReadable => |data| Read.wait_ready(&self.ring, set, data),
-            .WaitWritable => |data| Write.wait_ready(&self.ring, set, data),
-            .PerformRead => |data| Read.perform(&self.ring, set, data),
-            .PerformWrite => |data| Write.perform(&self.ring, set, data),
-            .PerformWriteV => |data| Write.perform_with_iovecs(&self.ring, set, data),
-            .PerformRecvMsg => |data| Read.recvmsg(&self.ring, set, data),
-            .PerformSendMsg => |data| Write.sendmsg(&self.ring, set, data),
-            .WaitTimer => |data| Timer.wait(&self.ring, set, data),
-            .SocketShutdown => |data| Socket.shutdown(&self.ring, set, data),
-            .Cancel => |data| Cancel.perform(&self.ring, data),
-            .SocketConnect => |data| Socket.connect(&self.ring, set, data),
-            .SocketAccept => |data| Socket.accept(&self.ring, set, data)
-        };
-        break result catch |err| {
-            if (err != error.SubmissionQueueFull) return err;
-            _ = try self.flush_pending_sqes();
-            continue;
-        };
+    const data_ptr = try switch (event) {
+        .WaitReadable => |data| Read.wait_ready(&self.ring, set, data),
+        .WaitWritable => |data| Write.wait_ready(&self.ring, set, data),
+        .PerformRead => |data| Read.perform(&self.ring, set, data),
+        .PerformWrite => |data| Write.perform(&self.ring, set, data),
+        .PerformWriteV => |data| Write.perform_with_iovecs(&self.ring, set, data),
+        .PerformRecvMsg => |data| Read.recvmsg(&self.ring, set, data),
+        .PerformSendMsg => |data| Write.sendmsg(&self.ring, set, data),
+        .WaitTimer => |data| Timer.wait(&self.ring, set, data),
+        .SocketShutdown => |data| Socket.shutdown(&self.ring, set, data),
+        .Cancel => |data| Cancel.perform(&self.ring, data),
+        .SocketConnect => |data| Socket.connect(&self.ring, set, data),
+        .SocketAccept => |data| Socket.accept(&self.ring, set, data)
     };
+
+    if (event != .Cancel and self.ring.sq_ready() >= TotalTasksItems - 2) {
+        _ = try self.flush_pending_sqes();
+    }
 
     return data_ptr;
 }
