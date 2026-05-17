@@ -326,6 +326,7 @@ blocking_ready_tasks: []std.os.linux.io_uring_cqe = &.{},
 /// Index 0 is reserved for eventfd. Transport sockets use 1..TotalTasksItems-1.
 fixed_file_table: []std.posix.fd_t = &.{},
 fixed_file_free: std.ArrayListUnmanaged(u16) = .{ .items = &.{}, .capacity = 0 },
+fixed_files_enabled: bool = false,
 
 pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
     self.busy_sets = BlockingTasksSetLinkedList.init(allocator);
@@ -355,28 +356,36 @@ pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
 
     self.ring_blocked = false;
 
-    // Initialize fixed file table for IOSQE_FIXED_FILE optimization
+    // Initialize fixed file table for IOSQE_FIXED_FILE optimization.
+    // Gracefully fall back if kernel doesn't support sparse file registration.
     const nr_files: u32 = TotalTasksItems;
     self.fixed_file_table = try allocator.alloc(std.posix.fd_t, nr_files);
     errdefer allocator.free(self.fixed_file_table);
     @memset(self.fixed_file_table[0..], -1);
 
-    try self.ring.register_files_sparse(nr_files);
-    errdefer self.ring.unregister_files() catch {};
-
-    // Pre-fill free list with indices 1..nr_files-1 (0 reserved for eventfd)
     self.fixed_file_free = .{ .items = &.{}, .capacity = 0 };
     try self.fixed_file_free.ensureTotalCapacity(allocator, nr_files - 1);
     for (1..nr_files) |i| {
         self.fixed_file_free.appendAssumeCapacity(@intCast(i));
     }
 
+    self.ring.register_files_sparse(nr_files) catch {
+        // Kernel doesn't support sparse file registration — skip fixed files.
+        // IO operations will use raw fds instead of fixed file indices.
+        self.fixed_files_enabled = false;
+        return;
+    };
+    errdefer self.ring.unregister_files() catch {};
+
     // Register eventfd at fixed file index 0
     self.fixed_file_table[0] = self.eventfd;
     try self.ring.register_files_update(0, self.fixed_file_table[0..1]);
+
+    self.fixed_files_enabled = true;
 }
 
 pub fn register_fixed_file(self: *IO, fd: std.posix.fd_t) !u16 {
+    if (!self.fixed_files_enabled) return error.FixedFilesDisabled;
     if (self.ring.fd < 0) return error.LoopDeinitialized;
     const index = self.fixed_file_free.pop() orelse return error.NoFixedFileSlots;
     self.fixed_file_table[index] = fd;
@@ -385,6 +394,7 @@ pub fn register_fixed_file(self: *IO, fd: std.posix.fd_t) !u16 {
 }
 
 pub fn unregister_fixed_file(self: *IO, index: u16) void {
+    if (!self.fixed_files_enabled) return;
     self.fixed_file_table[index] = -1;
     if (self.ring.fd >= 0) {
         self.ring.register_files_update(index, self.fixed_file_table[index..index + 1]) catch {};

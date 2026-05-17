@@ -185,10 +185,13 @@ fn stream_init_configuration(
 
     // Register the socket fd as a fixed file for IOSQE_FIXED_FILE optimization.
     // This eliminates fget/fput per IO — significantly reduces dTLB pressure.
-    const fixed_file_index = try loop_data.io.register_fixed_file(fd);
-    self.fixed_file_index = fixed_file_index;
-    read_transport_data.fixed_file_index = fixed_file_index;
-    write_transport_data.fixed_file_index = fixed_file_index;
+    // Gracefully skip if fixed files are disabled or no slots available.
+    const fixed_file_index = loop_data.io.register_fixed_file(fd) catch null;
+    if (fixed_file_index) |ffi| {
+        self.fixed_file_index = ffi;
+        read_transport_data.fixed_file_index = ffi;
+        write_transport_data.fixed_file_index = ffi;
+    }
 
     try Read.queue_read_operation(self, read_transport_data, protocol_type);
 }
