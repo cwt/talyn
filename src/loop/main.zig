@@ -129,10 +129,16 @@ pub fn release(self: *Loop) void {
     self.dns.deinit();
     self.fs_watcher.deinit();
     self.child_watcher.deinit();
-    self.io.deinit();
     self.unix_signals.deinit();
 
-    // Release pending callbacks first, while IO is still functional.
+    // Release pending callbacks while IO is still functional.
+    for (self.ready_tasks_queues) |*ready_tasks_queue| {
+        CallbackManager.release_dynamic_ring_buffer(ready_tasks_queue);
+    }
+
+    self.io.deinit();
+
+    // Release callbacks dispatched by cancel_all during io.deinit().
     for (self.ready_tasks_queues) |*ready_tasks_queue| {
         CallbackManager.release_dynamic_ring_buffer(ready_tasks_queue);
     }

@@ -98,6 +98,14 @@ When a `KeyboardInterrupt` stops the loop before a Task's initial `execute_task_
 *   **The Lesson:** Every callback function must handle the `cancelled` flag from `release_ring_buffer`. For task callbacks, the minimum obligation is to ensure the coroutine is "started" in CPython's eyes before discarding it.
 *   **Follow-up:** `execute_task_throw` at `src/task/callbacks.zig:437` had the same bug. Fixed by transferring the task's stored exception directly to the future when cancelled, without throwing into the coroutine.
 
+### 12. Ring FD Lifecycle During Shutdown — Fixed File Unregister (2026-05-17)
+When `IOSQE_FIXED_FILE` is enabled, transport close callbacks call `unregister_fixed_file()` → `ring.register_files_update()`. The Zig stdlib's `register_files_update` asserts `self.fd >= 0`. If the ring has been deinitialized (fd = -1), this assertion fires → `SIGABRT`.
+*   **The Bug at Rev 483:** `Loop.release()` called `io.deinit()` (which calls `ring.deinit()` → `ring.fd = -1`) BEFORE processing callbacks in `release_dynamic_ring_buffer`. When a pending `read_operation_completed` callback ran, its `defer` called `Lifecyle.maybe_close_fd()` → `unregister_fixed_file()` → `register_files_update()` → `assert(fd >= 0)` on fd=-1 → abort. This affected `test_ssl_server_and_connection` and `test_very_slow` (all Python versions).
+*   **The Fix (2 parts):**
+    1. `IO.unregister_fixed_file()` at `src/loop/scheduling/io/main.zig:388`: check `self.ring.fd >= 0` before calling `register_files_update()`. If ring is deinitialized, skip the kernel update — the ring's `io_uring_queue_exit()` already auto-unregisters files.
+    2. `Loop.release()` at `src/loop/main.zig:129-144`: move `release_dynamic_ring_buffer` BEFORE `io.deinit()` (the comment already said "while IO is still functional"), then add a second pass AFTER for callbacks dispatched by `cancel_all` during deinit.
+*   **The Lesson:** Any function that accesses ring state (fd, register_files, SQ/CQ) must guard against the ring being deinitialized. During shutdown, callbacks run at unpredictable times — some before ring deinit (first `release_dynamic_ring_buffer` pass), some after (second pass + GC-triggered callbacks). Always check `ring.fd >= 0` before touching ring API.
+
 ### 11. Ghost Reference Cycle in Future Callbacks (2026-05-13)
 When Task A awaits Future B, `wakeup_task` is registered as a `ZigGeneric` callback on Future B with `ptr = task`. `traverse_callbacks_queue()` at `src/future/callback.zig:164-177` had a no-op `ZigGeneric` arm — the GC could not see the `Task ← Future` cycle.
 *   **The Bug:** Task holds `fut_waiter` → Future B. Future B's callback queue holds `ptr` → Task A. Python GC traverses Task A's members (including `fut_waiter` → Future B) and Future B's members (including `callbacks_queue`), but the `ZigGeneric.ptr` field was invisible. This ghost cycle leaked memory, causing OOM on long-running processes. The comment in the code literally said "This cycle is HIDDEN".
@@ -113,6 +121,7 @@ When Task A awaits Future B, `wakeup_task` is registered as a `ZigGeneric` callb
 3.  **Thread-Safe Dispatches:** Any function that can be called from a background thread (like `call_soon_threadsafe`) must trigger the `eventfd` wakeup *only if* the loop is actually blocked.
 4.  **Null Discovery:** In free-threading, GC can null out fields concurrently. Always use `?PyObject` and handle `null` gracefully in callbacks.
 5.  **Initialization Order (GC Safety):** When adding items to a collection traversed by Python's GC, **ALWAYS fully initialize the data before advancing the index or linking the node.** Use `@atomicStore` with release semantics to ensure initialization is visible to GC threads.
+6.  **Ring FD Guard Before Kernel Calls:** Any function touching `ring.fd`, `ring.register_files_update()`, or any io_uring registration API MUST check `ring.fd >= 0` first. During `loop.close()`, callbacks can fire after `ring.deinit()` has set fd = -1. Asserting `fd >= 0` without a guard will `SIGABRT`.
 
 ## 🔵 PRIORITY 4: Standard Compatibility & GC Stability — ✅ DONE (2026-05-10)
 
@@ -178,7 +187,6 @@ Task Spawn benchmark (zero I/O, pure `create_task()`) shows leviathan at **0.21-
 
 The real bottleneck after debugging: the 80-byte `Callback` struct copy per `Soon.dispatch` + `PyIter_Send` overhead (coroutine startup is inherently expensive). These are architectural costs of leviathan's design.
 
-**Conclusion: Priority 10 is WON'T FIX.** The perceived boundary crossings were already near-optimal. The core bottleneck is in the task creation and dispatch architecture itself.
 **Conclusion: Priority 10 is WON'T FIX.** The perceived boundary crossings were already near-optimal. The core bottleneck is in the task creation and dispatch architecture itself.
 
 ### Implementation Plan
@@ -550,7 +558,18 @@ See [PRIORITY 17](#🔴-priority-17-sqpoll-hang-after-16000-total-sqes--✅-fixe
 from 1.16× to 0.57×**, Socket Ops from 0.65× to 0.49×. Zero-syscall submission is
 theoretically valuable but practically harmful on this kernel.
 
-#### Phase 3: Registered Buffers + Fixed Files
+#### Phase 3: Registered Buffers + Fixed Files — ✅ DONE (2026-05-17)
+
+IOSQE_FIXED_FILE optimization eliminates `fget`/`fput` per IO operation. Socket FDs are
+registered in a sparse fixed file table at transport creation. Index 0 reserved for eventfd.
+
+**Bug found & fixed (2026-05-17):** `Loop.release()` order was wrong — `io.deinit()` ran
+before callback dispatch. Pending `read_operation_completed` callbacks called
+`unregister_fixed_file()` on a deinitialized ring (fd = -1), triggering
+`assert(fd >= 0)` → abort. Fixed by:
+1. Guarding `unregister_fixed_file()` with `ring.fd >= 0` check
+2. Moving callback dispatch before `io.deinit()` in `Loop.release()`
+See Lesson 12 for details.
 
 | # | Task | Files | Expected |
 |---|------|-------|:--------:|

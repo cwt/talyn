@@ -385,7 +385,9 @@ pub fn register_fixed_file(self: *IO, fd: std.posix.fd_t) !u16 {
 
 pub fn unregister_fixed_file(self: *IO, index: u16) void {
     self.fixed_file_table[index] = -1;
-    self.ring.register_files_update(index, self.fixed_file_table[index..index + 1]) catch {};
+    if (self.ring.fd >= 0) {
+        self.ring.register_files_update(index, self.fixed_file_table[index..index + 1]) catch {};
+    }
     self.fixed_file_free.append(self.loop.allocator, index) catch {};
 }
 
