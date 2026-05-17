@@ -403,21 +403,41 @@ pub fn unregister_fixed_file(self: *IO, index: u16) void {
 }
 
 pub fn register_eventfd_callback(self: *IO) !void {
-    _ = try self.queue(.{
-        .PerformRead = .{
-            .fd = 0,
-            .fixed_file_index = 0,
-            .callback = .{
-                .func = &eventfd_callback,
-                .cleanup = null,
-                .data = .{
-                    .user_data = self
-                }
-            },
-            .data = .{ .buffer = @as([*]u8, @ptrCast(&self.eventfd_val))[0..@sizeOf(u64)] },
-        }
-    });
-    _ = try submit_guaranteed(&self.ring);
+    if (self.fixed_files_enabled) {
+        _ = try self.queue(.{
+            .PerformRead = .{
+                .fd = 0,
+                .fixed_file_index = 0,
+                .callback = .{
+                    .func = &eventfd_callback,
+                    .cleanup = null,
+                    .data = .{
+                        .user_data = self,
+                        .module_ptr = null,
+                        .callback_ptr = null,
+                    }
+                },
+                .data = .{ .buffer = @as([*]u8, @ptrCast(&self.eventfd_val))[0..@sizeOf(u64)] },
+            }
+        });
+    } else {
+        _ = try self.queue(.{
+            .PerformRead = .{
+                .fd = self.eventfd,
+                .fixed_file_index = null,
+                .callback = .{
+                    .func = &eventfd_callback,
+                    .cleanup = null,
+                    .data = .{
+                        .user_data = self,
+                        .module_ptr = null,
+                        .callback_ptr = null,
+                    }
+                },
+                .data = .{ .buffer = @as([*]u8, @ptrCast(&self.eventfd_val))[0..@sizeOf(u64)] },
+            }
+        });
+    }
 }
 
 pub fn wakeup_eventfd(self: *IO) !void {
