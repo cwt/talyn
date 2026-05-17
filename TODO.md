@@ -831,11 +831,11 @@ Results below grouped by severity.
 
 | # | Lesson | File:Line | Bug | Fix |
 |---|--------|-----------|-----|-----|
-| M1 | L10 Cancelled | `loop/python/control.zig:161` | `hook_callback` missing `data.cancelled` guard. During shutdown, `execute_hooks` calls arbitrary Python code on a potentially torn-down loop. | Add `if (data.cancelled) { python_c.py_decref(@ptrCast(handle)); return; }`. |
-| M2 | L3 Ghost Refs | `loop/python/control.zig:126-132` | `HookHandle.callback`: separate `py_newref` on callback object. When hook is unlinked from HooksList, this ref becomes invisible to GC. | Add `tp_traverse` visiting `callback` field. |
-| M3 | L3 Ghost Refs | `loop/python/control.zig:198-203` | `PathWatcherHandle.callback`: same pattern as HookHandle. Separate incref invisible when watcher removed from FSWatcher. | Add `tp_traverse` visiting `callback` field. |
-| M4 | M4 Null Discovery | `transports/datagram/write.zig:191` | `args[1].?` evaluated before `is_none` check. If `args[1]` is null, `.?` crashes before `is_none` can return false. | Restructure: check `args.len > 1` and non-null before unwrapping. |
-| M5 | L5 Resilience | `loop/runner.zig:147-153` | `execute_hooks` uses `try` — single failing hook (e.g. `flush_buffered_writes`) propagates error → kills the event loop. | Catch errors per-hook, route to exception handler, continue to next hook. |
+| M1 | L10 Cancelled | `loop/python/control.zig:161` | `hook_callback` missing `data.cancelled` guard. During shutdown, `execute_hooks` calls arbitrary Python code on a potentially torn-down loop. | ✅ **FIXED** — added `if (data.cancelled) { py_decref(handle); return; }`. |
+| M2 | L3 Ghost Refs | `loop/python/control.zig:126-132` | `HookHandle.callback`: separate `py_newref` on callback object. When hook is unlinked from HooksList, this ref becomes invisible to GC. | ✅ **FIXED** — added `tp_traverse` + `HAVE_GC` flag to `HookHandleType`. |
+| M3 | L3 Ghost Refs | `loop/python/control.zig:198-203` | `PathWatcherHandle.callback`: same pattern as HookHandle. Separate incref invisible when watcher removed from FSWatcher. | ✅ **FIXED** — added `tp_traverse` + `HAVE_GC` flag to `PathWatcherHandleType`. |
+| M4 | M4 Null Discovery | `transports/datagram/write.zig:191` | `args[1].?` evaluated before `is_none` check. If `args[1]` is null, `.?` crashes before `is_none` can return false. | ✅ **FIXED** — added `args[1] != null` guard before `.?` unwrap. |
+| M5 | L5 Resilience | `loop/runner.zig:147-153` | `execute_hooks` uses `try` — single failing hook (e.g. `flush_buffered_writes`) propagates error → kills the event loop. | ✅ **FIXED** — changed `try` to `catch continue` per-hook. |
 
 ### 🟢 LOW / INFO (3) — defense-in-depth, not high priority
 

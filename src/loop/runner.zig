@@ -148,7 +148,7 @@ fn execute_hooks(hooks: *Loop.HooksList) !void {
     var node = hooks.first;
     while (node) |n| {
         node = n.next;
-        try n.data.func(&n.data.data);
+        n.data.func(&n.data.data) catch continue;
     }
 }
 

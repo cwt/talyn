@@ -138,6 +138,11 @@ fn hook_handle_dealloc(self: ?*HookHandle) callconv(.c) void {
     @"type".tp_free.?(@ptrCast(instance));
 }
 
+fn hook_handle_traverse(self: ?*HookHandle, visit: python_c.visitproc, arg: ?*anyopaque) callconv(.c) c_int {
+    const instance = self.?;
+    return visit.?(@ptrCast(instance.callback), arg);
+}
+
 fn hook_handle_cancel(self: ?*HookHandle, _: ?PyObject) callconv(.c) ?PyObject {
     const instance = self.?;
     const hook_type: Loop.HookType = @enumFromInt(instance.hook_type);
@@ -153,13 +158,18 @@ const HookHandleMethods = [_]python_c.PyMethodDef{
 var HookHandleType = python_c.PyTypeObject{
     .tp_name = "leviathan._HookHandle\x00",
     .tp_basicsize = @sizeOf(HookHandle),
-    .tp_flags = python_c.Py_TPFLAGS_DEFAULT,
+    .tp_flags = python_c.Py_TPFLAGS_DEFAULT | python_c.Py_TPFLAGS_HAVE_GC,
     .tp_dealloc = @ptrCast(&hook_handle_dealloc),
+    .tp_traverse = @ptrCast(&hook_handle_traverse),
     .tp_methods = @constCast(&HookHandleMethods),
 };
 
 fn hook_callback(data: *const CallbackManager.CallbackData) !void {
     const handle: *HookHandle = @alignCast(@ptrCast(data.user_data.?));
+    if (data.cancelled) {
+        python_c.py_decref(@ptrCast(handle));
+        return;
+    }
     const ret = python_c.PyObject_CallNoArgs(handle.callback) orelse return error.PythonError;
     python_c.py_decref(ret);
 }
@@ -209,6 +219,11 @@ fn path_watcher_handle_dealloc(self: ?*PathWatcherHandle) callconv(.c) void {
     @"type".tp_free.?(@ptrCast(instance));
 }
 
+fn path_watcher_handle_traverse(self: ?*PathWatcherHandle, visit: python_c.visitproc, arg: ?*anyopaque) callconv(.c) c_int {
+    const instance = self.?;
+    return visit.?(@ptrCast(instance.callback), arg);
+}
+
 fn path_watcher_handle_cancel(self: ?*PathWatcherHandle, _: ?PyObject) callconv(.c) ?PyObject {
     const instance = self.?;
     if (instance.loop_data.initialized) {
@@ -225,8 +240,9 @@ const PathWatcherHandleMethods = [_]python_c.PyMethodDef{
 var PathWatcherHandleType = python_c.PyTypeObject{
     .tp_name = "leviathan._PathWatcherHandle\x00",
     .tp_basicsize = @sizeOf(PathWatcherHandle),
-    .tp_flags = python_c.Py_TPFLAGS_DEFAULT,
+    .tp_flags = python_c.Py_TPFLAGS_DEFAULT | python_c.Py_TPFLAGS_HAVE_GC,
     .tp_dealloc = @ptrCast(&path_watcher_handle_dealloc),
+    .tp_traverse = @ptrCast(&path_watcher_handle_traverse),
     .tp_methods = @constCast(&PathWatcherHandleMethods),
 };
 

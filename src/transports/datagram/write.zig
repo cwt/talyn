@@ -188,7 +188,7 @@ fn write_completed(data: *const CallbackManager.CallbackData) !void {
 pub fn z_datagram_set_write_buffer_limits(self: *DatagramTransport.DatagramTransportObject, args: []?PyObject) !?PyObject {
     if (args.len < 1) return error.InvalidArgs;
     const py_high = args[0].?;
-    const py_low: ?PyObject = if (args.len > 1 and !python_c.is_none(args[1].?)) args[1].? else null;
+    const py_low: ?PyObject = if (args.len > 1 and args[1] != null and !python_c.is_none(args[1].?)) args[1].? else null;
 
     const high = @as(usize, @intCast(python_c.PyLong_AsUnsignedLongLong(py_high)));
     const low: usize = if (py_low) |l| @as(usize, @intCast(python_c.PyLong_AsUnsignedLongLong(l))) else high / 4;
