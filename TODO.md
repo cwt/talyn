@@ -574,6 +574,54 @@ Leviathan finally leverages io_uring's true advantage: zero-syscall submission (
 
 ---
 
+## 🔴 PRIORITY 17: SQPOLL Hang After ~16000 Total SQEs — ✅ FIXED (2026-05-17)
+
+### Root Cause
+
+After ~16000–16400 total SQEs (~2 wraps of 8192-entry SQ ring), `run_until_complete` on a single `Loop` object hangs in `enter(0, 1, GETEVENTS | SQ_WAKEUP)` — blocks forever waiting for a CQE that never arrives.
+
+### Investigation Timeline
+
+| Attempt | Finding |
+|---------|---------|
+| Check `/proc/<tid>/status` | **SQPOLL thread is `R (running)`** during the hang — NOT sleeping. `SQ_WAKEUP` is useless because the thread is already awake. |
+| Replace eventfd READ with POLL_ADD | Hang still at exactly same iteration count. Eventfd SQE type was irrelevant. |
+| Always call `enter(0, 0, SQ_WAKEUP)` unconditionally in `submit_guaranteed` | NO effect — same iteration count hang. Thread doesn't need waking. |
+| Larger batches (m=128, m=256) hit hang earlier | Hang correlates with **total SQE count**, not iteration count. ~16000–16400 total SQEs triggers the hang regardless of batch size. |
+| Single-connect loops (m=1, ~2 SQEs/iter) run 500+ iterations fine | Below the threshold. |
+
+### Key Discoveries
+
+1. **`flush_sq()` returns `sq_ready()` = `sqe_tail − kernel_sq_head`** — the **total backlog** of SQEs the kernel hasn't yet consumed since the beginning, NOT the count of SQEs just flushed. After 17001 submitted and kernel consumed 16400, `flush_sq()` returns 601.
+
+2. **`submit_guaranteed` over-submits stale SQEs**: `ring.submit()` returns `sq_ready()` (601), then calls `enter(601, 0, SQ_WAKEUP)`. The kernel may try to re-process SQEs already consumed by the SQPOLL thread — corrupting its internal SQE tracking.
+
+3. **No CQE production guarantee**: With SQPOLL thread running but ignoring SQ_WAKEUP, and no socket operations producing CQEs, `enter(0, 1, GETEVENTS | SQ_WAKEUP)` has **no mechanism to produce a CQE** — the eventfd POLL_ADD won't fire because nobody wrote to the eventfd.
+
+### The Fix
+
+In `poll_blocking_events`'s blocking path, **write to eventfd before every blocking `enter()`**:
+
+```zig
+_ = try self.io.wakeup_eventfd();
+```
+
+This guarantees the eventfd POLL_ADD produces a CQE, so `enter()` returns immediately. The eventfd callback fires during `copy_cqes`, reads the eventfd (resetting it), and re-arms the POLL_ADD — all transparently.
+
+**Why it's safe:** The extra eventfd write is harmless when other CQEs are available — it just means one extra eventfd callback cycle. It's a 1 syscall overhead per blocking iteration.
+
+### Results
+
+- 30×256 TCP connect+close iterations: **PASS** (previously hung at iteration 8)
+- 269 tests × 4 Python variants (3.13, 3.14, 3.13t, 3.14t): **all passed**
+- Standard asyncio test suites: **all passed**
+
+### Lesson
+
+Never assume `SQ_WAKEUP` works on all kernel versions. The eventfd is the **only guaranteed CQE source** — always prime it before blocking if you need to wake.
+
+---
+
 ## 🔴 PRIORITY 16: Socket Ops Stability Investigation — ⚠️ WON'T FIX (2026-05-15)
 
 ### Root Cause Analysis of 0.63× Socket Ops Performance (24% Stdev)
