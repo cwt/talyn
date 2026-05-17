@@ -169,7 +169,7 @@ pub fn loop_dealloc(self: ?*LoopObject) callconv(.c) void {
     }
     _ = loop_clear(instance);
 
-    const @"type": *python_c.PyTypeObject = python_c.get_type(@ptrCast(instance));
+    const @"type" = python_c.get_type(@ptrCast(instance)) orelse return;
     @"type".tp_free.?(@ptrCast(instance));
 
     if (builtin.single_threaded) {

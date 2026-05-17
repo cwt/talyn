@@ -134,7 +134,7 @@ const HookHandle = extern struct {
 fn hook_handle_dealloc(self: ?*HookHandle) callconv(.c) void {
     const instance = self.?;
     python_c.py_decref(instance.callback);
-    const @"type": *python_c.PyTypeObject = python_c.get_type(@ptrCast(instance));
+    const @"type" = python_c.get_type(@ptrCast(instance)) orelse return;
     @"type".tp_free.?(@ptrCast(instance));
 }
 
@@ -205,7 +205,7 @@ const PathWatcherHandle = extern struct {
 fn path_watcher_handle_dealloc(self: ?*PathWatcherHandle) callconv(.c) void {
     const instance = self.?;
     python_c.py_decref(instance.callback);
-    const @"type": *python_c.PyTypeObject = python_c.get_type(@ptrCast(instance));
+    const @"type" = python_c.get_type(@ptrCast(instance)) orelse return;
     @"type".tp_free.?(@ptrCast(instance));
 }
 

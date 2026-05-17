@@ -308,7 +308,7 @@ pub fn stream_dealloc(self: ?*StreamTransportObject) callconv(.c) void {
     python_c.PyObject_GC_UnTrack(instance);
     _ = stream_clear(instance);
 
-    const @"type" = python_c.get_type(@ptrCast(instance));
+    const @"type" = python_c.get_type(@ptrCast(instance)) orelse return;
     @"type".tp_free.?(@ptrCast(instance));
 }
 

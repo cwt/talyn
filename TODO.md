@@ -808,10 +808,10 @@ Results below grouped by severity.
 
 | # | Lesson | File:Line | Bug | Fix |
 |---|--------|-----------|-----|-----|
-| C1 | L5 Resilience | `loop/child_watcher.zig:141-144` | Child exit callback error silently dropped. `PyObject_Call` fails → exception fetched + decref'd → function returns `void` (success). User never knows their child handler crashed. | Route exception to loop's `call_exception_handler` instead of discarding. |
-| C2 | L5 Resilience | `loop/fs_watcher.zig:119-124` | Same pattern — inotify callback errors silently dropped. `PyObject_Call` returns null → `PyErr_GetRaisedException` + decref → `return`. | Same fix as C1. |
-| C3 | L5 Resilience | `transports/subprocess/transport.zig:178-185` | `.CHILD` error branch: both `process_exited` (L178) and `connection_lost` (L184) callbacks silently swallow errors with `PyErr_Clear`. Double loss. | Route both to `call_exception_handler`. |
-| C4 | M4 Null Discovery | `python_c.zig:266` | `obj.ob_type orelse unreachable` — In Python 3.13t free-threading, `ob_type` CAN be null during concurrent deallocation. Used from dozens of call sites (`is_type`, `type_check`, `long_check`, etc.). | Replace `orelse unreachable` with error return + null check at call sites. |
+| C1 | L5 Resilience | `loop/child_watcher.zig:141-144` | Child exit callback error silently dropped. `PyObject_Call` fails → exception fetched + decref'd → function returns `void` (success). User never knows their child handler crashed. | ✅ **FIXED** — Route exception to loop's `call_exception_handler`. |
+| C2 | L5 Resilience | `loop/fs_watcher.zig:119-124` | Same pattern — inotify callback errors silently dropped. `PyObject_Call` returns null → `PyErr_GetRaisedException` + decref → `return`. | ✅ **FIXED** — Route exception to loop's `call_exception_handler`. |
+| C3 | L5 Resilience | `transports/subprocess/transport.zig:178-185` | `.CHILD` error branch: both `process_exited` (L178) and `connection_lost` (L184) callbacks silently swallow errors with `PyErr_Clear`. Double loss. | ✅ **FIXED** — Route both to `call_exception_handler`. |
+| C4 | M4 Null Discovery | `python_c.zig:266` | `obj.ob_type orelse unreachable` — In Python 3.13t free-threading, `ob_type` CAN be null during concurrent deallocation. Used from dozens of call sites (`is_type`, `type_check`, `long_check`, etc.). | ✅ **FIXED** — `get_type` returns `?*PyTypeObject`, all 9 callers guard with `orelse return`/`orelse return error.PythonError`. |
 
 ### 🔶 HIGH (10) — will break under load or leak memory
 

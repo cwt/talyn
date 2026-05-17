@@ -141,6 +141,16 @@ fn on_child_exit(data: *const CallbackManager.CallbackData) !void {
     const py_res = python_c.PyObject_Call(handler.callback, py_args, null) orelse {
         const exc = python_c.PyErr_GetRaisedException() orelse return;
         defer python_c.py_decref(exc);
+        const loop_obj = utils.get_parent_ptr(Loop.Python.LoopObject, self.loop);
+        const ctx = python_c.PyDict_New() orelse return;
+        defer python_c.py_decref(ctx);
+        _ = python_c.PyDict_SetItemString(ctx, "message\x00", python_c.PyUnicode_FromString("Exception in child handler callback\x00") orelse return);
+        _ = python_c.PyDict_SetItemString(ctx, "exception\x00", exc);
+        const ret = python_c.PyObject_CallMethod(@ptrCast(loop_obj), "call_exception_handler\x00", "O\x00", ctx) orelse {
+            python_c.PyErr_Clear();
+            return;
+        };
+        python_c.py_decref(ret);
         return;
     };
     python_c.py_decref(py_res);

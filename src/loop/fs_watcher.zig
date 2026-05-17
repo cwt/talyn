@@ -105,7 +105,6 @@ fn on_inotify_event(data: *const CallbackManager.CallbackData) !void {
 }
 
 fn dispatch_event(self: *FSWatcher, watcher: *Watcher, mask: u32, cookie: u32, name: []const u8) !void {
-    _ = self;
     const py_mask = python_c.PyLong_FromUnsignedLong(mask) orelse return error.PythonError;
     defer python_c.py_decref(py_mask);
     const py_cookie = python_c.PyLong_FromUnsignedLong(cookie) orelse return error.PythonError;
@@ -119,6 +118,16 @@ fn dispatch_event(self: *FSWatcher, watcher: *Watcher, mask: u32, cookie: u32, n
     const res = python_c.PyObject_Call(watcher.callback, args, null) orelse {
         const exc = python_c.PyErr_GetRaisedException() orelse return;
         defer python_c.py_decref(exc);
+        const loop_obj = utils.get_parent_ptr(Loop.Python.LoopObject, self.loop);
+        const ctx = python_c.PyDict_New() orelse return;
+        defer python_c.py_decref(ctx);
+        _ = python_c.PyDict_SetItemString(ctx, "message\x00", python_c.PyUnicode_FromString("Exception in inotify callback\x00") orelse return);
+        _ = python_c.PyDict_SetItemString(ctx, "exception\x00", exc);
+        const ret = python_c.PyObject_CallMethod(@ptrCast(loop_obj), "call_exception_handler\x00", "O\x00", ctx) orelse {
+            python_c.PyErr_Clear();
+            return;
+        };
+        python_c.py_decref(ret);
         return;
     };
     python_c.py_decref(res);

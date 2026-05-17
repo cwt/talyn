@@ -38,7 +38,7 @@ fn subprocess_dealloc(self: ?*SubprocessTransportObject) callconv(.c) void {
     python_c.py_xdecref(instance.protocol);
     python_c.py_xdecref(instance.popen);
     python_c.py_xdecref(instance.returncode);
-    const @"type": *python_c.PyTypeObject = python_c.get_type(@ptrCast(instance));
+    const @"type" = python_c.get_type(@ptrCast(instance)) orelse return;
     @"type".tp_free.?(@ptrCast(instance));
 }
 
@@ -176,13 +176,53 @@ fn pidfd_exit_callback(data: *const CallbackManager.CallbackData) !void {
                 const pe = python_c.PyObject_GetAttrString(proto, "process_exited\x00");
                 if (pe) |v| {
                     const r1 = python_c.PyObject_CallNoArgs(v);
-                    if (r1) |rv| python_c.py_decref(rv) else python_c.PyErr_Clear();
+                    if (r1) |rv| {
+                        python_c.py_decref(rv);
+                    } else {
+                        if (python_c.PyErr_GetRaisedException()) |e| {
+                            defer python_c.py_decref(e);
+                            const ctx = python_c.PyDict_New();
+                            if (ctx) |c| {
+                                defer python_c.py_decref(c);
+                                const msg = python_c.PyUnicode_FromString("Exception in subprocess process_exited callback\x00");
+                                if (msg) |m| {
+                                    _ = python_c.PyDict_SetItemString(c, "message\x00", m);
+                                    python_c.py_decref(m);
+                                }
+                                _ = python_c.PyDict_SetItemString(c, "exception\x00", e);
+                                if (transport.loop) |loop_obj| {
+                                    const ret = python_c.PyObject_CallMethod(loop_obj, "call_exception_handler\x00", "O\x00", c);
+                                    if (ret) |r| python_c.py_decref(r) else python_c.PyErr_Clear();
+                                }
+                            }
+                        }
+                    }
                     python_c.py_decref(v);
                 }
                 const cl = python_c.PyObject_GetAttrString(proto, "connection_lost\x00");
                 if (cl) |v| {
                     const r2 = python_c.PyObject_CallOneArg(v, python_c.get_py_none_without_incref());
-                    if (r2) |rv| python_c.py_decref(rv) else python_c.PyErr_Clear();
+                    if (r2) |rv| {
+                        python_c.py_decref(rv);
+                    } else {
+                        if (python_c.PyErr_GetRaisedException()) |e| {
+                            defer python_c.py_decref(e);
+                            const ctx = python_c.PyDict_New();
+                            if (ctx) |c| {
+                                defer python_c.py_decref(c);
+                                const msg = python_c.PyUnicode_FromString("Exception in subprocess connection_lost callback\x00");
+                                if (msg) |m| {
+                                    _ = python_c.PyDict_SetItemString(c, "message\x00", m);
+                                    python_c.py_decref(m);
+                                }
+                                _ = python_c.PyDict_SetItemString(c, "exception\x00", e);
+                                if (transport.loop) |loop_obj| {
+                                    const ret = python_c.PyObject_CallMethod(loop_obj, "call_exception_handler\x00", "O\x00", c);
+                                    if (ret) |r| python_c.py_decref(r) else python_c.PyErr_Clear();
+                                }
+                            }
+                        }
+                    }
                     python_c.py_decref(v);
                 }
             }

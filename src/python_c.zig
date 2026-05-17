@@ -262,16 +262,18 @@ pub const pid_t = _c.pid_t;
 const builtin = @import("builtin");
 const std = @import("std");
 
-pub inline fn get_type(obj: *Python.PyObject) *Python.PyTypeObject {
-    return obj.ob_type orelse unreachable;
+pub inline fn get_type(obj: *Python.PyObject) ?*Python.PyTypeObject {
+    return obj.ob_type;
 }
 
 pub inline fn is_type(obj: *Python.PyObject, @"type": *Python.PyTypeObject) bool {
-    return get_type(obj) == @"type";
+    const t = get_type(obj) orelse return false;
+    return t == @"type";
 }
 
 pub inline fn type_check(obj: *Python.PyObject, @"type": *Python.PyTypeObject) bool {
-    return is_type(obj, @"type") or Python.PyType_IsSubtype(get_type(obj), @"type") != 0;
+    const t = get_type(obj) orelse return false;
+    return t == @"type" or Python.PyType_IsSubtype(t, @"type") != 0;
 }
 
 // -------------------------------------------------
@@ -288,15 +290,18 @@ inline fn type_hasfeature(arg_type: *Python.PyTypeObject, arg_feature: c_ulong) 
 }
 
 pub inline fn long_check(obj: *Python.PyObject) bool {
-    return type_hasfeature(get_type(obj), Python.Py_TPFLAGS_LONG_SUBCLASS);
+    const t = get_type(obj) orelse return false;
+    return type_hasfeature(t, Python.Py_TPFLAGS_LONG_SUBCLASS);
 }
 
 pub inline fn unicode_check(obj: *Python.PyObject) bool {
-    return type_hasfeature(get_type(obj), Python.Py_TPFLAGS_UNICODE_SUBCLASS);
+    const t = get_type(obj) orelse return false;
+    return type_hasfeature(t, Python.Py_TPFLAGS_UNICODE_SUBCLASS);
 }
 
 pub inline fn exception_check(obj: *Python.PyObject) bool {
-    return type_hasfeature(get_type(obj), Python.Py_TPFLAGS_BASE_EXC_SUBCLASS);
+    const t = get_type(obj) orelse return false;
+    return type_hasfeature(t, Python.Py_TPFLAGS_BASE_EXC_SUBCLASS);
 }
 // -------------------------------------------------
 

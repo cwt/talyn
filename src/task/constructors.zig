@@ -23,7 +23,7 @@ inline fn task_init_configuration(
     coro: PyObject, context: PyObject, name: ?PyObject
 ) !void {
     try Future.Python.Constructors.future_init_configuration(&self.fut, loop);
-    const coro_type = python_c.get_type(coro);
+    const coro_type = python_c.get_type(coro) orelse return error.PythonError;
     if (coro_type.tp_as_async == null or coro_type.tp_as_async.*.am_await == null) {
         python_c.raise_python_type_error("Coro argument must be a coroutine\x00");
         return error.PythonError;

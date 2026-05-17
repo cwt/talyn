@@ -62,7 +62,7 @@ fn datagram_dealloc(self: ?*DatagramTransportObject) callconv(.c) void {
     python_c.py_xdecref(instance.protocol_error_received);
     python_c.py_xdecref(instance.protocol_connection_lost);
 
-    const @"type": *python_c.PyTypeObject = python_c.get_type(@ptrCast(instance));
+    const @"type" = python_c.get_type(@ptrCast(instance)) orelse return;
     @"type".tp_free.?(@ptrCast(instance));
 }
 

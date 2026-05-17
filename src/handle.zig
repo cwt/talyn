@@ -152,7 +152,7 @@ fn handle_dealloc(self: ?*PythonHandleObject) callconv(.c) void {
         allocator.free(args);
     }
 
-    const @"type": *python_c.PyTypeObject = python_c.get_type(@ptrCast(instance));
+    const @"type" = python_c.get_type(@ptrCast(instance)) orelse return;
     @"type".tp_free.?(@ptrCast(instance));
 }
 

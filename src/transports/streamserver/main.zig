@@ -50,7 +50,7 @@ fn streamserver_dealloc(self: ?*StreamServerObject) callconv(.c) void {
         }
     }
     instance.deinit();
-    const @"type": *python_c.PyTypeObject = python_c.get_type(@ptrCast(instance));
+    const @"type" = python_c.get_type(@ptrCast(instance)) orelse return;
     @"type".tp_free.?(@ptrCast(instance));
 }
 
