@@ -377,6 +377,7 @@ pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
 }
 
 pub fn register_fixed_file(self: *IO, fd: std.posix.fd_t) !u16 {
+    if (self.ring.fd < 0) return error.LoopDeinitialized;
     const index = self.fixed_file_free.pop() orelse return error.NoFixedFileSlots;
     self.fixed_file_table[index] = fd;
     try self.ring.register_files_update(index, self.fixed_file_table[index..index + 1]);
@@ -411,7 +412,14 @@ pub fn register_eventfd_callback(self: *IO) !void {
 
 pub fn wakeup_eventfd(self: *IO) !void {
     const val: u64 = 1;
-    _ = std.os.linux.write(self.eventfd, @as([*]const u8, @ptrCast(&val)), @sizeOf(u64));
+    while (true) {
+        const ret = std.os.linux.write(self.eventfd, @as([*]const u8, @ptrCast(&val)), @sizeOf(u64));
+        if (ret >= 0) return;
+        switch (std.os.errno(ret)) {
+            .INTR => continue,
+            else => return,
+        }
+    }
 }
 
 pub fn traverse(self: *const IO, visit: python_c.visitproc, arg: ?*anyopaque) c_int {

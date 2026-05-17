@@ -841,9 +841,9 @@ Results below grouped by severity.
 
 | # | Lesson | File:Line | Bug | Fix |
 |---|--------|-----------|-----|-----|
-| L1 | L12 Ring FD | `loop/scheduling/io/main.zig:382` | `register_fixed_file()` lacks `ring.fd >= 0` guard. If called after `io.deinit()`, `register_files_update` will assert-fail. Currently protected by Python layer preventing new connections on stopped loop. | Add guard for defense-in-depth. |
-| L2 | L2 EINTR | `loop/scheduling/io/main.zig:414` | Eventfd write discards return value via `_ =`. EINTR before the atomic 8-byte write could theoretically lose a wakeup (rare). | Check return value, retry on EINTR. |
-| L3 | L2 EINTR | `loop/child_watcher.zig:104` | `waitid` with WNOHANG: EINTR causes re-arm cycle where the pidfd read is queued again. Not crashy but wastes one io_uring cycle per signal. | Explicitly check for EINTR and retry `waitid` immediately. |
+| L1 | L12 Ring FD | `loop/scheduling/io/main.zig:382` | `register_fixed_file()` lacks `ring.fd >= 0` guard. If called after `io.deinit()`, `register_files_update` will assert-fail. Currently protected by Python layer preventing new connections on stopped loop. | ✅ **FIXED** — added `if (self.ring.fd < 0) return error.LoopDeinitialized;` guard. |
+| L2 | L2 EINTR | `loop/scheduling/io/main.zig:414` | Eventfd write discards return value via `_ =`. EINTR before the atomic 8-byte write could theoretically lose a wakeup (rare). | ✅ **FIXED** — retry loop on EINTR, return on any other error. |
+| L3 | L2 EINTR | `loop/child_watcher.zig:104` | `waitid` with WNOHANG: EINTR causes re-arm cycle where the pidfd read is queued again. Not crashy but wastes one io_uring cycle per signal. | ✅ **FIXED** — immediate retry on EINTR inside a `while(true)` loop. |
 
 ### ✅ What's Clean
 

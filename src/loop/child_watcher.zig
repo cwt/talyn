@@ -101,7 +101,16 @@ fn on_child_exit(data: *const CallbackManager.CallbackData) !void {
 
     // Get exit status
     var siginfo: std.os.linux.siginfo_t = undefined;
-    const res = std.os.linux.waitid(.PIDFD, handler.pidfd, &siginfo, std.os.linux.W.EXITED | std.os.linux.W.NOHANG, null);
+    const res = res: {
+        while (true) {
+            const r = std.os.linux.waitid(.PIDFD, handler.pidfd, &siginfo, std.os.linux.W.EXITED | std.os.linux.W.NOHANG, null);
+            if (r != 0) {
+                const errno: u32 = @truncate(~r + 1);
+                if (errno == @intFromEnum(std.os.linux.E.INTR)) continue;
+            }
+            break :res r;
+        }
+    };
     
     if (res != 0) {
         // Process might still be alive (though POLLIN triggered)?
