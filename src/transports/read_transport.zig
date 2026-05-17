@@ -41,6 +41,7 @@ blocking_task_id: usize = 0,
     cancelling: bool = false,
     initialized: bool = false,
     batch_dispatched: bool = false,
+    fixed_file_index: ?u16 = null,
 
 pub fn init(
     self: *ReadTransport, loop: *Loop, fd: std.posix.fd_t, callback: ReadCompletedCallback,
@@ -185,6 +186,7 @@ pub inline fn perform(self: *ReadTransport, buffer: ?[]u8) !void {
                     }
                 },
                 .fd = self.fd,
+                .fixed_file_index = self.fixed_file_index,
                 .data = .{
                     .buffer = buffer_to_read
                 },

@@ -39,17 +39,18 @@ buffer_size: usize = 0,
 fd: std.posix.fd_t,
 
 ready_to_queue_write_op: bool = true,
-zero_copying: bool,
+    zero_copying: bool,
 
-prepare_hook_node: ?Loop.HooksList.Node = null,
+    prepare_hook_node: ?Loop.HooksList.Node = null,
 
-writev_count: usize = 0,
+    writev_count: usize = 0,
 
-blocking_task_id: usize = 0,
+    blocking_task_id: usize = 0,
 
-is_closing: bool = false,
-closed: bool = false,
-initialized: bool = false,
+    is_closing: bool = false,
+    closed: bool = false,
+    initialized: bool = false,
+    fixed_file_index: ?u16 = null,
 
 
 pub fn init(
@@ -198,6 +199,7 @@ inline fn queue_remaining_data(self: *WriteTransport, data_written: usize) !void
                     }
                 },
                 .fd = self.fd,
+                .fixed_file_index = self.fixed_file_index,
                 .data = self.busy_buffers.items[current_ioves_index..],
                 .zero_copy = ((remaining >= 10_000) and self.zero_copying)
             }
@@ -332,6 +334,7 @@ pub fn queue_buffers_and_swap(self: *WriteTransport) !void {
                     }
                 },
                 .fd = self.fd,
+                .fixed_file_index = self.fixed_file_index,
                 .data = current_free_buffers.items,
                 .zero_copy = ((buffer_size >= 10_000) and self.zero_copying)
             }

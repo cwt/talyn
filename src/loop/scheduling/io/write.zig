@@ -5,6 +5,7 @@ const IO = @import("main.zig");
 
 pub const PerformData = struct {
     fd: std.posix.fd_t,
+    fixed_file_index: ?u16 = null,
     callback: CallbackManager.Callback,
     data: []const u8,
     offset: usize = 0,
@@ -14,6 +15,7 @@ pub const PerformData = struct {
 
 pub const PerformVData = struct {
     fd: std.posix.fd_t,
+    fixed_file_index: ?u16 = null,
     callback: CallbackManager.Callback,
     data: []const std.posix.iovec_const,
     offset: usize = 0,
@@ -23,6 +25,7 @@ pub const PerformVData = struct {
 
 pub const SendMsgData = struct {
     fd: std.posix.fd_t,
+    fixed_file_index: ?u16 = null,
     callback: CallbackManager.Callback,
     msg: *const std.posix.msghdr_const,
     flags: u32 = 0,
@@ -32,8 +35,10 @@ pub fn wait_ready(ring: *std.os.linux.IoUring, set: *IO.BlockingTasksSet, data: 
     const data_ptr = try set.push(.WaitWritable, &data.callback);
     errdefer data_ptr.discard();
 
-    const sqe = try ring.poll_add(@intCast(@intFromPtr(data_ptr)), data.fd, std.c.POLL.OUT);
+    const fd_arg: std.os.linux.fd_t = if (data.fixed_file_index) |ffi| ffi else data.fd;
+    const sqe = try ring.poll_add(@intCast(@intFromPtr(data_ptr)), fd_arg, std.c.POLL.OUT);
     sqe.flags |= std.os.linux.IOSQE_ASYNC;
+    sqe.flags |= if (data.fixed_file_index != null) std.os.linux.IOSQE_FIXED_FILE else 0;
 
     if (data.timeout) |*timeout| {
         sqe.flags |= std.os.linux.IOSQE_IO_LINK;
@@ -49,7 +54,9 @@ pub fn sendmsg(ring: *std.os.linux.IoUring, set: *IO.BlockingTasksSet, data: Sen
     const data_ptr = try set.push(.PerformSendMsg, &data.callback);
     errdefer data_ptr.discard();
 
-    _ = try ring.sendmsg(@intCast(@intFromPtr(data_ptr)), data.fd, data.msg, data.flags);
+    const fd_arg: std.os.linux.fd_t = if (data.fixed_file_index) |ffi| ffi else data.fd;
+    const sqe = try ring.sendmsg(@intCast(@intFromPtr(data_ptr)), fd_arg, data.msg, data.flags);
+    sqe.flags |= if (data.fixed_file_index != null) std.os.linux.IOSQE_FIXED_FILE else 0;
 
     // Flush SQE to kernel ring for immediate visibility.
     // User-space atomic store, not a syscall.
@@ -62,6 +69,9 @@ pub fn sendmsg(ring: *std.os.linux.IoUring, set: *IO.BlockingTasksSet, data: Sen
 pub fn perform(ring: *std.os.linux.IoUring, set: *IO.BlockingTasksSet, data: PerformData) !usize {
     const data_ptr = try set.push(.PerformWrite, &data.callback);
     errdefer data_ptr.discard();
+
+    const fd_arg: std.os.linux.fd_t = if (data.fixed_file_index) |ffi| ffi else data.fd;
+    const ff_flag: u8 = if (data.fixed_file_index != null) @as(u8, std.os.linux.IOSQE_FIXED_FILE) else 0;
 
     const sqe = blk: {
         if (data.zero_copy) {
@@ -78,15 +88,17 @@ pub fn perform(ring: *std.os.linux.IoUring, set: *IO.BlockingTasksSet, data: Per
             data_ptr.msg_storage.flags = 0;
 
             const sqe = try ring.sendmsg(
-                @intCast(@intFromPtr(data_ptr)), data.fd,
+                @intCast(@intFromPtr(data_ptr)), fd_arg,
                 @as(*const std.posix.msghdr_const, @ptrCast(&data_ptr.msg_storage)),
                 std.posix.MSG.ZEROCOPY,
             );
+            sqe.flags |= ff_flag;
 
             // Deferred: msg_storage and write_iov live in task_data_pool (heap).
             break :blk sqe;
         }
-        const sqe = try ring.write(@intCast(@intFromPtr(data_ptr)), data.fd, data.data, data.offset);
+        const sqe = try ring.write(@intCast(@intFromPtr(data_ptr)), fd_arg, data.data, data.offset);
+        sqe.flags |= ff_flag;
         break :blk sqe;
     };
 
@@ -104,6 +116,9 @@ pub fn perform_with_iovecs(ring: *std.os.linux.IoUring, set: *IO.BlockingTasksSe
     const data_ptr = try set.push(.PerformWriteV, &data.callback);
     errdefer data_ptr.discard();
 
+    const fd_arg: std.os.linux.fd_t = if (data.fixed_file_index) |ffi| ffi else data.fd;
+    const ff_flag: u8 = if (data.fixed_file_index != null) @as(u8, std.os.linux.IOSQE_FIXED_FILE) else 0;
+
     const sqe = blk: {
         if (data.zero_copy) {
             data_ptr.msg_storage.name = null;
@@ -115,15 +130,17 @@ pub fn perform_with_iovecs(ring: *std.os.linux.IoUring, set: *IO.BlockingTasksSe
             data_ptr.msg_storage.flags = 0;
 
             const sqe = try ring.sendmsg(
-                @intCast(@intFromPtr(data_ptr)), data.fd,
+                @intCast(@intFromPtr(data_ptr)), fd_arg,
                 @as(*const std.posix.msghdr_const, @ptrCast(&data_ptr.msg_storage)),
                 std.posix.MSG.ZEROCOPY,
             );
+            sqe.flags |= ff_flag;
 
             // Deferred: msg_storage lives in task_data_pool.
             break :blk sqe;
         }
-        const sqe = try ring.writev(@intCast(@intFromPtr(data_ptr)), data.fd, data.data, data.offset);
+        const sqe = try ring.writev(@intCast(@intFromPtr(data_ptr)), fd_arg, data.data, data.offset);
+        sqe.flags |= ff_flag;
         break :blk sqe;
     };
 

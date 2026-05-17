@@ -6,6 +6,7 @@ const PyObject = *python_c.PyObject;
 const utils = @import("utils");
 
 const Loop = @import("../../loop/main.zig");
+const LoopObject = Loop.Python.LoopObject;
 
 const Stream = @import("main.zig");
 const StreamTransportObject = Stream.StreamTransportObject;
@@ -86,6 +87,13 @@ pub fn transport_close(self: ?*StreamTransportObject) callconv(.c) ?PyObject {
 
         const fd = instance.fd;
         if (fd >= 0) {
+            if (instance.fixed_file_index != 0) {
+                if (instance.loop) |loop_obj| {
+                    const loop_data = utils.get_data_ptr(Loop, @as(*LoopObject, @ptrCast(loop_obj)));
+                    loop_data.io.unregister_fixed_file(instance.fixed_file_index);
+                }
+                instance.fixed_file_index = 0;
+            }
             _ = std.os.linux.close(fd);
             instance.fd = -1;
         }
@@ -113,6 +121,13 @@ pub fn maybe_close_fd(self: *StreamTransportObject) void {
         self.closed = true;
         const fd = self.fd;
         if (fd >= 0) {
+            if (self.fixed_file_index != 0) {
+                if (self.loop) |loop_obj| {
+                    const loop_data = utils.get_data_ptr(Loop, @as(*LoopObject, @ptrCast(loop_obj)));
+                    loop_data.io.unregister_fixed_file(self.fixed_file_index);
+                }
+                self.fixed_file_index = 0;
+            }
             _ = std.os.linux.close(fd);
             self.fd = -1;
         }
@@ -156,6 +171,13 @@ pub fn transport_force_close(self: ?*StreamTransportObject, exc: ?PyObject) call
 
     const fd = instance.fd;
     if (fd >= 0) {
+        if (instance.fixed_file_index != 0) {
+            if (instance.loop) |loop_obj| {
+                const loop_data = utils.get_data_ptr(Loop, @as(*LoopObject, @ptrCast(loop_obj)));
+                loop_data.io.unregister_fixed_file(instance.fixed_file_index);
+            }
+            instance.fixed_file_index = 0;
+        }
         _ = std.os.linux.close(fd);
         instance.fd = -1;
     }

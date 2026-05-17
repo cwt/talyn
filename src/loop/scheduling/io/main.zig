@@ -289,6 +289,7 @@ pub const BlockingTasksSet = struct {
 pub const WaitData = struct {
     callback: CallbackManager.Callback,
     fd: std.os.linux.fd_t,
+    fixed_file_index: ?u16 = null,
     timeout: ?std.os.linux.kernel_timespec = null
 };
 
@@ -320,6 +321,12 @@ eventfd: std.posix.fd_t = -1,
 eventfd_val: u64 = 0,
 blocking_ready_tasks: []std.os.linux.io_uring_cqe = &.{},
 
+/// Fixed file table for IOSQE_FIXED_FILE optimization.
+/// Registered as a sparse table via register_files_sparse at init.
+/// Index 0 is reserved for eventfd. Transport sockets use 1..TotalTasksItems-1.
+fixed_file_table: []std.posix.fd_t = &.{},
+fixed_file_free: std.ArrayListUnmanaged(u16) = .{ .items = &.{}, .capacity = 0 },
+
 pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
     self.busy_sets = BlockingTasksSetLinkedList.init(allocator);
 
@@ -347,12 +354,46 @@ pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
     errdefer allocator.free(self.blocking_ready_tasks);
 
     self.ring_blocked = false;
+
+    // Initialize fixed file table for IOSQE_FIXED_FILE optimization
+    const nr_files: u32 = TotalTasksItems;
+    self.fixed_file_table = try allocator.alloc(std.posix.fd_t, nr_files);
+    errdefer allocator.free(self.fixed_file_table);
+    @memset(self.fixed_file_table[0..], -1);
+
+    try self.ring.register_files_sparse(nr_files);
+    errdefer self.ring.unregister_files() catch {};
+
+    // Pre-fill free list with indices 1..nr_files-1 (0 reserved for eventfd)
+    self.fixed_file_free = .{ .items = &.{}, .capacity = 0 };
+    try self.fixed_file_free.ensureTotalCapacity(allocator, nr_files - 1);
+    for (1..nr_files) |i| {
+        self.fixed_file_free.appendAssumeCapacity(@intCast(i));
+    }
+
+    // Register eventfd at fixed file index 0
+    self.fixed_file_table[0] = self.eventfd;
+    try self.ring.register_files_update(0, self.fixed_file_table[0..1]);
+}
+
+pub fn register_fixed_file(self: *IO, fd: std.posix.fd_t) !u16 {
+    const index = self.fixed_file_free.pop() orelse return error.NoFixedFileSlots;
+    self.fixed_file_table[index] = fd;
+    try self.ring.register_files_update(index, self.fixed_file_table[index..index + 1]);
+    return index;
+}
+
+pub fn unregister_fixed_file(self: *IO, index: u16) void {
+    self.fixed_file_table[index] = -1;
+    self.ring.register_files_update(index, self.fixed_file_table[index..index + 1]) catch {};
+    self.fixed_file_free.append(self.loop.allocator, index) catch {};
 }
 
 pub fn register_eventfd_callback(self: *IO) !void {
     _ = try self.queue(.{
         .PerformRead = .{
-            .fd = self.eventfd,
+            .fd = 0,
+            .fixed_file_index = 0,
             .callback = .{
                 .func = &eventfd_callback,
                 .cleanup = null,
@@ -399,6 +440,8 @@ pub fn deinit(self: *IO) void {
     
     self.ring.deinit();
     self.busy_sets.allocator.free(self.blocking_ready_tasks);
+    self.fixed_file_free.deinit(self.busy_sets.allocator);
+    self.busy_sets.allocator.free(self.fixed_file_table);
     _ = std.os.linux.close(self.eventfd);
 }
 

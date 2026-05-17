@@ -183,7 +183,22 @@ fn stream_init_configuration(
     _ = std.os.linux.getsockopt(fd, std.posix.SOL.SOCKET, std.posix.SO.DOMAIN, @as([*]u8, @ptrCast(&family)), &optlen);
     self.family = family;
 
+    // Register the socket fd as a fixed file for IOSQE_FIXED_FILE optimization.
+    // This eliminates fget/fput per IO — significantly reduces dTLB pressure.
+    const fixed_file_index = try loop_data.io.register_fixed_file(fd);
+    self.fixed_file_index = fixed_file_index;
+    read_transport_data.fixed_file_index = fixed_file_index;
+    write_transport_data.fixed_file_index = fixed_file_index;
+
     try Read.queue_read_operation(self, read_transport_data, protocol_type);
+}
+
+pub fn unregister_fixed_file(self: *StreamTransportObject, loop_data: *Loop) void {
+    const index = self.fixed_file_index;
+    if (index != 0) {
+        loop_data.io.unregister_fixed_file(index);
+        self.fixed_file_index = 0;
+    }
 }
 
 pub fn new_stream_transport(protocol: PyObject, loop: *LoopObject, fd: std.posix.fd_t, zero_copying: bool) !*StreamTransportObject {
@@ -260,6 +275,13 @@ pub fn stream_clear(self: ?*StreamTransportObject) callconv(.c) c_int {
 
     const fd = py_transport.fd;
     if (fd >= 0) {
+        if (py_transport.fixed_file_index != 0) {
+            if (py_transport.loop) |loop_obj| {
+                const loop_data = utils.get_data_ptr(Loop, @as(*LoopObject, @ptrCast(loop_obj)));
+                loop_data.io.unregister_fixed_file(py_transport.fixed_file_index);
+            }
+            py_transport.fixed_file_index = 0;
+        }
         _ = std.os.linux.close(fd);
         py_transport.fd = -1;
     }
