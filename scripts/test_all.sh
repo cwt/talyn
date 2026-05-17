@@ -33,6 +33,7 @@ ensure_test_cert() {
 
 clean() {
     rm -rf zig-out zig-cache .zig-cache .pytest_cache 2>/dev/null || true
+    rm -f leviathan/leviathan_zig*.so leviathan/leviathan_zig*.pyd 2>/dev/null || true
     find . -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
     find . -name '*.pyc' -delete 2>/dev/null || true
 }
