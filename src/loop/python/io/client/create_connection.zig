@@ -41,6 +41,15 @@ const SocketCreationData = struct {
         const loop_data = utils.get_data_ptr(Loop, self.loop.?);
         const allocator = loop_data.allocator;
 
+        if (self.future) |f| {
+            python_c.py_decref(@ptrCast(f));
+            self.future = null;
+        }
+        if (self.loop) |l| {
+            python_c.py_decref(@ptrCast(l));
+            self.loop = null;
+        }
+
         python_c.deinitialize_object_fields(self, &.{});
         allocator.destroy(self);
     }
@@ -65,6 +74,20 @@ const TransportCreationData = struct {
 
     comptime {
         python_c.verify_gc_coverage(@This(), &.{});
+    }
+
+    pub fn traverse(ptr: ?*anyopaque, visit_ptr: ?*anyopaque, arg: ?*anyopaque) c_int {
+        const visit: python_c.visitproc = @ptrCast(visit_ptr);
+        const self: ?*TransportCreationData = @alignCast(@ptrCast(ptr));
+        if (self) |s| {
+            var vret = visit.?(@ptrCast(s.protocol_factory), arg);
+            if (vret != 0) return vret;
+            vret = visit.?(@ptrCast(s.future), arg);
+            if (vret != 0) return vret;
+            vret = visit.?(@ptrCast(s.loop), arg);
+            if (vret != 0) return vret;
+        }
+        return 0;
     }
 };
 
@@ -188,6 +211,7 @@ inline fn z_loop_create_connection(
             .cleanup = null,
             .data = .{
                 .user_data = transport_creation_data,
+                .traverse = &TransportCreationData.traverse,
             },
         };
         try Loop.Scheduling.Soon.dispatch(loop_data, &callback);
@@ -427,6 +451,8 @@ const MultiConnectState = struct {
     connection_data: *SocketConnectionData,
     pending: usize,
     succeeded: bool,
+    timer_scheduled: bool,
+    timer_fired: bool,
     failed_count: usize,
     task_ids: std.ArrayListUnmanaged(usize),
     all_errors: bool,
@@ -442,6 +468,8 @@ const MultiConnectState = struct {
             .connection_data = connection_data,
             .pending = 0,
             .succeeded = false,
+            .timer_scheduled = false,
+            .timer_fired = false,
             .failed_count = 0,
             .task_ids = .{ .items = &.{}, .capacity = 0 },
             .all_errors = all_errors,
@@ -457,8 +485,12 @@ const MultiConnectState = struct {
         const loop_data = utils.get_data_ptr(Loop, loop);
         const allocator = loop_data.allocator;
 
+        for (self.task_ids.items) |task_id| {
+            _ = Loop.Scheduling.IO.queue(&loop_data.io, .{ .Cancel = task_id }) catch {};
+        }
         self.task_ids.deinit(allocator);
         if (self.exceptions) |e| python_c.py_decref(e);
+        self.connection_data.deinit();
         allocator.destroy(self);
     }
 
@@ -542,6 +574,8 @@ fn submit_connect_for_address(
 fn schedule_remaining_connects_callback(data: *const CallbackManager.CallbackData) !void {
     const mcs: *MultiConnectState = @alignCast(@ptrCast(data.user_data.?));
     if (data.cancelled or mcs.succeeded) return;
+
+    mcs.timer_fired = true;
 
     const connection_data = mcs.connection_data;
     const creation_data = connection_data.creation_data;
@@ -634,6 +668,7 @@ fn z_create_socket_connection(data: *SocketConnectionData, connection_submitted:
             .cleanup = null,
             .data = .{
                 .user_data = mcs,
+                .traverse = &MultiConnectState.traverse_raw,
             },
         };
         const seconds: u64 = @intFromFloat(@floor(delay));
@@ -642,13 +677,15 @@ fn z_create_socket_connection(data: *SocketConnectionData, connection_submitted:
             .sec = @intCast(seconds),
             .nsec = @intCast(nanoseconds),
         };
-        _ = try Loop.Scheduling.IO.queue(&loop_data.io, .{
+        const timer_task_id = try Loop.Scheduling.IO.queue(&loop_data.io, .{
             .WaitTimer = .{
                 .duration = duration,
                 .delay_type = .Relative,
                 .callback = callback,
             },
         });
+        try mcs.task_ids.append(allocator, timer_task_id);
+        mcs.timer_scheduled = true;
     } else {
         // Submit all remaining immediately (no delay)
         for (address_list[1..]) |*addr| {
@@ -736,6 +773,10 @@ fn socket_connected_callback(data: *const CallbackManager.CallbackData) !void {
         if (fd >= 0) _ = std.os.linux.close(fd);
 
         if (mcs.pending == 0) {
+            if (mcs.timer_scheduled and !mcs.timer_fired) {
+                return;
+            }
+
             const future = creation_data.future.?;
             const future_data = utils.get_data_ptr(Future, future);
 

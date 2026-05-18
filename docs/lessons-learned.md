@@ -74,5 +74,17 @@ When Task A awaits Future B, `wakeup_task` is registered as a `ZigGeneric` callb
 *   **The Fix:** The `ZigGeneric` arm now calls `visit(ptr)` to expose the Task pointer to the GC. The `@alignCast(@ptrCast(ptr))` is safe — `ptr` is always a `*PythonTaskObject` from the Python heap.
 *   **The Lesson:** Any native structure holding a `PyObject` pointer must be reachable via `tp_traverse`. Skipping even one arm of a traversal union breaks the cycle detector.
 
+### 14. Gap in deinitialize_object_fields for Optional PyObject-Compatible Structs (2026-05-19)
+`deinitialize_object_fields()` iterates struct fields at comptime and decrefs PyObject pointers. The `.pointer` (non-optional) branch correctly handles structs with `ob_base` (e.g., `*FutureObject`, `*LoopObject`). But the `.optional` branch only checked `child == Python.PyObject` — missing `?*FutureObject` and `?*LoopObject` entirely.
+*   **The Bug:** `SocketCreationData` has `future: ?*FutureObject` and `loop: ?*LoopObject`. `SocketCreationData.deinit()` called `deinitialize_object_fields(self, &.{})`, which silently skipped both fields. The Future and Loop references were never decref'd, creating ghost references invisible to GC.
+*   **The Fix:** For structs used in `create_connection`, added explicit manual decref + null in `SocketCreationData.deinit()` before calling `deinitialize_object_fields`. The general fix (adding `ob_base` detection to the `.optional` branch) caused double-decref issues in other structs and was reverted — a global fix requires auditing all call sites.
+*   **The Lesson:** `deinitialize_object_fields` and `verify_gc_coverage` are not symmetric. `verify_gc_coverage` correctly identifies `?*FutureObject` as PyObject-compatible, but `deinitialize_object_fields` silently skips it. Always verify that deinit actually decrefs what traverse visits. Write targeted manual decrefs when the generic function has gaps.
+
+### 15. Timer-Triggered Use-After-Free with Deferred Deinit (2026-05-19)
+When a callback holds a pointer to a heap-allocated struct that can be freed before the callback fires, the callback must either (a) be cancelled before freeing, or (b) check a liveness flag before accessing the struct.
+*   **The Bug:** `schedule_remaining_connects_callback` stored `mcs` (MultiConnectState) as user_data. If all connect attempts failed before the timer fired, `mcs.deinit()` freed `mcs`. The timer CQE then dispatched the callback with a dangling `mcs` pointer — segfault.
+*   **The Fix:** Store timer task ID in `mcs.task_ids` for cancellation. Add `timer_scheduled`/`timer_fired` flags. When `mcs.pending == 0` but timer hasn't fired: defer `deinit` — let the timer callback submit remaining addresses, which will eventually trigger deinit through the normal all-failure path.
+*   **The Lesson:** Any callback that outlives its user_data allocation must be cancellable. Cancel BEFORE freeing, and verify cancellation succeeded. If cancel fails (already in-flight), defer freeing until the callback runs. Timeout operations (`WaitTimer`) use `timeout_remove` which is synchronous — success means no CQE will fire; failure means CQE already in the CQ.
+
 ---
 
