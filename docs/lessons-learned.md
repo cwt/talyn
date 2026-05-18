@@ -1,0 +1,78 @@
+[⬅️ Back to Index](todo.md)
+
+# 🧠 Lessons Learned: The Journey to 100% Stability
+
+### 1. Free-Threading & The "Atomic Sleep"
+In standard Python, the GIL hides many race conditions. In free-threading (3.13t/3.14t), the window between "checking for work" and "going to sleep" is a deadly trap.
+*   **The Bug:** The loop checks the queue, sees it empty, then blocks in `io_uring`. A background thread adds a task *after* the check but *before* the block.
+*   **The Lesson:** The decision to sleep must be **atomic**. Always check the ready queue while holding the loop mutex immediately before dropping the GIL and calling into the kernel.
+
+### 2. Signal Resilience (EINTR is a Constant)
+Signals (like `SIGCHLD` from subprocesses) can "stab" the process at any time, causing system calls to return `EINTR`.
+*   **The Bug:** `io_uring_submit` or `io_uring_wait` returns `SignalInterrupt`. If not handled, this propagates as a Zig panic or an unexpected Python exception, often leading to a process `Abort`.
+*   **The Lesson:** Every kernel-level interaction (`submit`, `wait`, `waitpid`) **must** be wrapped in a retry loop or a silent ignore for `SignalInterrupt`. The event loop should never exit due to a signal.
+
+### 3. The "Ghost Reference" Cycle (GC invisibility)
+Holding Python objects inside native Zig collections (std.ArrayList, BTree, etc.) without `tp_traverse` creates "Ghost References" that are invisible to the Garbage Collector.
+*   **The Bug:** A Loop holds a Task, which holds a Future, which holds a callback pointing back to the Loop. Since Zig's memory isn't scanned by Python's GC, these cycles are never broken, leading to 30GB+ OOM events in long-running suites.
+*   **The Lesson:** Any native structure holding a `PyObject` **must** be reachable via `tp_traverse`. Standard reference counting is insufficient for event loops due to inevitable complex cycles.
+
+### 4. Safe Traversal of Execution Queues
+Updating a progress marker *after* an operation is standard, but for GC safety, it must be **precise**.
+*   **The Bug:** GC runs while a callback is halfway through a queue. If the queue is scanned from the start, GC visits already-executed and decref'd objects.
+*   **The Lesson:** Immediately nullify references or update the traversal `offset` as each item is consumed. GC and execution are concurrent in free-threading; there is no "safe time" to have invalid pointers in a queue.
+
+### 5. Standard Resilience (Loop never quits)
+Asyncio event loops are designed to survive individual user-code failures.
+*   **The Bug:** A single misbehaving callback could raise an exception that bubbled up to the Zig loop runner, causing the entire loop to stop.
+*   **The Lesson:** Catch all exceptions at the callback boundary, route them to the loop's exception handler, and **continue** to the next event. The loop should only exit via explicit `stop()` or fatal signals.
+
+### 6. Stack Allocation of Large Structures
+When moving to fixed-size buffers (like the 256k RingBuffer), structs can grow to tens of megabytes (e.g., `Loop` ~42MB).
+*   **The Bug:** Initializing a large struct via literal `self.* = .{...}` or returning it from a function causes a silent `SIGSEGV` (stack overflow) because the compiler creates a massive temporary on the stack.
+*   **The Lesson:** Always use **in-place initialization** (`init(self: *Self)`) and individual field assignments for large structures. Ensure unit tests heap-allocate these structures instead of using `var loop: Loop = undefined;`.
+
+### 7. Precision in Typed Traversal (GC Stability)
+Using `@alignCast` on `?*anyopaque` pointers during `tp_traverse` is a common source of non-deterministic panics.
+*   **The Bug:** `MultiConnectState.traverse_raw` used `@alignCast(@ptrCast(ptr))` which failed under certain memory pressures when Python passed a pointer with unexpected alignment.
+*   **The Lesson:** Avoid `@alignCast` in hot GC paths. Refactor internal traversal functions to take **typed pointers** directly, and ensure the outer `tp_traverse` entry point performs the cast exactly once at the boundary.
+
+### 8. Fatal Exception Propagation (Loop Hangs)
+The Loop's exception handler must distinguish between "catchable" user exceptions and "fatal" Python exceptions (`KeyboardInterrupt`, `SystemExit`).
+*   **The Bug:** The Zig exception handler was capturing ALL errors and routing them to `loop.call_exception_handler`. In Python, this just logs the error and returns control to Zig. For fatal exceptions, this created an infinite loop where the interrupt was ignored, hanging the process.
+*   **The Lesson:** Explicitly check for fatal exceptions in the Zig callback runner. If `KeyboardInterrupt` or `SystemExit` is active, bypass the handler and return an error immediately to stop the event loop.
+
+### 9. Immediate Submission for Wakeup (EventFD Deadlock)
+In a batched submission model, certain critical operations cannot wait for the next loop tick.
+*   **The Bug:** Queuing the `eventfd` read SQE without an immediate `submit` caused deadlocks. Background threads would write to the `eventfd`, but the loop (blocked in `io_uring_enter`) wasn't watching the `eventfd` yet because its SQE was still sitting in the local buffer.
+*   **The Lesson:** Critical "infrastructure" SQEs (like the initial `eventfd` registration) MUST be submitted immediately upon registration to ensure the loop is responsive to external wakeups.
+
+### 10. Coroutine Cleanup During Loop Shutdown (2026-05-13)
+When a `KeyboardInterrupt` stops the loop before a Task's initial `execute_task_send` callback runs, the callback stays in the ready queue. During `loop.close()`, `release_ring_buffer` processes it with `cancelled = true`, but `execute_task_send` ignored the cancelled flag and called `_execute_task_send` — which tried to start the coroutine inside a torn-down loop (IO already deinitialized). The coroutine never got `PyIter_Send` called, so CPython emitted `RuntimeWarning: coroutine ... was never awaited` when the coroutine was later garbage collected.
+*   **The Bug:** `execute_task_send` didn't check `data.cancelled`. When cancelled during `release_ring_buffer`, it tried the full start-up path (enter task context, send to coroutine, process yielded Future) which could fail because loop IO was deinitialized. The coroutine's `gi_frame` remained `NULL` → CPython warned on GC.
+*   **The Fix:** In `execute_task_send`, when `data.cancelled` is true: call `PyIter_Send(coro, None)` just to set `gi_frame != NULL` (satisfies CPython's "was awaited" check), clear any Python errors, decref the task, and return. No other loop infrastructure is needed.
+*   **The Lesson:** Every callback function must handle the `cancelled` flag from `release_ring_buffer`. For task callbacks, the minimum obligation is to ensure the coroutine is "started" in CPython's eyes before discarding it.
+*   **Follow-up:** `execute_task_throw` at `src/task/callbacks.zig:437` had the same bug. Fixed by transferring the task's stored exception directly to the future when cancelled, without throwing into the coroutine.
+
+### 12. Ring FD Lifecycle During Shutdown — Fixed File Unregister (2026-05-17)
+When `IOSQE_FIXED_FILE` is enabled, transport close callbacks call `unregister_fixed_file()` → `ring.register_files_update()`. The Zig stdlib's `register_files_update` asserts `self.fd >= 0`. If the ring has been deinitialized (fd = -1), this assertion fires → `SIGABRT`.
+*   **The Bug at Rev 483:** `Loop.release()` called `io.deinit()` (which calls `ring.deinit()` → `ring.fd = -1`) BEFORE processing callbacks in `release_dynamic_ring_buffer`. When a pending `read_operation_completed` callback ran, its `defer` called `Lifecyle.maybe_close_fd()` → `unregister_fixed_file()` → `register_files_update()` → `assert(fd >= 0)` on fd=-1 → abort. This affected `test_ssl_server_and_connection` and `test_very_slow` (all Python versions).
+*   **The Fix (2 parts):**
+    1. `IO.unregister_fixed_file()` at `src/loop/scheduling/io/main.zig:388`: check `self.ring.fd >= 0` before calling `register_files_update()`. If ring is deinitialized, skip the kernel update — the ring's `io_uring_queue_exit()` already auto-unregisters files.
+    2. `Loop.release()` at `src/loop/main.zig:129-144`: move `release_dynamic_ring_buffer` BEFORE `io.deinit()` (the comment already said "while IO is still functional"), then add a second pass AFTER for callbacks dispatched by `cancel_all` during deinit.
+*   **The Lesson:** Any function that accesses ring state (fd, register_files, SQ/CQ) must guard against the ring being deinitialized. During shutdown, callbacks run at unpredictable times — some before ring deinit (first `release_dynamic_ring_buffer` pass), some after (second pass + GC-triggered callbacks). Always check `ring.fd >= 0` before touching ring API.
+
+### 13. Environment-Dependent Kernel Feature Failures (2026-05-18)
+Kernel features like `IORING_REGISTER_FILES_SPARSE` can fail based on `ulimit -n` (RLIMIT_NOFILE). A process with `ulimit -n 1024` cannot register 8192 fixed file slots — the kernel returns `-ENOMEM`/`-EINVAL` and the call fails silently.
+*   **The Bug:** `register_files_sparse(8192)` fails under SSH (ulimit 1024) but succeeds under tmux/opencode (ulimit 524288). The graceful fallback at Rev 491 made `fixed_files_enabled = false` but `register_eventfd_callback()` still used `fixed_file_index = 0` with `IOSQE_FIXED_FILE` — the kernel rejected the SQE (`-EBADF`, no fixed file table exists) and the eventfd read never completed. The loop blocked forever in `submit_and_wait(1)` waiting for a CQE that would never arrive → **silent hang**. This explains why tests froze at `..` (2 dots = 2 tests passed, 3rd test needed eventfd wakeup).
+*   **The Fix:** `register_eventfd_callback()` now branches on `self.fixed_files_enabled` — when disabled, uses raw `self.eventfd` fd with `fixed_file_index = null` (same as pre-483 behavior). The transports already handled this correctly via `register_fixed_file(fd) catch null` which leaves `fixed_file_index = null`, triggering the raw-fd path in read.zig/write.zig.
+*   **The Lesson:** Every kernel-dependent feature gate MUST have a COMPLETE fallback. Check every call site that uses the feature — a single missed path that hardcodes the feature-on behavior will silently break. Test fallback paths explicitly: `ulimit -n 1024 bash scripts/test_all.sh`.
+
+### 11. Ghost Reference Cycle in Future Callbacks (2026-05-13)
+When Task A awaits Future B, `wakeup_task` is registered as a `ZigGeneric` callback on Future B with `ptr = task`. `traverse_callbacks_queue()` at `src/future/callback.zig:164-177` had a no-op `ZigGeneric` arm — the GC could not see the `Task ← Future` cycle.
+*   **The Bug:** Task holds `fut_waiter` → Future B. Future B's callback queue holds `ptr` → Task A. Python GC traverses Task A's members (including `fut_waiter` → Future B) and Future B's members (including `callbacks_queue`), but the `ZigGeneric.ptr` field was invisible. This ghost cycle leaked memory, causing OOM on long-running processes. The comment in the code literally said "This cycle is HIDDEN".
+*   **The Fix:** The `ZigGeneric` arm now calls `visit(ptr)` to expose the Task pointer to the GC. The `@alignCast(@ptrCast(ptr))` is safe — `ptr` is always a `*PythonTaskObject` from the Python heap.
+*   **The Lesson:** Any native structure holding a `PyObject` pointer must be reachable via `tp_traverse`. Skipping even one arm of a traversal union breaks the cycle detector.
+
+---
+

@@ -2,7 +2,6 @@
 zig-out/
 
 build/
-docs/
 
 leviathan.egg-info/
 
