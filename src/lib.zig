@@ -73,7 +73,19 @@ var leviathan_module = python_c.PyModuleDef{
     .m_free = @ptrCast(&module_cleanup)
 };
 
+const std = @import("std");
+
+fn ensure_fd_limit() void {
+    // Raise RLIMIT_NOFILE before any types are initialized.
+    // pytest collection and IO fixed-file registration both need
+    // more than the SSH-default 1024 fds.
+    var rlim: std.os.linux.rlimit = undefined;
+    _ = std.os.linux.getrlimit(.NOFILE, &rlim);
+    _ = std.os.linux.setrlimit(.NOFILE, &.{ .cur = 8256, .max = rlim.max });
+}
+
 fn initialize_leviathan_types() !void {
+    ensure_fd_limit();
     inline for (static_leviathan_types) |v| {
         if (python_c.PyType_Ready(v) < 0) {
             return error.PythonError;
