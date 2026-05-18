@@ -11,8 +11,10 @@ import pytest, asyncio, io
 def test_checking_subclassing_and_arguments() -> None:
     another_loop = asyncio.new_event_loop()
     loop = Loop()
+    async def dummy():
+        pass
     try:
-        coro = AsyncMock()()
+        coro = dummy()
         with pytest.raises(TypeError):
             Task(coro, loop=another_loop)
 
@@ -61,7 +63,9 @@ def test_get_context() -> None:
 
 def test_get_loop() -> None:
     loop = Loop()
-    coro = AsyncMock()()
+    async def dummy():
+        pass
+    coro = dummy()
     try:
         task = Task(coro, loop=loop)
         assert task.get_loop() is loop
@@ -72,7 +76,9 @@ def test_get_loop() -> None:
 
 def test_name() -> None:
     loop = Loop()
-    coros = [AsyncMock()() for _ in range(2)]
+    async def dummy():
+        pass
+    coros = [dummy() for _ in range(2)]
     try:
         task = Task(coros[0], loop=loop)
         assert task.get_name()
@@ -93,7 +99,9 @@ def test_name() -> None:
 
 def test_stack() -> None:
     loop = Loop()
-    coro = AsyncMock()()
+    async def dummy():
+        pass
+    coro = dummy()
     try:
         task = Task(coro, loop=loop)
         with io.StringIO() as buf:

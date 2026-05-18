@@ -158,6 +158,12 @@ class Loop(_Loop):
     def call_exception_handler(self, context: ExceptionContext) -> None: # type: ignore
         self._exception_handler(context)
 
+    def set_exception_handler(self, handler: Callable[[ExceptionContext], None] | None) -> None:
+        if handler is None:
+            self._exception_handler = self.default_exception_handler
+        else:
+            self._exception_handler = handler
+
     # --------------------------------------------------------------------------------------------------------
     # P15 Phase 1: Completion batch dispatch infrastructure.
     # Called from Zig after poll_blocking_events to dispatch IO completions

@@ -7,7 +7,9 @@ import pytest, asyncio
 
 def test_task_eager_start_raises() -> None:
     loop = Loop()
-    coro = AsyncMock()()
+    async def dummy():
+        pass
+    coro = dummy()
     try:
         with pytest.raises(RuntimeError, match="eager_start"):
             Task(coro, loop=loop, eager_start=True)
@@ -20,7 +22,9 @@ def test_task_without_loop_inside_running_loop() -> None:
     loop = Loop()
     try:
         async def test():
-            coro2 = AsyncMock()()
+            async def dummy():
+                pass
+            coro2 = dummy()
             task = Task(coro2)
             assert isinstance(task.get_loop(), Loop)
             coro2.close()
