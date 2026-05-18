@@ -29,7 +29,9 @@ def test_checking_subclassing_and_arguments() -> None:
 
 def test_get_coro() -> None:
     loop = Loop()
-    coro = AsyncMock()()
+    async def dummy():
+        pass
+    coro = dummy()
     try:
         task = Task(coro, loop=loop)
         assert task.get_coro() is coro
@@ -40,8 +42,10 @@ def test_get_coro() -> None:
 
 def test_get_context() -> None:
     loop = Loop()
-    coro1 = AsyncMock()()
-    coro2 = AsyncMock()()
+    async def dummy():
+        pass
+    coro1 = dummy()
+    coro2 = dummy()
     try:
         task = Task(coro1, loop=loop)
         assert type(task.get_context()) is Context
