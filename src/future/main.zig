@@ -38,8 +38,8 @@ pub fn release(self: *Future) void {
         Callback.release_callbacks_queue(&self.callbacks_queue);
         self.loop.reserved_slots -= 1;
     }
-    self.callbacks_arena.deinit();
     self.released = true;
+    self.callbacks_arena.deinit();
 }
 
 pub const Callback = @import("callback.zig");
