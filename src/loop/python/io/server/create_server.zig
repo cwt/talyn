@@ -40,6 +40,7 @@ const ServerCreationData = struct {
 const ServerSocketData = struct {
     creation_data: *ServerCreationData,
     address_list: ?[]utils.Address = null,
+    socket_fd: std.posix.fd_t = -1,
 
     pub fn deinit(self: *ServerSocketData) void {
         const loop_data = utils.get_data_ptr(Loop, self.creation_data.loop.?);
@@ -97,15 +98,19 @@ inline fn z_loop_create_server(
     }
 
     var creation_data = ServerCreationData{};
-    creation_data.py_host = python_c.py_newref(args[1].?);
 
-    if (args.len > 2) creation_data.py_port = python_c.py_newref(args[2].?);
-
+    // Parse kwargs first to check for sock
     try python_c.parse_vector_call_kwargs(
         knames, args.ptr + args.len,
         &.{ "family\x00", "flags\x00", "sock\x00", "backlog\x00", "reuse_address\x00", "reuse_port\x00" },
         &.{ &creation_data.py_family, &creation_data.py_flags, &creation_data.py_sock, &creation_data.py_backlog, &creation_data.py_reuse_address, &creation_data.py_reuse_port },
     );
+
+    // Only set host/port if sock is not provided
+    if (creation_data.py_sock == null) {
+        creation_data.py_host = python_c.py_newref(args[1].?);
+        if (args.len > 2) creation_data.py_port = python_c.py_newref(args[2].?);
+    }
 
     const loop_data = utils.get_data_ptr(Loop, self);
     const allocator = loop_data.allocator;
@@ -120,6 +125,99 @@ inline fn z_loop_create_server(
     const creation_data_ptr = try allocator.create(ServerCreationData);
     creation_data_ptr.* = creation_data;
     errdefer allocator.destroy(creation_data_ptr);
+
+    if (creation_data.py_sock) |sock| {
+        const fileno_func = python_c.PyObject_GetAttrString(sock, "fileno\x00")
+            orelse return error.PythonError;
+        defer python_c.py_decref(fileno_func);
+
+        const py_fd = python_c.PyObject_CallNoArgs(fileno_func)
+            orelse return error.PythonError;
+        defer python_c.py_decref(py_fd);
+
+        const fd = python_c.PyLong_AsLongLong(py_fd);
+        if (fd < 0) {
+            _ = python_c.PyErr_Occurred() orelse {
+                python_c.raise_python_value_error("Invalid fd\x00");
+            };
+            return error.PythonError;
+        }
+
+        const getsockname_func = python_c.PyObject_GetAttrString(sock, "getsockname\x00")
+            orelse return error.PythonError;
+        defer python_c.py_decref(getsockname_func);
+
+        const py_addr = python_c.PyObject_CallNoArgs(getsockname_func)
+            orelse return error.PythonError;
+        defer python_c.py_decref(py_addr);
+
+        const py_family_attr = python_c.PyObject_GetAttrString(sock, "family\x00")
+            orelse return error.PythonError;
+        defer python_c.py_decref(py_family_attr);
+
+        const family = python_c.PyLong_AsLong(py_family_attr);
+        if (family == -1 and python_c.PyErr_Occurred() != null) return error.PythonError;
+
+        const addr: utils.Address = switch (@as(i32, @intCast(family))) {
+            std.posix.AF.INET => blk: {
+                if (python_c.PyTuple_Check(py_addr) == 0) return error.InvalidAddress;
+                const py_ip = python_c.PyTuple_GetItem(py_addr, 0) orelse return error.PythonError;
+                const py_port_item = python_c.PyTuple_GetItem(py_addr, 1) orelse return error.PythonError;
+                const port_val = python_c.PyLong_AsInt(py_port_item);
+                if (port_val == -1 and python_c.PyErr_Occurred() != null) return error.PythonError;
+
+                var ip_bytes: [4]u8 = undefined;
+                const ip_str = python_c.PyUnicode_AsUTF8AndSize(py_ip, null) orelse return error.PythonError;
+                var ip_parts = std.mem.splitSequence(u8, ip_str[0..std.mem.len(ip_str)], ".");
+                var i: usize = 0;
+                while (ip_parts.next()) |part| : (i += 1) {
+                    if (i >= 4) break;
+                    ip_bytes[i] = try std.fmt.parseInt(u8, part, 10);
+                }
+                break :blk utils.Address.initIp4(ip_bytes, @intCast(port_val));
+            },
+            std.posix.AF.INET6 => blk: {
+                if (python_c.PyTuple_Check(py_addr) == 0) return error.InvalidAddress;
+                const py_ip = python_c.PyTuple_GetItem(py_addr, 0) orelse return error.PythonError;
+                const py_port_item = python_c.PyTuple_GetItem(py_addr, 1) orelse return error.PythonError;
+                const port_val = python_c.PyLong_AsInt(py_port_item);
+                if (port_val == -1 and python_c.PyErr_Occurred() != null) return error.PythonError;
+
+                const ip_str = python_c.PyUnicode_AsUTF8AndSize(py_ip, null) orelse return error.PythonError;
+                break :blk try utils.Address.parseIp6(ip_str[0..std.mem.len(ip_str)], @intCast(port_val));
+            },
+            else => return error.UnsupportedAddressFamily,
+        };
+
+        const server_data = try allocator.create(ServerSocketData);
+        errdefer allocator.destroy(server_data);
+        server_data.* = .{
+            .creation_data = creation_data_ptr,
+            .address_list = try allocator.dupe(utils.Address, &.{addr}),
+            .socket_fd = @intCast(fd),
+        };
+        errdefer allocator.free(server_data.address_list.?);
+
+        // Duplicate the fd so the StreamServer owns its own copy
+        // The original fd is owned by the Python socket object which may be GC'd
+        const dup_fd = std.os.linux.dup(@intCast(fd));
+        if (@as(i32, @intCast(dup_fd)) < 0) {
+            return error.SystemResources;
+        }
+        server_data.socket_fd = @intCast(dup_fd);
+
+        const callback = CallbackManager.Callback{
+            .func = &create_server_socket,
+            .cleanup = null,
+            .data = .{
+                .user_data = server_data,
+            },
+        };
+        try Loop.Scheduling.Soon.dispatch(loop_data, &callback);
+
+        python_c.deinitialize_object_fields(creation_data_ptr, &.{"future", "protocol_factory"});
+        return python_c.py_newref(fut);
+    }
 
     const callback = CallbackManager.Callback{
         .func = &try_resolve_server_host,
@@ -303,34 +401,41 @@ fn z_create_server_socket(server_data: *ServerSocketData) !void {
         var addr_with_port = addr;
         addr_with_port.setPort(port);
 
-        const flags: u32 = std.posix.SOCK.STREAM | std.posix.SOCK.NONBLOCK | std.posix.SOCK.CLOEXEC;
-        const fd_ret = std.os.linux.socket(addr_with_port.any.family, flags, std.os.linux.IPPROTO.TCP);
-        if (@as(i32, @intCast(fd_ret)) < 0) {
-            last_err = error.SystemResources;
-            continue;
-        }
-        const fd: std.posix.fd_t = @intCast(fd_ret);
-        errdefer _ = std.os.linux.close(fd);
+        const fd: std.posix.fd_t = if (server_data.socket_fd >= 0)
+            server_data.socket_fd
+        else blk: {
+            const flags: u32 = std.posix.SOCK.STREAM | std.posix.SOCK.NONBLOCK | std.posix.SOCK.CLOEXEC;
+            const fd_ret = std.os.linux.socket(addr_with_port.any.family, flags, std.os.linux.IPPROTO.TCP);
+            if (@as(i32, @intCast(fd_ret)) < 0) {
+                last_err = error.SystemResources;
+                continue;
+            }
+            break :blk @intCast(fd_ret);
+        };
 
-        if (reuse_address) {
-            const val: c_int = 1;
-            _ = std.os.linux.setsockopt(fd, std.os.linux.SOL.SOCKET, std.os.linux.SO.REUSEADDR, @as([*]const u8, @ptrCast(std.mem.asBytes(&val))), @sizeOf(c_int));
-        }
-        if (reuse_port) {
-            const val: c_int = 1;
-            _ = std.os.linux.setsockopt(fd, std.os.linux.SOL.SOCKET, std.os.linux.SO.REUSEPORT, @as([*]const u8, @ptrCast(std.mem.asBytes(&val))), @sizeOf(c_int));
-        }
+        if (server_data.socket_fd < 0) {
+            errdefer _ = std.os.linux.close(fd);
 
-        const bind_rc = std.os.linux.bind(fd, @ptrCast(&addr_with_port.any), addr_with_port.getOsSockLen());
-        if (@as(i32, @intCast(bind_rc)) < 0) {
-            last_err = error.SystemResources;
-            continue;
-        }
+            if (reuse_address) {
+                const val: c_int = 1;
+                _ = std.os.linux.setsockopt(fd, std.os.linux.SOL.SOCKET, std.os.linux.SO.REUSEADDR, @as([*]const u8, @ptrCast(std.mem.asBytes(&val))), @sizeOf(c_int));
+            }
+            if (reuse_port) {
+                const val: c_int = 1;
+                _ = std.os.linux.setsockopt(fd, std.os.linux.SOL.SOCKET, std.os.linux.SO.REUSEPORT, @as([*]const u8, @ptrCast(std.mem.asBytes(&val))), @sizeOf(c_int));
+            }
 
-        const listen_rc = std.os.linux.listen(fd, @intCast(backlog));
-        if (@as(i32, @intCast(listen_rc)) < 0) {
-            last_err = error.SystemResources;
-            continue;
+            const bind_rc = std.os.linux.bind(fd, @ptrCast(&addr_with_port.any), addr_with_port.getOsSockLen());
+            if (@as(i32, @intCast(bind_rc)) < 0) {
+                last_err = error.SystemResources;
+                continue;
+            }
+
+            const listen_rc = std.os.linux.listen(fd, @intCast(backlog));
+            if (@as(i32, @intCast(listen_rc)) < 0) {
+                last_err = error.SystemResources;
+                continue;
+            }
         }
 
         const py_fd = python_c.PyLong_FromLong(@intCast(fd)) orelse return error.PythonError;

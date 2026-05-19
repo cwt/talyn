@@ -140,9 +140,11 @@ fn accept_callback(data: *const CallbackManager.CallbackData) !void {
     }
 
     const client_fd_ret = std.os.linux.accept4(server.server_fd, null, null, @as(u32, @intCast(std.posix.SOCK.NONBLOCK | std.posix.SOCK.CLOEXEC)));
-    const client_fd_signed = @as(i32, @intCast(client_fd_ret));
-    if (client_fd_signed < 0) {
-        if (client_fd_signed == -@as(i32, @intFromEnum(std.os.linux.E.AGAIN))) {
+    if (client_fd_ret == std.math.maxInt(usize)) {
+        // accept4 failed, check errno
+        const errno_val = @intFromEnum(std.os.linux.errno(0));
+        const eagain = @intFromEnum(std.os.linux.E.AGAIN);
+        if (errno_val == eagain) {
             // Re-arm poll
             try enqueue_accept(server);
             return;
