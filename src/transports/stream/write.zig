@@ -112,11 +112,10 @@ inline fn z_transport_set_write_buffer_limits(
         python_c.py_xdecref(py_low_water_mark);
     }
 
-    const watermark = (comptime std.math.maxInt(usize))/2;
     const py_long_error = comptime std.math.maxInt(c_ulonglong);
 
-    var high_water_mark: usize = watermark;
-    var low_water_mark: usize = watermark;
+    var high_water_mark: usize = 64 * 1024;
+    var low_water_mark: usize = 32 * 1024;
     if (py_high_water_mark) |obj| {
         const value = python_c.PyLong_AsUnsignedLongLong(obj);
         if (value == py_long_error) {

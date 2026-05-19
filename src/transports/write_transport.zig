@@ -24,33 +24,26 @@ connection_lost_callback: ?ConnectionLostCallback,
 
 write_completed_callback: WriteCompletedCallback,
 
-free_buffers: *BuffersArrayList,
-free_py_buffers: *PyBuffersArrayList,
-free_buffers_size: usize = 0,
-
-busy_buffers: *BuffersArrayList,
-busy_py_buffers: *PyBuffersArrayList,
-busy_buffers_size: usize = 0,
-busy_buffers_data_written: usize = 0,
-current_iovec_index: usize = 0,
-
+pending_buffers: *BuffersArrayList,
+pending_py_buffers: *PyBuffersArrayList,
+pending_buffer_index: usize = 0,
+pending_buffer_offset: usize = 0,
 buffer_size: usize = 0,
 
 fd: std.posix.fd_t,
 
-ready_to_queue_write_op: bool = true,
-    zero_copying: bool,
+write_in_flight: bool = false,
+zero_copying: bool,
 
-    prepare_hook_node: ?Loop.HooksList.Node = null,
+prepare_hook_node: ?Loop.HooksList.Node = null,
 
-    writev_count: usize = 0,
+total_bytes_written: usize = 0,
+writev_count: usize = 0,
 
-    blocking_task_id: usize = 0,
-
-    is_closing: bool = false,
-    closed: bool = false,
-    initialized: bool = false,
-    fixed_file_index: ?u16 = null,
+is_closing: bool = false,
+closed: bool = false,
+initialized: bool = false,
+fixed_file_index: ?u16 = null,
 
 
 pub fn init(
@@ -61,23 +54,14 @@ pub fn init(
 ) !void {
     const allocator = loop.allocator;
 
-    const free_buffers = try allocator.create(BuffersArrayList);
-    errdefer allocator.destroy(free_buffers);
+    const pending_buffers = try allocator.create(BuffersArrayList);
+    errdefer allocator.destroy(pending_buffers);
 
-    const busy_buffers = try allocator.create(BuffersArrayList);
-    errdefer allocator.destroy(busy_buffers);
+    const pending_py_objects = try allocator.create(PyBuffersArrayList);
+    errdefer allocator.destroy(pending_py_objects);
 
-    const free_py_objects = try allocator.create(PyBuffersArrayList);
-    errdefer allocator.destroy(free_py_objects);
-
-    const busy_py_objects = try allocator.create(PyBuffersArrayList);
-    errdefer allocator.destroy(busy_py_objects);
-
-    free_buffers.* = .{ .items = &.{}, .capacity = 0 };
-    busy_buffers.* = .{ .items = &.{}, .capacity = 0 };
-
-    free_py_objects.* = .{ .items = &.{}, .capacity = 0 };
-    busy_py_objects.* = .{ .items = &.{}, .capacity = 0 };
+    pending_buffers.* = .{ .items = &.{}, .capacity = 0 };
+    pending_py_objects.* = .{ .items = &.{}, .capacity = 0 };
 
     self.* = WriteTransport{
         .loop = loop,
@@ -88,11 +72,8 @@ pub fn init(
 
         .write_completed_callback = callback,
 
-        .free_buffers = free_buffers,
-        .free_py_buffers = free_py_objects,
-
-        .busy_buffers = busy_buffers,
-        .busy_py_buffers = busy_py_objects,
+        .pending_buffers = pending_buffers,
+        .pending_py_buffers = pending_py_objects,
 
         .fd = fd,
         .zero_copying = zero_copying,
@@ -109,8 +90,8 @@ pub fn init(
 fn flush_buffered_writes(data: *const CallbackManager.CallbackData) !void {
     if (data.cancelled) return;
     const self: *WriteTransport = @alignCast(@ptrCast(data.user_data.?));
-    if (self.ready_to_queue_write_op and self.buffer_size > 0) {
-        try self.queue_buffers_and_swap();
+    if (!self.write_in_flight and self.buffer_size > 0) {
+        try self.submit_next_chunk();
     }
 }
 
@@ -120,7 +101,7 @@ pub fn close(self: *WriteTransport) !void {
     self.is_closing = true;
     self.connection_lost_callback = null;
 
-    if (self.blocking_task_id == 0 and self.buffer_size == 0) {
+    if (!self.write_in_flight and self.buffer_size == 0) {
         self.closed = true;
     }
 }
@@ -130,10 +111,6 @@ pub fn force_close(self: *WriteTransport) !void {
     self.closed = true;
     self.is_closing = true;
     self.connection_lost_callback = null;
-
-    if (self.blocking_task_id > 0) {
-        _ = try self.loop.io.queue(.{ .Cancel = self.blocking_task_id });
-    }
 }
 
 pub fn deinit(self: *WriteTransport) void {
@@ -148,213 +125,161 @@ pub fn deinit(self: *WriteTransport) void {
 
     const allocator = self.loop.allocator;
 
-    for (self.free_py_buffers.items) |*v| {
+    for (self.pending_py_buffers.items) |*v| {
         python_c.PyBuffer_Release(v);
     }
 
-    for (self.busy_py_buffers.items) |*v| {
-        python_c.PyBuffer_Release(v);
-    }
+    self.pending_buffers.deinit(allocator);
+    self.pending_py_buffers.deinit(allocator);
 
-    self.free_buffers.deinit(allocator);
-    self.free_py_buffers.deinit(allocator);
-
-    self.busy_buffers.deinit(allocator);
-    self.busy_py_buffers.deinit(allocator);
-
-    allocator.destroy(self.free_buffers);
-    allocator.destroy(self.free_py_buffers);
-
-    allocator.destroy(self.busy_buffers);
-    allocator.destroy(self.busy_py_buffers);
+    allocator.destroy(self.pending_buffers);
+    allocator.destroy(self.pending_py_buffers);
 
     self.initialized = false;
 }
 
-inline fn queue_remaining_data(self: *WriteTransport, data_written: usize) !void {
-    var current_ioves_index = self.current_iovec_index;
-    var remaining: usize = data_written;
-    for (self.busy_buffers.items) |*iovec| {
-        const len = iovec.len;
-        if (remaining > len) {
-            remaining -= len;
-            current_ioves_index += 1;
-        }else{
-            iovec.base += remaining;
-            iovec.len -= remaining;
-            break;
-        }
+fn submit_next_chunk(self: *WriteTransport) !void {
+    if (self.write_in_flight) return;
+    if (self.pending_buffer_index >= self.pending_buffers.items.len) {
+        // All buffers consumed — but buffer_size > 0 means partial buffer left.
+        // This shouldn't happen if partial writes are tracked correctly.
+        self.write_in_flight = false;
+        return;
     }
-    self.current_iovec_index = current_ioves_index;
 
-    self.blocking_task_id = try self.loop.io.queue(
-        .{
-            .PerformWriteV = .{
-                .callback = .{
-                    .func = &write_operation_completed,
-                    .cleanup = &cleanup_resources_callback,
-                    .data = .{
-                        .user_data = self,
-                        .module_ptr = null,
-            .callback_ptr = null,
-                    }
+    const iov = self.pending_buffers.items[self.pending_buffer_index];
+    const offset = self.pending_buffer_offset;
+    const remaining = iov.len - offset;
+    if (remaining == 0) {
+        // Advance to next buffer
+        self.pending_buffer_index += 1;
+        self.pending_buffer_offset = 0;
+        return self.submit_next_chunk();
+    }
+
+    const data_slice: []const u8 = @as([*]const u8, @ptrCast(iov.base))[offset..][0..remaining];
+
+    _ = try self.loop.io.queue(.{
+        .PerformWrite = .{
+            .callback = .{
+                .func = &write_operation_completed,
+                .cleanup = &cleanup_resources_callback,
+                .data = .{
+                    .user_data = self,
+                    .module_ptr = null,
+                    .callback_ptr = null,
                 },
-                .fd = self.fd,
-                .fixed_file_index = self.fixed_file_index,
-                .data = self.busy_buffers.items[current_ioves_index..],
-                .zero_copy = ((remaining >= 10_000) and self.zero_copying)
-            }
-        }
-    );
+            },
+            .fd = self.fd,
+            .fixed_file_index = null,
+            .data = data_slice,
+            .zero_copy = false,
+        },
+    });
+    _ = try self.loop.io.flush_pending_sqes();
 
-    python_c.py_incref(self.parent_transport);
+    self.writev_count += 1;
+    self.write_in_flight = true;
 }
 
 fn cleanup_resources_callback(ptr: ?*anyopaque) void {
     const self: *WriteTransport = @alignCast(@ptrCast(ptr.?));
     python_c.py_decref(self.parent_transport);
-
-    self.blocking_task_id = 0;
 }
 
 fn write_operation_completed(data: *const CallbackManager.CallbackData) !void {
     const self: *WriteTransport = @alignCast(@ptrCast(data.user_data.?));
     if (data.cancelled) {
-        cleanup_resources_callback(self);
+        python_c.py_decref(self.parent_transport);
         return;
     }
 
     const io_uring_res = data.io_uring_res;
     const io_uring_err = data.io_uring_err;
+    self.write_in_flight = false;
 
-    self.blocking_task_id = 0;
-
-    const parent_transport = self.parent_transport;
-
-    var exception: PyObject = undefined;
-
-    var data_written: usize = 0;
-    var remaining_data = self.buffer_size;
     if (io_uring_res > 0) {
-        data_written = self.busy_buffers_data_written + @as(usize, @intCast(io_uring_res));
-        remaining_data -= @intCast(io_uring_res);
-        self.buffer_size = remaining_data;
-        self.busy_buffers_data_written = data_written;
+        const written = @as(usize, @intCast(io_uring_res));
+        self.buffer_size -= @min(written, self.buffer_size);
+        self.total_bytes_written += written;
 
-        if (data_written < self.busy_buffers_size) {
-            try queue_remaining_data(self, @intCast(io_uring_res));
-            python_c.py_decref(parent_transport);
-            return;
-        }
-    }
-
-    for (self.busy_py_buffers.items) |*v| {
-        python_c.PyBuffer_Release(v);
-    }
-    self.busy_py_buffers.clearRetainingCapacity();
-    self.busy_buffers.clearRetainingCapacity();
-
-    if (self.is_closing and (self.buffer_size == 0 or io_uring_err == .CANCELED)) {
-        self.closed = true;
-    }
-
-    const ret = self.write_completed_callback(self, data_written, remaining_data, io_uring_err);
-    if (ret) |_| {
-        switch (io_uring_err) {
-            .SUCCESS => {
-                if (self.closed) {
-                    // Already set above
-                }else{
-                    try self.queue_buffers_and_swap();
-                }
-
-                python_c.py_decref(parent_transport);
-                return;
-            },
-            .CANCELED => {
-                python_c.py_decref(parent_transport);
-                // Already set above
-                return;
-            },
-            else => {
-                if (self.is_closing) {
-                    // Already set above
-                    python_c.py_decref(parent_transport);
-                    return;
-                }
-
-                exception = python_c.PyObject_CallFunction(
-                    python_c.PyExc_OSError, "Ls\x00", @as(c_long, @intFromEnum(io_uring_err)),
-                    "Write operation failed\x00"
-                ) orelse return error.PythonError;
+        // Advance the current buffer position by bytes written
+        const iov = self.pending_buffers.items[self.pending_buffer_index];
+        const iov_remaining = iov.len - self.pending_buffer_offset;
+        if (written < iov_remaining) {
+            // Partial write — advance offset within current buffer
+            self.pending_buffer_offset += written;
+        } else {
+            // Full buffer consumed
+            self.pending_buffer_index += 1;
+            self.pending_buffer_offset = 0;
+            // Release the consumed buffer's Py_buffer
+            if (self.pending_buffer_index - 1 < self.pending_py_buffers.items.len) {
+                python_c.PyBuffer_Release(&self.pending_py_buffers.items[self.pending_buffer_index - 1]);
             }
         }
-    }else |err| {
-        utils.handle_zig_function_error(err, {});
-        exception = python_c.PyErr_GetRaisedException()
-            orelse return error.PythonError;
     }
 
-    defer {
-        self.is_closing = true;
-        self.closed = true;
-        python_c.PyErr_SetRaisedException(exception);
-    }
+    if (io_uring_err != .SUCCESS and io_uring_err != .CANCELED and io_uring_res <= 0) {
+        // Real error — report via connection_lost
+        if (!self.is_closing) {
+            var exception: PyObject = undefined;
+            exception = python_c.PyObject_CallFunction(
+                python_c.PyExc_OSError, "Ls\x00", @as(c_long, @intFromEnum(io_uring_err)),
+                "Write operation failed\x00"
+            ) orelse return error.PythonError;
 
-    if (self.connection_lost_callback) |callback| {
-        try callback(parent_transport, exception);
-    }
+            defer {
+                self.is_closing = true;
+                self.closed = true;
+                python_c.PyErr_SetRaisedException(exception);
+            }
 
-    return error.PythonError;
-}
-
-pub fn queue_buffers_and_swap(self: *WriteTransport) !void {
-    const current_free_buffers = self.free_buffers;
-    if (current_free_buffers.items.len == 0) {
-        self.ready_to_queue_write_op = true;
+            if (self.connection_lost_callback) |callback| {
+                try callback(self.parent_transport, exception);
+            }
+            return error.PythonError;
+        }
         return;
     }
 
-    const current_free_py_buffers = self.free_py_buffers;
-
-    const current_busy_buffers = self.busy_buffers;
-    const current_busy_py_buffers = self.busy_py_buffers;
-
-    const buffer_size = self.buffer_size;
-
-    self.blocking_task_id = try self.loop.io.queue(
-        .{
-            .PerformWriteV = .{
-                .callback = .{
-                    .func = &write_operation_completed,
-                    .cleanup = &cleanup_resources_callback,
-                    .data = .{
-                        .user_data = self,
-                        .module_ptr = null,
-            .callback_ptr = null,
-                    }
-                },
-                .fd = self.fd,
-                .fixed_file_index = self.fixed_file_index,
-                .data = current_free_buffers.items,
-                .zero_copy = ((buffer_size >= 10_000) and self.zero_copying)
-            }
+    // Check if more data needs to be written
+    if (self.buffer_size > 0) {
+        try self.submit_next_chunk();
+    } else {
+        // All data written — clean up consumed buffers
+        // Release any remaining Py_buffers (at the current index and beyond)
+        for (self.pending_py_buffers.items[self.pending_buffer_index..]) |*v| {
+            python_c.PyBuffer_Release(v);
         }
-    );
+        self.pending_buffers.clearRetainingCapacity();
+        self.pending_py_buffers.clearRetainingCapacity();
+        self.pending_buffer_index = 0;
+        self.pending_buffer_offset = 0;
 
-    self.free_buffers = current_busy_buffers;
-    self.free_py_buffers = current_busy_py_buffers;
+        if (self.is_closing) {
+            self.closed = true;
+        }
 
-    self.busy_buffers = current_free_buffers;
-    self.busy_py_buffers = current_free_py_buffers;
-    self.busy_buffers_data_written = 0;
-    self.busy_buffers_size = buffer_size;
-    self.current_iovec_index = 0;
+        const bw = self.total_bytes_written;
+        self.total_bytes_written = 0;
+        _ = self.write_completed_callback(self, bw, 0, .SUCCESS) catch |err| {
+            utils.handle_zig_function_error(err, {});
+            const exception = python_c.PyErr_GetRaisedException()
+                orelse return error.PythonError;
 
-    self.writev_count += 1;
-    self.ready_to_queue_write_op = false;
+            defer {
+                self.is_closing = true;
+                self.closed = true;
+                python_c.PyErr_SetRaisedException(exception);
+            }
 
-    python_c.py_incref(self.parent_transport);
+            if (self.connection_lost_callback) |callback| {
+                try callback(self.parent_transport, exception);
+            }
+            return error.PythonError;
+        };
+    }
 }
 
 pub fn append_new_buffer_to_write(self: *WriteTransport, py_object: PyObject) !usize {
@@ -376,10 +301,10 @@ pub fn append_new_buffer_to_write(self: *WriteTransport, py_object: PyObject) !u
 
         const buffer_len: usize = @intCast(pbuffer.len);
 
-        try self.free_py_buffers.append(self.loop.allocator, pbuffer);
-        errdefer _ = self.free_py_buffers.pop();
+        try self.pending_py_buffers.append(self.loop.allocator, pbuffer);
+        errdefer _ = self.pending_py_buffers.pop();
 
-        try self.free_buffers.append(self.loop.allocator, .{
+        try self.pending_buffers.append(self.loop.allocator, .{
             .base = @ptrCast(pbuffer.buf.?),
             .len = buffer_len
         });

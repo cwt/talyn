@@ -119,30 +119,21 @@ pub fn perform_with_iovecs(ring: *std.os.linux.IoUring, set: *IO.BlockingTasksSe
     const fd_arg: std.os.linux.fd_t = if (data.fixed_file_index) |ffi| ffi else data.fd;
     const ff_flag: u8 = if (data.fixed_file_index != null) @as(u8, std.os.linux.IOSQE_FIXED_FILE) else 0;
 
-    const sqe = blk: {
-        if (data.zero_copy) {
-            data_ptr.msg_storage.name = null;
-            data_ptr.msg_storage.namelen = 0;
-            data_ptr.msg_storage.iov = @as([*]std.posix.iovec, @ptrCast(@constCast(data.data.ptr)));
-            data_ptr.msg_storage.iovlen = @intCast(data.data.len);
-            data_ptr.msg_storage.control = null;
-            data_ptr.msg_storage.controllen = 0;
-            data_ptr.msg_storage.flags = 0;
+    data_ptr.msg_storage.name = null;
+    data_ptr.msg_storage.namelen = 0;
+    data_ptr.msg_storage.iov = @as([*]std.posix.iovec, @ptrCast(@constCast(data.data.ptr)));
+    data_ptr.msg_storage.iovlen = @intCast(data.data.len);
+    data_ptr.msg_storage.control = null;
+    data_ptr.msg_storage.controllen = 0;
+    data_ptr.msg_storage.flags = 0;
 
-            const sqe = try ring.sendmsg(
-                @intCast(@intFromPtr(data_ptr)), fd_arg,
-                @as(*const std.posix.msghdr_const, @ptrCast(&data_ptr.msg_storage)),
-                std.posix.MSG.ZEROCOPY,
-            );
-            sqe.flags |= ff_flag;
-
-            // Deferred: msg_storage lives in task_data_pool.
-            break :blk sqe;
-        }
-        const sqe = try ring.writev(@intCast(@intFromPtr(data_ptr)), fd_arg, data.data, data.offset);
-        sqe.flags |= ff_flag;
-        break :blk sqe;
-    };
+    const flags: u32 = if (data.zero_copy) std.posix.MSG.ZEROCOPY else 0;
+    const sqe = try ring.sendmsg(
+        @intCast(@intFromPtr(data_ptr)), fd_arg,
+        @as(*const std.posix.msghdr_const, @ptrCast(&data_ptr.msg_storage)),
+        flags,
+    );
+    sqe.flags |= ff_flag;
 
     if (data.timeout) |*timeout| {
         sqe.flags |= std.os.linux.IOSQE_IO_LINK;
@@ -150,6 +141,6 @@ pub fn perform_with_iovecs(ring: *std.os.linux.IoUring, set: *IO.BlockingTasksSe
         timeout_sqe.flags |= std.os.linux.IOSQE_ASYNC;
     }
 
-    // Deferred: heap iovecs in WriteTransport.busy_buffers — safe.
+    // Deferred: msg_storage in task_data_pool, iovecs in transport.
     return @intFromPtr(data_ptr);
 }

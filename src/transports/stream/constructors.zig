@@ -167,10 +167,8 @@ fn stream_init_configuration(
         python_c.py_decref_and_set_null(&self.protocol_resume_writing);
     }
 
-    const watermark = (comptime std.math.maxInt(usize))/2;
-
-    self.writing_low_water_mark = watermark;
-    self.writing_high_water_mark = watermark;
+    self.writing_low_water_mark = 32 * 1024;
+    self.writing_high_water_mark = 64 * 1024;
 
     self.is_writing = true;
     self.is_reading = true;
