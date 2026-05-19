@@ -562,6 +562,7 @@ fn wakeup_task(fut: ?*Future.Python.FutureObject, ptr: ?*anyopaque) !void {
     errdefer python_c.py_decref(@ptrCast(task));
 
     if (leviathan_fut.exception) |exception| {
+        leviathan_fut.exception = null;
         _execute_task_throw(task, python_c.py_newref(exception)) catch |err| {
             utils.handle_zig_function_error(err, {});
 
@@ -569,7 +570,7 @@ fn wakeup_task(fut: ?*Future.Python.FutureObject, ptr: ?*anyopaque) !void {
 
             const future_data = utils.get_data_ptr(Future, &task.fut);
             try Future.Python.Result.future_fast_set_exception(
-&task.fut, future_data, exc);
+                &task.fut, future_data, exc);
             python_c.py_decref(@ptrCast(task));
         };
         return;
@@ -582,7 +583,7 @@ fn wakeup_task(fut: ?*Future.Python.FutureObject, ptr: ?*anyopaque) !void {
 
         const future_data = utils.get_data_ptr(Future, &task.fut);
         try Future.Python.Result.future_fast_set_exception(
-&task.fut, future_data, exc);
+            &task.fut, future_data, exc);
         python_c.py_decref(@ptrCast(task));
     };
 }
