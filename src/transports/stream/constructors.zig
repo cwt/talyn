@@ -353,3 +353,11 @@ inline fn z_stream_init(self: *StreamTransportObject, args: ?PyObject, kwargs: ?
 pub fn stream_init(self: ?*StreamTransportObject, args: ?PyObject, kwargs: ?PyObject) callconv(.c) c_int {
     return utils.execute_zig_function(z_stream_init, .{self.?, args, kwargs});
 }
+
+pub fn stream_set_protocol(self: ?*StreamTransportObject, protocol: ?PyObject) callconv(.c) ?PyObject {
+    const instance = self.?;
+    _ = set_protocol(instance, protocol.?) catch |err| {
+        return utils.handle_zig_function_error(err, @as(?PyObject, null));
+    };
+    return python_c.get_py_none();
+}

@@ -112,6 +112,14 @@ const PythonStreamMethods: []const python_c.PyMethodDef = &[_]python_c.PyMethodD
         .ml_flags = python_c.METH_FASTCALL | python_c.METH_KEYWORDS
     },
 
+    // -------------------------- protocol swap (for start_tls) --------------------------
+    python_c.PyMethodDef{
+        .ml_name = "set_protocol\x00",
+        .ml_meth = @ptrCast(&Constructors.stream_set_protocol),
+        .ml_doc = "Set a new protocol for this transport.\x00",
+        .ml_flags = python_c.METH_O
+    },
+
     python_c.PyMethodDef{
         .ml_name = null, .ml_meth = null, .ml_doc = null, .ml_flags = 0
     }
@@ -195,4 +203,6 @@ pub fn create_type() !void {
         @constCast(&stream_spec), utils.PythonImports.asyncio_transport
     ) orelse return error.PythonError;
     StreamType = @ptrCast(type_stream_transport);
+
+    _ = python_c.PyObject_SetAttrString(@ptrCast(StreamType), "_start_tls_compatible\x00", @constCast(&python_c._Py_TrueStruct));
 }

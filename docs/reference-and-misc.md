@@ -17,7 +17,7 @@
 # Reference
 
 - **uvloop source:** https://github.com/MagicStack/uvloop
-- **Test results:** 268 internal tests + standard asyncio suite modules PASS on all 4 versions (3.13, 3.14, 3.13t, 3.14t). UDP Ping-Pong matches standard asyncio.
+- **Test results (2026-05-21):** 7 project SSL tests PASS. Standard asyncio suite: `test_futures` (181), `test_transports` (7), `test_protocols` (5), `test_runners` (29) all PASS. `test_streams`: 73/75 pass, 2 TLS-related tests hang (`test_start_tls_buffered_data`, `test_open_connection_no_loop_ssl`). See [Priority 20](priorities/20-tls-ssl-completion-2026-05.md).
 
 ---
 

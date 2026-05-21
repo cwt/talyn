@@ -88,3 +88,16 @@ When a callback holds a pointer to a heap-allocated struct that can be freed bef
 
 ---
 
+### 16. TLS/SSL: Protocol-Layer Approach Over Native Crypto (2026-05-21)
+uvloop's SSL architecture was analyzed for TLS feature design. uvloop performs **zero** SSL in C/libuv — all encryption/decryption happens in a 1007-line Cython protocol layer (`sslproto.pyx`) using Python's `ssl.MemoryBIO` + `sslobj.wrap_bio` + `BufferedProtocol`. The native transport only handles raw encrypted bytes.
+*   **Key Findings:**
+    1. `ssl.MemoryBIO` decouples crypto from socket I/O — the protocol reads/writes to in-memory buffers, not the socket. The transport is completely crypto-agnostic.
+    2. `start_tls` flow: pause reading → `set_protocol` (swap protocol) → `connection_made` → resume reading. All at the protocol layer.
+    3. 5 explicit states: `UNWRAPPED → DO_HANDSHAKE → WRAPPED → FLUSHING → SHUTDOWN`. State machine handles all edge cases (renegotiation, shutdown race).
+    4. C-level fast paths: uvloop's Cython code bypasses Python `get_buffer()`/`buffer_updated()` calls when SSL is active, writing directly to the SSL protocol's internal buffer.
+*   **Leviathan Status:** The architecture (Python `ssl.MemoryBIO` over raw Zig transport) is correct and mirrors uvloop. Remaining work is protocol-layer edge cases: buffered data during `start_tls`, SSL shutdown handshake, flow control backpressure. See [Priority 20](priorities/20-tls-ssl-completion-2026-05.md).
+
+---
+
+
+

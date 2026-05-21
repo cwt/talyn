@@ -29,6 +29,8 @@ _subprocess_popens: dict[int, Any] = {}
 class _SSLTransportWrapper:
     """Wraps a raw transport to encrypt writes through an SSL object."""
 
+    _start_tls_compatible = True
+
     def __init__(self, ssp, raw_transport, ssl_module, shutdown_timeout=None):
         self._ssp = ssp
         self._raw_t = raw_transport
@@ -53,6 +55,10 @@ class _SSLTransportWrapper:
         self._raw_t.close()
 
     def get_extra_info(self, name, default=None):
+        if name == 'sslcontext':
+            return self._ssp._sslobj.context
+        if name == 'ssl_object':
+            return self._ssp._sslobj
         return self._raw_t.get_extra_info(name, default)
 
     def is_closing(self):
@@ -69,6 +75,18 @@ class _SSLTransportWrapper:
 
     def get_write_buffer_size(self):
         return self._raw_t.get_write_buffer_size()
+
+    def pause_reading(self):
+        self._raw_t.pause_reading()
+
+    def resume_reading(self):
+        self._raw_t.resume_reading()
+
+    def is_reading(self):
+        return self._raw_t.is_reading()
+
+    def set_protocol(self, protocol):
+        self._raw_t.set_protocol(protocol)
 
 
 class ExceptionContext(TypedDict):
@@ -427,6 +445,130 @@ class Loop(_Loop):
         return await _Loop.create_connection(
             self, protocol_factory, host, port, **kwargs,
         )
+
+    async def start_tls(
+        self, transport, protocol, sslcontext, *,
+        server_side=False, server_hostname=None,
+        ssl_handshake_timeout=None, ssl_shutdown_timeout=None,
+    ):
+        import ssl as ssl_module
+
+        if not isinstance(sslcontext, ssl_module.SSLContext):
+            raise TypeError(
+                f'sslcontext is expected to be an instance of ssl.SSLContext, '
+                f'got {sslcontext!r}')
+
+        incoming = ssl_module.MemoryBIO()
+        outgoing = ssl_module.MemoryBIO()
+        sslobj_temp = sslcontext.wrap_bio(
+            incoming, outgoing,
+            server_side=server_side,
+            server_hostname=server_hostname,
+        )
+
+        waiter = self.create_future()
+        wrapper_holder = [None]
+
+        class _SP(asyncio.BufferedProtocol):
+            def __init__(self):
+                self._buf = bytearray(65536)
+                self._view = memoryview(self._buf)
+                self._hs = False
+                self._sslobj = sslobj_temp
+                self._incoming = incoming
+                self._outgoing = outgoing
+                self._ap = protocol
+                self._running = True
+                self._raw_t = None
+
+            def get_buffer(self, n):
+                return self._view[:n]
+
+            def buffer_updated(self, n):
+                try:
+                    self._incoming.write(self._buf[:n])
+                    if not self._hs:
+                        self._h()
+                    else:
+                        self._r()
+                except Exception:
+                    self._running = False
+                    self._raw_t.close()
+
+            def connection_made(self, t):
+                self._raw_t = t
+                self._wrapper = _SSLTransportWrapper(
+                    self, t, ssl_module, shutdown_timeout=ssl_shutdown_timeout)
+                wrapper_holder[0] = self._wrapper
+                self._h()
+
+            def connection_lost(self, e):
+                self._running = False
+                try:
+                    self._ap.connection_lost(e)
+                except Exception:
+                    pass
+                if not waiter.done():
+                    waiter.set_exception(e or ConnectionResetError())
+
+            def eof_received(self):
+                try:
+                    return self._ap.eof_received()
+                except Exception:
+                    return False
+
+            def _h(self):
+                try:
+                    self._sslobj.do_handshake()
+                except ssl_module.SSLWantReadError:
+                    self._f()
+                except ssl_module.SSLWantWriteError:
+                    self._f()
+                except Exception as exc:
+                    self._running = False
+                    if not waiter.done():
+                        waiter.set_exception(exc)
+                    self._raw_t.close()
+                else:
+                    self._hs = True
+                    if not waiter.done():
+                        waiter.set_result(None)
+                    self._f()
+
+            def _r(self):
+                while self._running:
+                    try:
+                        d = self._sslobj.read(65536)
+                    except ssl_module.SSLWantReadError:
+                        break
+                    except (ssl_module.SSLSyscallError, ssl_module.SSLError):
+                        break
+                    if not d:
+                        break
+                    try:
+                        self._ap.data_received(d)
+                    except Exception:
+                        break
+
+            def _f(self):
+                d = self._outgoing.read()
+                if d and self._raw_t is not None:
+                    self._raw_t.write(d)
+
+        ssl_protocol = _SP()
+
+        transport.pause_reading()
+        transport.set_protocol(ssl_protocol)
+        self.call_soon(ssl_protocol.connection_made, transport)
+        self.call_soon(transport.resume_reading)
+
+        try:
+            await asyncio.wait_for(waiter, timeout=ssl_handshake_timeout or 60)
+        except BaseException:
+            transport.close()
+            raise
+
+        return wrapper_holder[0] or transport
 
     async def _create_ssl_connection(
         self, protocol_factory: Callable[[], asyncio.BaseProtocol],
