@@ -5,6 +5,7 @@ import tempfile
 import os
 
 import leviathan
+leviathan.install()
 import asyncio
 
 pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
@@ -455,6 +456,61 @@ async def test_ssl_graceful_shutdown(ssl_certs):
     writer.close()
     await writer.wait_closed()
 
+    srv.close()
+    await srv.wait_closed()
+
+
+@pytest.mark.asyncio
+async def test_ssl_flow_control(ssl_certs):
+    """Verify that pause_writing and resume_writing propagate correctly in SSL protocols."""
+    server_ctx, key_path, cert_path = ssl_certs
+
+    loop = asyncio.get_running_loop()
+    client_ctx = ssl.create_default_context()
+    client_ctx.check_hostname = False
+    client_ctx.verify_mode = ssl.CERT_NONE
+
+    events = []
+
+    class FlowControlClient(asyncio.Protocol):
+        def connection_made(self, transport):
+            self.transport = transport
+        def data_received(self, data):
+            pass
+        def pause_writing(self):
+            events.append("paused")
+        def resume_writing(self):
+            events.append("resumed")
+
+    async def handle_client(reader, writer):
+        await reader.readline()
+        writer.write(b"ok\n")
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+    srv = await asyncio.start_server(handle_client, "127.0.0.1", 0, ssl=server_ctx)
+    addr = srv.sockets[0].getsockname()
+
+    transport, protocol = await loop.create_connection(
+        FlowControlClient, addr[0], addr[1], ssl=client_ctx
+    )
+
+    # Let's verify we can get/set buffer limits
+    limits = transport.get_write_buffer_limits()
+    assert isinstance(limits, tuple)
+    transport.set_write_buffer_limits(4096, 1024)
+    assert transport.get_write_buffer_limits() == (1024, 4096)
+
+    # Manually trigger pause_writing and resume_writing on the wrapper's SSP/SP protocol
+    # to simulate backpressure from the native transport layer.
+    ssl_protocol = transport._ssp
+    ssl_protocol.pause_writing()
+    ssl_protocol.resume_writing()
+
+    assert events == ["paused", "resumed"]
+
+    transport.close()
     srv.close()
     await srv.wait_closed()
 

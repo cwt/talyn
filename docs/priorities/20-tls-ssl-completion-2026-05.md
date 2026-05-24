@@ -86,7 +86,7 @@ underlying socket.
 
 ---
 
-### 🔴 Task 3: Flow Control (`pause_writing`/`resume_writing`)
+### ✅ Task 3: Flow Control (`pause_writing`/`resume_writing`) (DONE)
 
 **Problem:** `_SSLTransportWrapper` delegates writes to the raw transport via
 `_sslobj.write()` + `_f()`, but doesn't participate in asyncio's flow control.

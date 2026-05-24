@@ -104,6 +104,12 @@ class _SSLTransportWrapper:
     def get_write_buffer_size(self):
         return self._raw_t.get_write_buffer_size()
 
+    def get_write_buffer_limits(self):
+        return self._raw_t.get_write_buffer_limits()
+
+    def set_write_buffer_limits(self, high=None, low=None):
+        self._raw_t.set_write_buffer_limits(high, low)
+
     def pause_reading(self):
         self._raw_t.pause_reading()
 
@@ -547,6 +553,20 @@ class Loop(_Loop):
                 except Exception:
                     return False
 
+            def pause_writing(self):
+                if hasattr(self, '_ap') and hasattr(self._ap, 'pause_writing'):
+                    try:
+                        self._ap.pause_writing()
+                    except Exception:
+                        pass
+
+            def resume_writing(self):
+                if hasattr(self, '_ap') and hasattr(self._ap, 'resume_writing'):
+                    try:
+                        self._ap.resume_writing()
+                    except Exception:
+                        pass
+
             def _h(self):
                 try:
                     self._sslobj.do_handshake()
@@ -566,6 +586,7 @@ class Loop(_Loop):
                     self._f()
 
             def _r(self):
+                chunks = []
                 while self._running:
                     try:
                         d = self._sslobj.read(65536)
@@ -575,10 +596,12 @@ class Loop(_Loop):
                         break
                     if not d:
                         break
+                    chunks.append(d)
+                if chunks:
                     try:
-                        self._ap.data_received(d)
+                        self._ap.data_received(b"".join(chunks))
                     except Exception:
-                        break
+                        pass
 
             def _f(self):
                 d = self._outgoing.read()
@@ -643,6 +666,7 @@ class Loop(_Loop):
                 self._sslobj = sslobj
                 self._incoming = incoming
                 self._outgoing = outgoing
+                self._ap = app_protocol
             def get_buffer(self, n):
                 return self._view[:n]
             def buffer_updated(self, n):
@@ -660,6 +684,18 @@ class Loop(_Loop):
                 pass
             def eof_received(self):
                 return False
+            def pause_writing(self):
+                if hasattr(self, '_ap') and hasattr(self._ap, 'pause_writing'):
+                    try:
+                        self._ap.pause_writing()
+                    except Exception:
+                        pass
+            def resume_writing(self):
+                if hasattr(self, '_ap') and hasattr(self._ap, 'resume_writing'):
+                    try:
+                        self._ap.resume_writing()
+                    except Exception:
+                        pass
             def _h(self):
                 try:
                     self._sslobj.do_handshake()
@@ -677,6 +713,7 @@ class Loop(_Loop):
                     self._f()
                     app_protocol.connection_made(self._wrapper)
             def _r(self):
+                chunks = []
                 while True:
                     try:
                         d = self._sslobj.read(65536)
@@ -686,7 +723,9 @@ class Loop(_Loop):
                         break
                     if not d:
                         break
-                    app_protocol.data_received(d)
+                    chunks.append(d)
+                if chunks:
+                    app_protocol.data_received(b"".join(chunks))
             def _f(self):
                 d = self._outgoing.read()
                 if d:
@@ -787,6 +826,18 @@ class Loop(_Loop):
             def eof_received(self):
                 self._ap.eof_received()
                 return False
+            def pause_writing(self):
+                if hasattr(self, '_ap') and hasattr(self._ap, 'pause_writing'):
+                    try:
+                        self._ap.pause_writing()
+                    except Exception:
+                        pass
+            def resume_writing(self):
+                if hasattr(self, '_ap') and hasattr(self._ap, 'resume_writing'):
+                    try:
+                        self._ap.resume_writing()
+                    except Exception:
+                        pass
             def _h(self):
                 try:
                     self._sslobj.do_handshake()
@@ -801,6 +852,7 @@ class Loop(_Loop):
                     self._f()
                     self._ap.connection_made(self._wrapper)
             def _r(self):
+                chunks = []
                 while True:
                     try:
                         d = self._sslobj.read(65536)
@@ -810,7 +862,9 @@ class Loop(_Loop):
                         break
                     if not d:
                         break
-                    self._ap.data_received(d)
+                    chunks.append(d)
+                if chunks:
+                    self._ap.data_received(b"".join(chunks))
             def _f(self):
                 d = self._outgoing.read()
                 if d:
@@ -892,6 +946,7 @@ class Loop(_Loop):
                 self._sslobj = sslobj
                 self._incoming = incoming
                 self._outgoing = outgoing
+                self._ap = app_protocol
             def get_buffer(self, n):
                 return self._view[:n]
             def buffer_updated(self, n):
@@ -909,6 +964,18 @@ class Loop(_Loop):
                 pass
             def eof_received(self):
                 return False
+            def pause_writing(self):
+                if hasattr(self, '_ap') and hasattr(self._ap, 'pause_writing'):
+                    try:
+                        self._ap.pause_writing()
+                    except Exception:
+                        pass
+            def resume_writing(self):
+                if hasattr(self, '_ap') and hasattr(self._ap, 'resume_writing'):
+                    try:
+                        self._ap.resume_writing()
+                    except Exception:
+                        pass
             def _h(self):
                 try:
                     self._sslobj.do_handshake()
@@ -926,6 +993,7 @@ class Loop(_Loop):
                     self._f()
                     app_protocol.connection_made(self._wrapper)
             def _r(self):
+                chunks = []
                 while True:
                     try:
                         d = self._sslobj.read(65536)
@@ -935,7 +1003,9 @@ class Loop(_Loop):
                         break
                     if not d:
                         break
-                    app_protocol.data_received(d)
+                    chunks.append(d)
+                if chunks:
+                    app_protocol.data_received(b"".join(chunks))
             def _f(self):
                 d = self._outgoing.read()
                 if d:
