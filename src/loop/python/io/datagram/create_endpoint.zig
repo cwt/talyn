@@ -224,7 +224,7 @@ fn create_endpoint(data: *const CallbackManager.CallbackData) !void {
     }
 
     const socket_ret = std.os.linux.socket(family, @as(u32, @intCast(std.posix.SOCK.DGRAM | std.posix.SOCK.NONBLOCK | std.posix.SOCK.CLOEXEC)), 0);
-    if (@as(i32, @intCast(socket_ret)) < 0) return error.SystemResources;
+    if (std.posix.errno(socket_ret) != .SUCCESS) return error.SystemResources;
     const fd: std.posix.fd_t = @intCast(socket_ret);
     errdefer _ = std.os.linux.close(fd);
 
@@ -248,7 +248,7 @@ fn create_endpoint(data: *const CallbackManager.CallbackData) !void {
         for (addrs) |*addr| {
             if (addr.any.family != family) continue;
             const bind_ret = std.os.linux.bind(fd, @ptrCast(&addr.any), addr.getOsSockLen());
-            if (@as(i32, @intCast(bind_ret)) >= 0) {
+            if (std.posix.errno(bind_ret) == .SUCCESS) {
                 bound = true;
                 break;
             }
@@ -262,7 +262,7 @@ fn create_endpoint(data: *const CallbackManager.CallbackData) !void {
         for (addrs) |*addr| {
             if (addr.any.family != family) continue;
             const connect_ret = std.os.linux.connect(fd, @ptrCast(&addr.any), addr.getOsSockLen());
-            if (@as(i32, @intCast(connect_ret)) >= 0) {
+            if (std.posix.errno(connect_ret) == .SUCCESS) {
                 connected = true;
                 break;
             }

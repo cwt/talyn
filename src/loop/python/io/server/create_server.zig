@@ -406,7 +406,7 @@ fn z_create_server_socket(server_data: *ServerSocketData) !void {
         else blk: {
             const flags: u32 = std.posix.SOCK.STREAM | std.posix.SOCK.NONBLOCK | std.posix.SOCK.CLOEXEC;
             const fd_ret = std.os.linux.socket(addr_with_port.any.family, flags, std.os.linux.IPPROTO.TCP);
-            if (@as(i32, @intCast(fd_ret)) < 0) {
+            if (std.posix.errno(fd_ret) != .SUCCESS) {
                 last_err = error.SystemResources;
                 continue;
             }
@@ -426,13 +426,13 @@ fn z_create_server_socket(server_data: *ServerSocketData) !void {
             }
 
             const bind_rc = std.os.linux.bind(fd, @ptrCast(&addr_with_port.any), addr_with_port.getOsSockLen());
-            if (@as(i32, @intCast(bind_rc)) < 0) {
+            if (std.posix.errno(bind_rc) != .SUCCESS) {
                 last_err = error.SystemResources;
                 continue;
             }
 
             const listen_rc = std.os.linux.listen(fd, @intCast(backlog));
-            if (@as(i32, @intCast(listen_rc)) < 0) {
+            if (std.posix.errno(listen_rc) != .SUCCESS) {
                 last_err = error.SystemResources;
                 continue;
             }
