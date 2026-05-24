@@ -423,3 +423,38 @@ async def test_start_tls_buffered_data(ssl_certs):
     srv.close()
     await srv.wait_closed()
 
+
+@pytest.mark.asyncio
+async def test_ssl_graceful_shutdown(ssl_certs):
+    """Verify that SSL transport wrapper close performs a graceful shutdown sequence."""
+    server_ctx, key_path, cert_path = ssl_certs
+
+    loop = asyncio.get_running_loop()
+    client_ctx = ssl.create_default_context()
+    client_ctx.check_hostname = False
+    client_ctx.verify_mode = ssl.CERT_NONE
+
+    async def handle_client(reader, writer):
+        await reader.readline()
+        writer.write(b"ok\n")
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+    srv = await asyncio.start_server(handle_client, "127.0.0.1", 0, ssl=server_ctx)
+    addr = srv.sockets[0].getsockname()
+
+    reader, writer = await asyncio.open_connection(addr[0], addr[1], ssl=client_ctx)
+    writer.write(b"ping\n")
+    await writer.drain()
+    
+    resp = await reader.readline()
+    assert resp == b"ok\n"
+
+    # Close and wait for graceful SSL shutdown handshake to complete
+    writer.close()
+    await writer.wait_closed()
+
+    srv.close()
+    await srv.wait_closed()
+

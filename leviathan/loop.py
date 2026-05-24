@@ -36,22 +36,50 @@ class _SSLTransportWrapper:
         self._raw_t = raw_transport
         self._sslmod = ssl_module
         self._ssl_shutdown_timeout = shutdown_timeout
+        self._closing = False
+        self._shutdown_timeout_handle = None
 
     def write(self, data):
         self._ssp._sslobj.write(data)
         self._ssp._f()
 
     def close(self):
+        if self._closing:
+            return
+        self._closing = True
+        self._start_shutdown()
+
+    def _start_shutdown(self):
         try:
             self._ssp._sslobj.unwrap()
-        except (
-            self._sslmod.SSLSyscallError,
-            self._sslmod.SSLWantReadError,
-            self._sslmod.SSLWantWriteError,
-            self._sslmod.SSLError,
-        ):
+        except self._sslmod.SSLWantReadError:
+            self._ssp._f()
+            if self._shutdown_timeout_handle is None:
+                timeout = self._ssl_shutdown_timeout or 30.0
+                loop = asyncio.get_running_loop()
+                self._shutdown_timeout_handle = loop.call_later(
+                    timeout, self._force_close
+                )
+            return
+        except self._sslmod.SSLWantWriteError:
+            self._ssp._f()
+            if self._shutdown_timeout_handle is None:
+                timeout = self._ssl_shutdown_timeout or 30.0
+                loop = asyncio.get_running_loop()
+                self._shutdown_timeout_handle = loop.call_later(
+                    timeout, self._force_close
+                )
+            return
+        except Exception:
             pass
+
         self._ssp._f()
+        self._force_close()
+
+    def _force_close(self):
+        if self._shutdown_timeout_handle is not None:
+            self._shutdown_timeout_handle.cancel()
+            self._shutdown_timeout_handle = None
         self._raw_t.close()
 
     def get_extra_info(self, name, default=None):
@@ -487,7 +515,9 @@ class Loop(_Loop):
             def buffer_updated(self, n):
                 try:
                     self._incoming.write(self._buf[:n])
-                    if not self._hs:
+                    if hasattr(self, '_wrapper') and self._wrapper._closing:
+                        self._wrapper._start_shutdown()
+                    elif not self._hs:
                         self._h()
                     else:
                         self._r()
@@ -617,7 +647,9 @@ class Loop(_Loop):
                 return self._view[:n]
             def buffer_updated(self, n):
                 self._incoming.write(self._buf[:n])
-                if not self._hs: self._h()
+                if hasattr(self, '_wrapper') and self._wrapper._closing:
+                    self._wrapper._start_shutdown()
+                elif not self._hs: self._h()
                 else: self._r()
             def connection_made(self, t):
                 self._raw_t = t
@@ -741,7 +773,9 @@ class Loop(_Loop):
                 return self._view[:n]
             def buffer_updated(self, n):
                 self._incoming.write(self._buf[:n])
-                if not self._hs: self._h()
+                if hasattr(self, '_wrapper') and self._wrapper._closing:
+                    self._wrapper._start_shutdown()
+                elif not self._hs: self._h()
                 else: self._r()
             def connection_made(self, t):
                 self._raw_t = t
@@ -862,7 +896,9 @@ class Loop(_Loop):
                 return self._view[:n]
             def buffer_updated(self, n):
                 self._incoming.write(self._buf[:n])
-                if not self._hs: self._h()
+                if hasattr(self, '_wrapper') and self._wrapper._closing:
+                    self._wrapper._start_shutdown()
+                elif not self._hs: self._h()
                 else: self._r()
             def connection_made(self, t):
                 self._raw_t = t

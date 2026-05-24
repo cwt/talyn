@@ -70,7 +70,7 @@ buffered data is in the old StreamReaderProtocol, not the transport. Deadlock.
 
 ---
 
-### 🔴 Task 2: Proper SSL Shutdown in `_SSLTransportWrapper.close()`
+### ✅ Task 2: Proper SSL Shutdown in `_SSLTransportWrapper.close()` (DONE)
 
 **Problem:** `close()` calls `sslobj.unwrap()` to send `close_notify`, but
 doesn't wait for the peer's `close_notify` response. Standard asyncio expects
