@@ -378,3 +378,48 @@ async def test_ssl_create_server_multiple_connections(ssl_certs):
 
     srv.close()
     await asyncio.sleep(0.1)
+
+
+@pytest.mark.asyncio
+async def test_start_tls_buffered_data(ssl_certs):
+    """Verify start_tls works even when there is buffered data in the StreamReader."""
+    server_ctx, key_path, cert_path = ssl_certs
+
+    loop = asyncio.get_running_loop()
+    client_ctx = ssl.create_default_context()
+    client_ctx.check_hostname = False
+    client_ctx.verify_mode = ssl.CERT_NONE
+
+    async def handle_client(reader, writer):
+        # Wait for TLS ClientHello to be buffered before start_tls().
+        await reader._wait_for_data('test_start_tls_buffered_data')
+        assert reader._buffer
+
+        await writer.start_tls(server_ctx)
+        
+        line = await reader.readline()
+        assert line == b"ping\n"
+        writer.write(b"pong\n")
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+    srv = await asyncio.start_server(handle_client, "127.0.0.1", 0)
+    addr = srv.sockets[0].getsockname()
+
+    # Client connection
+    reader, writer = await asyncio.open_connection(addr[0], addr[1])
+    await writer.start_tls(client_ctx)
+
+    writer.write(b"ping\n")
+    await writer.drain()
+
+    # Read the secure message
+    secure_resp = await reader.readline()
+    assert secure_resp == b"pong\n"
+
+    writer.close()
+    await writer.wait_closed()
+    srv.close()
+    await srv.wait_closed()
+

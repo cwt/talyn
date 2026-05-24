@@ -557,6 +557,15 @@ class Loop(_Loop):
 
         ssl_protocol = _SP()
 
+        from asyncio.streams import StreamReaderProtocol
+        if isinstance(protocol, StreamReaderProtocol):
+            stream_reader = getattr(protocol, '_stream_reader', None)
+            if stream_reader is not None:
+                buffer = stream_reader._buffer
+                if buffer:
+                    incoming.write(buffer)
+                    buffer.clear()
+
         transport.pause_reading()
         transport.set_protocol(ssl_protocol)
         self.call_soon(ssl_protocol.connection_made, transport)

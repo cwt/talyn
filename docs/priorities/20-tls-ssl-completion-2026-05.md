@@ -48,7 +48,7 @@ allows swapping the protocol at runtime for `start_tls`. Already in working copy
 
 ---
 
-### 🔴 Task 1: Feed Buffered Data to SSL Handshake in `start_tls`
+### ✅ Task 1: Feed Buffered Data to SSL Handshake in `start_tls` (DONE)
 
 **Problem:** When `start_tls()` is called via `StreamWriter.start_tls()`, the
 StreamReader may have already buffered incoming TLS ClientHello bytes. Our
