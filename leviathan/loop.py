@@ -31,13 +31,14 @@ class _SSLTransportWrapper:
 
     _start_tls_compatible = True
 
-    def __init__(self, ssp, raw_transport, ssl_module, shutdown_timeout=None):
+    def __init__(self, ssp, raw_transport, ssl_module, shutdown_timeout=None, loop=None):
         self._ssp = ssp
         self._raw_t = raw_transport
         self._sslmod = ssl_module
         self._ssl_shutdown_timeout = shutdown_timeout
         self._closing = False
         self._shutdown_timeout_handle = None
+        self._loop = loop
 
     def write(self, data):
         self._ssp._sslobj.write(data)
@@ -54,19 +55,17 @@ class _SSLTransportWrapper:
             self._ssp._sslobj.unwrap()
         except self._sslmod.SSLWantReadError:
             self._ssp._f()
-            if self._shutdown_timeout_handle is None:
+            if self._shutdown_timeout_handle is None and self._loop is not None and not self._loop.is_closed():
                 timeout = self._ssl_shutdown_timeout or 30.0
-                loop = asyncio.get_running_loop()
-                self._shutdown_timeout_handle = loop.call_later(
+                self._shutdown_timeout_handle = self._loop.call_later(
                     timeout, self._force_close
                 )
             return
         except self._sslmod.SSLWantWriteError:
             self._ssp._f()
-            if self._shutdown_timeout_handle is None:
+            if self._shutdown_timeout_handle is None and self._loop is not None and not self._loop.is_closed():
                 timeout = self._ssl_shutdown_timeout or 30.0
-                loop = asyncio.get_running_loop()
-                self._shutdown_timeout_handle = loop.call_later(
+                self._shutdown_timeout_handle = self._loop.call_later(
                     timeout, self._force_close
                 )
             return
@@ -208,9 +207,16 @@ class Loop(_Loop):
         logger.error("\n".join(log_lines), exc_info=exception)
 
     def call_exception_handler(self, context: ExceptionContext) -> None: # type: ignore
-        self._exception_handler(context)
+        if self._exception_handler == self.default_exception_handler:
+            self.default_exception_handler(context)
+        else:
+            try:
+                self._exception_handler(self, context)
+            except Exception:
+                # Fallback or log if custom handler fails
+                self.default_exception_handler(context)
 
-    def set_exception_handler(self, handler: Callable[[ExceptionContext], None] | None) -> None:
+    def set_exception_handler(self, handler: Callable[[Any, ExceptionContext], None] | None) -> None:
         if handler is None:
             self._exception_handler = self.default_exception_handler
         else:
@@ -485,6 +491,7 @@ class Loop(_Loop):
         server_side=False, server_hostname=None,
         ssl_handshake_timeout=None, ssl_shutdown_timeout=None,
     ):
+        self_loop = self
         import ssl as ssl_module
 
         if not isinstance(sslcontext, ssl_module.SSLContext):
@@ -534,7 +541,7 @@ class Loop(_Loop):
             def connection_made(self, t):
                 self._raw_t = t
                 self._wrapper = _SSLTransportWrapper(
-                    self, t, ssl_module, shutdown_timeout=ssl_shutdown_timeout)
+                    self, t, ssl_module, shutdown_timeout=ssl_shutdown_timeout, loop=self_loop)
                 wrapper_holder[0] = self._wrapper
                 self._h()
 
@@ -641,6 +648,7 @@ class Loop(_Loop):
         happy_eyeballs_delay: float|None, interleave: int|None,
         all_errors: bool,
     ) -> tuple[asyncio.Transport, asyncio.BaseProtocol]:
+        self_loop = self
         import ssl as ssl_module
 
         sslcontext = ssl
@@ -677,7 +685,7 @@ class Loop(_Loop):
                 else: self._r()
             def connection_made(self, t):
                 self._raw_t = t
-                self._wrapper = _SSLTransportWrapper(self, t, ssl_module, shutdown_timeout=ssl_shutdown_timeout)
+                self._wrapper = _SSLTransportWrapper(self, t, ssl_module, shutdown_timeout=ssl_shutdown_timeout, loop=self_loop)
                 wrapper_holder[0] = self._wrapper
                 self._h()
             def connection_lost(self, e):
@@ -795,6 +803,7 @@ class Loop(_Loop):
         ssl_handshake_timeout: float|None, ssl_shutdown_timeout: float|None,
         start_serving: bool,
     ) -> "Server":
+        self_loop = self
         from .server import Server
         import ssl as ssl_module
 
@@ -825,7 +834,7 @@ class Loop(_Loop):
             def connection_made(self, t):
                 self._raw_t = t
                 self._ap = protocol_factory()
-                self._wrapper = _SSLTransportWrapper(self, self._raw_t, ssl_module, shutdown_timeout=ssl_shutdown_timeout)
+                self._wrapper = _SSLTransportWrapper(self, self._raw_t, ssl_module, shutdown_timeout=ssl_shutdown_timeout, loop=self_loop)
                 self._h()
             def connection_lost(self, e):
                 self._ap.connection_lost(e)
@@ -927,10 +936,11 @@ class Loop(_Loop):
         path: str, *, ssl: Any, server_hostname: str|None,
         ssl_shutdown_timeout: float|None = None,
     ) -> tuple[asyncio.Transport, asyncio.BaseProtocol]:
+        self_loop = self
         import ssl as ssl_module
 
         sslcontext = ssl
-        sni = server_hostname
+        sni = server_hostname or None
 
         incoming = ssl_module.MemoryBIO()
         outgoing = ssl_module.MemoryBIO()
@@ -963,7 +973,7 @@ class Loop(_Loop):
                 else: self._r()
             def connection_made(self, t):
                 self._raw_t = t
-                self._wrapper = _SSLTransportWrapper(self, t, ssl_module, shutdown_timeout=ssl_shutdown_timeout)
+                self._wrapper = _SSLTransportWrapper(self, t, ssl_module, shutdown_timeout=ssl_shutdown_timeout, loop=self_loop)
                 wrapper_holder[0] = self._wrapper
                 self._h()
             def connection_lost(self, e):
@@ -1061,6 +1071,7 @@ class Loop(_Loop):
         path: str, *, backlog: int, ssl: Any,
         ssl_shutdown_timeout: float|None = None,
     ) -> "Server":
+        self_loop = self
         from .server import Server
         import ssl as ssl_module
 
@@ -1089,7 +1100,7 @@ class Loop(_Loop):
             def connection_made(self, t):
                 self._raw_t = t
                 self._ap = protocol_factory()
-                self._wrapper = _SSLTransportWrapper(self, self._raw_t, ssl_module, shutdown_timeout=ssl_shutdown_timeout)
+                self._wrapper = _SSLTransportWrapper(self, self._raw_t, ssl_module, shutdown_timeout=ssl_shutdown_timeout, loop=self_loop)
                 self._h()
             def connection_lost(self, e):
                 self._ap.connection_lost(e)

@@ -116,7 +116,7 @@ correctly return the wrapped transport to the StreamReader/StreamWriter pair.
 
 ---
 
-### 🔵 Task 5: Full `test_streams` Pass
+### ✅ Task 5: Full `test_streams` Pass (DONE)
 
 Once tasks 1–4 are done, verify all 75 `test_streams` tests pass without hangs.
 Run `scripts/test_all.sh` to confirm across all 4 Python variants.

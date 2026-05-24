@@ -232,13 +232,13 @@ fn write_operation_completed(data: *const CallbackManager.CallbackData) !void {
             defer {
                 self.is_closing = true;
                 self.closed = true;
-                python_c.PyErr_SetRaisedException(exception);
+                python_c.py_decref(exception);
             }
 
             if (self.connection_lost_callback) |callback| {
                 try callback(self.parent_transport, exception);
             }
-            return error.PythonError;
+            return;
         }
         return;
     }
