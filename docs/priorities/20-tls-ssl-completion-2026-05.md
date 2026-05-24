@@ -101,7 +101,7 @@ backpressure up to the application protocol.
 
 ---
 
-### 🔴 Task 4: Fix `open_connection` with `ssl` Parameter
+### ✅ Task 4: Fix `open_connection` with `ssl` Parameter (DONE)
 
 **Problem:** `test_open_connection_no_loop_ssl` hangs. The `open_connection()`
 high-level function with `ssl=True` creates an `_SSLProtocol` flow that may not

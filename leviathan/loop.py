@@ -681,9 +681,15 @@ class Loop(_Loop):
                 wrapper_holder[0] = self._wrapper
                 self._h()
             def connection_lost(self, e):
-                pass
+                try:
+                    self._ap.connection_lost(e)
+                except Exception:
+                    pass
             def eof_received(self):
-                return False
+                try:
+                    return self._ap.eof_received()
+                except Exception:
+                    return False
             def pause_writing(self):
                 if hasattr(self, '_ap') and hasattr(self._ap, 'pause_writing'):
                     try:
@@ -961,9 +967,15 @@ class Loop(_Loop):
                 wrapper_holder[0] = self._wrapper
                 self._h()
             def connection_lost(self, e):
-                pass
+                try:
+                    self._ap.connection_lost(e)
+                except Exception:
+                    pass
             def eof_received(self):
-                return False
+                try:
+                    return self._ap.eof_received()
+                except Exception:
+                    return False
             def pause_writing(self):
                 if hasattr(self, '_ap') and hasattr(self._ap, 'pause_writing'):
                     try:
