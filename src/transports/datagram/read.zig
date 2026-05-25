@@ -14,22 +14,18 @@ pub fn queue_read(self: *DatagramTransport.DatagramTransportObject) !void {
     const loop_data = utils.get_data_ptr(Loop, @as(*Loop.Python.LoopObject, @ptrCast(self.loop.?)));
     const alloc = loop_data.allocator;
 
-    const buf = try alloc.alloc(u8, MAX_DGRAM);
-    errdefer alloc.free(buf);
-
     const rd = try alloc.create(ReadData);
     errdefer alloc.destroy(rd);
 
     rd.* = .{
         .transport = self,
-        .buf = buf,
         .alloc = alloc,
         .msg = undefined,
         .iov = undefined,
         .addr = undefined,
     };
 
-    rd.iov = .{ .base = buf.ptr, .len = buf.len };
+    rd.iov = .{ .base = self.buffer_ptr.?, .len = self.buffer_len };
     rd.msg = .{
         .name = @ptrCast(&rd.addr),
         .namelen = @sizeOf(std.posix.sockaddr.storage),
@@ -40,9 +36,12 @@ pub fn queue_read(self: *DatagramTransport.DatagramTransportObject) !void {
         .flags = 0,
     };
 
+    const ffi = if (self.fixed_file_index != 0) self.fixed_file_index else null;
+
     _ = try loop_data.io.queue(.{
         .PerformRecvMsg = .{
             .fd = self.fd,
+            .fixed_file_index = ffi,
             .msg = &rd.msg,
             .callback = .{
                 .func = &read_completed,
@@ -56,7 +55,6 @@ pub fn queue_read(self: *DatagramTransport.DatagramTransportObject) !void {
 
 const ReadData = struct {
     transport: *DatagramTransport.DatagramTransportObject,
-    buf: []u8,
     alloc: std.mem.Allocator,
     msg: std.posix.msghdr,
     iov: std.posix.iovec,
@@ -65,7 +63,6 @@ const ReadData = struct {
 
 fn cleanup_read(ptr: ?*anyopaque) void {
     const rd: *ReadData = @ptrCast(@alignCast(ptr.?));
-    rd.alloc.free(rd.buf);
     rd.alloc.destroy(rd);
 }
 
@@ -99,7 +96,7 @@ fn read_completed(data: *const CallbackManager.CallbackData) !void {
 
     // Deliver data to protocol
     if (self.protocol_datagram_received) |dr| {
-        const py_data = python_c.PyBytes_FromStringAndSize(rd.buf.ptr, @intCast(nread)) orelse return error.PythonError;
+        const py_data = python_c.PyBytes_FromStringAndSize(self.buffer_ptr.?, @intCast(nread)) orelse return error.PythonError;
         defer python_c.py_decref(py_data);
         
         // Format source address using universal helper

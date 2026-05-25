@@ -51,6 +51,9 @@ pub fn init_configuration(
     loop: *Loop.Python.LoopObject,
     fd: std.posix.fd_t,
 ) !void {
+    const loop_data = utils.get_data_ptr(Loop, loop);
+    const allocator = loop_data.allocator;
+
     self.loop = python_c.py_newref(@as(*python_c.PyObject, @ptrCast(loop)));
     self.fd = fd;
     self.buffer_size = 0;
@@ -58,6 +61,23 @@ pub fn init_configuration(
     self.writing_low_water_mark = std.math.maxInt(usize) / 2;
     self.is_writing = true;
     self.closed = false;
+
+    // Register socket fd as fixed file
+    const ffi = loop_data.io.register_fixed_file(fd) catch null;
+    self.fixed_file_index = ffi orelse 0;
+
+    // Lease registered buffer from the global pool
+    var fixed_buffer_index: ?u16 = null;
+    var buffer: []u8 = &.{};
+    if (loop_data.io.buffer_pool.lease()) |leased| {
+        fixed_buffer_index = leased.index;
+        buffer = leased.slice;
+    } else {
+        buffer = try allocator.alloc(u8, 65536);
+    }
+    self.fixed_buffer_index = fixed_buffer_index orelse 0xffff;
+    self.buffer_ptr = buffer.ptr;
+    self.buffer_len = buffer.len;
 
     try set_protocol(self, protocol);
 }

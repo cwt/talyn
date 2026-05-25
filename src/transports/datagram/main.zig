@@ -29,6 +29,10 @@ pub const DatagramTransportObject = extern struct {
     writing_low_water_mark: usize,
     is_writing: bool,
     closed: bool,
+    fixed_file_index: u16 = 0,
+    fixed_buffer_index: u16 = 0xffff,
+    buffer_ptr: ?[*]u8 = null,
+    buffer_len: usize = 0,
 };
 
 pub const WriteTransport = @import("write.zig");
@@ -37,8 +41,46 @@ pub const ReadTransport = @import("read.zig");
 pub const Constructors = @import("constructors.zig");
 const ExtraInfo = @import("extra_info.zig");
 
+fn cleanup_resources(instance: *DatagramTransportObject) void {
+    if (instance.fixed_file_index != 0) {
+        if (instance.loop) |loop| {
+            const loop_obj: *LoopObject = @alignCast(@ptrCast(loop));
+            const loop_data = utils.get_data_ptr(Loop, loop_obj);
+            if (loop_data.initialized) {
+                loop_data.io.unregister_fixed_file(instance.fixed_file_index);
+            }
+        }
+        instance.fixed_file_index = 0;
+    }
+    if (instance.fixed_buffer_index != 0xffff) {
+        if (instance.loop) |loop| {
+            const loop_obj: *LoopObject = @alignCast(@ptrCast(loop));
+            const loop_data = utils.get_data_ptr(Loop, loop_obj);
+            if (loop_data.initialized) {
+                loop_data.io.buffer_pool.release(instance.fixed_buffer_index);
+            }
+        }
+        instance.fixed_buffer_index = 0xffff;
+        instance.buffer_ptr = null;
+        instance.buffer_len = 0;
+    } else if (instance.buffer_len > 0) {
+        if (instance.loop) |loop| {
+            const loop_obj: *LoopObject = @alignCast(@ptrCast(loop));
+            const loop_data = utils.get_data_ptr(Loop, loop_obj);
+            if (loop_data.initialized) {
+                if (instance.buffer_ptr) |ptr| {
+                    loop_data.allocator.free(ptr[0..instance.buffer_len]);
+                }
+            }
+        }
+        instance.buffer_ptr = null;
+        instance.buffer_len = 0;
+    }
+}
+
 fn datagram_dealloc(self: ?*DatagramTransportObject) callconv(.c) void {
     const instance = self.?;
+    cleanup_resources(instance);
     if (!instance.closed and instance.fd >= 0) {
         if (instance.loop) |loop| {
             const loop_obj: *LoopObject = @alignCast(@ptrCast(loop));
@@ -72,6 +114,7 @@ fn datagram_traverse(self: ?*DatagramTransportObject, visit: python_c.visitproc,
 
 fn datagram_clear(self: ?*DatagramTransportObject) callconv(.c) c_int {
     const instance = self.?;
+    cleanup_resources(instance);
     if (instance.fd >= 0) {
         _ = std.os.linux.close(instance.fd);
         instance.fd = -1;
