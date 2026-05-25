@@ -57,7 +57,7 @@ fn cleanup_resources(instance: *DatagramTransportObject) void {
             const loop_obj: *LoopObject = @alignCast(@ptrCast(loop));
             const loop_data = utils.get_data_ptr(Loop, loop_obj);
             if (loop_data.initialized) {
-                loop_data.io.buffer_pool.release(instance.fixed_buffer_index);
+                loop_data.io.release_buffer(instance.fixed_buffer_index);
             }
         }
         instance.fixed_buffer_index = 0xffff;

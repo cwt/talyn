@@ -173,6 +173,10 @@ pub const HookType = enum {
 };
 
 pub fn add_hook(self: *Loop, hook_type: HookType, callback: CallbackManager.Callback) !HooksList.Node {
+    const mutex = &self.mutex;
+    mutex.lock();
+    defer mutex.unlock();
+
     const hooks = switch (hook_type) {
         .prepare => &self.prepare_hooks,
         .check => &self.check_hooks,
@@ -184,6 +188,10 @@ pub fn add_hook(self: *Loop, hook_type: HookType, callback: CallbackManager.Call
 }
 
 pub fn remove_hook(self: *Loop, hook_type: HookType, node: HooksList.Node) void {
+    const mutex = &self.mutex;
+    mutex.lock();
+    defer mutex.unlock();
+
     const hooks = switch (hook_type) {
         .prepare => &self.prepare_hooks,
         .check => &self.check_hooks,

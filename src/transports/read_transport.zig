@@ -54,7 +54,7 @@ pub fn init(
 
     var fixed_buffer_index: ?u16 = null;
     var buffer: []u8 = &.{};
-    if (loop.io.buffer_pool.lease()) |leased| {
+    if (loop.io.lease_buffer()) |leased| {
         fixed_buffer_index = leased.index;
         buffer = leased.slice;
     } else {
@@ -62,7 +62,7 @@ pub fn init(
     }
     errdefer {
         if (fixed_buffer_index) |idx| {
-            loop.io.buffer_pool.release(idx);
+            loop.io.release_buffer(idx);
         } else {
             allocator.free(buffer);
         }
@@ -122,7 +122,7 @@ pub fn deinit(self: *ReadTransport) void {
 
     const allocator = self.loop.allocator;
     if (self.fixed_buffer_index) |idx| {
-        self.loop.io.buffer_pool.release(idx);
+        self.loop.io.release_buffer(idx);
     } else {
         allocator.free(self.buffer);
     }

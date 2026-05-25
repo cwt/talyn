@@ -69,7 +69,7 @@ pub fn init_configuration(
     // Lease registered buffer from the global pool
     var fixed_buffer_index: ?u16 = null;
     var buffer: []u8 = &.{};
-    if (loop_data.io.buffer_pool.lease()) |leased| {
+    if (loop_data.io.lease_buffer()) |leased| {
         fixed_buffer_index = leased.index;
         buffer = leased.slice;
     } else {

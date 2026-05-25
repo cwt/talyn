@@ -312,6 +312,11 @@ pub const RegisteredBufferPool = struct {
     pub const SlotSize = 65536; // 64KB
     pub const SlotCount = 64;   // 64 slots -> 4MB (fits under host MEMLOCK limits)
 
+    pub const LeaseResult = struct {
+        index: u16,
+        slice: []u8,
+    };
+
     buffer_memory: []u8 = &.{},
     iovecs: []std.posix.iovec = &.{},
     free_slots: []u16 = &.{},
@@ -345,7 +350,7 @@ pub const RegisteredBufferPool = struct {
         self.* = .{};
     }
 
-    pub fn lease(self: *RegisteredBufferPool) ?struct { index: u16, slice: []u8 } {
+    pub fn lease(self: *RegisteredBufferPool) ?LeaseResult {
         if (self.free_slots.len == 0 or self.free_count == 0) return null;
         self.free_count -= 1;
         const index = self.free_slots[self.free_count];
@@ -455,6 +460,10 @@ pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
 }
 
 pub fn register_fixed_file(self: *IO, fd: std.posix.fd_t) !u16 {
+    const mutex = &self.loop.mutex;
+    mutex.lock();
+    defer mutex.unlock();
+
     if (!self.fixed_files_enabled) return error.FixedFilesDisabled;
     if (self.ring.fd < 0) return error.LoopDeinitialized;
     const index = self.fixed_file_free.pop() orelse return error.NoFixedFileSlots;
@@ -464,12 +473,30 @@ pub fn register_fixed_file(self: *IO, fd: std.posix.fd_t) !u16 {
 }
 
 pub fn unregister_fixed_file(self: *IO, index: u16) void {
+    const mutex = &self.loop.mutex;
+    mutex.lock();
+    defer mutex.unlock();
+
     if (!self.fixed_files_enabled) return;
     self.fixed_file_table[index] = -1;
     if (self.ring.fd >= 0) {
         self.ring.register_files_update(index, self.fixed_file_table[index..index + 1]) catch {};
     }
     self.fixed_file_free.append(self.loop.allocator, index) catch {};
+}
+
+pub fn lease_buffer(self: *IO) ?RegisteredBufferPool.LeaseResult {
+    const mutex = &self.loop.mutex;
+    mutex.lock();
+    defer mutex.unlock();
+    return self.buffer_pool.lease();
+}
+
+pub fn release_buffer(self: *IO, index: u16) void {
+    const mutex = &self.loop.mutex;
+    mutex.lock();
+    defer mutex.unlock();
+    self.buffer_pool.release(index);
 }
 
 pub fn register_eventfd_callback(self: *IO) !void {
