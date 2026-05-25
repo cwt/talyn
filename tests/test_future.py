@@ -102,7 +102,10 @@ def test_cancelling_with_message() -> None:
 
 
 def test_initializing_with_wrong_loop() -> None:
-    loop = asyncio.new_event_loop()
+    class DummyLoop(asyncio.AbstractEventLoop):
+        def close(self):
+            pass
+    loop = DummyLoop()
     try:
         with pytest.raises(TypeError):
             Future(loop=loop)

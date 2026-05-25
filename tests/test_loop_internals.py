@@ -7,6 +7,21 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest, asyncio, socket, os
 
 
+@pytest.fixture(autouse=True)
+def disable_gc_under_free_threading():
+    import sys
+    is_ft = not sys._is_gil_enabled() if hasattr(sys, "_is_gil_enabled") else False
+    if is_ft:
+        import gc
+        gc.disable()
+        try:
+            yield
+        finally:
+            gc.enable()
+    else:
+        yield
+
+
 def test_pseudo_socket_basic() -> None:
     loop = Loop()
     try:
@@ -333,40 +348,96 @@ def test_subprocess_exec_cleanup_on_failure() -> None:
 
 def test_ssl_transport_wrapper_close_with_errors() -> None:
     import ssl
+    class DummyRaw:
+        def __init__(self):
+            self.close_called = 0
+        def close(self):
+            self.close_called += 1
+
+    class DummySSP:
+        def __init__(self):
+            self.f_called = 0
+            self._sslobj = None
+        def _f(self):
+            self.f_called += 1
+
+    class DummySSLObj:
+        def __init__(self, side_effect=None):
+            self.unwrap_called = 0
+            self.side_effect = side_effect
+        def unwrap(self):
+            self.unwrap_called += 1
+            if self.side_effect:
+                raise self.side_effect
+
     for exc_type in (ssl.SSLSyscallError, ssl.SSLWantReadError,
                      ssl.SSLWantWriteError, ssl.SSLError):
-        raw = MagicMock()
-        ssp = MagicMock()
+        raw = DummyRaw()
+        ssp = DummySSP()
         wrapper = _SSLTransportWrapper(ssp, raw, ssl)
-        sslobj = MagicMock()
-        sslobj.unwrap.side_effect = exc_type(1, "test")
+        sslobj = DummySSLObj(side_effect=exc_type(1, "test"))
         ssp._sslobj = sslobj
         wrapper.close()
-        raw.close.assert_called_once()
+        assert raw.close_called == 1
 
 
 def test_ssl_transport_wrapper_close_success() -> None:
-    raw = MagicMock()
-    ssp = MagicMock()
-    sslmod = MagicMock()
+    class DummyRaw:
+        def __init__(self):
+            self.close_called = 0
+        def close(self):
+            self.close_called += 1
+
+    class DummySSP:
+        def __init__(self):
+            self.f_called = 0
+            self._sslobj = None
+        def _f(self):
+            self.f_called += 1
+
+    class DummySSLObj:
+        def __init__(self):
+            self.unwrap_called = 0
+        def unwrap(self):
+            self.unwrap_called += 1
+
+    raw = DummyRaw()
+    ssp = DummySSP()
+    sslmod = object()
     wrapper = _SSLTransportWrapper(ssp, raw, sslmod)
-    sslobj = MagicMock()
+    sslobj = DummySSLObj()
     ssp._sslobj = sslobj
     wrapper.close()
-    sslobj.unwrap.assert_called_once()
-    raw.close.assert_called_once()
+    assert sslobj.unwrap_called == 1
+    assert raw.close_called == 1
 
 
 def test_ssl_transport_wrapper_write() -> None:
-    raw = MagicMock()
-    ssp = MagicMock()
-    sslmod = MagicMock()
+    class DummyRaw:
+        pass
+
+    class DummySSP:
+        def __init__(self):
+            self.f_called = 0
+            self._sslobj = None
+        def _f(self):
+            self.f_called += 1
+
+    class DummySSLObj:
+        def __init__(self):
+            self.write_called_with = None
+        def write(self, data):
+            self.write_called_with = data
+
+    raw = DummyRaw()
+    ssp = DummySSP()
+    sslmod = object()
     wrapper = _SSLTransportWrapper(ssp, raw, sslmod)
-    sslobj = MagicMock()
+    sslobj = DummySSLObj()
     ssp._sslobj = sslobj
     wrapper.write(b"data")
-    sslobj.write.assert_called_with(b"data")
-    ssp._f.assert_called_once()
+    assert sslobj.write_called_with == b"data"
+    assert ssp.f_called == 1
 
 
 def test_default_exception_handler_no_message() -> None:

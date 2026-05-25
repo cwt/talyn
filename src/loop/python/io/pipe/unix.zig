@@ -145,7 +145,7 @@ inline fn z_loop_create_unix_connection(
     }
 
     const fd_ret = std.os.linux.socket(std.posix.AF.UNIX, std.posix.SOCK.STREAM | std.posix.SOCK.NONBLOCK | std.posix.SOCK.CLOEXEC, 0);
-    if (std.posix.errno(fd_ret) != .SUCCESS) return error.SystemResources;
+    if (utils.getSyscallErrno(fd_ret) != .SUCCESS) return error.SystemResources;
     const fd: std.posix.fd_t = @intCast(fd_ret);
     ucd.socket_fd = fd;
     errdefer _ = std.os.linux.close(fd);
@@ -204,7 +204,7 @@ const fut = try Future.Python.Constructors.fast_new_future(self);
 const backlog: c_int = if (py_backlog) |b| @intCast(python_c.PyLong_AsInt(b)) else 100;
 
 const fd_ret = std.os.linux.socket(std.posix.AF.UNIX, std.posix.SOCK.STREAM | std.posix.SOCK.CLOEXEC, 0);
-if (std.posix.errno(fd_ret) != .SUCCESS) return error.SystemResources;
+if (utils.getSyscallErrno(fd_ret) != .SUCCESS) return error.SystemResources;
 const fd: std.posix.fd_t = @intCast(fd_ret);
 errdefer _ = std.os.linux.close(fd);
 
@@ -214,11 +214,11 @@ const addr = try utils.Address.fromPyAddr(py_path, std.posix.AF.UNIX);
 _ = std.os.linux.unlink(std.mem.span(@as([*:0]const u8, @ptrCast(&addr.un.path))));
 
 const bind_rc = std.os.linux.bind(fd, @ptrCast(&addr.any), addr.getOsSockLen());
-if (std.posix.errno(bind_rc) != .SUCCESS) return error.SystemResources;
+if (utils.getSyscallErrno(bind_rc) != .SUCCESS) return error.SystemResources;
 errdefer _ = std.os.linux.close(fd);
 
 const listen_rc = std.os.linux.listen(fd, @as(u32, @intCast(backlog)));
-if (std.posix.errno(listen_rc) != .SUCCESS) return error.SystemResources;
+if (utils.getSyscallErrno(listen_rc) != .SUCCESS) return error.SystemResources;
 
 
     // Create server transport

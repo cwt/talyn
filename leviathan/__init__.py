@@ -11,3 +11,9 @@ def install():
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
         asyncio.set_event_loop_policy(EventLoopPolicy())
+    
+    import sys
+    is_ft = not sys._is_gil_enabled() if hasattr(sys, "_is_gil_enabled") else False
+    if is_ft:
+        import gc
+        gc.disable()

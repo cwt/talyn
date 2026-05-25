@@ -9,7 +9,10 @@ import pytest, asyncio, io
 
 
 def test_checking_subclassing_and_arguments() -> None:
-    another_loop = asyncio.new_event_loop()
+    class DummyLoop(asyncio.AbstractEventLoop):
+        def close(self):
+            pass
+    another_loop = DummyLoop()
     loop = Loop()
     async def dummy():
         pass

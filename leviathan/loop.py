@@ -60,6 +60,8 @@ class _SSLTransportWrapper:
                 self._shutdown_timeout_handle = self._loop.call_later(
                     timeout, self._force_close
                 )
+                return
+            self._force_close()
             return
         except self._sslmod.SSLWantWriteError:
             self._ssp._f()
@@ -68,6 +70,8 @@ class _SSLTransportWrapper:
                 self._shutdown_timeout_handle = self._loop.call_later(
                     timeout, self._force_close
                 )
+                return
+            self._force_close()
             return
         except Exception:
             pass
@@ -212,6 +216,15 @@ class Loop(_Loop):
         else:
             try:
                 self._exception_handler(self, context)
+            except TypeError as e:
+                # Support both handler(loop, context) and handler(context) signatures
+                if "positional argument" in str(e) or "takes 1" in str(e):
+                    try:
+                        self._exception_handler(context)
+                    except Exception:
+                        self.default_exception_handler(context)
+                else:
+                    self.default_exception_handler(context)
             except Exception:
                 # Fallback or log if custom handler fails
                 self.default_exception_handler(context)

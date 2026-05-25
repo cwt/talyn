@@ -406,7 +406,7 @@ fn z_create_server_socket(server_data: *ServerSocketData) !void {
         else blk: {
             const flags: u32 = std.posix.SOCK.STREAM | std.posix.SOCK.NONBLOCK | std.posix.SOCK.CLOEXEC;
             const fd_ret = std.os.linux.socket(addr_with_port.any.family, flags, std.os.linux.IPPROTO.TCP);
-            if (std.posix.errno(fd_ret) != .SUCCESS) {
+            if (utils.getSyscallErrno(fd_ret) != .SUCCESS) {
                 last_err = error.SystemResources;
                 continue;
             }
@@ -426,13 +426,18 @@ fn z_create_server_socket(server_data: *ServerSocketData) !void {
             }
 
             const bind_rc = std.os.linux.bind(fd, @ptrCast(&addr_with_port.any), addr_with_port.getOsSockLen());
-            if (std.posix.errno(bind_rc) != .SUCCESS) {
-                last_err = error.SystemResources;
+            std.debug.print("Z_BIND FD: {}, RET: {}, ERR: {}\n", .{fd, bind_rc, utils.getSyscallErrno(bind_rc)});
+            if (utils.getSyscallErrno(bind_rc) != .SUCCESS) {
+                if (utils.getSyscallErrno(bind_rc) == .ADDRNOTAVAIL) {
+                    last_err = error.AddressNotAvailable;
+                } else {
+                    last_err = error.SystemResources;
+                }
                 continue;
             }
 
             const listen_rc = std.os.linux.listen(fd, @intCast(backlog));
-            if (std.posix.errno(listen_rc) != .SUCCESS) {
+            if (utils.getSyscallErrno(listen_rc) != .SUCCESS) {
                 last_err = error.SystemResources;
                 continue;
             }

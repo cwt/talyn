@@ -446,12 +446,12 @@ fn build_queries(
         std.posix.SOCK.DGRAM | std.posix.SOCK.CLOEXEC,
         std.os.linux.IPPROTO.UDP,
     );
-    if (std.posix.errno(socket_ret) != .SUCCESS) return error.SystemResources;
+    if (utils.getSyscallErrno(socket_ret) != .SUCCESS) return error.SystemResources;
     const socket_fd: std.posix.fd_t = @intCast(socket_ret);
     errdefer _ = std.os.linux.close(socket_fd);
 
     const connect_ret = std.os.linux.connect(socket_fd, @ptrCast(&server_address.any), server_address.getOsSockLen());
-    if (std.posix.errno(connect_ret) != .SUCCESS) return error.SystemResources;
+    if (utils.getSyscallErrno(connect_ret) != .SUCCESS) return error.SystemResources;
 
     const payload = try allocator.alloc(u8, (1 + @as(usize, @intFromBool(ipv6_supported))) * 512 * hostnames_array.len);
     errdefer allocator.free(payload);

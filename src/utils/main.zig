@@ -76,6 +76,9 @@ pub inline fn handle_zig_function_error(@"error": anyerror, return_value: anytyp
     switch (@"error") {
         error.PythonError => {},
         error.OutOfMemory => python_c.raise_python_error(python_c.PyExc_MemoryError.?, null),
+        error.AddressNotAvailable, error.SystemResources => {
+            python_c.raise_python_error(python_c.PyExc_OSError.?, @errorName(@"error"));
+        },
         error.SignalInterrupt => {
             // Silently raise this as a RuntimeError. It should be caught by the loop retry logic
             // but if it escapes to Python, we don't want to crash.
@@ -108,6 +111,14 @@ pub inline fn execute_zig_function(func: anytype, args: anytype) get_func_return
 
         return handle_zig_function_error(err, return_value);
     };
+}
+
+pub fn getSyscallErrno(rc: usize) std.posix.E {
+    const signed = @as(isize, @bitCast(rc));
+    if (signed > -4096 and signed < 0) {
+        return @enumFromInt(-signed);
+    }
+    return .SUCCESS;
 }
 
 test {

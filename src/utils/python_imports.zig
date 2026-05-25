@@ -18,6 +18,7 @@ pub var asyncio_datagram_protocol: PyObject = undefined;
 pub var asyncio_subprocess_protocol: PyObject = undefined;
 
 pub var asyncio_transport: PyObject = undefined;
+pub var asyncio_datagram_transport: PyObject = undefined;
 
 pub var invalid_state_exc: PyObject = undefined;
 pub var cancelled_error_exc: PyObject = undefined;
@@ -57,6 +58,8 @@ pub fn initialize_python_imports() !void {
         orelse return error.PythonError;
     
     asyncio_transport = python_c.PyObject_GetAttrString(asyncio_module, "Transport\x00")
+        orelse return error.PythonError;
+    asyncio_datagram_transport = python_c.PyObject_GetAttrString(asyncio_module, "DatagramTransport\x00")
         orelse return error.PythonError;
 
     set_running_loop = python_c.PyObject_GetAttrString(asyncio_module, "_set_running_loop\x00")
