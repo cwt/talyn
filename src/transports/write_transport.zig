@@ -171,7 +171,7 @@ fn submit_next_chunk(self: *WriteTransport) !void {
                 },
             },
             .fd = self.fd,
-            .fixed_file_index = null,
+            .fixed_file_index = self.fixed_file_index,
             .data = data_slice,
             .zero_copy = false,
         },
