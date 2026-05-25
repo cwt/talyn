@@ -20,7 +20,7 @@ Welcome to the Leviathan TODO and project tracking documentation. This serves as
 - [🔴 PRIORITY 17: SQPOLL Hang After ~16000 Total SQEs — ⛔ REVERTED (2026-05-17)](priorities/17-sqpoll-hang-after-16000-total-sqes.md)
 - [🔴 PRIORITY 18: Deep Audit — Lessons-Learned Scan (2026-05-17)](priorities/18-deep-audit-lessons-learned-scan-2026.md)
 - [🔴 PRIORITY 19: Remaining Pre-Existing Issues (2026-05-18)](priorities/19-remaining-pre-existing-issues-2026-05.md)
-- [🔴 PRIORITY 20: TLS/SSL Completion (2026-05-21)](priorities/20-tls-ssl-completion-2026-05.md)
+- [✅ PRIORITY 20: TLS/SSL Completion — DONE (2026-05-25)](priorities/20-tls-ssl-completion-2026-05.md)
 
 ## Knowledge Base
 

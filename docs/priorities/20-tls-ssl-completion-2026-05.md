@@ -1,11 +1,10 @@
 [⬅️ Back to Index](../todo.md)
 
-# 🔴 PRIORITY 20: TLS/SSL Completion (2026-05-21)
+# 🔵 PRIORITY 20: TLS/SSL Completion — ✅ DONE (2026-05-25)
 
 Make Leviathan's SSL wrapper fully compatible with the standard `test_streams`
 test suite. The core architecture — Python `ssl.MemoryBIO` over raw Zig transport —
-is sound and mirrors uvloop's proven approach. The remaining work is incremental
-bug fixes in the Python-layer protocol shim.
+is sound and mirrors uvloop's proven approach. The remaining work was completed successfully.
 
 ## Current Status
 
@@ -13,11 +12,11 @@ bug fixes in the Python-layer protocol shim.
 |-------|--------|
 | `tests/test_ssl.py` (7 tests) | ✅ ALL PASS |
 | `test.test_asyncio.test_streams.test_start_tls` | ✅ PASS |
-| `test.test_asyncio.test_streams.test_start_tls_buffered_data` | 🔴 HANGS |
-| `test.test_asyncio.test_streams.test_open_connection_no_loop_ssl` | 🔴 HANGS |
+| `test.test_asyncio.test_streams.test_start_tls_buffered_data` | ✅ PASS |
+| `test.test_asyncio.test_streams.test_open_connection_no_loop_ssl` | ✅ PASS |
 | Other std test modules (futures, transports, protocols, runners) | ✅ ALL PASS |
 
-**Root cause:** Every failing test involves TLS over the standard `asyncio`
+**Root cause solved:** Every failing test involves TLS over the standard `asyncio`
 high-level streams API (StreamReader/StreamWriter), which exercises edge
 cases our current implementation doesn't handle:
 - Buffered data from old protocol not fed to new SSL protocol during `start_tls`
