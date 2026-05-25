@@ -21,17 +21,14 @@ pub const DebugState = struct {
 pub const WarningHandler = *const fn (duration: f64, ?*python_c.PyObject, ?*anyopaque) void;
 
 pub const CallbackData = struct {
-    io_uring_res: i32 = 0,
-    io_uring_err: std.os.linux.E = .SUCCESS,
-
     user_data: ?*anyopaque,
-
-    cancelled: bool = false,
-    batch_dispatched: bool = false,
     module_ptr: ?*python_c.PyObject = null,
     callback_ptr: ?PyObject = null,
-
     traverse: ?*const fn (ptr: ?*anyopaque, visit: ?*anyopaque, arg: ?*anyopaque) c_int = null,
+    io_uring_res: i32 = 0,
+    io_uring_err: std.os.linux.E = .SUCCESS,
+    cancelled: bool = false,
+    batch_dispatched: bool = false,
 };
 
 pub const GenericCallback = *const fn (data: *const CallbackData) anyerror!void;
@@ -41,7 +38,6 @@ pub const Callback = struct {
     func: GenericCallback,
     cleanup: ?GenericCleanUpCallback,
     data: CallbackData,
-    executed: bool = false
 };
 
 pub fn RingBuffer(comptime N: usize) type {
@@ -496,6 +492,11 @@ fn test_exception_handler(err: anyerror, data: ?*anyopaque, _: ?*python_c.PyObje
 
     const executed_ptr: *usize = @alignCast(@ptrCast(data.?));
     executed_ptr.* += 1;
+}
+
+test "Callback and CallbackData compact sizes" {
+    try std.testing.expectEqual(@as(usize, 40), @sizeOf(CallbackData));
+    try std.testing.expectEqual(@as(usize, 56), @sizeOf(Callback));
 }
 
 test "RingBuffer basic properties" {
