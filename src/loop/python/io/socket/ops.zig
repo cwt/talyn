@@ -69,9 +69,7 @@ ad.future, future_data, exc);
     const py_client_fd = python_c.PyLong_FromLong(client_fd) orelse return error.PythonError;
     defer python_c.py_decref(py_client_fd);
     
-    const socket_module = utils.PythonImports.socket_module;
-    const socket_class = python_c.PyObject_GetAttrString(socket_module, "socket\x00") orelse return error.PythonError;
-    defer python_c.py_decref(socket_class);
+    const socket_class = utils.PythonImports.socket_class;
     
     const py_family = python_c.PyLong_FromLong(ad.family) orelse return error.PythonError;
     defer python_c.py_decref(py_family);
