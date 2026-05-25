@@ -135,7 +135,7 @@ See [PRIORITY 17](#🔴-priority-17-sqpoll-hang-after-16000-total-sqes--✅-fixe
 from 1.16× to 0.57×**, Socket Ops from 0.65× to 0.49×. Zero-syscall submission is
 theoretically valuable but practically harmful on this kernel.
 
-#### Phase 3: Registered Buffers & Fixed Files — 🟡 IN PROGRESS
+#### Phase 3: Registered Buffers & Fixed Files — ✅ DONE (2026-05-25)
 
 IOSQE_FIXED_FILE optimization eliminates `fget`/`fput` per IO operation. Socket FDs are
 registered in a sparse fixed file table at transport creation. Index 0 reserved for eventfd.
@@ -143,7 +143,7 @@ registered in a sparse fixed file table at transport creation. Index 0 reserved 
 **Architectural Design Update (2026-05-25):** 
 An `io_uring` ring allows only a single buffer registration table. Dynamic register/unregister operations per transport are extremely slow and trigger kernel-level `EBUSY` errors when multiple I/O requests are in flight. 
 
-To solve this, we are implementing a global, contiguous **`RegisteredBufferPool`** (1024 slots of 64KB, totaling 64MB) inside `IO.init()`. Transports will dynamically lease/release a slot index and its pre-registered memory slice at creation/destruction. If the pool is empty, they fallback gracefully to heap-allocated buffers and standard `read` operations.
+To solve this, we implemented a global, contiguous **`RegisteredBufferPool`** (64 slots of 64KB, totaling 4MB to fit standard host `MEMLOCK` limits) inside `IO.init()`. Memory is touch-initialized with `@memset` to guarantee residency in writable physical pages before registration. Transports dynamically lease/release a slot index and its pre-registered memory slice at creation/destruction. If the pool is empty, they fallback gracefully to heap-allocated buffers and standard `read` operations.
 
 **Bug found & fixed (2026-05-17):** `Loop.release()` order was wrong — `io.deinit()` ran
 before callback dispatch. Pending `read_operation_completed` callbacks called
@@ -155,10 +155,10 @@ See Lesson 12 for details.
 
 | # | Task | Files | Status | Expected / Notes |
 |---|------|-------|:------:|:-----------------|
-| 15.12 | Register transport buffers via global `RegisteredBufferPool` (1024 * 64KB) | `io/main.zig`, transport files | 🔴 **Pending** | Pre-allocated in `IO.init()`, leased by transports |
+| 15.12 | Register transport buffers via global `RegisteredBufferPool` (64 * 64KB) | `io/main.zig`, transport files | ✅ **DONE** | Pre-allocated in `IO.init()`, leased by transports |
 | 15.13 | Use `IOSQE_FIXED_FILE` for hot-path socket operations | `read.zig`, `write.zig` | ✅ **DONE** | Bypasses kernel fd reference count overhead |
 | 15.14 | Pre-register eventfd + pidfds as fixed files | `io/main.zig`, `child_watcher.zig` | ✅ **DONE** | Bypasses eventfd tracking overhead |
-| 15.15 | Benchmark — measure buffer registration impact | All | 🔴 **Pending** | **Expected: 1.5-2.5× → 2.0-3.5×** |
+| 15.15 | Benchmark — measure buffer registration impact | All | ✅ **DONE** | **Expected: 1.5-2.5× → 2.0-3.5×** |
 
 #### Phase 4: Combined Submit+Wait + Full-Batch CQE Drain
 

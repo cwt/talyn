@@ -42,6 +42,7 @@ blocking_task_id: usize = 0,
     initialized: bool = false,
     batch_dispatched: bool = false,
     fixed_file_index: ?u16 = null,
+    fixed_buffer_index: ?u16 = null,
 
 pub fn init(
     self: *ReadTransport, loop: *Loop, fd: std.posix.fd_t, callback: ReadCompletedCallback,
@@ -51,8 +52,21 @@ pub fn init(
 ) !void {
     const allocator = loop.allocator;
 
-    const buffer = try allocator.alloc(u8, MAX_READ);
-    errdefer allocator.free(buffer);
+    var fixed_buffer_index: ?u16 = null;
+    var buffer: []u8 = &.{};
+    if (loop.io.buffer_pool.lease()) |leased| {
+        fixed_buffer_index = leased.index;
+        buffer = leased.slice;
+    } else {
+        buffer = try allocator.alloc(u8, MAX_READ);
+    }
+    errdefer {
+        if (fixed_buffer_index) |idx| {
+            loop.io.buffer_pool.release(idx);
+        } else {
+            allocator.free(buffer);
+        }
+    }
 
     self.* = .{
         .loop = loop,
@@ -63,6 +77,7 @@ pub fn init(
 
         .read_completed_callback = callback,
         .buffer = buffer,
+        .fixed_buffer_index = fixed_buffer_index,
         .buffer_to_read = undefined,
 
         .zero_copying = zero_copying,
@@ -106,7 +121,11 @@ pub fn deinit(self: *ReadTransport) void {
     if (!self.initialized) return;
 
     const allocator = self.loop.allocator;
-    allocator.free(self.buffer);
+    if (self.fixed_buffer_index) |idx| {
+        self.loop.io.buffer_pool.release(idx);
+    } else {
+        allocator.free(self.buffer);
+    }
 
     self.initialized = false;
 }
@@ -176,6 +195,7 @@ fn read_operation_completed(data: *const CallbackManager.CallbackData) !void {
 
 pub inline fn perform(self: *ReadTransport, buffer: ?[]u8) !void {
     const buffer_to_read = buffer orelse self.buffer;
+    const fixed_buffer_idx = if (buffer == null) self.fixed_buffer_index else null;
 
     self.blocking_task_id = try self.loop.io.queue(
         .{
@@ -191,6 +211,7 @@ pub inline fn perform(self: *ReadTransport, buffer: ?[]u8) !void {
                 },
                 .fd = self.fd,
                 .fixed_file_index = self.fixed_file_index,
+                .fixed_buffer_index = fixed_buffer_idx,
                 .data = .{
                     .buffer = buffer_to_read
                 },

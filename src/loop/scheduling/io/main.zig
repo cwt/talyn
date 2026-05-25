@@ -308,6 +308,61 @@ pub const BlockingOperationData = union(BlockingOperation) {
     SocketAccept: Socket.AcceptData,
 };
 
+pub const RegisteredBufferPool = struct {
+    pub const SlotSize = 65536; // 64KB
+    pub const SlotCount = 64;   // 64 slots -> 4MB (fits under host MEMLOCK limits)
+
+    buffer_memory: []u8 = &.{},
+    iovecs: []std.posix.iovec = &.{},
+    free_slots: []u16 = &.{},
+    free_count: usize = 0,
+
+    pub fn init(self: *RegisteredBufferPool, allocator: std.mem.Allocator) !void {
+        self.buffer_memory = try allocator.alloc(u8, SlotSize * SlotCount);
+        errdefer allocator.free(self.buffer_memory);
+        @memset(self.buffer_memory, 0);
+
+        self.iovecs = try allocator.alloc(std.posix.iovec, SlotCount);
+        errdefer allocator.free(self.iovecs);
+
+        self.free_slots = try allocator.alloc(u16, SlotCount);
+        errdefer allocator.free(self.free_slots);
+
+        for (0..SlotCount) |i| {
+            self.iovecs[i] = .{
+                .base = self.buffer_memory[i * SlotSize .. (i + 1) * SlotSize].ptr,
+                .len = SlotSize,
+            };
+            self.free_slots[i] = @intCast(i);
+        }
+        self.free_count = SlotCount;
+    }
+
+    pub fn deinit(self: *RegisteredBufferPool, allocator: std.mem.Allocator) void {
+        if (self.buffer_memory.len > 0) allocator.free(self.buffer_memory);
+        if (self.iovecs.len > 0) allocator.free(self.iovecs);
+        if (self.free_slots.len > 0) allocator.free(self.free_slots);
+        self.* = .{};
+    }
+
+    pub fn lease(self: *RegisteredBufferPool) ?struct { index: u16, slice: []u8 } {
+        if (self.free_slots.len == 0 or self.free_count == 0) return null;
+        self.free_count -= 1;
+        const index = self.free_slots[self.free_count];
+        const offset = @as(usize, index) * SlotSize;
+        return .{
+            .index = index,
+            .slice = self.buffer_memory[offset .. offset + SlotSize],
+        };
+    }
+
+    pub fn release(self: *RegisteredBufferPool, index: u16) void {
+        if (self.free_slots.len == 0) return;
+        self.free_slots[self.free_count] = index;
+        self.free_count += 1;
+    }
+};
+
 loop: *Loop = undefined,
 
 busy_sets: BlockingTasksSetLinkedList = undefined,
@@ -327,6 +382,8 @@ blocking_ready_tasks: []std.os.linux.io_uring_cqe = &.{},
 fixed_file_table: []std.posix.fd_t = &.{},
 fixed_file_free: std.ArrayListUnmanaged(u16) = .{ .items = &.{}, .capacity = 0 },
 fixed_files_enabled: bool = false,
+
+buffer_pool: RegisteredBufferPool = .{},
 
 pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
     self.busy_sets = BlockingTasksSetLinkedList.init(allocator);
@@ -386,6 +443,15 @@ pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
     try self.ring.register_files_update(0, self.fixed_file_table[0..1]);
 
     self.fixed_files_enabled = true;
+
+    try self.buffer_pool.init(allocator);
+    errdefer self.buffer_pool.deinit(allocator);
+
+    self.ring.register_buffers(self.buffer_pool.iovecs) catch |err| {
+        // Graceful fallback if buffer registration fails
+        self.buffer_pool.deinit(allocator);
+        std.debug.print("io_uring buffer registration failed: {}\n", .{err});
+    };
 }
 
 pub fn register_fixed_file(self: *IO, fd: std.posix.fd_t) !u16 {
@@ -482,6 +548,9 @@ pub fn deinit(self: *IO) void {
         set.deinit();
     }
     
+    self.ring.unregister_buffers() catch {};
+    self.buffer_pool.deinit(self.busy_sets.allocator);
+
     self.ring.deinit();
     self.busy_sets.allocator.free(self.blocking_ready_tasks);
     self.fixed_file_free.deinit(self.busy_sets.allocator);

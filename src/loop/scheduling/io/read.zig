@@ -6,6 +6,7 @@ const IO = @import("main.zig");
 pub const PerformData = struct {
     fd: std.posix.fd_t,
     fixed_file_index: ?u16 = null,
+    fixed_buffer_index: ?u16 = null,
     callback: CallbackManager.Callback,
     data: std.os.linux.IoUring.ReadBuffer,
     offset: usize = 0,
@@ -72,6 +73,12 @@ pub fn perform(ring: *std.os.linux.IoUring, set: *IO.BlockingTasksSet, data: Per
     const ff_flag: u8 = if (data.fixed_file_index != null) @as(u8, std.os.linux.IOSQE_FIXED_FILE) else 0;
 
     const sqe = blk: {
+        if (data.fixed_buffer_index) |buf_idx| {
+            const iovec_ptr = &set.loop.io.buffer_pool.iovecs[buf_idx];
+            const sqe = try ring.read_fixed(@intCast(@intFromPtr(data_ptr)), fd_arg, iovec_ptr, data.offset, buf_idx);
+            sqe.flags |= ff_flag;
+            break :blk sqe;
+        }
         if (data.zero_copy) {
             switch (data.data) {
                 .buffer_selection => return error.NotImplemented,
