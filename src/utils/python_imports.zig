@@ -31,6 +31,12 @@ pub var register_task_func: PyObject = undefined;
 pub var get_asyncgen_hooks: PyObject = undefined;
 pub var set_asyncgen_hooks: PyObject = undefined;
 
+pub var py_af_inet: PyObject = undefined;
+pub var py_af_inet6: PyObject = undefined;
+pub var py_af_unix: PyObject = undefined;
+pub var py_sock_stream: PyObject = undefined;
+pub var py_sock_dgram: PyObject = undefined;
+
 pub fn initialize_python_imports() !void {
     asyncio_module = python_c.PyImport_ImportModule("asyncio\x00") orelse return error.PythonError;
     sys_module = python_c.PyImport_ImportModule("sys\x00") orelse return error.PythonError;
@@ -76,6 +82,11 @@ pub fn initialize_python_imports() !void {
     set_asyncgen_hooks = python_c.PyObject_GetAttrString(sys_module, "set_asyncgen_hooks\x00")
         orelse return error.PythonError;
 
+    py_af_inet = python_c.PyLong_FromLong(std.posix.AF.INET) orelse return error.PythonError;
+    py_af_inet6 = python_c.PyLong_FromLong(std.posix.AF.INET6) orelse return error.PythonError;
+    py_af_unix = python_c.PyLong_FromLong(std.posix.AF.UNIX) orelse return error.PythonError;
+    py_sock_stream = python_c.PyLong_FromLong(std.posix.SOCK.STREAM) orelse return error.PythonError;
+    py_sock_dgram = python_c.PyLong_FromLong(std.posix.SOCK.DGRAM) orelse return error.PythonError;
 }
 
 pub fn release_python_imports() void {
