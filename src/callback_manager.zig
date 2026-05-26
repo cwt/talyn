@@ -364,7 +364,7 @@ pub fn execute_ring_buffer(
         callbacks_executed += 1;
 
         yield_counter += 1;
-        if (!builtin.is_test and yield_counter == 64) {
+        if (!builtin.is_test and yield_counter == 256) {
             yield_counter = 0;
             const ts = python_c.PyEval_SaveThread();
             _ = python_c.PyEval_RestoreThread(ts);
@@ -453,7 +453,7 @@ pub fn execute_dynamic_ring_buffer(
         callbacks_executed += 1;
 
         yield_counter += 1;
-        if (!builtin.is_test and yield_counter == 64) {
+        if (!builtin.is_test and yield_counter == 256) {
             yield_counter = 0;
             const ts = python_c.PyEval_SaveThread();
             _ = python_c.PyEval_RestoreThread(ts);
