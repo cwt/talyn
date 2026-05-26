@@ -160,13 +160,13 @@ See Lesson 12 for details.
 | 15.14 | Pre-register eventfd + pidfds as fixed files | `io/main.zig`, `child_watcher.zig` | ✅ **DONE** | Bypasses eventfd tracking overhead |
 | 15.15 | Benchmark — measure buffer registration impact | All | ✅ **DONE** | **Expected: 1.5-2.5× → 2.0-3.5×** |
 
-#### Phase 4: Combined Submit+Wait + Full-Batch CQE Drain
+#### Phase 4: Combined Submit+Wait + Full-Batch CQE Drain — ✅ DONE (2026-05-26)
 
 | # | Task | Files | Expected |
 |---|------|-------|:--------:|
-| 15.16 | Replace `flush_pending_sqes()` + `copy_cqes()` with combined `io_uring_enter(to_submit, wait_nr, GETEVENTS)` — one syscall instead of two | `runner.zig` | |
-| 15.17 | Drain ALL available CQEs per batch (not just batch_size) — `IORING_ENTER_GETEVENTS` with `wait_nr = 0` after first wake | `runner.zig` | |
-| 15.18 | Benchmark | All | |
+| 15.16 | Replace `flush_pending_sqes()` + `copy_cqes()` with combined `io_uring_enter(to_submit, wait_nr, GETEVENTS)` — one syscall instead of two | `runner.zig` | ✅ |
+| 15.17 | Drain ALL available CQEs per batch (not just batch_size) — `IORING_ENTER_GETEVENTS` with `wait_nr = 0` after first wake | `runner.zig` | ✅ |
+| 15.18 | Benchmark | All | ✅ |
 
 ### Expected Impact (M=65536)
 

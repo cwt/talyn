@@ -607,6 +607,8 @@ pub fn get_blocking_tasks_set(self: *IO) !*BlockingTasksSet {
 }
 
 pub fn flush_pending_sqes(self: *IO) !u32 {
+    const ready = self.ring.sq_ready();
+    if (ready == 0) return 0;
     return try submit_guaranteed(&self.ring);
 }
 

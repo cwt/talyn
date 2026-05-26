@@ -110,8 +110,8 @@ When done callbacks are registered on a `Future` (e.g., during `MagicMock` calls
 *   **The Fix:** Accept a mutable pointer `*CallbacksSetData` in `release_callbacks_queue`, check `if (callback.executed) continue;`, and mark them `executed = true` immediately after freeing callback references (ensuring idempotent releases). Always call `release_callbacks_queue` in `Future.release` regardless of status.
 *   **The Lesson:** Callback release logic must be completely idempotent and track execution state to allow multiple passes. Unexecuted callback references must always be released during resource deallocation.
 
----
-
-
-
+---### 19. Syscall Elimination / Short-Circuit Empty-SQE (2026-05-26)
+In an event loop runner using `io_uring`, the default behavior of flushing pending SQEs (`flush_pending_sqes`) may issue a system call even when the submission queue (SQ) has no pending events ready.
+*   **The Bug:** In high-throughput, non-blocking loops, checking `sq_ready()` before calling `io_uring_submit` / `io_uring_enter` allows immediate short-circuiting. If no new events have been queued, bypassing the system call achieves exactly **0 syscalls per tick** when processing in-memory task queues.
+*   **The Lesson:** Always check `ring.sq_ready()` to short-circuit flushes. Under heavy in-memory workloads, this yields immense CPU saving and maximizes overall execution throughput by minimizing system call overhead.
 

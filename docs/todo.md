@@ -15,7 +15,7 @@ Welcome to the Leviathan TODO and project tracking documentation. This serves as
 - [PRIORITY 12: Callback Struct Slimming (2026-05-14) ✅ DONE](priorities/12-callback-struct-slimming-2026-05-14.md)
 - [🔴 PRIORITY 13: Subprocess — pidfd-Based Exit Notification — ✅ DONE (2026-05-15)](priorities/13-subprocess-pidfd-based-exit-notification-2026.md)
 - [🔴 PRIORITY 14: Remove IOSQE_ASYNC from Data Ops — ✅ DONE (2026-05-15)](priorities/14-remove-iosqe-async-from-data-ops.md)
-- [🔴 PRIORITY 15: Batch Dispatch Engine + Full io_uring — Architectural Redesign](priorities/15-batch-dispatch-engine-full-io-uring.md)
+- [🔴 PRIORITY 15: Batch Dispatch Engine + Full io_uring — Architectural Redesign — ✅ DONE (2026-05-26)](priorities/15-batch-dispatch-engine-full-io-uring.md)
 - [🔴 PRIORITY 16: Socket Ops Stability Investigation — ⚠️ WON'T FIX (2026-05-15)](priorities/16-socket-ops-stability-investigation-won-t.md)
 - [🔴 PRIORITY 17: SQPOLL Hang After ~16000 Total SQEs — ⛔ REVERTED (2026-05-17)](priorities/17-sqpoll-hang-after-16000-total-sqes.md)
 - [🔴 PRIORITY 18: Deep Audit — Lessons-Learned Scan (2026-05-17)](priorities/18-deep-audit-lessons-learned-scan-2026.md)

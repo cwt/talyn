@@ -257,4 +257,25 @@ test "loop hooks" {
     try std.testing.expectEqual(@as(usize, 0), loop.check_hooks.len);
 }
 
+test "syscall optimization" {
+    const allocator = std.testing.allocator;
+    const loop = try allocator.create(Loop);
+    defer allocator.destroy(loop);
+
+    try loop.init(allocator, 1024);
+    defer loop.release();
+
+    // Verify initially the SQ queue has 2 infrastructure SQEs (eventfd & signalfd)
+    try std.testing.expectEqual(@as(u32, 2), loop.io.ring.sq_ready());
+    
+    // First flush should submit both and return 2
+    const submitted1 = try loop.io.flush_pending_sqes();
+    try std.testing.expectEqual(@as(u32, 2), submitted1);
+
+    // Verify the SQ queue is now empty and subsequent flushes short-circuit to 0
+    try std.testing.expectEqual(@as(u32, 0), loop.io.ring.sq_ready());
+    const submitted2 = try loop.io.flush_pending_sqes();
+    try std.testing.expectEqual(@as(u32, 0), submitted2);
+}
+
 const Loop = @This();
