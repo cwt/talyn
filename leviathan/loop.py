@@ -395,6 +395,8 @@ class Loop(_Loop):
     def run_in_executor(
         self, executor: Any, func: Callable[[Unpack[_Ts]], _T], *args: Unpack[_Ts]
     ) -> asyncio.Future[_T]:
+        if self.is_closed():
+            raise RuntimeError("Event loop is closed")
         if executor is None and (executor := self._default_executor) is None:
             if self._shutdown_executor_called:
                 raise RuntimeError("Default executor shut down")

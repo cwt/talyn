@@ -138,7 +138,7 @@ fn cleanup_resources_callback(ptr: ?*anyopaque) void {
     self.cancelling = false;
 }
 
-fn read_operation_completed(data: *const CallbackManager.CallbackData) !void {
+pub fn read_operation_completed(data: *const CallbackManager.CallbackData) !void {
     if (data.cancelled) {
         cleanup_resources_callback(data.user_data);
         return;

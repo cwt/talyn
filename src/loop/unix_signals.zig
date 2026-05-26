@@ -208,7 +208,7 @@ pub fn deinit(self: *UnixSignals) void {
 
         _ = c.signal(@as(c_int, @intCast(sig)), c.SIG_DFL);
         value.data.cancelled = true;
-        Loop.Scheduling.Soon.dispatch_guaranteed(loop, &value) catch {};
+        Loop.Scheduling.Soon.dispatch_guaranteed_nonthreadsafe(loop, &value) catch {};
     }
 
     std.posix.sigprocmask(std.os.linux.SIG.UNBLOCK, &mask, null);

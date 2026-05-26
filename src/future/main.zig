@@ -34,8 +34,8 @@ pub fn init(self: *Future, loop: *Loop) !void {
 }
 
 pub fn release(self: *Future) void {
+    Callback.release_callbacks_queue(&self.callbacks_queue);
     if (self.status == .pending) {
-        Callback.release_callbacks_queue(&self.callbacks_queue);
         self.loop.reserved_slots -= 1;
     }
     self.released = true;

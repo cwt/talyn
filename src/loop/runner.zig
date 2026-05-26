@@ -172,7 +172,7 @@ fn fetch_completed_tasks(
                 // P15 Phase 2: Batch read transport completions
                 // Uses raw Zig pointers (no PyObject*), so GC never touches the batch.
                 // Dispatch creates PyBytes on the fly from the raw buffer pointer.
-                if (v.data.module_ptr != null and err == .SUCCESS and cqe.res > 0) {
+                if (v.func == &ReadTransport.read_operation_completed and err == .SUCCESS and cqe.res > 0) {
                     const read_transport: *ReadTransport = @alignCast(@ptrCast(v.data.user_data.?));
                     const bytes_read: usize = @intCast(cqe.res);
 

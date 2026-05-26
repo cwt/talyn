@@ -198,7 +198,7 @@ pub const BlockingTasksSet = struct {
             switch (task.data) {
                 .callback => |*data| {
                     data.data.cancelled = true;
-                    try Loop.Scheduling.Soon.dispatch_guaranteed(loop, data);
+                    try Loop.Scheduling.Soon.dispatch_guaranteed_nonthreadsafe(loop, data);
                 },
                 .none => {}
             }

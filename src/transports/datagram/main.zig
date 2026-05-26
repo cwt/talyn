@@ -229,7 +229,7 @@ const datagram_spec = python_c.PyType_Spec{
     .name = "leviathan.DatagramTransport\x00",
     .basicsize = @sizeOf(DatagramTransportObject),
     .itemsize = 0,
-    .flags = python_c.Py_TPFLAGS_DEFAULT | python_c.Py_TPFLAGS_BASETYPE,
+    .flags = python_c.Py_TPFLAGS_DEFAULT | python_c.Py_TPFLAGS_BASETYPE | python_c.Py_TPFLAGS_HAVE_GC,
     .slots = @constCast(DatagramSlots.ptr),
 };
 

@@ -125,7 +125,36 @@ pub fn task_traverse(self: ?*PythonTaskObject, visit: python_c.visitproc, arg: ?
     const vret = Future.Python.Constructors.future_traverse(&instance.fut, visit, arg);
     if (vret != 0) return vret;
 
-    return python_c.py_visit(instance, visit, arg);
+    if (instance.py_context) |o| {
+        const vret_c = visit.?(o, arg);
+        if (vret_c != 0) return vret_c;
+    }
+    if (instance.name) |o| {
+        const vret_n = visit.?(o, arg);
+        if (vret_n != 0) return vret_n;
+    }
+    if (instance.coro) |o| {
+        const vret_coro = visit.?(o, arg);
+        if (vret_coro != 0) return vret_coro;
+    }
+    if (instance.wake_up_task_callback) |o| {
+        const vret_w = visit.?(o, arg);
+        if (vret_w != 0) return vret_w;
+    }
+    if (instance.fut_waiter) |o| {
+        const vret_f = visit.?(o, arg);
+        if (vret_f != 0) return vret_f;
+    }
+    if (instance.exception) |o| {
+        const vret_e = visit.?(o, arg);
+        if (vret_e != 0) return vret_e;
+    }
+    if (instance.weakref_list) |o| {
+        const vret_weak = visit.?(o, arg);
+        if (vret_weak != 0) return vret_weak;
+    }
+
+    return 0;
 }
 
 pub fn task_dealloc(self: ?*PythonTaskObject) callconv(.c) void {

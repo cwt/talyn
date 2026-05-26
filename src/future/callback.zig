@@ -181,8 +181,10 @@ pub fn traverse_callbacks_queue(queue: *const CallbacksSetData, visit: python_c.
     return 0;
 }
 
-pub fn release_callbacks_queue(queue: *const CallbacksSetData) void {
-    for (queue.items) |callback| {
+pub fn release_callbacks_queue(queue: *CallbacksSetData) void {
+    for (queue.items) |*callback| {
+        if (callback.executed) continue;
+        callback.executed = true;
         switch (callback.data) {
             .PythonGeneric => |data| {
                 python_c.py_decref(data.callback);

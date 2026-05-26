@@ -99,5 +99,19 @@ uvloop's SSL architecture was analyzed for TLS feature design. uvloop performs *
 
 ---
 
+### 17. Recursive SpinMutex Deadlock at Loop Exit (2026-05-26)
+During Python interpreter finalization, garbage collection or explicit teardown calls `loop_clear()` to release event loop resources. If the clearing thread already holds the non-recursive `loop.mutex` lock, invoking generic queue-dispatch APIs like `Soon.dispatch_guaranteed` will attempt to acquire the lock again, creating an infinite deadlock spin.
+*   **The Bug:** During `loop.release()`, deinitializers for components like `unix_signals` and `BlockingTasksSet` popped cancelled or pending callbacks and called `Soon.dispatch_guaranteed(loop, &value)`. Since the clearing thread already held the `loop.mutex` from `loop_clear()`, this resulted in an infinite self-deadlock spin inside `atomic.Mutex.tryLock` at test exit.
+*   **The Lesson:** Deinitializers and cleanup handlers running during loop teardown must assume the loop's mutex is already held or use non-threadsafe scheduling variants (like `Soon.dispatch_guaranteed_nonthreadsafe`). Never attempt to lock a non-recursive mutex recursively during finalization.
+
+### 18. Python Reference Leaks in Future Done Callbacks (2026-05-26)
+When done callbacks are registered on a `Future` (e.g., during `MagicMock` calls), the callback and context objects are wrapped in `*PythonHandleObject` via `Handle.fast_new_handle`. If a callback is cancelled or the future status is not `.pending` at release, reference counts are leaked.
+*   **The Bug:** In `src/future/callback.zig`, cancelled callbacks in `callbacks_queue` were skipped during execution but never decref'd because `release_callbacks_queue` was only called if `self.status == .pending`. Furthermore, `release_callbacks_queue` had a risk of double-decrefs if called on already-executed callbacks.
+*   **The Fix:** Accept a mutable pointer `*CallbacksSetData` in `release_callbacks_queue`, check `if (callback.executed) continue;`, and mark them `executed = true` immediately after freeing callback references (ensuring idempotent releases). Always call `release_callbacks_queue` in `Future.release` regardless of status.
+*   **The Lesson:** Callback release logic must be completely idempotent and track execution state to allow multiple passes. Unexecuted callback references must always be released during resource deallocation.
+
+---
+
+
 
 
