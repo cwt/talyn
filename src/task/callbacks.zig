@@ -1,6 +1,18 @@
 const python_c = @import("python_c");
 const PyObject = *python_c.PyObject;
 
+extern fn leviathan_task_step_trampoline(
+    enter_task_func: PyObject,
+    leave_task_func: PyObject,
+    loop: PyObject,
+    task: PyObject,
+    coro: PyObject,
+    context: PyObject,
+    send_val: PyObject,
+    send_result_out: *c_int,
+    coro_ret_out: *?PyObject
+) ?PyObject;
+
 const utils = @import("utils");
 
 const CallbackManager = @import("callback_manager");
@@ -510,32 +522,29 @@ fn _execute_task_send(task: *Task.PythonTaskObject) !void {
         return;
     }
 
-    const enter_task_args: [2]PyObject = .{
-        @ptrCast(py_loop), @ptrCast(task)
-    };
-
     const py_none = python_c.get_py_none_without_incref();
-
-    const enter_ret: PyObject = python_c.PyObject_Vectorcall(
-        utils.PythonImports.enter_task_func, &enter_task_args, enter_task_args.len, null
-    ) orelse return error.PythonError;
-    python_c.py_decref(enter_ret);
-
-    const context = task.py_context.?;
-    if (python_c.PyContext_Enter(context) < 0) {
-        return error.PythonError;
-    }
-
+    var send_result: c_int = 0;
     var coro_ret: ?PyObject = null;
     defer python_c.py_xdecref(coro_ret);
 
-    const gen_ret: python_c.PySendResult = python_c.PyIter_Send(task.coro.?, py_none, &coro_ret);
+    const trampoline_ret = leviathan_task_step_trampoline(
+        utils.PythonImports.enter_task_func,
+        utils.PythonImports.leave_task_func,
+        @ptrCast(py_loop),
+        @ptrCast(task),
+        task.coro.?,
+        task.py_context.?,
+        py_none,
+        &send_result,
+        &coro_ret
+    );
 
-    if (python_c.PyContext_Exit(context) < 0) {
+    if (trampoline_ret == null) {
         return error.PythonError;
     }
 
     var exception: ?PyObject = null;
+    const gen_ret: python_c.PySendResult = @intCast(send_result);
     check_gen_ret(
         gen_ret,
         task,
@@ -547,12 +556,6 @@ fn _execute_task_send(task: *Task.PythonTaskObject) !void {
 
         exception = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
     };
-
-    const leave_ret = python_c.PyObject_Vectorcall(
-        utils.PythonImports.leave_task_func, &enter_task_args, enter_task_args.len, null
-    ) orelse return error.PythonError;
-    python_c.py_decref(leave_ret);
-
 
     if (exception) |exc| {
         python_c.PyErr_SetRaisedException(exc);
