@@ -132,6 +132,18 @@ fn handle_clear(self: ?*PythonHandleObject) callconv(.c) c_int {
     const instance = self.?;
     python_c.py_decref_and_set_null(&instance.contextvars);
     python_c.py_decref_and_set_null(&instance.py_callback);
+
+    const args_len = instance.py_callback_len;
+    if (instance.py_callback_args) |args_ptr| {
+        // Nullify fields first to prevent any potential re-entry or double-free during decref/free
+        instance.py_callback_args = null;
+        instance.py_callback_len = 0;
+
+        const allocator = utils.gpa.allocator();
+        const args = args_ptr[0..args_len];
+        for (args) |arg| python_c.py_decref(arg);
+        allocator.free(args);
+    }
     return 0;
 }
 
@@ -139,18 +151,7 @@ fn handle_dealloc(self: ?*PythonHandleObject) callconv(.c) void {
     const instance = self.?;
     python_c.PyObject_GC_UnTrack(instance);
 
-    python_c.py_decref_and_set_null(&instance.contextvars);
-    python_c.py_decref_and_set_null(&instance.py_callback);
-
-    const args_len = instance.py_callback_len;
-    if (instance.py_callback_args) |args_ptr| {
-        const allocator = instance.loop_data.?.allocator;
-        const args = args_ptr[0..args_len];
-
-        for (args) |arg| python_c.py_decref(arg);
-
-        allocator.free(args);
-    }
+    _ = handle_clear(instance);
 
     const @"type" = python_c.get_type(@ptrCast(instance)) orelse return;
     @"type".tp_free.?(@ptrCast(instance));

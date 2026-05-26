@@ -251,7 +251,21 @@ pub fn stream_new(
 }
  
 pub fn stream_traverse(self: ?*StreamTransportObject, visit: python_c.visitproc, arg: ?*anyopaque) callconv(.c) c_int {
-    return python_c.py_visit(self.?, visit, arg);
+    const instance = self.?;
+
+    // Visit type object (required for heap types)
+    if (python_c.Py_TYPE(@ptrCast(instance))) |t| {
+        const vret_t = visit.?(@ptrCast(t), arg);
+        if (vret_t != 0) return vret_t;
+    }
+
+    // Visit managed dictionary (for dynamically added attributes)
+    if (python_c.has_managed_dict(@ptrCast(instance))) {
+        const vret_dict = python_c.PyObject_VisitManagedDict(@ptrCast(instance), visit, arg);
+        if (vret_dict != 0) return vret_dict;
+    }
+
+    return python_c.py_visit(instance, visit, arg);
 }
 
 pub fn stream_clear(self: ?*StreamTransportObject) callconv(.c) c_int {
@@ -272,6 +286,9 @@ pub fn stream_clear(self: ?*StreamTransportObject) callconv(.c) c_int {
     }
 
     python_c.deinitialize_object_fields(py_transport, &.{"protocol_buffer"});
+    if (python_c.has_managed_dict(@ptrCast(py_transport))) {
+        python_c.PyObject_ClearManagedDict(@ptrCast(py_transport));
+    }
     py_transport.protocol_type = undefined;
 
     const fd = py_transport.fd;

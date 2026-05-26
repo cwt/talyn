@@ -79,6 +79,7 @@ inline fn z_loop_add_signal_handler(
             .user_data = py_handle,
             .module_ptr = null,
             .callback_ptr = py_callback,
+            .traverse = &python_c.traverse_pyobject_callback,
         }
     });
 

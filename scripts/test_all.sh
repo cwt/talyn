@@ -68,7 +68,7 @@ run_tests() {
     local py="$1" label="$2" cmd=""
     printf "${YELLOW}[%s]${NC} Running tests...\n" "$label"
     if has_timeout; then
-        cmd="$(get_timeout_cmd) -k 5 120 $py"
+        cmd="$(get_timeout_cmd) -k 5 600 $py"
     else
         cmd="$py"
     fi

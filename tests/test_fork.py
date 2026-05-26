@@ -45,5 +45,8 @@ def test_fork_safety():
             await asyncio.sleep(0.1)
             loop.stop()
 
-    loop.run_until_complete(main())
-    loop.close()
+    try:
+        loop.run_until_complete(main())
+    finally:
+        loop.close()
+        asyncio.set_event_loop(None)

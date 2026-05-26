@@ -31,6 +31,7 @@ pub const Py_TPFLAGS_HAVE_GC = _c.Py_TPFLAGS_HAVE_GC;
 pub const Py_TPFLAGS_LONG_SUBCLASS = _c.Py_TPFLAGS_LONG_SUBCLASS;
 pub const Py_TPFLAGS_UNICODE_SUBCLASS = _c.Py_TPFLAGS_UNICODE_SUBCLASS;
 pub const Py_TPFLAGS_BASE_EXC_SUBCLASS = _c.Py_TPFLAGS_BASE_EXC_SUBCLASS;
+pub const Py_TPFLAGS_MANAGED_DICT = 16;
 
 pub const Py_READONLY = _c.Py_READONLY;
 pub const Py_T_BOOL = _c.Py_T_BOOL;
@@ -303,6 +304,11 @@ pub inline fn exception_check(obj: *Python.PyObject) bool {
     const t = get_type(obj) orelse return false;
     return type_hasfeature(t, Python.Py_TPFLAGS_BASE_EXC_SUBCLASS);
 }
+
+pub inline fn has_managed_dict(obj: *Python.PyObject) bool {
+    const t = get_type(obj) orelse return false;
+    return type_hasfeature(t, Py_TPFLAGS_MANAGED_DICT);
+}
 // -------------------------------------------------
 
 pub inline fn get_py_true() *Python.PyObject {
@@ -426,6 +432,15 @@ pub fn py_visit(object: anytype, visit: Python.visitproc, arg: ?*anyopaque) c_in
         }
     }
 
+    return 0;
+}
+
+pub fn traverse_pyobject_callback(ptr: ?*anyopaque, visit_ptr: ?*anyopaque, arg: ?*anyopaque) c_int {
+    const obj: ?*PyObject = @ptrCast(@alignCast(ptr));
+    if (obj) |o| {
+        const visit: visitproc = @ptrCast(visit_ptr.?);
+        return visit.?(o, arg);
+    }
     return 0;
 }
 
@@ -606,6 +621,8 @@ pub extern fn PySet_Discard(set: ?*PyObject, key: ?*PyObject) c_int;
 pub extern fn PyDict_SetItem(dict: ?*PyObject, key: ?*PyObject, val: ?*PyObject) c_int;
 pub extern fn PyDict_DelItem(dict: ?*PyObject, key: ?*PyObject) c_int;
 
-pub extern fn PyLong_FromSize_t(size: usize) ?*PyObject;
+pub extern fn PyObject_VisitManagedDict(obj: ?*PyObject, visit: visitproc, arg: ?*anyopaque) c_int;
+pub extern fn PyObject_ClearManagedDict(obj: ?*PyObject) void;
 
 const Python = @This();
+

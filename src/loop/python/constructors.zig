@@ -64,11 +64,15 @@ pub fn loop_clear(self: ?*LoopObject) callconv(.c) c_int {
     const py_loop = self.?;
     const loop_data = utils.get_data_ptr(Loop, py_loop);
     if (loop_data.initialized) {
+        const mutex = &loop_data.mutex;
+        mutex.lock();
+        defer mutex.unlock();
         loop_data.release();
     }
 
-    if (builtin.single_threaded) {
-        python_c.deinitialize_object_fields(py_loop, &.{});
+    python_c.deinitialize_object_fields(py_loop, &.{});
+    if (python_c.has_managed_dict(@ptrCast(py_loop))) {
+        python_c.PyObject_ClearManagedDict(@ptrCast(py_loop));
     }
     return 0;
 }
@@ -77,11 +81,27 @@ pub fn loop_traverse(self: ?*LoopObject, visit: python_c.visitproc, arg: ?*anyop
     const py_loop = self.?;
     const loop_data = utils.get_data_ptr(Loop, py_loop);
 
+    // Visit type object (required for heap types)
+    if (python_c.Py_TYPE(@ptrCast(py_loop))) |t| {
+        const vret_t = visit.?(@ptrCast(t), arg);
+        if (vret_t != 0) return vret_t;
+    }
+
+    // Visit managed dictionary (for dynamically added attributes)
+    if (python_c.has_managed_dict(@ptrCast(py_loop))) {
+        const vret_dict = python_c.PyObject_VisitManagedDict(@ptrCast(py_loop), visit, arg);
+        if (vret_dict != 0) return vret_dict;
+    }
+
     // Visit standard fields
     const vret1 = python_c.py_visit(py_loop, visit, arg);
     if (vret1 != 0) return vret1;
 
     if (!loop_data.initialized) return 0;
+
+    const mutex = &loop_data.mutex;
+    mutex.lock();
+    defer mutex.unlock();
 
     // Visit ready tasks queues
     for (loop_data.ready_tasks_queues) |*queue| {
@@ -168,9 +188,7 @@ fn traverse_hooks(hooks: *Loop.HooksList, visit: python_c.visitproc, arg: ?*anyo
 pub fn loop_dealloc(self: ?*LoopObject) callconv(.c) void {
     const instance = self.?;
 
-    if (builtin.single_threaded) {
-        python_c.PyObject_GC_UnTrack(instance);
-    }
+    python_c.PyObject_GC_UnTrack(instance);
     _ = loop_clear(instance);
 
     const @"type" = python_c.get_type(@ptrCast(instance)) orelse return;

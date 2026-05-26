@@ -166,7 +166,7 @@ fn submit_next_chunk(self: *WriteTransport) !void {
                 .cleanup = &cleanup_resources_callback,
                 .data = .{
                     .user_data = self,
-                    .module_ptr = null,
+                    .module_ptr = @ptrCast(self.parent_transport),
                     .callback_ptr = null,
                 },
             },

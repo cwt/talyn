@@ -87,7 +87,8 @@ inline fn z_future_add_done_callback(
                 .data = .{
                     .user_data = handle,
                     .module_ptr = null,
-            .callback_ptr = py_callback,
+                    .callback_ptr = py_callback,
+                    .traverse = &python_c.traverse_pyobject_callback,
                 }
             };
             try Loop.Scheduling.Soon.dispatch(future_data.loop, &callback);

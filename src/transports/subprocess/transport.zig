@@ -45,6 +45,19 @@ fn subprocess_dealloc(self: ?*SubprocessTransportObject) callconv(.c) void {
 
 fn subprocess_traverse(self: ?*SubprocessTransportObject, visit: python_c.visitproc, arg: ?*anyopaque) callconv(.c) c_int {
     const instance = self.?;
+
+    // Visit type object (required for heap types)
+    if (python_c.Py_TYPE(@ptrCast(instance))) |t| {
+        const vret_t = visit.?(@ptrCast(t), arg);
+        if (vret_t != 0) return vret_t;
+    }
+
+    // Visit managed dictionary (for dynamically added attributes)
+    if (python_c.has_managed_dict(@ptrCast(instance))) {
+        const vret_dict = python_c.PyObject_VisitManagedDict(@ptrCast(instance), visit, arg);
+        if (vret_dict != 0) return vret_dict;
+    }
+
     var vret: c_int = 0;
     if (instance.loop) |obj| {
         vret = visit.?(@ptrCast(obj), arg);
@@ -75,6 +88,10 @@ fn subprocess_clear(self: ?*SubprocessTransportObject) callconv(.c) c_int {
     instance.popen = null;
     python_c.py_xdecref(instance.returncode);
     instance.returncode = null;
+
+    if (python_c.has_managed_dict(@ptrCast(instance))) {
+        python_c.PyObject_ClearManagedDict(@ptrCast(instance));
+    }
     return 0;
 }
 
@@ -196,6 +213,11 @@ pub fn create_type() !void {
     ) orelse return error.PythonError);
 }
 
+fn cleanup_pidfd(ptr: ?*anyopaque) void {
+    const transport: *SubprocessTransportObject = @alignCast(@ptrCast(ptr.?));
+    python_c.py_decref(@ptrCast(transport));
+}
+
 fn pidfd_exit_callback(data: *const CallbackManager.CallbackData) !void {
     const transport: *SubprocessTransportObject = @alignCast(@ptrCast(data.user_data.?));
     defer python_c.py_decref(@ptrCast(transport));
@@ -278,8 +300,12 @@ fn pidfd_exit_callback(data: *const CallbackManager.CallbackData) !void {
                 .fd = transport.pidfd,
                 .callback = .{
                     .func = &pidfd_exit_callback,
-                    .cleanup = null,
-                    .data = .{ .user_data = transport },
+                    .cleanup = &cleanup_pidfd,
+                    .data = .{
+                        .user_data = transport,
+                        .module_ptr = @ptrCast(transport),
+                        .callback_ptr = null,
+                    },
                 },
             },
         });
@@ -331,8 +357,12 @@ pub fn start_exit_watcher(transport: *SubprocessTransportObject, loop: *LoopObje
             .fd = pidfd,
             .callback = .{
                 .func = &pidfd_exit_callback,
-                .cleanup = null,
-                .data = .{ .user_data = transport },
+                .cleanup = &cleanup_pidfd,
+                .data = .{
+                    .user_data = transport,
+                    .module_ptr = @ptrCast(transport),
+                    .callback_ptr = null,
+                },
             },
         },
     });

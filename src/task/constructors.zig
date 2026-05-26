@@ -51,6 +51,7 @@ inline fn task_schedule_coro(self: *PythonTaskObject, loop: *LoopObject) !void {
             .user_data = self,
             .module_ptr = null,
             .callback_ptr = self.coro.?,
+            .traverse = &python_c.traverse_pyobject_callback,
         }
     };
 

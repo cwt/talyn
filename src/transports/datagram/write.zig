@@ -15,12 +15,17 @@ const SendToData = struct {
     iov: std.posix.iovec_const,
 };
 
+fn cleanup_sendto(ptr: ?*anyopaque) void {
+    const sd: *SendToData = @ptrCast(@alignCast(ptr.?));
+    sd.alloc.free(sd.buf);
+    const transport = sd.transport;
+    python_c.py_decref(@ptrCast(transport));
+    sd.alloc.destroy(sd);
+}
+
 fn sendto_completed(data: *const CallbackManager.CallbackData) !void {
     const sd: *SendToData = @alignCast(@ptrCast(data.user_data.?));
-    defer {
-        sd.alloc.free(sd.buf);
-        sd.alloc.destroy(sd);
-    }
+    defer cleanup_sendto(@ptrCast(@alignCast(sd)));
 
     const self = sd.transport;
     if (data.cancelled or self.closed) return;
@@ -141,12 +146,17 @@ pub fn z_datagram_sendto(self: *DatagramTransport.DatagramTransportObject, args:
             .msg = &sd.msg,
             .callback = .{
                 .func = &sendto_completed,
-                .cleanup = null,
-                .data = .{ .user_data = sd },
+                .cleanup = &cleanup_sendto,
+                .data = .{
+                    .user_data = sd,
+                    .module_ptr = @ptrCast(self),
+                    .callback_ptr = null,
+                },
             },
             .flags = 0,
         },
     });
+    python_c.py_incref(@ptrCast(self));
 
     try buffer_watermark_check(self, len);
     return python_c.get_py_none();

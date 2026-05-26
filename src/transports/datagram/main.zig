@@ -80,6 +80,7 @@ fn cleanup_resources(instance: *DatagramTransportObject) void {
 
 fn datagram_dealloc(self: ?*DatagramTransportObject) callconv(.c) void {
     const instance = self.?;
+    python_c.PyObject_GC_UnTrack(instance);
     cleanup_resources(instance);
     if (!instance.closed and instance.fd >= 0) {
         if (instance.loop) |loop| {
@@ -109,7 +110,21 @@ fn datagram_dealloc(self: ?*DatagramTransportObject) callconv(.c) void {
 }
 
 fn datagram_traverse(self: ?*DatagramTransportObject, visit: python_c.visitproc, arg: ?*anyopaque) callconv(.c) c_int {
-    return python_c.py_visit(self.?, visit, arg);
+    const instance = self.?;
+
+    // Visit type object (required for heap types)
+    if (python_c.Py_TYPE(@ptrCast(instance))) |t| {
+        const vret_t = visit.?(@ptrCast(t), arg);
+        if (vret_t != 0) return vret_t;
+    }
+
+    // Visit managed dictionary (for dynamically added attributes)
+    if (python_c.has_managed_dict(@ptrCast(instance))) {
+        const vret_dict = python_c.PyObject_VisitManagedDict(@ptrCast(instance), visit, arg);
+        if (vret_dict != 0) return vret_dict;
+    }
+
+    return python_c.py_visit(instance, visit, arg);
 }
 
 fn datagram_clear(self: ?*DatagramTransportObject) callconv(.c) c_int {
@@ -120,6 +135,11 @@ fn datagram_clear(self: ?*DatagramTransportObject) callconv(.c) c_int {
         instance.fd = -1;
     }
     instance.closed = true;
+
+    python_c.deinitialize_object_fields(instance, &.{});
+    if (python_c.has_managed_dict(@ptrCast(instance))) {
+        python_c.PyObject_ClearManagedDict(@ptrCast(instance));
+    }
     return 0;
 }
 

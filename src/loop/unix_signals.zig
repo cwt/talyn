@@ -224,17 +224,18 @@ pub fn traverse(self: *const UnixSignals, visit: python_c.visitproc, arg: ?*anyo
 fn traverse_btree_node(node: anytype, visit: python_c.visitproc, arg: ?*anyopaque) c_int {
     const nkeys = node.nkeys;
     for (node.values[0..nkeys]) |*cb| {
-        if (cb.data.user_data) |ud| {
-            const vret = visit.?(@ptrCast(@alignCast(ud)), arg);
+        if (cb.data.traverse) |t| {
+            const vret = t(cb.data.user_data, @constCast(@ptrCast(visit)), arg);
             if (vret != 0) return vret;
         }
+
         if (cb.data.module_ptr) |mp| {
             const vret = visit.?(@ptrCast(mp), arg);
             if (vret != 0) return vret;
-        }
-        if (cb.data.callback_ptr) |cp| {
-            const vret = visit.?(@ptrCast(cp), arg);
-            if (vret != 0) return vret;
+            if (cb.data.callback_ptr) |cp| {
+                const vret2 = visit.?(@ptrCast(cp), arg);
+                if (vret2 != 0) return vret2;
+            }
         }
     }
     for (node.childs[0 .. nkeys + 1]) |maybe_child| {

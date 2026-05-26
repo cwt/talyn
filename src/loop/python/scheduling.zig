@@ -112,6 +112,7 @@ inline fn z_loop_call_soon(
             .user_data = py_handle,
             .module_ptr = null,
             .callback_ptr = py_callback,
+            .traverse = &python_c.traverse_pyobject_callback,
         }
         // .PythonGeneric = .{
         //     .args = callback_info,

@@ -87,6 +87,7 @@ fn create_new_py_exception_and_add_event(
             .user_data = task,
             .module_ptr = null,
             .callback_ptr = task.coro.?,
+            .traverse = &python_c.traverse_pyobject_callback,
         }
     };
 
@@ -252,7 +253,8 @@ inline fn successfully_execution(
             .data = .{
                 .user_data = task,
                 .module_ptr = null,
-            .callback_ptr = task.coro.?,
+                .callback_ptr = task.coro.?,
+                .traverse = &python_c.traverse_pyobject_callback,
             }
         };
 

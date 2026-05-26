@@ -26,8 +26,11 @@ pub const StreamServerObject = extern struct {
 
     pub fn deinit(self: *StreamServerObject) void {
         python_c.py_xdecref(self.loop);
+        self.loop = null;
         python_c.py_xdecref(self.protocol_factory);
+        self.protocol_factory = null;
         python_c.py_xdecref(self.server_ref);
+        self.server_ref = null;
         if (self.server_fd >= 0) {
             _ = std.os.linux.close(self.server_fd);
             self.server_fd = -1;
@@ -37,6 +40,7 @@ pub const StreamServerObject = extern struct {
 
 fn streamserver_dealloc(self: ?*StreamServerObject) callconv(.c) void {
     const instance = self.?;
+    python_c.PyObject_GC_UnTrack(instance);
     if (!instance.closed and instance.server_fd >= 0) {
         if (instance.loop) |loop| {
             const loop_obj: *Loop.Python.LoopObject = @alignCast(@ptrCast(loop));
@@ -55,11 +59,31 @@ fn streamserver_dealloc(self: ?*StreamServerObject) callconv(.c) void {
 }
 
 fn streamserver_traverse(self: ?*StreamServerObject, visit: python_c.visitproc, arg: ?*anyopaque) callconv(.c) c_int {
-    return python_c.py_visit(self.?, visit, arg);
+    const instance = self.?;
+
+    // Visit type object (required for heap types)
+    if (python_c.Py_TYPE(@ptrCast(instance))) |t| {
+        const vret_t = visit.?(@ptrCast(t), arg);
+        if (vret_t != 0) return vret_t;
+    }
+
+    // Visit managed dictionary (for dynamically added attributes)
+    if (python_c.has_managed_dict(@ptrCast(instance))) {
+        const vret_dict = python_c.PyObject_VisitManagedDict(@ptrCast(instance), visit, arg);
+        if (vret_dict != 0) return vret_dict;
+    }
+
+    return python_c.py_visit(instance, visit, arg);
 }
 
 fn streamserver_clear(self: ?*StreamServerObject) callconv(.c) c_int {
-    self.?.deinit();
+    const instance = self.?;
+    instance.deinit();
+
+    python_c.deinitialize_object_fields(instance, &.{});
+    if (python_c.has_managed_dict(@ptrCast(instance))) {
+        python_c.PyObject_ClearManagedDict(@ptrCast(instance));
+    }
     return 0;
 }
 

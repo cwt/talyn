@@ -46,11 +46,16 @@ pub fn queue_read(self: *DatagramTransport.DatagramTransportObject) !void {
             .callback = .{
                 .func = &read_completed,
                 .cleanup = &cleanup_read,
-                .data = .{ .user_data = rd },
+                .data = .{
+                    .user_data = rd,
+                    .module_ptr = @ptrCast(self),
+                    .callback_ptr = null,
+                },
             },
             .flags = 0,
         },
     });
+    python_c.py_incref(@ptrCast(self));
 }
 
 const ReadData = struct {
@@ -63,6 +68,8 @@ const ReadData = struct {
 
 fn cleanup_read(ptr: ?*anyopaque) void {
     const rd: *ReadData = @ptrCast(@alignCast(ptr.?));
+    const transport = rd.transport;
+    python_c.py_decref(@ptrCast(transport));
     rd.alloc.destroy(rd);
 }
 

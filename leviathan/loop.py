@@ -411,11 +411,14 @@ class Loop(_Loop):
 
         self._default_executor = executor
 
-    def _do_shutdown(self, future: asyncio.Future[None]) -> None:
+    def _do_shutdown(self, future: asyncio.Future[None], executor: Any = None) -> None:
         is_closed: Callable[[], bool] = self.is_closed # type: ignore
         call_soon_threadsafe: Callable[..., asyncio.Handle] = self.call_soon_threadsafe # type: ignore
 
-        if (executor := self._default_executor) is None:
+        if executor is None:
+            executor = self._default_executor
+
+        if executor is None:
             raise RuntimeError("Default executor is None")
 
         try:
@@ -438,14 +441,16 @@ class Loop(_Loop):
         if executor is None:
             return
 
+        self._default_executor = None
+
         future: asyncio.Future[None] = self.create_future() # type: ignore
-        thread = threading.Thread(target=self._do_shutdown, args=(future,))
+        thread = threading.Thread(target=self._do_shutdown, args=(future, executor), daemon=True)
         thread.start()
         try:
             async with asyncio.timeouts.timeout(timeout):
                 await future
         except asyncio.TimeoutError:
-            executor.shutdown(wait=False)
+            pass
         else:
             thread.join()
 
