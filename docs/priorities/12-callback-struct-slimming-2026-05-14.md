@@ -13,7 +13,7 @@ per callback function type and only used in error/cold paths.
 |------|:------:|:-----:|:------:|
 | `CallbackExceptionContext` | 48 bytes | removed | 100% |
 | `CallbackData` | 88 bytes | 40 bytes | 55% |
-| `Callback` | 112 bytes | 48 bytes | **57%** |
+| `Callback` | 112 bytes | 56 bytes | **50%** |
 
 **Fix:** Replaced inline `exception_context: ?CallbackExceptionContext` (56 bytes)
 with two optional pointers: `module_ptr: ?*PyObject` (8) + `callback_ptr: ?PyObject` (8).
