@@ -611,6 +611,7 @@ pub fn flush_pending_sqes(self: *IO) !u32 {
 }
 
 pub fn queue(self: *IO, event: BlockingOperationData) !usize {
+    if (self.ring.fd < 0) return error.LoopDeinitialized;
     const set = try self.get_blocking_tasks_set();
 
     if (event == .Cancel) {

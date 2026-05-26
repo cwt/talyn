@@ -135,9 +135,15 @@ pub const ControlData = struct {
 
             for (self.user_callbacks.items) |*v| {
                 v.data.cancelled = true;
-                Loop.Scheduling.Soon.dispatch_guaranteed(loop, v) catch {
-                    loop.reserved_slots -= 1;
-                };
+                if (!loop.initialized) {
+                    Loop.Scheduling.Soon.dispatch_guaranteed_nonthreadsafe(loop, v) catch {
+                        loop.reserved_slots -= 1;
+                    };
+                } else {
+                    Loop.Scheduling.Soon.dispatch_guaranteed(loop, v) catch {
+                        loop.reserved_slots -= 1;
+                    };
+                }
             }
         }
 
