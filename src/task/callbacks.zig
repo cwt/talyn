@@ -44,6 +44,18 @@ inline fn set_result(
     }else{
         try Future.Python.Result.future_fast_set_result(future_data, result);
     }
+    if (task.coro) |c| {
+        python_c.py_decref(c);
+        task.coro = null;
+    }
+    if (task.py_context) |ctx| {
+        python_c.py_decref(ctx);
+        task.py_context = null;
+    }
+    if (task.fut_waiter) |w| {
+        python_c.py_decref(w);
+        task.fut_waiter = null;
+    }
 }
 
 fn create_new_py_exception_and_add_event(
@@ -299,10 +311,35 @@ fn failed_execution(task: *Task.PythonTaskObject) !void {
             return error.PythonError;
         };
         python_c.py_decref(exception);
+        if (task.coro) |c| {
+            python_c.py_decref(c);
+            task.coro = null;
+        }
+        if (task.py_context) |ctx| {
+            python_c.py_decref(ctx);
+            task.py_context = null;
+        }
+        if (task.fut_waiter) |w| {
+            python_c.py_decref(w);
+            task.fut_waiter = null;
+        }
         return;
     }
 
     try Future.Python.Result.future_fast_set_exception(fut, future_data, exception);
+    if (task.coro) |c| {
+        python_c.py_decref(c);
+        task.coro = null;
+    }
+    if (task.py_context) |ctx| {
+        python_c.py_decref(ctx);
+        task.py_context = null;
+    }
+    if (task.fut_waiter) |w| {
+        python_c.py_decref(w);
+        task.fut_waiter = null;
+    }
+
     if (
         exc_match(exception, python_c.PyExc_SystemExit) > 0 or
         exc_match(exception, python_c.PyExc_KeyboardInterrupt) > 0

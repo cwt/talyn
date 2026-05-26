@@ -17,11 +17,17 @@ pub fn task_not_implemented_method(
 }
 
 pub fn task_get_coro(self: ?*Task.PythonTaskObject) callconv(.c) ?PyObject {
-    return python_c.py_newref(self.?.coro);
+    if (self.?.coro) |coro| {
+        return python_c.py_newref(coro);
+    }
+    return python_c.get_py_none();
 }
 
 pub fn task_get_context(self: ?*Task.PythonTaskObject) callconv(.c) ?PyObject {
-    return python_c.py_newref(self.?.py_context);
+    if (self.?.py_context) |context| {
+        return python_c.py_newref(context);
+    }
+    return python_c.get_py_none();
 }
 
 pub fn task_get_name(self: ?*Task.PythonTaskObject) callconv(.c) ?PyObject {
