@@ -1,8 +1,9 @@
 # Talyn: Robust, Stable Asyncio Event Loop for Python
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE.md)
-[![Python Compatibility](https://img.shields.io/badge/python-3.13%20%7C%203.14-blue.svg)](#📜-requirements)
-[![Linux Compatibility](https://img.shields.io/badge/linux-5.11+-orange.svg)](#📜-requirements)
+[![Python Compatibility](https://img.shields.io/badge/python-3.13%20%7C%203.14%20%7C%20Free--Threaded-blue.svg)](#📜-requirements)
+[![Linux Compatibility](https://img.shields.io/badge/linux-5.11+%20%7C%20Fedora%2043--44-orange.svg)](#📜-requirements)
+[![Zig Compatibility](https://img.shields.io/badge/zig-0.16.0-red.svg)](#📜-requirements)
 
 **Talyn** is a robust, exceptionally stable, and realistically fast `asyncio` event loop drop-in replacement for Python, powered by the asynchronous capabilities of **Zig** and **io_uring**. 
 
