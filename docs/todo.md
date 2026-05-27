@@ -10,7 +10,7 @@ Welcome to the Leviathan TODO and project tracking documentation. This serves as
 - [🟡 PRIORITY 2: Network & Transport — ALL DONE (7/7)](priorities/2-network-transport-all-7-7.md)
 - [🔵 PRIORITY 4: Standard Compatibility & GC Stability — ✅ DONE (2026-05-10)](priorities/4-standard-compatibility-gc-stability-2026-05.md)
 - [🔴 PRIORITY 9: Callback Dispatch Rewrite — Flat Ring Buffer (2026-05-11)](priorities/9-callback-dispatch-rewrite-flat-ring-buffer.md)
-- [🔴 PRIORITY 10: Python/Zig Boundary Overhead Elimination (2026-05-13)](priorities/10-python-zig-boundary-overhead-elimination-2026.md)
+- [✅ PRIORITY 10: Python/Zig Boundary Overhead Elimination — ✅ DONE (2026-05-27)](priorities/10-python-zig-boundary-overhead-elimination-2026.md)
 - [🔴 PRIORITY 11: SQE Batch Submission — io_uring Batching (2026-05-13)](priorities/11-sqe-batch-submission-io-uring-batching.md)
 - [PRIORITY 12: Callback Struct Slimming (2026-05-14) ✅ DONE](priorities/12-callback-struct-slimming-2026-05-14.md)
 - [🔴 PRIORITY 13: Subprocess — pidfd-Based Exit Notification — ✅ DONE (2026-05-15)](priorities/13-subprocess-pidfd-based-exit-notification-2026.md)
