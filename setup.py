@@ -90,7 +90,7 @@ class ZigBuildExtCommand(build_ext):
 
         ext_suffix = sysconfig.get_config_var("EXT_SUFFIX")
         src_path = os.path.join(build_dir, "libtalyn.so")
-        dest_path = os.path.join("build", "lib", "talyn", f"talyn_zig{ext_suffix}")
+        dest_path = os.path.join(self.build_lib, "talyn", f"talyn_zig{ext_suffix}")
         os.makedirs(os.path.dirname(dest_path), exist_ok=True)
         shutil.copyfile(src_path, dest_path)
 
@@ -102,8 +102,7 @@ class ZigBuildCommand(build):
     def run(self) -> None:
         self.run_command("build_py")
 
-        build_lib_path = os.path.join("build", "lib")
-        tests_path = os.path.join(build_lib_path, "tests")
+        tests_path = os.path.join(self.build_lib, "tests")
         shutil.copytree("./tests", tests_path, dirs_exist_ok=True)
 
         self.run_command("build_ext")
