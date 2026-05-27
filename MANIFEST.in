@@ -1,2 +1,2 @@
-include leviathan/leviathan_zig.pyi
-include leviathan/leviathan_zig.so
+include talyn/talyn_zig.pyi
+include talyn/talyn_zig.so
