@@ -43,8 +43,8 @@ Once the dispatch layer is O(1), the next bottleneck is io_uring submission/reap
 | # | Task | Status |
 |---|------|:---:|
 | 9.9 | Batch SQE submission — collect pending ops, submit all in one `io_uring_enter` | 🔴 **REVERTED** |
-| 9.10 | Batch CQE reaping — process all CQEs per `copy_cqes` without re-entering loop | 🔴 Pending |
-| 9.11 | Registered buffers / fixed files for hot paths | 🔴 Pending |
+| 9.10 | Batch CQE reaping — process all CQEs per `copy_cqes` without re-entering loop | ✅ **DONE** |
+| 9.11 | Registered buffers / fixed files for hot paths | ✅ **DONE** |
 
 **Expected impact with both phases:** leviathan at **2-5×** asyncio, matching or beating uvloop.
 

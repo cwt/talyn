@@ -86,8 +86,8 @@ This ensures:
 | # | Task | Status |
 |---|------|:---:|
 | 11.11 | Combined submit+wait — already done via `submit_and_wait(1)` in waiting path. `copy_cqes(..., 0)` is pure memcpy (0 syscalls). Non-waiting path already 0 syscalls (`submit()` skips `io_uring_enter` in non-SQPOLL). | ✅ Already done |
-| 11.12 | Batch CQE reaping — process all CQEs per `copy_cqes` without re-entering loop | 🔴 Future |
-| 11.13 | Registered buffers / fixed files for hot paths | 🔴 Future |
+| 11.12 | Batch CQE reaping — process all CQEs per `copy_cqes` without re-entering loop | ✅ **DONE** |
+| 11.13 | Registered buffers / fixed files for hot paths | ✅ **DONE** |
 
 #### Phase 3: Pointer-Safe Deferred Submission — DONE (2026-05-15)
 
