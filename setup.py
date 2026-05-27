@@ -1,4 +1,4 @@
-from setuptools import setup, Command
+from setuptools import setup, Command, Distribution
 from setuptools.command.develop import develop
 from setuptools.command.build_ext import build_ext
 from setuptools.command.build import build
@@ -24,6 +24,12 @@ zig_compiler_options.append(f"-Dpython-lib={full_path}")
 is_gil_enabled = sys._is_gil_enabled()  # type: ignore
 if not is_gil_enabled:
     zig_compiler_options.append("-Dpython-gil-disabled")
+
+
+class BinaryDistribution(Distribution):
+    """Distribution which always forces a binary package"""
+    def has_ext_modules(self) -> bool:
+        return True
 
 
 class TalynBench(Command):
@@ -111,6 +117,7 @@ class ZigDevelopCommand(develop):
 
 # Setuptools execution with custom build commands
 setup(
+    distclass=BinaryDistribution,
     cmdclass={
         "build_ext": ZigBuildExtCommand,
         "build": ZigBuildCommand,

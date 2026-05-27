@@ -31,7 +31,7 @@ for py in "${PYTHONS[@]}"; do
     fi
 
     printf "${YELLOW}[%s]${NC} Checking build requirements...\n" "$py"
-    if ! "$py" -c "import build" >/dev/null 2>&1; then
+    if ! "$py" -I -c "import build" >/dev/null 2>&1; then
         printf "  Installing 'build' dependency...\n"
         "$py" -m pip install --upgrade build || {
             printf "${RED}[%s]${NC} Failed to install 'build' package\n" "$py"
