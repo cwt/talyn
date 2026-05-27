@@ -21,6 +21,10 @@ classifiers = [
 ]
 dependencies = []
 
+[project.urls]
+Homepage = "https://github.com/cwt/talyn"
+Repository = "https://github.com/cwt/talyn"
+
 [tool.setuptools]
 zip-safe = false
 
