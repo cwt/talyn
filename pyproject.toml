@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0.0", "wheel"]
+requires = ["setuptools>=77.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,7 +8,7 @@ version = "0.4.0"
 description = "Talyn: A robust, stable, and realistically fast Zig-powered event loop for Python's asyncio."
 readme = "README.md"
 requires-python = ">=3.13"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "Chaiwat Suttipongsakul", email = "cwt@bashell.com"}
 ]
