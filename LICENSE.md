@@ -1,6 +1,7 @@
 MIT License
 
 Copyright (c) 2025 Enrique Miguel Mora Meza
+Copyright (c) 2026 Chaiwat Suttipongsakul
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

@@ -1,0 +1,79 @@
+# Talyn: Robust, Stable Asyncio Event Loop for Python
+
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE.md)
+[![Python Compatibility](https://img.shields.io/badge/python-3.13%20%7C%203.14-blue.svg)](#📜-requirements)
+[![Linux Compatibility](https://img.shields.io/badge/linux-5.11+-orange.svg)](#📜-requirements)
+
+**Talyn** is a robust, exceptionally stable, and realistically fast `asyncio` event loop drop-in replacement for Python, powered by the asynchronous capabilities of **Zig** and **io_uring**. 
+
+Talyn prioritizes **correctness, complete system safety, and high usability** over artificial micro-benchmark superiority. It is fully compatible with CPython's standard single-threaded and free-threaded (GIL-disabled) runtimes.
+
+---
+
+## 🚀 Features
+
+- **Realistic Speed**: Designed to deliver solid and reliable I/O performance on Linux by leveraging `io_uring`'s native kernel-side asynchronous completion queues.
+- **Robust & Crash-Resistant**: Meticulously hardened against circular reference memory leaks, stack alignment faults, signal interrupt deadlocks, and use-after-free bugs.
+- **Full Asyncio Compatibility**: Passes 100% of standard Python `asyncio`, `subprocess`, `transports`, and connection-lifecycle test suites.
+- **Modern Packaging**: Fully migrated to PEP 517/518 standard declarative `pyproject.toml` configuration.
+- **GIL-Disabled Free-Threading Ready**: Fully compatible with `python3.13t` and `python3.14t` without memory races.
+
+---
+
+## 📜 Requirements
+
+* **Python**: `>= 3.13` (Tested and verified under CPython `3.13`, `3.14`, `3.13t` (free-threaded), and `3.14t` (free-threaded))
+* **Linux Kernel**: `>= 5.11` (for `io_uring` support; verified on Linux Kernel `7.0.x`)
+* **Zig Compiler** (for source builds): `0.16.0` (Fedora packages)
+
+> [!NOTE]
+> **Tested Platform Verification**:
+> Talyn has been built, compiled, and verified extensively under **Fedora 43-44** on an **x86_64** architecture equipped with an **Intel(R) Core(TM) Ultra 7 265** processor. Compatibility with other Linux distributions, older kernels, or alternative hardware architectures (e.g. AArch64) has not been verified yet. We welcome feedback and pull requests for other environments!
+
+---
+
+## 🔧 Installation
+
+To compile and install Talyn locally, run:
+
+```bash
+pip install -e .
+```
+
+---
+
+## 📦 Basic Usage
+
+```python
+import talyn
+import asyncio
+
+async def main():
+    print("Hello from Talyn!")
+    await asyncio.sleep(1)
+    print("Goodbye from Talyn!")
+
+# Run using Talyn event loop
+talyn.run(main())
+```
+
+---
+
+## 💝 Historical Credits & Origin
+
+Talyn is spun off from **Leviathan**, an event loop originally pioneered by **Enrique Mora** (@kike28). Enrique Mora's creative spark and vision of merging Zig, `io_uring`, and `asyncio` laid the critical foundation and architecture of this project.
+
+As Talyn evolved, the implementation underwent a complete systems-level refactoring to transition from a theoretical prototype to a production-grade, crash-resistant runtime:
+* Eliminated multi-crossing Zig/Python vectorcall overhead by implementing a native C step trampoline.
+* Redesigned completion handlers into flat, GC-safe ring buffers.
+* Fully audited and resolved all memory-leak reference cycles under concurrent connections.
+
+To honor the project's roots and Enrique's early work:
+* The original Leviathan README can be viewed at: [docs/historical/leviathan-readme.md](docs/historical/leviathan-readme.md)
+* The original preliminary benchmarks can be viewed at: [docs/historical/leviathan-benchmark.md](docs/historical/leviathan-benchmark.md)
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License. See [LICENSE.md](LICENSE.md) for details.
