@@ -1,4 +1,4 @@
-# Talyn: Robust, Stable Asyncio Event Loop for Python
+# Talyn: Robust, Stable AsyncIO Event Loop for Python
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE.md)
 [![Python Compatibility](https://img.shields.io/badge/python-3.13%20%7C%203.14%20%7C%20Free--Threaded-blue.svg)](#📜-requirements)
