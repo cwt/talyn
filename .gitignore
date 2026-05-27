@@ -3,7 +3,7 @@ zig-out/
 
 build/
 
-leviathan.egg-info/
+talyn.egg-info/
 
 probe2.py
 probe.py
@@ -25,3 +25,6 @@ benchmarks/output/
 benchmarks/output.*/
 
 tmp*.py
+
+.antigravitycli/
+scratch/
