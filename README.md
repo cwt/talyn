@@ -63,7 +63,7 @@ talyn.run(main())
 
 ## 💝 Historical Credits & Origin
 
-Talyn is spun off from **[Leviathan](https://github.com/kython28/leviathan)**, an event loop originally pioneered by **Enrique Mora** (@kython28). Enrique Mora's creative spark and vision of merging Zig, `io_uring`, and `asyncio` laid the critical foundation and architecture of this project.
+Talyn is spun off from **[Leviathan](https://github.com/kython28/leviathan)**, an event loop originally pioneered by **[Enrique Mora](https://github.com/kython28)**. Enrique Mora's creative spark and vision of merging Zig, `io_uring`, and `asyncio` laid the critical foundation and architecture of this project.
 
 As Talyn evolved, the implementation underwent a complete systems-level refactoring to transition from a theoretical prototype to a production-grade, crash-resistant runtime:
 * Eliminated multi-crossing Zig/Python vectorcall overhead by implementing a native C step trampoline.
