@@ -1,4 +1,4 @@
-from leviathan import Loop
+from talyn import Loop
 import pytest, os
 
 def test_add_and_remove_reader() -> None:

@@ -1,4 +1,4 @@
-from .leviathan_zig import Future as _Future
+from .talyn_zig import Future as _Future
 import asyncio
 
 

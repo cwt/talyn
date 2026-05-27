@@ -1,4 +1,4 @@
-from leviathan import Loop
+from talyn import Loop
 import asyncio
 import pytest
 

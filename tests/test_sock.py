@@ -1,5 +1,5 @@
 import asyncio
-import leviathan
+import talyn
 import socket
 import pytest
 import os
@@ -42,7 +42,7 @@ def test_sock_accept_connect():
         await server_task
         server_sock.close()
 
-    leviathan.run(main())
+    talyn.run(main())
 
 def test_sock_recvfrom_sendto():
     async def main():
@@ -76,7 +76,7 @@ def test_sock_recvfrom_sendto():
         sock1.close()
         sock2.close()
 
-    leviathan.run(main())
+    talyn.run(main())
 
 def test_sock_recv_into():
     async def main():
@@ -97,7 +97,7 @@ def test_sock_recv_into():
             rsock.close()
             wsock.close()
 
-    leviathan.run(main())
+    talyn.run(main())
 
 def test_task_factory():
     async def main():
@@ -106,7 +106,7 @@ def test_task_factory():
         assert loop.get_task_factory() is None
         
         def my_factory(loop, coro, context=None):
-            task = leviathan.Task(coro, loop=loop, context=context)
+            task = talyn.Task(coro, loop=loop, context=context)
             task.my_attr = "custom"
             return task
             
@@ -127,4 +127,4 @@ def test_task_factory():
         assert not hasattr(task2, "my_attr")
         await task2
 
-    leviathan.run(main())
+    talyn.run(main())

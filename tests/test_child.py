@@ -1,5 +1,5 @@
 import asyncio
-import leviathan
+import talyn
 import pytest
 import os
 import signal
@@ -28,7 +28,7 @@ def test_child_handler():
         assert result == [(pid, 0)]
         proc.wait() # Just to be clean
 
-    leviathan.run(main())
+    talyn.run(main())
 
 def test_child_handler_killed():
     async def main():
@@ -56,4 +56,4 @@ def test_child_handler_killed():
         assert result[0][1] == -signal.SIGTERM
         proc.wait()
 
-    leviathan.run(main())
+    talyn.run(main())

@@ -1,4 +1,4 @@
-from leviathan import Future, Loop
+from talyn import Future, Loop
 
 from unittest.mock import MagicMock
 from typing import Any

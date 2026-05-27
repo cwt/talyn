@@ -31,7 +31,7 @@ inline fn z_loop_subprocess_exec(
         return error.PythonError;
     }
     if (py_pid == null) {
-        python_c.raise_python_value_error("pid keyword required (use leviathan subprocess wrapper)");
+        python_c.raise_python_value_error("pid keyword required (use talyn subprocess wrapper)");
         return error.PythonError;
     }
 

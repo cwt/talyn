@@ -10,7 +10,7 @@ The test verifies correctness is preserved after the flag removal.
 """
 
 import asyncio
-import leviathan
+import talyn
 import socket
 import pytest
 
@@ -43,7 +43,7 @@ def test_many_sequential_connections():
             for _ in range(100):
                 await one_shot(port)
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_raw_socket_connect_accept():
@@ -86,7 +86,7 @@ def test_raw_socket_connect_accept():
         server_sock.close()
         assert len(results) == 20
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_shutdown_variants():
@@ -125,7 +125,7 @@ def test_shutdown_variants():
         client_sock.close()
         server_sock.close()
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_concurrent_connect_accept_stress():
@@ -156,7 +156,7 @@ def test_concurrent_connect_accept_stress():
             tasks = [one_shot(i) for i in range(50)]
             await asyncio.gather(*tasks)
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_unix_socket_connect_accept():
@@ -187,4 +187,4 @@ def test_unix_socket_connect_accept():
                     writer.close()
                     await writer.wait_closed()
 
-    leviathan.run(main())
+    talyn.run(main())

@@ -325,12 +325,12 @@ const PythonStreamServerSlots: []const python_c.PyType_Slot = &[_]python_c.PyTyp
     python_c.PyType_Slot{ .slot = python_c.Py_tp_init, .pfunc = @ptrCast(@constCast(&streamserver_init)) },
     python_c.PyType_Slot{ .slot = python_c.Py_tp_new, .pfunc = @ptrCast(@constCast(&python_c.PyType_GenericNew)) },
     python_c.PyType_Slot{ .slot = python_c.Py_tp_methods, .pfunc = @constCast(PythonStreamServerMethods.ptr) },
-    python_c.PyType_Slot{ .slot = python_c.Py_tp_doc, .pfunc = @constCast("Leviathan stream server.\x00") },
+    python_c.PyType_Slot{ .slot = python_c.Py_tp_doc, .pfunc = @constCast("Talyn stream server.\x00") },
     python_c.PyType_Slot{ .slot = 0, .pfunc = null },
 };
 
 var server_spec = python_c.PyType_Spec{
-    .name = "leviathan.StreamServer\x00",
+    .name = "talyn.StreamServer\x00",
     .basicsize = @sizeOf(StreamServerObject),
     .itemsize = 0,
     .flags = python_c.Py_TPFLAGS_DEFAULT | python_c.Py_TPFLAGS_BASETYPE | python_c.Py_TPFLAGS_HAVE_GC,

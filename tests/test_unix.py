@@ -1,12 +1,12 @@
-from leviathan import Loop
-import leviathan
+from talyn import Loop
+import talyn
 
 import asyncio, os, tempfile, pytest
 from typing import Any
 
 
 def _unix_path() -> str:
-    return f"/tmp/leviathan_test_{os.getpid()}.sock"
+    return f"/tmp/talyn_test_{os.getpid()}.sock"
 
 
 class EchoProtocol(asyncio.Protocol):
@@ -52,7 +52,7 @@ def test_create_unix_connection() -> None:
             transport.close()
             server.close()
 
-        leviathan.run(main())
+        talyn.run(main())
     finally:
         try:
             os.unlink(path)
@@ -70,7 +70,7 @@ def test_create_unix_server() -> None:
             server.close()
             await server.wait_closed()
 
-        leviathan.run(main())
+        talyn.run(main())
     finally:
         try:
             os.unlink(path)
@@ -88,7 +88,7 @@ def test_create_unix_server_sockets() -> None:
             assert len(sockets) >= 1
             server.close()
 
-        leviathan.run(main())
+        talyn.run(main())
     finally:
         try:
             os.unlink(path)
@@ -104,7 +104,7 @@ def test_create_unix_connection_invalid_path() -> None:
                 EchoProtocol, "/tmp/nonexistent_path_xyz.sock"
             )
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_create_unix_server_missing_args() -> None:
@@ -113,7 +113,7 @@ def test_create_unix_server_missing_args() -> None:
         with pytest.raises((ValueError, TypeError)):
             await loop.create_unix_server(EchoProtocol)
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_create_unix_connection_multiple() -> None:
@@ -131,7 +131,7 @@ def test_create_unix_connection_multiple() -> None:
                 t.close()
             server.close()
 
-        leviathan.run(main())
+        talyn.run(main())
     finally:
         try:
             os.unlink(path)

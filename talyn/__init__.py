@@ -3,7 +3,7 @@ from .task import Task
 from .loop import Loop, EventLoopPolicy
 from .runner import run, Runner
 
-from .leviathan_zig import StreamTransport
+from .talyn_zig import StreamTransport
 
 def install():
     import asyncio

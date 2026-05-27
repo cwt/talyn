@@ -115,8 +115,8 @@ const PythonFutureAsyncMethods = python_c.PyAsyncMethods{
 };
 
 pub var FutureType = python_c.PyTypeObject{
-    .tp_name = "leviathan.Future\x00",
-    .tp_doc = "Leviathan's future class\x00",
+    .tp_name = "talyn.Future\x00",
+    .tp_doc = "Talyn's future class\x00",
     .tp_basicsize = @sizeOf(FutureObject),
     .tp_itemsize = 0,
     .tp_flags = python_c.Py_TPFLAGS_DEFAULT | python_c.Py_TPFLAGS_BASETYPE | python_c.Py_TPFLAGS_HAVE_GC,

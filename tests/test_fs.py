@@ -1,5 +1,5 @@
 import asyncio
-import leviathan
+import talyn
 import pytest
 import os
 import tempfile
@@ -50,4 +50,4 @@ def test_path_watcher():
             
             handle.cancel()
 
-    leviathan.run(main())
+    talyn.run(main())

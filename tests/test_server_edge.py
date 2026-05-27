@@ -1,5 +1,5 @@
-from leviathan import Loop
-from leviathan.server import Server
+from talyn import Loop
+from talyn.server import Server
 
 import pytest, asyncio
 

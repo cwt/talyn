@@ -130,8 +130,8 @@ pub const PythonTaskObject = extern struct {
 };
 
 pub var PythonTaskType = python_c.PyTypeObject{
-    .tp_name = "leviathan.Task\x00",
-    .tp_doc = "Leviathan's task class\x00",
+    .tp_name = "talyn.Task\x00",
+    .tp_doc = "Talyn's task class\x00",
     .tp_base = &Future.Python.FutureType,
     .tp_basicsize = @sizeOf(PythonTaskObject),
     .tp_itemsize = 0,

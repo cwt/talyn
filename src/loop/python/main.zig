@@ -343,7 +343,7 @@ pub const LoopObject = extern struct {
 };
 
 const loop_slots = [_]python_c.PyType_Slot{
-    .{ .slot = python_c.Py_tp_doc, .pfunc = @constCast("Leviathan's loop class\x00") },
+    .{ .slot = python_c.Py_tp_doc, .pfunc = @constCast("Talyn's loop class\x00") },
     .{ .slot = python_c.Py_tp_new, .pfunc = @constCast(&Constructors.loop_new) },
     .{ .slot = python_c.Py_tp_traverse, .pfunc = @constCast(&Constructors.loop_traverse) },
     .{ .slot = python_c.Py_tp_clear, .pfunc = @constCast(&Constructors.loop_clear) },
@@ -355,7 +355,7 @@ const loop_slots = [_]python_c.PyType_Slot{
 };
 
 const loop_spec = python_c.PyType_Spec{
-    .name = "leviathan.Loop\x00",
+    .name = "talyn.Loop\x00",
     .basicsize = @sizeOf(LoopObject),
     .itemsize = 0,
     .flags = python_c.Py_TPFLAGS_DEFAULT | python_c.Py_TPFLAGS_BASETYPE | python_c.Py_TPFLAGS_HAVE_GC,

@@ -1,5 +1,5 @@
 import asyncio
-import leviathan
+import talyn
 import pytest
 
 def test_lru_cache():
@@ -8,4 +8,4 @@ def test_lru_cache():
         # This calls the Zig internal test logic
         loop._test_lru()
 
-    leviathan.run(main())
+    talyn.run(main())

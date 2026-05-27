@@ -1,4 +1,4 @@
-from leviathan import Loop
+from talyn import Loop
 
 from contextvars import Context, copy_context
 from unittest.mock import AsyncMock

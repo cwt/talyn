@@ -274,8 +274,8 @@ const PythonhandleMethods: []const python_c.PyMethodDef = &[_]python_c.PyMethodD
 };
 
 pub var PythonHandleType = python_c.PyTypeObject{
-    .tp_name = "leviathan.Handle\x00",
-    .tp_doc = "Leviathan's handle class\x00",
+    .tp_name = "talyn.Handle\x00",
+    .tp_doc = "Talyn's handle class\x00",
     .tp_basicsize = @sizeOf(PythonHandleObject),
     .tp_itemsize = 0,
     .tp_flags = python_c.Py_TPFLAGS_DEFAULT | python_c.Py_TPFLAGS_BASETYPE | python_c.Py_TPFLAGS_HAVE_GC,

@@ -3,7 +3,7 @@ from prettytable import PrettyTable
 from benchmarks import Benchmark
 
 import dataclasses
-import uvloop, asyncio, time, leviathan
+import uvloop, asyncio, time, talyn
 import matplotlib.pyplot as plt
 import sys, os, statistics, traceback, subprocess, json, signal, tempfile
 import matplotlib
@@ -57,13 +57,13 @@ M_MULTIPLIER: int = 2
 LOOPS: List[Tuple[str, str, Callable[[], asyncio.AbstractEventLoop]]] = [
     ("asyncio", "asyncio.new_event_loop()", lambda: asyncio.new_event_loop()),
     ("uvloop", "uvloop.new_event_loop()", uvloop.new_event_loop),
-    ("leviathan", "leviathan.Loop()", leviathan.Loop),
+    ("talyn", "talyn.Loop()", talyn.Loop),
 ]
 
 def make_script(modname, m, loop_type):
     imports = "import asyncio, sys, json, time"
-    if "leviathan" in loop_type:
-        imports += ", leviathan"
+    if "talyn" in loop_type:
+        imports += ", talyn"
     if "uvloop" in loop_type:
         imports += ", uvloop"
     return f"""\

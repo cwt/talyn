@@ -35,7 +35,7 @@ pub fn z_datagram_init(
     ) < 0) return error.PythonError;
 
     if (!python_c.type_check(py_loop.?, Loop.Python.LoopType)) {
-        python_c.raise_python_type_error("loop must be a leviathan Loop\x00");
+        python_c.raise_python_type_error("loop must be a talyn Loop\x00");
         return error.PythonError;
     }
 

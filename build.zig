@@ -107,32 +107,32 @@ pub fn build(b: *std.Build) void {
     callback_manager_module.addImport("python_c", python_c_module);
     callback_manager_module.addImport("utils", utils_module);
 
-    const leviathan_module = b.addModule("leviathan", .{
+    const talyn_module = b.addModule("talyn", .{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
-    leviathan_module.addImport("python_c", python_c_module);
-    leviathan_module.addImport("utils", utils_module);
-    leviathan_module.addImport("callback_manager", callback_manager_module);
+    talyn_module.addImport("python_c", python_c_module);
+    talyn_module.addImport("utils", utils_module);
+    talyn_module.addImport("callback_manager", callback_manager_module);
 
-    const modules_name = .{ "leviathan", "python_c", "utils" };
-    const modules = .{ leviathan_module, python_c_module, utils_module };
+    const modules_name = .{ "talyn", "python_c", "utils" };
+    const modules = .{ talyn_module, python_c_module, utils_module };
     const install_step = b.getInstallStep();
 
     create_build_step(
-        b, "leviathan", "src/lib.zig", target, optimize, !python_is_gil_disabled,
+        b, "talyn", "src/lib.zig", target, optimize, !python_is_gil_disabled,
         &modules_name, &modules, true, install_step,
     );
 
     const check_step = b.step("check", "Run checking for ZLS");
     create_build_step(
-        b, "leviathan", "src/lib.zig", target, optimize, true,
+        b, "talyn", "src/lib.zig", target, optimize, true,
         &modules_name, &modules, false, check_step,
     );
 
-    const leviathan_module_unit_tests = b.addTest(.{
-        .name = "leviathan",
+    const talyn_module_unit_tests = b.addTest(.{
+        .name = "talyn",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
@@ -174,18 +174,18 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    const run_leviathan_module_unit_tests = b.addRunArtifact(leviathan_module_unit_tests);
+    const run_talyn_module_unit_tests = b.addRunArtifact(talyn_module_unit_tests);
     const run_callback_manager_unit_tests = b.addRunArtifact(callback_manager_unit_tests);
     const run_utils_unit_tests = b.addRunArtifact(utils_unit_tests);
 
     if (python_lib) |lib| {
-        leviathan_module_unit_tests.root_module.addObjectFile(.{ .cwd_relative = lib });
+        talyn_module_unit_tests.root_module.addObjectFile(.{ .cwd_relative = lib });
         callback_manager_unit_tests.root_module.addObjectFile(.{ .cwd_relative = lib });
         utils_unit_tests.root_module.addObjectFile(.{ .cwd_relative = lib });
     }
 
     const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_leviathan_module_unit_tests.step);
+    test_step.dependOn(&run_talyn_module_unit_tests.step);
     test_step.dependOn(&run_callback_manager_unit_tests.step);
     test_step.dependOn(&run_utils_unit_tests.step);
 

@@ -1,4 +1,4 @@
-from .leviathan_zig import Loop as _Loop
+from .talyn_zig import Loop as _Loop
 
 from concurrent.futures import ThreadPoolExecutor
 from typing import (
@@ -401,7 +401,7 @@ class Loop(_Loop):
             if self._shutdown_executor_called:
                 raise RuntimeError("Default executor shut down")
 
-            executor = ThreadPoolExecutor(thread_name_prefix="leviathan")
+            executor = ThreadPoolExecutor(thread_name_prefix="talyn")
             self._default_executor = executor
 
         concurrent_future = executor.submit(func, *args)
@@ -1282,10 +1282,10 @@ import warnings
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", DeprecationWarning)
     class EventLoopPolicy(asyncio.DefaultEventLoopPolicy):
-        """Event loop policy for Leviathan."""
+        """Event loop policy for Talyn."""
 
         def new_event_loop(self) -> Loop:
-            """Create and return a new Leviathan event loop."""
+            """Create and return a new Talyn event loop."""
             return Loop()
 
 

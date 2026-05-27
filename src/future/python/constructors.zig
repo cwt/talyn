@@ -23,21 +23,21 @@ pub inline fn future_set_initial_values(self: *PythonFutureObject) void {
     self.log_destroy_pending = 1;
 }
 
-pub inline fn future_init_configuration(self: *PythonFutureObject, leviathan_loop: *LoopObject) !void {
-    const loop_data = utils.get_data_ptr(Loop, leviathan_loop);
+pub inline fn future_init_configuration(self: *PythonFutureObject, talyn_loop: *LoopObject) !void {
+    const loop_data = utils.get_data_ptr(Loop, talyn_loop);
     const future_data = utils.get_data_ptr(Future, self);
     try future_data.init(loop_data);
-    self.py_loop = @ptrCast(python_c.py_newref(leviathan_loop));
+    self.py_loop = @ptrCast(python_c.py_newref(talyn_loop));
 }
 
-pub inline fn fast_new_future(leviathan_loop: *LoopObject) !*PythonFutureObject {
+pub inline fn fast_new_future(talyn_loop: *LoopObject) !*PythonFutureObject {
     const instance: *PythonFutureObject = @ptrCast(
         Future.Python.FutureType.tp_alloc.?(&Future.Python.FutureType, 0) orelse return error.PythonError
     );
     errdefer future_dealloc(instance);
 
     future_set_initial_values(instance);
-    try future_init_configuration(instance, leviathan_loop);
+    try future_init_configuration(instance, talyn_loop);
     return instance;
 }
 
@@ -127,13 +127,13 @@ inline fn z_future_init(
         return error.PythonError;
     }
 
-    const leviathan_loop: *LoopObject = @ptrCast(py_loop.?);
-    if (!python_c.type_check(@ptrCast(leviathan_loop), Loop.Python.LoopType)) {
-        python_c.raise_python_type_error("Invalid asyncio event loop. Only Leviathan's event loops are allowed\x00");
+    const talyn_loop: *LoopObject = @ptrCast(py_loop.?);
+    if (!python_c.type_check(@ptrCast(talyn_loop), Loop.Python.LoopType)) {
+        python_c.raise_python_type_error("Invalid asyncio event loop. Only Talyn's event loops are allowed\x00");
         return error.PythonError;
     }
 
-    try future_init_configuration(self, leviathan_loop);
+    try future_init_configuration(self, talyn_loop);
     return 0;
 }
 

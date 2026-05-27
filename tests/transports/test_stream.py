@@ -1,5 +1,5 @@
-from leviathan import StreamTransport
-import leviathan
+from talyn import StreamTransport
+import talyn
 
 import asyncio, socket, os, pytest
 from typing import Any
@@ -152,7 +152,7 @@ async def _test_stream_transport_basics() -> None:
         client_transport.close()
 
 def test_stream_transport_basics() -> None:
-    leviathan.run(_test_stream_transport_basics())
+    talyn.run(_test_stream_transport_basics())
 
 async def _test_stream_transport_multiple_writes() -> None:
     loop = asyncio.get_running_loop()
@@ -188,7 +188,7 @@ async def _test_stream_transport_multiple_writes() -> None:
         client_transport.close()
 
 def test_stream_transport_multiple_writes() -> None:
-    leviathan.run(_test_stream_transport_multiple_writes())
+    talyn.run(_test_stream_transport_multiple_writes())
 
 async def _test_stream_transport_large_writes() -> None:
     loop = asyncio.get_running_loop()
@@ -233,7 +233,7 @@ async def _test_stream_transport_large_writes() -> None:
         client_transport.close()
 
 def test_stream_transport_large_writes() -> None:
-    leviathan.run(_test_stream_transport_large_writes())
+    talyn.run(_test_stream_transport_large_writes())
 
 async def _test_stream_transport_watermarks() -> None:
     loop = asyncio.get_running_loop()
@@ -276,7 +276,7 @@ async def _test_stream_transport_watermarks() -> None:
         client_transport.close()
 
 def test_stream_transport_watermarks() -> None:
-    leviathan.run(_test_stream_transport_watermarks())
+    talyn.run(_test_stream_transport_watermarks())
 
 async def _test_stream_transport_eof() -> None:
     loop = asyncio.get_running_loop()
@@ -311,7 +311,7 @@ async def _test_stream_transport_eof() -> None:
         client_transport.close()
 
 def test_stream_transport_eof() -> None:
-    leviathan.run(_test_stream_transport_eof())
+    talyn.run(_test_stream_transport_eof())
 
 async def _test_stream_transport_eof_with_pending_writes() -> None:
     loop = asyncio.get_running_loop()
@@ -351,7 +351,7 @@ async def _test_stream_transport_eof_with_pending_writes() -> None:
         client_transport.close()
 
 def test_stream_transport_eof_with_pending_writes() -> None:
-    leviathan.run(_test_stream_transport_eof_with_pending_writes())
+    talyn.run(_test_stream_transport_eof_with_pending_writes())
 
 async def _test_buffered_protocol_basics() -> None:
     loop = asyncio.get_running_loop()
@@ -388,7 +388,7 @@ async def _test_buffered_protocol_basics() -> None:
         client_transport.close()
 
 def test_buffered_protocol_basics() -> None:
-    leviathan.run(_test_buffered_protocol_basics())
+    talyn.run(_test_buffered_protocol_basics())
 
 async def _test_stream_transport_writelines() -> None:
     loop = asyncio.get_running_loop()
@@ -424,7 +424,7 @@ async def _test_stream_transport_writelines() -> None:
         client_transport.close()
 
 def test_stream_transport_writelines() -> None:
-    leviathan.run(_test_stream_transport_writelines())
+    talyn.run(_test_stream_transport_writelines())
 
 async def _test_stream_transport_abort() -> None:
     loop = asyncio.get_running_loop()
@@ -466,7 +466,7 @@ async def _test_stream_transport_abort() -> None:
         client_transport.close()
 
 def test_stream_transport_abort() -> None:
-    leviathan.run(_test_stream_transport_abort())
+    talyn.run(_test_stream_transport_abort())
 
 async def _test_stream_transport_reading_control() -> None:
     loop = asyncio.get_running_loop()
@@ -533,7 +533,7 @@ async def _test_stream_transport_reading_control() -> None:
         client_transport.close()
 
 def test_stream_transport_reading_control() -> None:
-    leviathan.run(_test_stream_transport_reading_control())
+    talyn.run(_test_stream_transport_reading_control())
 
 async def _test_stream_transport_rapid_reading_toggle() -> None:
     loop = asyncio.get_running_loop()
@@ -573,7 +573,7 @@ async def _test_stream_transport_rapid_reading_toggle() -> None:
         client_transport.close()
 
 def test_stream_transport_rapid_reading_toggle() -> None:
-    leviathan.run(_test_stream_transport_rapid_reading_toggle())
+    talyn.run(_test_stream_transport_rapid_reading_toggle())
 
 async def _test_stream_transport_buffer_types() -> None:
     loop = asyncio.get_running_loop()
@@ -621,7 +621,7 @@ async def _test_stream_transport_buffer_types() -> None:
         client_transport.close()
 
 def test_stream_transport_buffer_types() -> None:
-    leviathan.run(_test_stream_transport_buffer_types())
+    talyn.run(_test_stream_transport_buffer_types())
 
 async def _test_stream_transport_extra_info() -> None:
     loop = asyncio.get_running_loop()
@@ -665,7 +665,7 @@ async def _test_stream_transport_extra_info() -> None:
         client_transport.close()
 
 def test_stream_transport_extra_info() -> None:
-    leviathan.run(_test_stream_transport_extra_info())
+    talyn.run(_test_stream_transport_extra_info())
 
 async def _test_stream_transport_invalid_inputs() -> None:
     loop = asyncio.get_running_loop()
@@ -694,7 +694,7 @@ async def _test_stream_transport_invalid_inputs() -> None:
         server_transport.close()
 
 def test_stream_transport_invalid_inputs() -> None:
-    leviathan.run(_test_stream_transport_invalid_inputs())
+    talyn.run(_test_stream_transport_invalid_inputs())
 
 async def _test_stream_transport_write_edge_cases() -> None:
     loop = asyncio.get_running_loop()
@@ -735,7 +735,7 @@ async def _test_stream_transport_write_edge_cases() -> None:
         client_transport.close()
 
 def test_stream_transport_write_edge_cases() -> None:
-    leviathan.run(_test_stream_transport_write_edge_cases())
+    talyn.run(_test_stream_transport_write_edge_cases())
 
 async def _test_stream_transport_get_write_buffer_limits() -> None:
     loop = asyncio.get_running_loop()
@@ -763,7 +763,7 @@ async def _test_stream_transport_get_write_buffer_limits() -> None:
         client_socket.close()
 
 def test_stream_transport_get_write_buffer_limits() -> None:
-    leviathan.run(_test_stream_transport_get_write_buffer_limits())
+    talyn.run(_test_stream_transport_get_write_buffer_limits())
 
 
 async def _test_stream_transport_is_writing_initialized() -> None:
@@ -809,4 +809,4 @@ async def _test_stream_transport_is_writing_initialized() -> None:
         client_socket.close()
 
 def test_stream_transport_is_writing_initialized() -> None:
-    leviathan.run(_test_stream_transport_is_writing_initialized())
+    talyn.run(_test_stream_transport_is_writing_initialized())

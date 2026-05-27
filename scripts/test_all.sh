@@ -33,7 +33,7 @@ ensure_test_cert() {
 
 clean() {
     rm -rf zig-out zig-cache .zig-cache .pytest_cache 2>/dev/null || true
-    rm -f leviathan/leviathan_zig*.so leviathan/leviathan_zig*.pyd 2>/dev/null || true
+    rm -f talyn/talyn_zig*.so talyn/talyn_zig*.pyd 2>/dev/null || true
     find . -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
     find . -name '*.pyc' -delete 2>/dev/null || true
 }
@@ -105,7 +105,7 @@ run_std_tests() {
             cmd="$py"
         fi
         
-        if ! PYTHONPATH=. $cmd -c "import leviathan; leviathan.install(); import unittest; from test.test_asyncio import $mod; unittest.main(module=$mod, exit=False, argv=['-q'])" >/dev/null 2>&1; then
+        if ! PYTHONPATH=. $cmd -c "import talyn; talyn.install(); import unittest; from test.test_asyncio import $mod; unittest.main(module=$mod, exit=False, argv=['-q'])" >/dev/null 2>&1; then
             printf "  ${RED}%s: FAIL${NC}\n" "$mod"
             failed=1
         else
@@ -126,7 +126,7 @@ run_std_tests() {
 
 ensure_test_cert
 
-echo "=== Leviathan Test Suite ==="
+echo "=== Talyn Test Suite ==="
 echo ""
 
 # Clean once at start — removes all stale build artifacts
@@ -173,8 +173,8 @@ for py in python3.13 python3.14 python3.13t python3.14t; do
     fi
 
     ext_suffix=$("$py" -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))")
-    cp zig-out/lib/libleviathan.so "leviathan/leviathan_zig${ext_suffix}"
-    rm -f leviathan/leviathan_zig.so
+    cp zig-out/lib/libtalyn.so "talyn/talyn_zig${ext_suffix}"
+    rm -f talyn/talyn_zig.so
     run_tests "$py" "$py" || true
     run_std_tests "$py" "$py" || true
     echo ""

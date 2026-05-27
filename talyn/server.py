@@ -3,7 +3,7 @@ from typing import Any, Optional
 
 
 class Server:
-    """An asyncio.Server-compatible wrapper for leviathan stream servers."""
+    """An asyncio.Server-compatible wrapper for talyn stream servers."""
 
     def __init__(self, loop: asyncio.AbstractEventLoop, servers: list[Any]) -> None:
         self._loop = loop

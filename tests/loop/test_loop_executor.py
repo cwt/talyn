@@ -1,6 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 
-from leviathan import Loop
+from talyn import Loop
 
 import pytest, time
 

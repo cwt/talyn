@@ -1,5 +1,5 @@
 import asyncio
-import leviathan
+import talyn
 import pytest
 
 def test_loop_hooks():
@@ -45,7 +45,7 @@ def test_loop_hooks():
         h_prepare.cancel()
         h_check.cancel()
 
-    leviathan.run(main())
+    talyn.run(main())
 
 def test_idle_prevents_blocking():
     async def main():
@@ -65,4 +65,4 @@ def test_idle_prevents_blocking():
         assert count >= 5
         h_idle.cancel()
 
-    leviathan.run(main())
+    talyn.run(main())

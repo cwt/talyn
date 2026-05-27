@@ -19,38 +19,38 @@ pub const gpa = struct {
 
 pub fn init_gpa() void {}
 
-pub inline fn get_data_ptr2(comptime T: type, comptime field_name: []const u8, leviathan_pyobject: anytype) *T {
-    const type_info = @typeInfo(@TypeOf(leviathan_pyobject));
+pub inline fn get_data_ptr2(comptime T: type, comptime field_name: []const u8, talyn_pyobject: anytype) *T {
+    const type_info = @typeInfo(@TypeOf(talyn_pyobject));
     if (type_info != .pointer) {
-        @compileError("leviathan_pyobject must be a pointer");
+        @compileError("talyn_pyobject must be a pointer");
     }
 
     if (type_info.pointer.size != .one) {
-        @compileError("leviathan_pyobject must be a single pointer");
+        @compileError("talyn_pyobject must be a single pointer");
     }
 
     if (!@hasField(type_info.pointer.child, field_name)) {
         @compileError("Field not available");
     }
 
-    return @as(*T, @ptrFromInt(@intFromPtr(leviathan_pyobject) + @offsetOf(type_info.pointer.child, field_name)));
+    return @as(*T, @ptrFromInt(@intFromPtr(talyn_pyobject) + @offsetOf(type_info.pointer.child, field_name)));
 }
 
-pub inline fn get_data_ptr(comptime T: type, leviathan_pyobject: anytype) *T {
-    return get_data_ptr2(T, "data", leviathan_pyobject);
+pub inline fn get_data_ptr(comptime T: type, talyn_pyobject: anytype) *T {
+    return get_data_ptr2(T, "data", talyn_pyobject);
 }
 
-pub inline fn get_parent_ptr(comptime T: type, leviathan_object: anytype) *T {
-    const type_info = @typeInfo(@TypeOf(leviathan_object));
+pub inline fn get_parent_ptr(comptime T: type, talyn_object: anytype) *T {
+    const type_info = @typeInfo(@TypeOf(talyn_object));
     if (type_info != .pointer) {
-        @compileError("leviathan_pyobject must be a pointer");
+        @compileError("talyn_pyobject must be a pointer");
     }
 
     if (type_info.pointer.size != .one) {
-        @compileError("leviathan_pyobject must be a single pointer");
+        @compileError("talyn_pyobject must be a single pointer");
     }
     
-    return @as(*T, @ptrFromInt(@intFromPtr(leviathan_object) - @offsetOf(T, "data")));
+    return @as(*T, @ptrFromInt(@intFromPtr(talyn_object) - @offsetOf(T, "data")));
 }
 
 fn get_func_return_type(func: anytype) type {

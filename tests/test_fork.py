@@ -1,11 +1,11 @@
 import asyncio
 import os
 import pytest
-import leviathan
+import talyn
 import time
 
 def test_fork_safety():
-    loop = leviathan.Loop()
+    loop = talyn.Loop()
     asyncio.set_event_loop(loop)
     
     async def main():

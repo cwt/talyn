@@ -219,14 +219,14 @@ const DatagramSlots: []const python_c.PyType_Slot = &[_]python_c.PyType_Slot{
     .{ .slot = python_c.Py_tp_traverse, .pfunc = @constCast(&datagram_traverse) },
     .{ .slot = python_c.Py_tp_clear, .pfunc = @constCast(&datagram_clear) },
     .{ .slot = python_c.Py_tp_methods, .pfunc = @constCast(DatagramMethods.ptr) },
-    .{ .slot = python_c.Py_tp_doc, .pfunc = @constCast("Leviathan DatagramTransport.\x00") },
+    .{ .slot = python_c.Py_tp_doc, .pfunc = @constCast("Talyn DatagramTransport.\x00") },
     .{ .slot = 0, .pfunc = null },
 };
 
 // const PythonDatagramMembers: []const python_c.PyMemberDef = &[_]python_c.PyMemberDef{
 
 const datagram_spec = python_c.PyType_Spec{
-    .name = "leviathan.DatagramTransport\x00",
+    .name = "talyn.DatagramTransport\x00",
     .basicsize = @sizeOf(DatagramTransportObject),
     .itemsize = 0,
     .flags = python_c.Py_TPFLAGS_DEFAULT | python_c.Py_TPFLAGS_BASETYPE | python_c.Py_TPFLAGS_HAVE_GC,

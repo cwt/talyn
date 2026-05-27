@@ -99,8 +99,8 @@ const PythonTimerHandleMethods: []const python_c.PyMethodDef = &[_]python_c.PyMe
 };
 
 pub var PythonTimerHandleType = python_c.PyTypeObject{
-    .tp_name = "leviathan.TimerHandle\x00",
-    .tp_doc = "Leviathan's handle class\x00",
+    .tp_name = "talyn.TimerHandle\x00",
+    .tp_doc = "Talyn's handle class\x00",
     .tp_base = &Handle.PythonHandleType,
     .tp_basicsize = @sizeOf(PythonTimerHandleObject),
     .tp_itemsize = 0,

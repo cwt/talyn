@@ -22,8 +22,8 @@ const PythonPipeMembers: []const python_c.PyMemberDef = &[_]python_c.PyMemberDef
 };
 
 pub var PipeType = python_c.PyTypeObject{
-    .tp_name = "leviathan.Pipe\x00",
-    .tp_doc = "Leviathan's Pipe Transport\x00",
+    .tp_name = "talyn.Pipe\x00",
+    .tp_doc = "Talyn's Pipe Transport\x00",
     .tp_basicsize = @sizeOf(PipeTransport),
     .tp_itemsize = 0,
     .tp_flags = python_c.Py_TPFLAGS_DEFAULT | python_c.Py_TPFLAGS_BASETYPE,

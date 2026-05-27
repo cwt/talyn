@@ -1,5 +1,5 @@
 import asyncio
-import leviathan
+import talyn
 import socket
 import pytest
 
@@ -24,7 +24,7 @@ def test_pseudosocket():
         
         sock = transport.get_extra_info('socket')
         assert sock is not None
-        # In our implementation it should be leviathan.leviathan_zig.PseudoSocket
+        # In our implementation it should be talyn.talyn_zig.PseudoSocket
         # (or just look like a socket)
         assert hasattr(sock, 'fileno')
         assert hasattr(sock, 'getsockname')
@@ -43,4 +43,4 @@ def test_pseudosocket():
         await server_task
         server_sock.close()
 
-    leviathan.run(main())
+    talyn.run(main())

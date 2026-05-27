@@ -1,6 +1,6 @@
-from leviathan import Loop
-import leviathan
-from leviathan.loop import _subprocess_popens
+from talyn import Loop
+import talyn
+from talyn.loop import _subprocess_popens
 
 import asyncio, pytest
 
@@ -39,7 +39,7 @@ def test_subprocess_exec_basic() -> None:
         assert protocol.exit_code == 0
         await protocol.closed
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_subprocess_exec_sleep() -> None:
@@ -52,7 +52,7 @@ def test_subprocess_exec_sleep() -> None:
         assert protocol.exit_code == 0
         transport.close()
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_subprocess_get_pid() -> None:
@@ -66,7 +66,7 @@ def test_subprocess_get_pid() -> None:
         assert pid > 0
         transport.close()
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_subprocess_kill() -> None:
@@ -81,7 +81,7 @@ def test_subprocess_kill() -> None:
         assert protocol.exit_code < 0  # negative = killed by signal
         transport.close()
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_subprocess_terminate() -> None:
@@ -95,7 +95,7 @@ def test_subprocess_terminate() -> None:
         assert protocol.exit_code is not None
         transport.close()
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_subprocess_send_signal() -> None:
@@ -110,7 +110,7 @@ def test_subprocess_send_signal() -> None:
         assert protocol.exit_code is not None
         transport.close()
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_subprocess_returncode_none_before_exit() -> None:
@@ -124,7 +124,7 @@ def test_subprocess_returncode_none_before_exit() -> None:
         await protocol.exited
         transport.close()
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_subprocess_missing_factory() -> None:
@@ -133,7 +133,7 @@ def test_subprocess_missing_factory() -> None:
         with pytest.raises((ValueError, TypeError)):
             await loop.subprocess_exec(None, "/usr/bin/true")
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_subprocess_popen_cleaned_on_success() -> None:
@@ -156,7 +156,7 @@ def test_subprocess_popen_cleaned_on_success() -> None:
         assert protocol.exit_code == 0
         transport.close()
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 

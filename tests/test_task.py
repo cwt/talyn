@@ -1,4 +1,4 @@
-from leviathan import Task, Loop
+from talyn import Task, Loop
 
 from unittest.mock import AsyncMock
 

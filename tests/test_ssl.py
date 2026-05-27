@@ -4,8 +4,8 @@ import subprocess
 import tempfile
 import os
 
-import leviathan
-leviathan.install()
+import talyn
+talyn.install()
 import asyncio
 
 pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
@@ -290,7 +290,7 @@ async def test_ssl_create_server_handshake(ssl_certs):
 
 @pytest.mark.asyncio
 async def test_ssl_create_server_echo_ssl_client(ssl_certs):
-    """SSL server + leviathan SSL client echo."""
+    """SSL server + talyn SSL client echo."""
     server_ctx, key_path, cert_path = ssl_certs
 
     class EchoServer(asyncio.Protocol):

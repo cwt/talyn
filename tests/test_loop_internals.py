@@ -1,5 +1,5 @@
-from leviathan import Loop
-from leviathan.loop import PseudoSocket, _SSLTransportWrapper
+from talyn import Loop
+from talyn.loop import PseudoSocket, _SSLTransportWrapper
 
 from unittest.mock import MagicMock
 from concurrent.futures import ThreadPoolExecutor
@@ -73,7 +73,7 @@ def test_pseudo_socket_getpeername() -> None:
 
 
 def test_event_loop_policy() -> None:
-    from leviathan.loop import EventLoopPolicy
+    from talyn.loop import EventLoopPolicy
     import asyncio, warnings
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
@@ -92,16 +92,16 @@ def test_event_loop_policy() -> None:
 
 
 def test_install() -> None:
-    import leviathan
+    import talyn
     import asyncio, warnings
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
         old_policy = asyncio.get_event_loop_policy()
     try:
-        leviathan.install()
+        talyn.install()
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
-            assert isinstance(asyncio.get_event_loop_policy(), leviathan.loop.EventLoopPolicy)
+            assert isinstance(asyncio.get_event_loop_policy(), talyn.loop.EventLoopPolicy)
     finally:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)

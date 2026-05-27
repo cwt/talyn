@@ -352,17 +352,17 @@ inline fn z_stream_init(self: *StreamTransportObject, args: ?PyObject, kwargs: ?
     }
 
     if (!python_c.type_check(loop.?, Loop.Python.LoopType)) {
-        python_c.raise_python_type_error("Invalid event loop. Only Leviathan's loops are allow\x00");
+        python_c.raise_python_type_error("Invalid event loop. Only Talyn's loops are allow\x00");
         return error.PythonError;
     }
 
-    const leviathan_loop: *LoopObject = @ptrCast(loop.?);
+    const talyn_loop: *LoopObject = @ptrCast(loop.?);
 
     // Incref borrowed reference — free-threading GC can free it concurrently
     const protocol_ref = python_c.py_newref(py_protocol.?);
     defer python_c.py_decref(protocol_ref);
 
-    try stream_init_configuration(self, protocol_ref, leviathan_loop, @intCast(fd), false);
+    try stream_init_configuration(self, protocol_ref, talyn_loop, @intCast(fd), false);
 
     return 0;
 }

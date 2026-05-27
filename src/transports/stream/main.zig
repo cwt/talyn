@@ -176,7 +176,7 @@ pub const StreamTransportObject = extern struct {
 // };
 
 const stream_slots = [_]python_c.PyType_Slot{
-    .{ .slot = python_c.Py_tp_doc, .pfunc = @constCast("Leviathan's Stream Transport\x00") },
+    .{ .slot = python_c.Py_tp_doc, .pfunc = @constCast("Talyn's Stream Transport\x00") },
     .{ .slot = python_c.Py_tp_new, .pfunc = @constCast(&Constructors.stream_new) },
     .{ .slot = python_c.Py_tp_traverse, .pfunc = @constCast(&Constructors.stream_traverse) },
     .{ .slot = python_c.Py_tp_clear, .pfunc = @constCast(&Constructors.stream_clear) },
@@ -189,7 +189,7 @@ const stream_slots = [_]python_c.PyType_Slot{
 // const PythonStreamMembers: []const python_c.PyMemberDef = &[_]python_c.PyMemberDef{
 
 const stream_spec = python_c.PyType_Spec{
-    .name = "leviathan.StreamTransport\x00",
+    .name = "talyn.StreamTransport\x00",
     .basicsize = @sizeOf(StreamTransportObject),
     .itemsize = 0,
     .flags = python_c.Py_TPFLAGS_DEFAULT | python_c.Py_TPFLAGS_BASETYPE | python_c.Py_TPFLAGS_HAVE_GC,

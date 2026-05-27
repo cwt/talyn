@@ -1,7 +1,7 @@
 const python_c = @import("python_c");
 const PyObject = *python_c.PyObject;
 
-extern fn leviathan_task_step_trampoline(
+extern fn talyn_task_step_trampoline(
     enter_task_func: PyObject,
     leave_task_func: PyObject,
     loop: PyObject,
@@ -29,7 +29,7 @@ pub const Data = struct {
 };
 
 
-pub const LeviathanPyTaskWakeupMethod = python_c.PyMethodDef{
+pub const TalynPyTaskWakeupMethod = python_c.PyMethodDef{
     .ml_name = "wake_up_task\x00",
     .ml_meth = @ptrCast(&py_wake_up),
     .ml_doc = "Wakeup the task.\x00",
@@ -152,7 +152,7 @@ inline fn cancel_future_object(
 
 fn create_wake_up_task_callback(task: *Task.PythonTaskObject) !PyObject {
     const wrapper = python_c.PyCFunction_New(
-        @constCast(&LeviathanPyTaskWakeupMethod), @ptrCast(task)
+        @constCast(&TalynPyTaskWakeupMethod), @ptrCast(task)
     ) orelse return error.PythonError;
 
     task.wake_up_task_callback = wrapper;
@@ -213,7 +213,7 @@ inline fn handle_legacy_future_object(
     return;
 }
 
-inline fn handle_leviathan_future_object(
+inline fn handle_talyn_future_object(
     task: *Task.PythonTaskObject,
     future: *Future.Python.FutureObject,
     loop_data: *Loop
@@ -268,7 +268,7 @@ inline fn successfully_execution(
     task: *Task.PythonTaskObject, loop_data: *Loop, result: PyObject
 ) !void {
     if (python_c.type_check(result, &Future.Python.FutureType)) {
-        try handle_leviathan_future_object(task, @ptrCast(result), loop_data);
+        try handle_talyn_future_object(task, @ptrCast(result), loop_data);
         return;
     }else if (python_c.is_none(result)) {
         const callback = CallbackManager.Callback{
@@ -527,7 +527,7 @@ fn _execute_task_send(task: *Task.PythonTaskObject) !void {
     var coro_ret: ?PyObject = null;
     defer python_c.py_xdecref(coro_ret);
 
-    const trampoline_ret = leviathan_task_step_trampoline(
+    const trampoline_ret = talyn_task_step_trampoline(
         utils.PythonImports.enter_task_func,
         utils.PythonImports.leave_task_func,
         @ptrCast(py_loop),
@@ -597,14 +597,14 @@ fn wakeup_task(fut: ?*Future.Python.FutureObject, ptr: ?*anyopaque) !void {
     const task: *Task.PythonTaskObject = @alignCast(@ptrCast(ptr.?));
     python_c.py_decref_and_set_null(&task.fut_waiter);
 
-    const leviathan_fut = fut orelse {
+    const talyn_fut = fut orelse {
         python_c.py_decref(@ptrCast(task));
         return;
     };
     errdefer python_c.py_decref(@ptrCast(task));
 
-    if (leviathan_fut.exception) |exception| {
-        leviathan_fut.exception = null;
+    if (talyn_fut.exception) |exception| {
+        talyn_fut.exception = null;
         _execute_task_throw(task, python_c.py_newref(exception)) catch |err| {
             utils.handle_zig_function_error(err, {});
 

@@ -1,6 +1,6 @@
-from leviathan.loop import Loop
+from talyn.loop import Loop
 
-from leviathan.runner import run
+from talyn.runner import run
 
 import asyncio
 

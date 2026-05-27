@@ -1,4 +1,4 @@
-from .leviathan_zig import Task as _Task
+from .talyn_zig import Task as _Task
 
 from typing import TypeVar, Coroutine, Optional, Any
 import asyncio

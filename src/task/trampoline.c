@@ -1,6 +1,6 @@
 #include <Python.h>
 
-PyObject* leviathan_task_step_trampoline(
+PyObject* talyn_task_step_trampoline(
     PyObject *enter_task_func,
     PyObject *leave_task_func,
     PyObject *loop,

@@ -189,9 +189,9 @@ inline fn z_task_init(
         return error.PythonError;
     }
 
-    const leviathan_loop: *LoopObject = @ptrCast(py_loop.?);
-    if (!python_c.type_check(@ptrCast(leviathan_loop), Loop.Python.LoopType)) {
-        python_c.raise_python_type_error("Invalid asyncio event loop. Only Leviathan's event loops are allowed\x00");
+    const talyn_loop: *LoopObject = @ptrCast(py_loop.?);
+    if (!python_c.type_check(@ptrCast(talyn_loop), Loop.Python.LoopType)) {
+        python_c.raise_python_type_error("Invalid asyncio event loop. Only Talyn's event loops are allowed\x00");
         return error.PythonError;
     }
 
@@ -224,10 +224,10 @@ inline fn z_task_init(
     python_c.py_incref(coro.?);
     errdefer python_c.py_decref(coro.?);
 
-    try task_init_configuration(self, leviathan_loop, coro.?, context.?, name);
+    try task_init_configuration(self, talyn_loop, coro.?, context.?, name);
     errdefer { self.py_context = null; }
 
-    try task_schedule_coro(self, leviathan_loop);
+    try task_schedule_coro(self, talyn_loop);
 
     return 0;
 }

@@ -1,15 +1,13 @@
-from setuptools import setup, find_packages, Command
+from setuptools import setup, Command
 from setuptools.command.develop import develop
-from setuptools.command.install import install
 from setuptools.command.build_ext import build_ext
 from setuptools.command.build import build
 
 import os, shutil, subprocess, stat, sys, sysconfig
-
-from typing import Literal, Any
+from typing import Literal
 
 if sys.version_info < (3, 13):
-    raise RuntimeError("leviathan requires Python 3.13 or later")
+    raise RuntimeError("talyn requires Python 3.13 or later")
 
 zig_mode: Literal["Debug", "ReleaseSafe"] = "Debug"
 zig_compiler_options = []
@@ -28,7 +26,7 @@ if not is_gil_enabled:
     zig_compiler_options.append("-Dpython-gil-disabled")
 
 
-class LeviathanBench(Command):
+class TalynBench(Command):
     def initialize_options(self) -> None:
         pass
 
@@ -42,13 +40,11 @@ class LeviathanBench(Command):
         self.run_command("build")
 
         build_lib_path = os.path.join("build", "lib")
-
         benchmarks_path = os.path.join(build_lib_path, "benchmarks")
         benchmark_py_path = os.path.join(build_lib_path, "benchmark.py")
         shutil.copytree("./benchmarks", benchmarks_path, dirs_exist_ok=True)
         shutil.copyfile("./benchmark.py", benchmark_py_path)
 
-        build_lib_path = os.path.join("build", "lib")
         errno = subprocess.call([sys.executable, "benchmark.py"], cwd=build_lib_path)
 
         shutil.rmtree(benchmarks_path)
@@ -57,7 +53,7 @@ class LeviathanBench(Command):
         raise SystemExit(errno)
 
 
-class LeviathanTest(Command):
+class TalynTest(Command):
     def initialize_options(self) -> None:
         pass
 
@@ -70,7 +66,7 @@ class LeviathanTest(Command):
 
         errno = subprocess.call(
             [sys.executable, "-m", "pytest", "-s", "-x", "--verbose", "--full-trace",
-             "--cov=leviathan", "--cov-report=term", "--cov-report=html", "--cov-config=.coveragerc"],
+             "--cov=talyn", "--cov-report=term", "--cov-report=html", "--cov-config=.coveragerc"],
             cwd=os.path.join("build", "lib"),
         )
         raise SystemExit(errno)
@@ -87,8 +83,8 @@ class ZigBuildExtCommand(build_ext):
         build_dir = "./zig-out/lib"
 
         ext_suffix = sysconfig.get_config_var("EXT_SUFFIX")
-        src_path = os.path.join(build_dir, "libleviathan.so")
-        dest_path = os.path.join("build", "lib", "leviathan", f"leviathan_zig{ext_suffix}")
+        src_path = os.path.join(build_dir, "libtalyn.so")
+        dest_path = os.path.join("build", "lib", "talyn", f"talyn_zig{ext_suffix}")
         os.makedirs(os.path.dirname(dest_path), exist_ok=True)
         shutil.copyfile(src_path, dest_path)
 
@@ -113,35 +109,13 @@ class ZigDevelopCommand(develop):
         super().run()
 
 
-class ZigInstallCommand(install):
-    def run(self) -> None:
-        global zig_mode
-
-        zig_mode = "ReleaseSafe"
-        self.run_command("build")
-        super().run()
-
-
+# Setuptools execution with custom build commands
 setup(
-    name="leviathan",
-    version="0.4.0",
-    description="Leviathan: A lightning-fast Zig-powered event loop for Python's asyncio.",
-    author="Enrique Miguel Mora Meza",
-    author_email="kike28.py@protonmail.ch",
-    url="https://github.com/kython28/leviathan",
-    packages=find_packages(
-        exclude=["tests", "zig-out", "src"], include=["leviathan", "leviathan.*"]
-    ),
-    package_data={
-        "leviathan": ["leviathan_zig*.so"],
-        "": ["tests/"],
-    },
     cmdclass={
         "build_ext": ZigBuildExtCommand,
         "build": ZigBuildCommand,
         "develop": ZigDevelopCommand,
-        "install": ZigInstallCommand,
-        "bench": LeviathanBench,
-        "test": LeviathanTest,
+        "bench": TalynBench,
+        "test": TalynTest,
     },
 )

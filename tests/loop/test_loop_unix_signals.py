@@ -1,4 +1,4 @@
-from leviathan import Loop
+from talyn import Loop
 
 from typing import Callable
 import pytest, os, signal

@@ -1,4 +1,4 @@
-from leviathan import Future, Loop
+from talyn import Future, Loop
 
 import pytest, asyncio
 

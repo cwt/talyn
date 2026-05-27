@@ -1,5 +1,5 @@
 import asyncio
-import leviathan
+import talyn
 import pytest
 import socket
 

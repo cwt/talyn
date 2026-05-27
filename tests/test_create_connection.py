@@ -1,5 +1,5 @@
-from leviathan import Loop
-import leviathan
+from talyn import Loop
+import talyn
 
 import asyncio, socket, threading, pytest
 from typing import Any
@@ -84,7 +84,7 @@ def test_create_connection_basic() -> None:
             assert protocol.connected.done()
             transport.close()
 
-        leviathan.run(main())
+        talyn.run(main())
     finally:
         stop.set()
 
@@ -102,7 +102,7 @@ def test_create_connection_send_recv() -> None:
             assert data == b"hello"
             transport.close()
 
-        leviathan.run(main())
+        talyn.run(main())
     finally:
         stop.set()
 
@@ -118,7 +118,7 @@ def test_create_connection_close() -> None:
             transport.close()
             await protocol.disconnected
 
-        leviathan.run(main())
+        talyn.run(main())
     finally:
         stop.set()
 
@@ -135,7 +135,7 @@ def test_create_connection_refused() -> None:
         with pytest.raises(ConnectionRefusedError):
             await loop.create_connection(EchoProtocol, "127.0.0.1", port)
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_create_connection_missing_args() -> None:
@@ -144,7 +144,7 @@ def test_create_connection_missing_args() -> None:
         with pytest.raises(TypeError):
             await loop.create_connection() # type: ignore
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_create_connection_invalid_protocol_factory() -> None:
@@ -153,7 +153,7 @@ def test_create_connection_invalid_protocol_factory() -> None:
         with pytest.raises(ValueError, match="Invalid protocol_factory"):
             await loop.create_connection("not a callable", "127.0.0.1", 12345) # type: ignore
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 import pytest
@@ -169,7 +169,7 @@ def test_create_connection_lambda_factory() -> None:
             assert isinstance(protocol, EchoProtocol)
             transport.close()
 
-        leviathan.run(main())
+        talyn.run(main())
     finally:
         stop.set()
 
@@ -189,7 +189,7 @@ def test_create_connection_multiple_messages() -> None:
                 assert data == msg
             transport.close()
 
-        leviathan.run(main())
+        talyn.run(main())
     finally:
         stop.set()
 
@@ -212,7 +212,7 @@ def test_create_connection_extra_info() -> None:
             assert hasattr(sock, 'fileno')
             assert sock.fileno() > 0
             transport.close()
-        leviathan.run(main())
+        talyn.run(main())
     finally:
         stop.set()
 
@@ -229,7 +229,7 @@ def test_create_connection_write_eof() -> None:
             transport.write_eof()
             transport.close()
 
-        leviathan.run(main())
+        talyn.run(main())
     finally:
         stop.set()
 
@@ -246,7 +246,7 @@ def test_create_connection_is_closing() -> None:
             transport.close()
             assert transport.is_closing()
 
-        leviathan.run(main())
+        talyn.run(main())
     finally:
         stop.set()
 
@@ -270,4 +270,4 @@ def test_create_connection_all_errors() -> None:
         with pytest.raises(ExceptionGroup, match="Multiple connection failures"):
             await loop.create_connection(EchoProtocol, "127.0.0.1", port, all_errors=True)
 
-    leviathan.run(main())
+    talyn.run(main())

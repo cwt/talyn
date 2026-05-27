@@ -1,4 +1,4 @@
-from leviathan import Loop
+from talyn import Loop
 
 import contextvars
 from contextvars import copy_context

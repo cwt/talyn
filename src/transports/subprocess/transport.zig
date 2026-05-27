@@ -192,12 +192,12 @@ const SubprocessSlots: []const python_c.PyType_Slot = &[_]python_c.PyType_Slot{
     .{ .slot = python_c.Py_tp_clear, .pfunc = @ptrCast(@constCast(&subprocess_clear)) },
     .{ .slot = python_c.Py_tp_methods, .pfunc = @ptrCast(@constCast(SubprocessMethods.ptr)) },
     .{ .slot = Py_tp_getset, .pfunc = @ptrCast(@constCast(SubprocessGetSet.ptr)) },
-    .{ .slot = python_c.Py_tp_doc, .pfunc = @constCast("Leviathan SubprocessTransport.") },
+    .{ .slot = python_c.Py_tp_doc, .pfunc = @constCast("Talyn SubprocessTransport.") },
     .{ .slot = 0, .pfunc = null },
 };
 
 var subprocess_spec = python_c.PyType_Spec{
-    .name = "leviathan.SubprocessTransport",
+    .name = "talyn.SubprocessTransport",
     .basicsize = @sizeOf(SubprocessTransportObject),
     .itemsize = 0,
     .flags = python_c.Py_TPFLAGS_DEFAULT | python_c.Py_TPFLAGS_BASETYPE | python_c.Py_TPFLAGS_HAVE_GC,

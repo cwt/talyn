@@ -22,8 +22,8 @@ const PythonSubprocessMembers: []const python_c.PyMemberDef = &[_]python_c.PyMem
 };
 
 pub var SubprocessType = python_c.PyTypeObject{
-    .tp_name = "leviathan.Subprocess\x00",
-    .tp_doc = "Leviathan's Subprocess Transport\x00",
+    .tp_name = "talyn.Subprocess\x00",
+    .tp_doc = "Talyn's Subprocess Transport\x00",
     .tp_basicsize = @sizeOf(SubprocessTransport),
     .tp_itemsize = 0,
     .tp_flags = python_c.Py_TPFLAGS_DEFAULT | python_c.Py_TPFLAGS_BASETYPE,

@@ -106,7 +106,7 @@ const PseudoSocketGetSet = [_]python_c.PyGetSetDef{
 };
 
 pub var PseudoSocketType = python_c.PyTypeObject{
-    .tp_name = "leviathan.PseudoSocket\x00",
+    .tp_name = "talyn.PseudoSocket\x00",
     .tp_basicsize = @sizeOf(PseudoSocketObject),
     .tp_flags = python_c.Py_TPFLAGS_DEFAULT,
     .tp_methods = @constCast(&PseudoSocketMethods),

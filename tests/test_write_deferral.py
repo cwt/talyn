@@ -1,5 +1,5 @@
 import asyncio
-import leviathan
+import talyn
 import socket
 import pytest
 
@@ -52,7 +52,7 @@ def test_write_deferral():
         await server_task
         server_sock.close()
 
-    leviathan.run(main())
+    talyn.run(main())
 
 def test_write_deferral_with_drain():
     async def main():
@@ -91,4 +91,4 @@ def test_write_deferral_with_drain():
         await server_task
         server_sock.close()
 
-    leviathan.run(main())
+    talyn.run(main())

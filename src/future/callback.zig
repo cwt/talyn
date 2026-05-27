@@ -169,7 +169,7 @@ pub fn traverse_callbacks_queue(queue: *const CallbacksSetData, visit: python_c.
                 if (vret2 != 0) return vret2;
             },
             .ZigGeneric => |data| {
-                // data.ptr is always a PythonTaskObject (Task) in Leviathan.
+                // data.ptr is always a PythonTaskObject (Task) in Talyn.
                 // Traverse it so GC can see Task -> Future -> Task cycles.
                 if (data.ptr) |ptr| {
                     const vret = visit.?(@alignCast(@ptrCast(ptr)), arg);

@@ -157,7 +157,7 @@ const HookHandleMethods = [_]python_c.PyMethodDef{
 };
 
 var HookHandleType = python_c.PyTypeObject{
-    .tp_name = "leviathan._HookHandle\x00",
+    .tp_name = "talyn._HookHandle\x00",
     .tp_basicsize = @sizeOf(HookHandle),
     .tp_flags = python_c.Py_TPFLAGS_DEFAULT | python_c.Py_TPFLAGS_HAVE_GC,
     .tp_dealloc = @ptrCast(&hook_handle_dealloc),
@@ -240,7 +240,7 @@ const PathWatcherHandleMethods = [_]python_c.PyMethodDef{
 };
 
 var PathWatcherHandleType = python_c.PyTypeObject{
-    .tp_name = "leviathan._PathWatcherHandle\x00",
+    .tp_name = "talyn._PathWatcherHandle\x00",
     .tp_basicsize = @sizeOf(PathWatcherHandle),
     .tp_flags = python_c.Py_TPFLAGS_DEFAULT | python_c.Py_TPFLAGS_HAVE_GC,
     .tp_dealloc = @ptrCast(&path_watcher_handle_dealloc),

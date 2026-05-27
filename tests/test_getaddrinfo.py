@@ -1,5 +1,5 @@
-from leviathan import Loop
-import leviathan
+from talyn import Loop
+import talyn
 
 import asyncio, socket, pytest
 
@@ -14,7 +14,7 @@ def test_getaddrinfo_literal_ipv4() -> None:
         assert typ == socket.SOCK_STREAM
         assert sockaddr == ("127.0.0.1", 80)
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_getaddrinfo_multiple() -> None:
@@ -28,7 +28,7 @@ def test_getaddrinfo_multiple() -> None:
         assert r1[0][4] == ("127.0.0.1", 80)
         assert r2[0][4] == ("127.0.0.1", 443)
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_getaddrinfo_different_port() -> None:
@@ -38,7 +38,7 @@ def test_getaddrinfo_different_port() -> None:
         sockaddr = result[0][4]
         assert sockaddr[1] == 443
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_getaddrinfo_missing_host() -> None:
@@ -47,7 +47,7 @@ def test_getaddrinfo_missing_host() -> None:
         with pytest.raises((ValueError, TypeError)):
             await loop.getaddrinfo(None, 80)
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_getaddrinfo_returns_tuple() -> None:
@@ -60,4 +60,4 @@ def test_getaddrinfo_returns_tuple() -> None:
         assert isinstance(entry, tuple)
         assert len(entry) == 5
 
-    leviathan.run(main())
+    talyn.run(main())

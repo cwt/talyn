@@ -1,5 +1,5 @@
 import asyncio
-import leviathan
+import talyn
 import time
 import pytest
 import logging
@@ -7,7 +7,7 @@ import threading
 import weakref
 
 def test_debug_mode_basic():
-    loop = leviathan.Loop()
+    loop = talyn.Loop()
     try:
         assert loop.get_debug() is False
         loop.set_debug(True)
@@ -18,7 +18,7 @@ def test_debug_mode_basic():
         loop.close()
 
 def test_debug_mode_slow_callback(caplog):
-    loop = leviathan.Loop()
+    loop = talyn.Loop()
     loop.set_debug(True)
     
     def slow_callback():
@@ -29,7 +29,7 @@ def test_debug_mode_slow_callback(caplog):
         await asyncio.sleep(0.2)
     
     try:
-        with caplog.at_level(logging.ERROR, logger="leviathan"):
+        with caplog.at_level(logging.ERROR, logger="talyn"):
             loop.run_until_complete(main())
     
         found = False
@@ -42,7 +42,7 @@ def test_debug_mode_slow_callback(caplog):
         loop.close()
 
 def test_debug_mode_thread_safety():
-    loop = leviathan.Loop()
+    loop = talyn.Loop()
     loop.set_debug(True)
     
     errors = []
@@ -66,7 +66,7 @@ def test_debug_mode_thread_safety():
         loop.close()
 
 def test_loop_weakref():
-    loop = leviathan.Loop()
+    loop = talyn.Loop()
     try:
         ref = weakref.ref(loop)
         assert ref() is loop
@@ -74,4 +74,4 @@ def test_loop_weakref():
         loop.close()
 
 if __name__ == "__main__":
-    leviathan.run(test_debug_mode_basic())
+    talyn.run(test_debug_mode_basic())

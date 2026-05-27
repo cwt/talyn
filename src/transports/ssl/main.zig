@@ -22,8 +22,8 @@ const PythonSSLMembers: []const python_c.PyMemberDef = &[_]python_c.PyMemberDef{
 };
 
 pub var SSLType = python_c.PyTypeObject{
-    .tp_name = "leviathan.SSL\x00",
-    .tp_doc = "Leviathan's SSL Transport\x00",
+    .tp_name = "talyn.SSL\x00",
+    .tp_doc = "Talyn's SSL Transport\x00",
     .tp_basicsize = @sizeOf(SSLTransport),
     .tp_itemsize = 0,
     .tp_flags = python_c.Py_TPFLAGS_DEFAULT | python_c.Py_TPFLAGS_BASETYPE,

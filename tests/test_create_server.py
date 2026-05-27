@@ -1,5 +1,5 @@
-from leviathan import Loop
-import leviathan
+from talyn import Loop
+import talyn
 
 import asyncio, socket, pytest
 from typing import Any
@@ -27,7 +27,7 @@ def test_create_server_basic() -> None:
         server.close()
         await server.wait_closed()
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_create_server_bind_any() -> None:
@@ -37,7 +37,7 @@ def test_create_server_bind_any() -> None:
         assert server.is_serving()
         server.close()
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_create_server_close() -> None:
@@ -47,7 +47,7 @@ def test_create_server_close() -> None:
         server.close()
         assert not server.is_serving()
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_create_server_sockets_property() -> None:
@@ -59,7 +59,7 @@ def test_create_server_sockets_property() -> None:
         assert isinstance(sockets[0], socket.socket)
         server.close()
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_create_server_invalid_protocol_factory() -> None:
@@ -68,7 +68,7 @@ def test_create_server_invalid_protocol_factory() -> None:
         with pytest.raises((TypeError, ValueError)):
             await loop.create_server(None, "127.0.0.1", 0)
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_create_server_get_loop() -> None:
@@ -78,7 +78,7 @@ def test_create_server_get_loop() -> None:
         assert server.get_loop() is loop
         server.close()
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_create_server_localhost() -> None:
@@ -92,7 +92,7 @@ def test_create_server_localhost() -> None:
         server.close()
         await server.wait_closed()
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_create_server_localhost_echo() -> None:
@@ -113,7 +113,7 @@ def test_create_server_localhost_echo() -> None:
         server.close()
         await server.wait_closed()
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_create_server_bind_all_interfaces() -> None:
@@ -128,7 +128,7 @@ def test_create_server_bind_all_interfaces() -> None:
         server.close()
         await server.wait_closed()
 
-    leviathan.run(main())
+    talyn.run(main())
 
 
 def test_create_server_unresolvable_host() -> None:
@@ -137,4 +137,4 @@ def test_create_server_unresolvable_host() -> None:
         with pytest.raises(RuntimeError):
             await loop.create_server(EchoProtocol, "invalid--domain", 0)
 
-    leviathan.run(main())
+    talyn.run(main())
