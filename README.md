@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE.md)
 [![Python Compatibility](https://img.shields.io/badge/python-3.13%20%7C%203.14%20%7C%20Free--Threaded-blue.svg)](#📜-requirements)
-[![Linux Compatibility](https://img.shields.io/badge/linux-5.11+%20%7C%20Fedora%2043--44-orange.svg)](#📜-requirements)
+[![Linux Compatibility](https://img.shields.io/badge/linux-7.0+%20%7C%20Fedora%2043--44-orange.svg)](#📜-requirements)
 [![Zig Compatibility](https://img.shields.io/badge/zig-0.16.0-red.svg)](#📜-requirements)
 
 **Talyn** is a robust, exceptionally stable, and realistically fast `asyncio` event loop drop-in replacement for Python, powered by the asynchronous capabilities of **Zig** and **io_uring**. 
@@ -24,7 +24,7 @@ Talyn prioritizes **correctness, complete system safety, and high usability** ov
 ## 📜 Requirements
 
 * **Python**: `>= 3.13` (Tested and verified under CPython `3.13`, `3.14`, `3.13t` (free-threaded), and `3.14t` (free-threaded))
-* **Linux Kernel**: `>= 5.11` (for `io_uring` support; verified on Linux Kernel `7.0.x`)
+* **Linux Kernel**: `>= 7.0` (Verified on Linux Kernel `7.0.x`)
 * **Zig Compiler** (for source builds): `0.16.0` (Fedora packages)
 
 > [!NOTE]
