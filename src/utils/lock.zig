@@ -9,7 +9,21 @@ const SpinMutex = struct {
     }
 
     pub fn lock(m: *SpinMutex) void {
-        while (!m.inner.tryLock()) {}
+        var spin: usize = 0;
+        while (!m.inner.tryLock()) {
+            spin += 1;
+            if (spin < 10) {
+                std.atomic.spinLoopHint();
+            } else if (spin < 20) {
+                var i: usize = 0;
+                while (i < 10) : (i += 1) {
+                    std.atomic.spinLoopHint();
+                }
+            } else {
+                std.Thread.yield() catch {};
+                spin = 0;
+            }
+        }
     }
 
     pub fn unlock(m: *SpinMutex) void {
@@ -26,10 +40,7 @@ const DummyLock = struct {
     pub fn unlock(_: *DummyLock) void {}
 };
 
-pub const Mutex = switch (builtin.mode) {
-    .Debug => SpinMutex,
-    else => if (builtin.single_threaded) DummyLock else SpinMutex,
-};
+pub const Mutex = if (builtin.single_threaded) DummyLock else SpinMutex;
 
 pub inline fn init() Mutex {
     return .{};
