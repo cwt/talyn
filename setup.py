@@ -41,7 +41,7 @@ class TalynBench(Command):
 
     def run(self) -> None:
         global zig_mode
-        zig_mode = "ReleaseSafe"
+        zig_mode = "ReleaseFast"
 
         self.run_command("build")
 

@@ -61,13 +61,14 @@ LOOPS: List[Tuple[str, str, Callable[[], asyncio.AbstractEventLoop]]] = [
 ]
 
 def make_script(modname, m, loop_type):
-    imports = "import asyncio, sys, json, time"
+    imports = "import asyncio, sys, json, time, os"
     if "talyn" in loop_type:
         imports += ", talyn"
     if "uvloop" in loop_type:
         imports += ", uvloop"
     return f"""\
 {imports}
+sys.path.insert(0, os.path.abspath('.'))
 from importlib import import_module
 mod = import_module("{modname}")
 loop = {loop_type}
@@ -115,7 +116,7 @@ def benchmark_with_event_loops(
                     timeout=BENCHMARK_TIMEOUT,
                 )
                 if out.returncode != 0:
-                    err = out.stderr.strip()[:120]
+                    err = out.stderr.strip()
                     print(f"FAIL (m={m}): {err}", flush=True)
                     failed = True
                     break
