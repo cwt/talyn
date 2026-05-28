@@ -36,7 +36,7 @@ fn getaddrinfo_callback(data: *const CallbackManager.CallbackData) !void {
     }
     const loop_data = utils.get_data_ptr(Loop, gaid.loop);
     
-    if (data.cancelled) {
+    if (data.cancelled()) {
         return;
     }
 

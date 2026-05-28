@@ -134,7 +134,7 @@ pub const ControlData = struct {
             self.record.discard();
 
             for (self.user_callbacks.items) |*v| {
-                v.data.cancelled = true;
+                v.data.set_cancelled(true);
                 if (!loop.initialized) {
                     Loop.Scheduling.Soon.dispatch_guaranteed_nonthreadsafe(loop, v) catch {
                         loop.reserved_slots -= 1;
@@ -154,10 +154,10 @@ pub const ControlData = struct {
 
     pub fn traverse(self: *const ControlData, visit: python_c.visitproc, arg: ?*anyopaque) c_int {
         for (self.user_callbacks.items) |*v| {
-            if (v.data.module_ptr) |mod| {
+            if (v.data.module_ptr()) |mod| {
                 const vret1 = visit.?(@ptrCast(mod), arg);
                 if (vret1 != 0) return vret1;
-                if (v.data.callback_ptr) |cp| {
+                if (v.data.callback_ptr()) |cp| {
                     const vret2 = visit.?(@ptrCast(cp), arg);
                     if (vret2 != 0) return vret2;
                 }
@@ -196,13 +196,13 @@ fn mark_resolved_and_execute_user_callbacks(server_data: *ServerQueryData) !void
 }
 
 fn check_send_operation_result(data: *const CallbackManager.CallbackData) !void {
-    const io_uring_err = data.io_uring_err;
-    const io_uring_res = data.io_uring_res;
+    const io_uring_err = data.io_uring_err();
+    const io_uring_res = data.io_uring_res();
 
     const server_data: *ServerQueryData = @alignCast(@ptrCast(data.user_data.?));
 
     const control_data = server_data.control_data;
-    if (io_uring_err != .SUCCESS or control_data.resolved or data.cancelled) {
+    if (io_uring_err != .SUCCESS or control_data.resolved or data.cancelled()) {
         return;
     }
 
@@ -314,13 +314,13 @@ fn parse_individual_dns_result(full_data: []const u8, initial_offset: usize, res
 }
 
 fn process_dns_response(data: *const CallbackManager.CallbackData) !void {
-    const io_uring_err = data.io_uring_err;
-    const io_uring_res = data.io_uring_res;
+    const io_uring_err = data.io_uring_err();
+    const io_uring_res = data.io_uring_res();
 
     const server_data: *ServerQueryData = @alignCast(@ptrCast(data.user_data.?));
 
     const control_data = server_data.control_data;
-    if (io_uring_err != .SUCCESS or control_data.resolved or data.cancelled) {
+    if (io_uring_err != .SUCCESS or control_data.resolved or data.cancelled()) {
         server_data.release();
         return;
     }

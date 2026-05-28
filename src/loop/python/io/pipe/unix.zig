@@ -55,13 +55,13 @@ fn unix_connect_callback(data: *const CallbackManager.CallbackData) !void {
         allocator.destroy(ucd);
     }
 
-    if (data.cancelled) {
+    if (data.cancelled()) {
         python_c.raise_python_runtime_error("Unix connection cancelled");
         return set_future_exception(error.PythonError, ucd.future);
     }
 
-    const io_uring_res = data.io_uring_res;
-    const io_uring_err = data.io_uring_err;
+    const io_uring_res = data.io_uring_res();
+    const io_uring_err = data.io_uring_err();
 
     if (io_uring_err != .SUCCESS or io_uring_res < 0) {
         const errno_val = if (io_uring_res < 0) -io_uring_res else @intFromEnum(io_uring_err);

@@ -167,7 +167,7 @@ var HookHandleType = python_c.PyTypeObject{
 
 fn hook_callback(data: *const CallbackManager.CallbackData) !void {
     const handle: *HookHandle = @alignCast(@ptrCast(data.user_data.?));
-    if (data.cancelled) {
+    if (data.cancelled()) {
         python_c.py_decref(@ptrCast(handle));
         return;
     }

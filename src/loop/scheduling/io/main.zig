@@ -145,7 +145,7 @@ pub const BlockingTask = struct {
 };
 
 fn eventfd_callback(data: *const CallbackManager.CallbackData) !void {
-    if (data.cancelled) return;
+    if (data.cancelled()) return;
 
     const io: *IO = @alignCast(@ptrCast(data.user_data.?));
     try io.register_eventfd_callback();
@@ -197,7 +197,7 @@ pub const BlockingTasksSet = struct {
         for (self.task_data_pool[0..self.index]) |*task| {
             switch (task.data) {
                 .callback => |*data| {
-                    data.data.cancelled = true;
+                    data.data.set_cancelled(true);
                     try Loop.Scheduling.Soon.dispatch_guaranteed_nonthreadsafe(loop, data);
                 },
                 .none => {}
@@ -265,15 +265,15 @@ pub const BlockingTasksSet = struct {
         for (self.task_data_pool[0..current_index]) |*task| {
             switch (task.data) {
                 .callback => |*cb| {
-                    if (cb.data.traverse) |t| {
+                    if (cb.data.traverse()) |t| {
                         const vret = t(cb.data.user_data, @constCast(@ptrCast(visit)), arg);
                         if (vret != 0) return vret;
                     }
 
-                    if (cb.data.module_ptr) |mod| {
+                    if (cb.data.module_ptr()) |mod| {
                         const vret1 = visit.?(@ptrCast(mod), arg);
                         if (vret1 != 0) return vret1;
-                        if (cb.data.callback_ptr) |cp| {
+                        if (cb.data.callback_ptr()) |cp| {
                             const vret2 = visit.?(@ptrCast(cp), arg);
                             if (vret2 != 0) return vret2;
                         }
@@ -510,8 +510,6 @@ pub fn register_eventfd_callback(self: *IO) !void {
                     .cleanup = null,
                     .data = .{
                         .user_data = self,
-                        .module_ptr = null,
-                        .callback_ptr = null,
                     }
                 },
                 .data = .{ .buffer = @as([*]u8, @ptrCast(&self.eventfd_val))[0..@sizeOf(u64)] },
@@ -527,8 +525,6 @@ pub fn register_eventfd_callback(self: *IO) !void {
                     .cleanup = null,
                     .data = .{
                         .user_data = self,
-                        .module_ptr = null,
-                        .callback_ptr = null,
                     }
                 },
                 .data = .{ .buffer = @as([*]u8, @ptrCast(&self.eventfd_val))[0..@sizeOf(u64)] },

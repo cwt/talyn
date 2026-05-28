@@ -139,20 +139,20 @@ fn cleanup_resources_callback(ptr: ?*anyopaque) void {
 }
 
 pub fn read_operation_completed(data: *const CallbackManager.CallbackData) !void {
-    if (data.cancelled) {
+    if (data.cancelled()) {
         cleanup_resources_callback(data.user_data);
         return;
     }
     const self: *ReadTransport = @alignCast(@ptrCast(data.user_data.?));
-    const io_uring_err = data.io_uring_err;
-    const io_uring_res = data.io_uring_res;
+    const io_uring_err = data.io_uring_err();
+    const io_uring_res = data.io_uring_res();
 
     self.blocking_task_id = 0;
     self.cancelling = false;
-    self.batch_dispatched = data.batch_dispatched;
+    self.batch_dispatched = data.batch_dispatched();
 
     var bytes_read: usize = 0;
-    if (io_uring_err == .SUCCESS and !data.cancelled) {
+    if (io_uring_err == .SUCCESS and !data.cancelled()) {
         bytes_read = @intCast(io_uring_res);
     }
 
@@ -205,8 +205,6 @@ pub inline fn perform(self: *ReadTransport, buffer: ?[]u8) !void {
                     .cleanup = &cleanup_resources_callback,
                     .data = .{
                         .user_data = self,
-                        .module_ptr = @ptrCast(self.parent_transport),
-                        .callback_ptr = null,
                     }
                 },
                 .fd = self.fd,

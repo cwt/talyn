@@ -64,7 +64,7 @@ fn ensure_inotify(self: *FSWatcher) !void {
 fn on_inotify_event(data: *const CallbackManager.CallbackData) !void {
     const self: *FSWatcher = @alignCast(@ptrCast(data.user_data.?));
     
-    if (data.cancelled or self.inotify_fd < 0) {
+    if (data.cancelled() or self.inotify_fd < 0) {
         return;
     }
 

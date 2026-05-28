@@ -84,12 +84,7 @@ inline fn z_future_add_done_callback(
             const callback = CallbackManager.Callback{
                 .func = &Handle.callback_for_python_generic_callbacks,
                 .cleanup = &Handle.release_python_generic_callback,
-                .data = .{
-                    .user_data = handle,
-                    .module_ptr = null,
-                    .callback_ptr = py_callback,
-                    .traverse = &python_c.traverse_pyobject_callback,
-                }
+                .data = CallbackManager.CallbackData.init_python(handle, &handle.python_payload),
             };
             try Loop.Scheduling.Soon.dispatch(future_data.loop, &callback);
         }

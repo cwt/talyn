@@ -28,8 +28,8 @@ fn dummy_signal_handler(_: c_int) callconv(.c) void {
 }
 
 fn signal_handler(data: *const CallbackManager.CallbackData) !void {
-    const io_uring_err = data.io_uring_err;
-    if (data.cancelled or io_uring_err == .CANCELED) return;
+    const io_uring_err = data.io_uring_err();
+    if (data.cancelled() or io_uring_err == .CANCELED) return;
 
     const loop: *Loop = @alignCast(@ptrCast(data.user_data.?));
     if (io_uring_err != .SUCCESS) {
@@ -75,7 +75,7 @@ fn signal_handler(data: *const CallbackManager.CallbackData) !void {
 }
 
 fn default_sigint_signal_callback(data: *const CallbackManager.CallbackData) !void {
-    if (data.cancelled) return;
+    if (data.cancelled()) return;
 
     python_c.PyErr_SetNone(python_c.PyExc_KeyboardInterrupt);
     return error.PythonError;
@@ -127,7 +127,7 @@ pub fn link(self: *UnixSignals, sig: std.os.linux.SIG, callback: CallbackManager
     
     var prev_callback = self.callbacks.replace(@intCast(@intFromEnum(sig)), callback);
     if (prev_callback) |*v| {
-        v.data.cancelled = true;
+        v.data.set_cancelled(true);
         try Loop.Scheduling.Soon.dispatch_nonthreadsafe(self.loop, v);
     }else{
         try self.loop.reserve_slots(1);
@@ -137,7 +137,7 @@ pub fn link(self: *UnixSignals, sig: std.os.linux.SIG, callback: CallbackManager
 pub fn unlink(self: *UnixSignals, sig: std.os.linux.SIG) !void {
     var callback_info = self.callbacks.delete(@intCast(@intFromEnum(sig)));
     if (callback_info) |*v| {
-        v.data.cancelled = true;
+        v.data.set_cancelled(true);
         try Loop.Scheduling.Soon.dispatch_guaranteed_nonthreadsafe(self.loop, v);
     }else{
         return error.KeyNotFound;
@@ -207,7 +207,7 @@ pub fn deinit(self: *UnixSignals) void {
         std.posix.sigaddset(&mask, @as(std.os.linux.SIG, @enumFromInt(sig)));
 
         _ = c.signal(@as(c_int, @intCast(sig)), c.SIG_DFL);
-        value.data.cancelled = true;
+        value.data.set_cancelled(true);
         Loop.Scheduling.Soon.dispatch_guaranteed_nonthreadsafe(loop, &value) catch {};
     }
 
@@ -224,15 +224,15 @@ pub fn traverse(self: *const UnixSignals, visit: python_c.visitproc, arg: ?*anyo
 fn traverse_btree_node(node: anytype, visit: python_c.visitproc, arg: ?*anyopaque) c_int {
     const nkeys = node.nkeys;
     for (node.values[0..nkeys]) |*cb| {
-        if (cb.data.traverse) |t| {
+        if (cb.data.traverse()) |t| {
             const vret = t(cb.data.user_data, @constCast(@ptrCast(visit)), arg);
             if (vret != 0) return vret;
         }
 
-        if (cb.data.module_ptr) |mp| {
+        if (cb.data.module_ptr()) |mp| {
             const vret = visit.?(@ptrCast(mp), arg);
             if (vret != 0) return vret;
-            if (cb.data.callback_ptr) |cp| {
+            if (cb.data.callback_ptr()) |cp| {
                 const vret2 = visit.?(@ptrCast(cp), arg);
                 if (vret2 != 0) return vret2;
             }

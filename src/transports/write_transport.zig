@@ -88,7 +88,7 @@ pub fn init(
 }
 
 fn flush_buffered_writes(data: *const CallbackManager.CallbackData) !void {
-    if (data.cancelled) return;
+    if (data.cancelled()) return;
     const self: *WriteTransport = @alignCast(@ptrCast(data.user_data.?));
     if (!self.write_in_flight and self.buffer_size > 0) {
         try self.submit_next_chunk();
@@ -166,8 +166,6 @@ fn submit_next_chunk(self: *WriteTransport) !void {
                 .cleanup = &cleanup_resources_callback,
                 .data = .{
                     .user_data = self,
-                    .module_ptr = @ptrCast(self.parent_transport),
-                    .callback_ptr = null,
                 },
             },
             .fd = self.fd,
@@ -189,13 +187,13 @@ fn cleanup_resources_callback(ptr: ?*anyopaque) void {
 
 fn write_operation_completed(data: *const CallbackManager.CallbackData) !void {
     const self: *WriteTransport = @alignCast(@ptrCast(data.user_data.?));
-    if (data.cancelled) {
+    if (data.cancelled()) {
         python_c.py_decref(self.parent_transport);
         return;
     }
 
-    const io_uring_res = data.io_uring_res;
-    const io_uring_err = data.io_uring_err;
+    const io_uring_res = data.io_uring_res();
+    const io_uring_err = data.io_uring_err();
     self.write_in_flight = false;
 
     if (io_uring_res > 0) {

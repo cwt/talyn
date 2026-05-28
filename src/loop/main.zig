@@ -238,12 +238,7 @@ test "loop hooks" {
     // Manually execute hooks since we are not running the full loop
     var node = loop.prepare_hooks.first;
     while (node) |n| {
-        try n.data.func(&.{
-            .user_data = n.data.data.user_data,
-            .io_uring_res = 0,
-            .io_uring_err = .SUCCESS,
-            .cancelled = false,
-        });
+        try n.data.func(&n.data.data);
         node = n.next;
     }
 

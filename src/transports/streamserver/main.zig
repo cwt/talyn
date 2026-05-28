@@ -151,12 +151,13 @@ fn streamserver_init(
 
 fn accept_callback(data: *const CallbackManager.CallbackData) !void {
     const server: *StreamServerObject = @alignCast(@ptrCast(data.user_data.?));
-    if (data.cancelled or server.closed) return;
+    if (data.cancelled() or server.closed) return;
 
-    if (data.io_uring_err != .SUCCESS) {
+    const io_uring_err = data.io_uring_err();
+    if (io_uring_err != .SUCCESS) {
         const exception = python_c.PyObject_CallFunction(
             python_c.PyExc_OSError, "Ls\x00",
-            @as(c_long, @intFromEnum(data.io_uring_err)),
+            @as(c_long, @intFromEnum(io_uring_err)),
             "Accept error\x00"
         ) orelse return error.PythonError;
         python_c.PyErr_SetRaisedException(exception);

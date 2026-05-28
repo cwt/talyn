@@ -28,11 +28,12 @@ fn sendto_completed(data: *const CallbackManager.CallbackData) !void {
     defer cleanup_sendto(@ptrCast(@alignCast(sd)));
 
     const self = sd.transport;
-    if (data.cancelled or self.closed) return;
-    if (data.io_uring_err != .SUCCESS) {
+    if (data.cancelled() or self.closed) return;
+    const io_uring_err = data.io_uring_err();
+    if (io_uring_err != .SUCCESS) {
         if (self.protocol_error_received) |er| {
             const exc = python_c.PyObject_CallFunction(
-                python_c.PyExc_OSError, "Ls", @as(c_long, @intFromEnum(data.io_uring_err)), "Sendto error"
+                python_c.PyExc_OSError, "Ls", @as(c_long, @intFromEnum(io_uring_err)), "Sendto error"
             ) orelse return error.PythonError;
             defer python_c.py_decref(exc);
             const r = python_c.PyObject_CallOneArg(er, exc) orelse return error.PythonError;
@@ -41,7 +42,7 @@ fn sendto_completed(data: *const CallbackManager.CallbackData) !void {
         return;
     }
 
-    const written: usize = @intCast(@max(data.io_uring_res, 0));
+    const written: usize = @intCast(@max(data.io_uring_res(), 0));
     if (self.buffer_size >= written) {
         self.buffer_size -= written;
     } else {
@@ -149,8 +150,6 @@ pub fn z_datagram_sendto(self: *DatagramTransport.DatagramTransportObject, args:
                 .cleanup = &cleanup_sendto,
                 .data = .{
                     .user_data = sd,
-                    .module_ptr = @ptrCast(self),
-                    .callback_ptr = null,
                 },
             },
             .flags = 0,

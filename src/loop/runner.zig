@@ -166,8 +166,7 @@ fn fetch_completed_tasks(
 
         switch (blocking_task.data) {
             .callback => |*v| {
-                v.data.io_uring_err = err;
-                v.data.io_uring_res = cqe.res;
+                v.data.set_io(cqe.res, err);
 
                 // P15 Phase 2: Batch read transport completions
                 // Uses raw Zig pointers (no PyObject*), so GC never touches the batch.
@@ -193,7 +192,7 @@ fn fetch_completed_tasks(
                     };
 
                     if (self.completion_batch.push(record)) {
-                        v.data.batch_dispatched = true;
+                        v.data.set_batch_dispatched(true);
                         read_transport.batch_dispatched = true;
                     }
                     // Push failure = batch full, fall through to normal callback.

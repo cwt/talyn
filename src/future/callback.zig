@@ -85,7 +85,7 @@ fn run_python_future_set_callbacks(data: *const CallbackManager.CallbackData) !v
     const future: *Future = @alignCast(@ptrCast(data.user_data.?));
     const py_future = utils.get_parent_ptr(Future.Python.FutureObject, future);
 
-    if (data.cancelled) {
+    if (data.cancelled()) {
         release_callbacks_queue(&future.callbacks_queue);
         python_c.py_decref(@ptrCast(py_future));
         return;
@@ -244,16 +244,16 @@ pub fn call_done_callbacks(self: *Future, new_status: Future.FutureStatus) !void
         return;
     }
 
+    self.python_payload = .{
+        .module_ptr = null,
+        .callback_ptr = null,
+        .traverse = &traverse_python_future_data,
+    };
     const pyfut = utils.get_parent_ptr(Future.Python.FutureObject, self);
     const callback = CallbackManager.Callback{
         .func = &run_python_future_set_callbacks,
         .cleanup = &release_python_future_data,
-        .data = .{
-            .user_data = self,
-            .module_ptr = null,
-            .callback_ptr = null,
-            .traverse = &traverse_python_future_data,
-        }
+        .data = CallbackManager.CallbackData.init_python(self, &self.python_payload),
     };
 
     try Loop.Scheduling.Soon.dispatch_guaranteed(self.loop, &callback);

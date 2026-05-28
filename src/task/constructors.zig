@@ -43,16 +43,17 @@ inline fn task_schedule_coro(self: *PythonTaskObject, loop: *LoopObject) !void {
     }
 
     const loop_data = utils.get_data_ptr(Loop, loop);
+    const future_data = utils.get_data_ptr(Future, &self.fut);
+    future_data.python_payload = .{
+        .module_ptr = null,
+        .callback_ptr = self.coro.?,
+        .traverse = &python_c.traverse_pyobject_callback,
+    };
 
     const callback = CallbackManager.Callback{
         .func = &callbacks.execute_task_send,
         .cleanup = &callbacks.cleanup_task,
-        .data = .{
-            .user_data = self,
-            .module_ptr = null,
-            .callback_ptr = self.coro.?,
-            .traverse = &python_c.traverse_pyobject_callback,
-        }
+        .data = CallbackManager.CallbackData.init_python(self, &future_data.python_payload),
     };
 
     try Loop.Scheduling.Soon.dispatch(loop_data, &callback);

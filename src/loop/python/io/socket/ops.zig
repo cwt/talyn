@@ -36,6 +36,8 @@ const AcceptData = struct {
 };
 
 fn sock_accept_callback(data: *const CallbackManager.CallbackData) !void {
+    const io_uring_err = data.io_uring_err();
+    const io_uring_res = data.io_uring_res();
     const ad: *AcceptData = @alignCast(@ptrCast(data.user_data.?));
     defer {
         python_c.py_decref(@ptrCast(ad.future));
@@ -43,10 +45,10 @@ fn sock_accept_callback(data: *const CallbackManager.CallbackData) !void {
         ad.allocator.destroy(ad);
     }
 
-    if (data.cancelled) return;
+    if (data.cancelled()) return;
 
-    if (data.io_uring_err != .SUCCESS or data.io_uring_res < 0) {
-        const errno_val = if (data.io_uring_res < 0) -data.io_uring_res else @intFromEnum(data.io_uring_err);
+    if (io_uring_err != .SUCCESS or io_uring_res < 0) {
+        const errno_val = if (io_uring_res < 0) -io_uring_res else @intFromEnum(io_uring_err);
         const exc = python_c.PyObject_CallFunction(
             python_c.PyExc_OSError, "is\x00",
             @as(c_int, @intCast(errno_val)),
@@ -60,7 +62,7 @@ ad.future, future_data, exc);
         return;
     }
 
-    const client_fd: std.posix.fd_t = @intCast(data.io_uring_res);
+    const client_fd: std.posix.fd_t = @intCast(io_uring_res);
     
     // Convert addr to Python tuple
     const py_addr = try AddressUtils.toPyAddr(utils.Address.initPosix(@ptrCast(&ad.addr)));
@@ -172,6 +174,8 @@ const SockConnectData = struct {
 };
 
 fn sock_connect_callback(data: *const CallbackManager.CallbackData) !void {
+    const io_uring_err = data.io_uring_err();
+    const io_uring_res = data.io_uring_res();
     const scd: *SockConnectData = @alignCast(@ptrCast(data.user_data.?));
     defer {
         python_c.py_decref(@ptrCast(scd.future));
@@ -179,10 +183,10 @@ fn sock_connect_callback(data: *const CallbackManager.CallbackData) !void {
         scd.allocator.destroy(scd);
     }
 
-    if (data.cancelled) return;
+    if (data.cancelled()) return;
 
-    if (data.io_uring_err != .SUCCESS and data.io_uring_err != .ALREADY) {
-        const errno_val = if (data.io_uring_res < 0) -data.io_uring_res else @intFromEnum(data.io_uring_err);
+    if (io_uring_err != .SUCCESS and io_uring_err != .ALREADY) {
+        const errno_val = if (io_uring_res < 0) -io_uring_res else @intFromEnum(io_uring_err);
         const exc = python_c.PyObject_CallFunction(
             python_c.PyExc_OSError, "is\x00",
             @as(c_int, @intCast(errno_val)),
@@ -271,6 +275,8 @@ const SockRecvData = struct {
 };
 
 fn sock_recv_callback(data: *const CallbackManager.CallbackData) !void {
+    const io_uring_err = data.io_uring_err();
+    const io_uring_res = data.io_uring_res();
     const rd: *SockRecvData = @alignCast(@ptrCast(data.user_data.?));
     defer {
         python_c.py_decref(@ptrCast(rd.future));
@@ -279,10 +285,10 @@ fn sock_recv_callback(data: *const CallbackManager.CallbackData) !void {
         rd.allocator.destroy(rd);
     }
 
-    if (data.cancelled) return;
+    if (data.cancelled()) return;
 
-    if (data.io_uring_err != .SUCCESS) {
-        const errno_val = @intFromEnum(data.io_uring_err);
+    if (io_uring_err != .SUCCESS) {
+        const errno_val = @intFromEnum(io_uring_err);
         const exc = python_c.PyObject_CallFunction(
             python_c.PyExc_OSError, "is\x00",
             @as(c_int, @intCast(errno_val)),
@@ -296,7 +302,7 @@ rd.future, future_data, exc);
         return;
     }
 
-    const nread: usize = @intCast(@max(data.io_uring_res, 0));
+    const nread: usize = @intCast(@max(io_uring_res, 0));
     const py_data = python_c.PyBytes_FromStringAndSize(rd.buf.ptr, @intCast(nread)) orelse return error.PythonError;
     defer python_c.py_decref(py_data);
 
@@ -374,9 +380,11 @@ const SockSendAllData = struct {
 };
 
 fn sock_sendall_callback(data: *const CallbackManager.CallbackData) !void {
+    const io_uring_err = data.io_uring_err();
+    const io_uring_res = data.io_uring_res();
     const sd: *SockSendAllData = @alignCast(@ptrCast(data.user_data.?));
     
-    if (data.cancelled) {
+    if (data.cancelled()) {
         python_c.py_decref(@ptrCast(sd.future));
         python_c.py_decref(@ptrCast(sd.loop));
         sd.allocator.free(sd.data);
@@ -384,14 +392,14 @@ fn sock_sendall_callback(data: *const CallbackManager.CallbackData) !void {
         return;
     }
 
-    if (data.io_uring_err != .SUCCESS) {
+    if (io_uring_err != .SUCCESS) {
         defer {
             python_c.py_decref(@ptrCast(sd.future));
             python_c.py_decref(@ptrCast(sd.loop));
             sd.allocator.free(sd.data);
             sd.allocator.destroy(sd);
         }
-        const errno_val = @intFromEnum(data.io_uring_err);
+        const errno_val = @intFromEnum(io_uring_err);
         const exc = python_c.PyObject_CallFunction(
             python_c.PyExc_OSError, "is\x00",
             @as(c_int, @intCast(errno_val)),
@@ -405,7 +413,7 @@ sd.future, future_data, exc);
         return;
     }
 
-    const nwritten: usize = @intCast(@max(data.io_uring_res, 0));
+    const nwritten: usize = @intCast(@max(io_uring_res, 0));
     sd.offset += nwritten;
 
     if (sd.offset < sd.data.len) {
@@ -516,6 +524,8 @@ const SockRecvFromData = struct {
 };
 
 fn sock_recvfrom_callback(data: *const CallbackManager.CallbackData) !void {
+    const io_uring_err = data.io_uring_err();
+    const io_uring_res = data.io_uring_res();
     const rd: *SockRecvFromData = @alignCast(@ptrCast(data.user_data.?));
     defer {
         python_c.py_decref(@ptrCast(rd.future));
@@ -524,10 +534,10 @@ fn sock_recvfrom_callback(data: *const CallbackManager.CallbackData) !void {
         rd.allocator.destroy(rd);
     }
 
-    if (data.cancelled) return;
+    if (data.cancelled()) return;
 
-    if (data.io_uring_err != .SUCCESS) {
-        const errno_val = @intFromEnum(data.io_uring_err);
+    if (io_uring_err != .SUCCESS) {
+        const errno_val = @intFromEnum(io_uring_err);
         const exc = python_c.PyObject_CallFunction(
             python_c.PyExc_OSError, "is\x00",
             @as(c_int, @intCast(errno_val)),
@@ -541,7 +551,7 @@ rd.future, future_data, exc);
         return;
     }
 
-    const nread: usize = @intCast(@max(data.io_uring_res, 0));
+    const nread: usize = @intCast(@max(io_uring_res, 0));
     const py_data = python_c.PyBytes_FromStringAndSize(rd.buf.ptr, @intCast(nread)) orelse return error.PythonError;
     defer python_c.py_decref(py_data);
     
@@ -637,6 +647,8 @@ const SockSendToData = struct {
 };
 
 fn sock_sendto_callback(data: *const CallbackManager.CallbackData) !void {
+    const io_uring_err = data.io_uring_err();
+    const io_uring_res = data.io_uring_res();
     const sd: *SockSendToData = @alignCast(@ptrCast(data.user_data.?));
     defer {
         python_c.py_decref(@ptrCast(sd.future));
@@ -645,10 +657,10 @@ fn sock_sendto_callback(data: *const CallbackManager.CallbackData) !void {
         sd.allocator.destroy(sd);
     }
 
-    if (data.cancelled) return;
+    if (data.cancelled()) return;
 
-    if (data.io_uring_err != .SUCCESS) {
-        const errno_val = @intFromEnum(data.io_uring_err);
+    if (io_uring_err != .SUCCESS) {
+        const errno_val = @intFromEnum(io_uring_err);
         const exc = python_c.PyObject_CallFunction(
             python_c.PyExc_OSError, "is\x00",
             @as(c_int, @intCast(errno_val)),
@@ -664,7 +676,7 @@ sd.future, future_data, exc);
 
     const future_data = utils.get_data_ptr(Future, sd.future);
     try Future.Python.Result.future_fast_set_result(future_data,
- python_c.PyLong_FromLong(@intCast(data.io_uring_res)));
+ python_c.PyLong_FromLong(@intCast(io_uring_res)));
 }
 
 pub fn loop_sock_sendto(
@@ -759,6 +771,8 @@ const SockRecvIntoData = struct {
 };
 
 fn sock_recv_into_callback(data: *const CallbackManager.CallbackData) !void {
+    const io_uring_err = data.io_uring_err();
+    const io_uring_res = data.io_uring_res();
     const rd: *SockRecvIntoData = @alignCast(@ptrCast(data.user_data.?));
     defer {
         python_c.py_decref(@ptrCast(rd.future));
@@ -766,10 +780,10 @@ fn sock_recv_into_callback(data: *const CallbackManager.CallbackData) !void {
         rd.allocator.destroy(rd);
     }
 
-    if (data.cancelled) return;
+    if (data.cancelled()) return;
 
-    if (data.io_uring_err != .SUCCESS) {
-        const errno_val = @intFromEnum(data.io_uring_err);
+    if (io_uring_err != .SUCCESS) {
+        const errno_val = @intFromEnum(io_uring_err);
         const exc = python_c.PyObject_CallFunction(
             python_c.PyExc_OSError, "is\x00",
             @as(c_int, @intCast(errno_val)),
@@ -783,7 +797,7 @@ rd.future, future_data, exc);
         return;
     }
 
-    const nread: usize = @intCast(@max(data.io_uring_res, 0));
+    const nread: usize = @intCast(@max(io_uring_res, 0));
     const future_data = utils.get_data_ptr(Future, rd.future);
     try Future.Python.Result.future_fast_set_result(future_data,
  python_c.PyLong_FromLong(@intCast(nread)));
@@ -856,6 +870,8 @@ const SockRecvIntoDataWithBuf = struct {
 };
 
 fn sock_recv_into_callback_with_buf(data: *const CallbackManager.CallbackData) !void {
+    const io_uring_err = data.io_uring_err();
+    const io_uring_res = data.io_uring_res();
     const rd: *SockRecvIntoDataWithBuf = @alignCast(@ptrCast(data.user_data.?));
     defer {
         python_c.PyBuffer_Release(&rd.pbuf);
@@ -864,10 +880,10 @@ fn sock_recv_into_callback_with_buf(data: *const CallbackManager.CallbackData) !
         rd.base.allocator.destroy(rd);
     }
 
-    if (data.cancelled) return;
+    if (data.cancelled()) return;
 
-    if (data.io_uring_err != .SUCCESS) {
-        const errno_val = @intFromEnum(data.io_uring_err);
+    if (io_uring_err != .SUCCESS) {
+        const errno_val = @intFromEnum(io_uring_err);
         const exc = python_c.PyObject_CallFunction(
             python_c.PyExc_OSError, "is\x00",
             @as(c_int, @intCast(errno_val)),
@@ -881,7 +897,7 @@ rd.base.future, future_data, exc);
         return;
     }
 
-    const nread: usize = @intCast(@max(data.io_uring_res, 0));
+    const nread: usize = @intCast(@max(io_uring_res, 0));
     const future_data = utils.get_data_ptr(Future, rd.base.future);
     try Future.Python.Result.future_fast_set_result(future_data,
  python_c.PyLong_FromLong(@intCast(nread)));

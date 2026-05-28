@@ -48,8 +48,6 @@ pub fn queue_read(self: *DatagramTransport.DatagramTransportObject) !void {
                 .cleanup = &cleanup_read,
                 .data = .{
                     .user_data = rd,
-                    .module_ptr = @ptrCast(self),
-                    .callback_ptr = null,
                 },
             },
             .flags = 0,
@@ -78,13 +76,14 @@ fn read_completed(data: *const CallbackManager.CallbackData) !void {
     defer cleanup_read(@ptrCast(@alignCast(rd)));
 
     const self = rd.transport;
-    if (data.cancelled or self.closed) return;
+    if (data.cancelled() or self.closed) return;
 
-    if (data.io_uring_err != .SUCCESS) {
+    const io_uring_err = data.io_uring_err();
+    if (io_uring_err != .SUCCESS) {
         // Error — notify protocol and re-arm
         if (self.protocol_error_received) |er| {
             const exc = python_c.PyObject_CallFunction(
-                python_c.PyExc_OSError, "Ls", @as(c_long, @intFromEnum(data.io_uring_err)), "Read error"
+                python_c.PyExc_OSError, "Ls", @as(c_long, @intFromEnum(io_uring_err)), "Read error"
             ) orelse return error.PythonError;
             defer python_c.py_decref(exc);
             const r = python_c.PyObject_CallOneArg(er, exc) orelse return error.PythonError;
@@ -94,7 +93,7 @@ fn read_completed(data: *const CallbackManager.CallbackData) !void {
         return;
     }
 
-    const nread: usize = @intCast(@max(data.io_uring_res, 0));
+    const nread: usize = @intCast(@max(data.io_uring_res(), 0));
     if (nread == 0) {
         // Empty datagram — re-arm
         try queue_read(self);

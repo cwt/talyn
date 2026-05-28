@@ -95,7 +95,7 @@ fn on_child_exit(data: *const CallbackManager.CallbackData) !void {
     const handler: *ChildHandler = @alignCast(@ptrCast(data.user_data.?));
     const self = handler.watcher;
 
-    if (data.cancelled or !self.loop.initialized) {
+    if (data.cancelled() or !self.loop.initialized) {
         return;
     }
 

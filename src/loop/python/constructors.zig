@@ -172,10 +172,10 @@ fn traverse_hooks(hooks: *Loop.HooksList, visit: python_c.visitproc, arg: ?*anyo
     var node = hooks.first;
     while (node) |n| {
         const cb = n.data;
-        if (cb.data.module_ptr) |mod| {
+        if (cb.data.module_ptr()) |mod| {
             const vret1 = visit.?(@ptrCast(mod), arg);
             if (vret1 != 0) return vret1;
-            if (cb.data.callback_ptr) |cp| {
+            if (cb.data.callback_ptr()) |cp| {
                 const vret2 = visit.?(@ptrCast(cp), arg);
                 if (vret2 != 0) return vret2;
             }

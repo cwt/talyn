@@ -222,7 +222,7 @@ fn pidfd_exit_callback(data: *const CallbackManager.CallbackData) !void {
     const transport: *SubprocessTransportObject = @alignCast(@ptrCast(data.user_data.?));
     defer python_c.py_decref(@ptrCast(transport));
 
-    if (data.cancelled or transport.closed) return;
+    if (data.cancelled() or transport.closed) return;
 
     var siginfo: std.os.linux.siginfo_t = undefined;
     const res = res: {
@@ -312,8 +312,6 @@ fn pidfd_exit_callback(data: *const CallbackManager.CallbackData) !void {
                     .cleanup = &cleanup_pidfd,
                     .data = .{
                         .user_data = transport,
-                        .module_ptr = @ptrCast(transport),
-                        .callback_ptr = null,
                     },
                 },
             },
@@ -369,8 +367,6 @@ pub fn start_exit_watcher(transport: *SubprocessTransportObject, loop: *LoopObje
                 .cleanup = &cleanup_pidfd,
                 .data = .{
                     .user_data = transport,
-                    .module_ptr = @ptrCast(transport),
-                    .callback_ptr = null,
                 },
             },
         },

@@ -20,15 +20,105 @@ pub const DebugState = struct {
 
 pub const WarningHandler = *const fn (duration: f64, ?*python_c.PyObject, ?*anyopaque) void;
 
-pub const CallbackData = struct {
-    user_data: ?*anyopaque,
+pub const PythonPayload = extern struct {
     module_ptr: ?*python_c.PyObject = null,
     callback_ptr: ?PyObject = null,
     traverse: ?*const fn (ptr: ?*anyopaque, visit: ?*anyopaque, arg: ?*anyopaque) c_int = null,
-    io_uring_res: i32 = 0,
-    io_uring_err: std.os.linux.E = .SUCCESS,
-    cancelled: bool = false,
-    batch_dispatched: bool = false,
+};
+
+pub const CallbackData = struct {
+    user_data: ?*anyopaque,
+    payload: usize = 0,
+
+    pub inline fn io_uring_res(self: CallbackData) i32 {
+        if ((self.payload & 1) == 0) return 0;
+        const val = (self.payload >> 3) & 0xFFFFFFFF;
+        return @bitCast(@as(u32, @intCast(val)));
+    }
+
+    pub inline fn io_uring_err(self: CallbackData) std.os.linux.E {
+        if ((self.payload & 1) == 0) return .SUCCESS;
+        const val = (self.payload >> 35) & 0xFFFF;
+        return @enumFromInt(val);
+    }
+
+    pub inline fn module_ptr(self: CallbackData) ?*python_c.PyObject {
+        if ((self.payload & 1) != 0) return null;
+        const ptr_val = self.payload & ~@as(usize, 7);
+        if (ptr_val == 0) return null;
+        const py: *PythonPayload = @ptrFromInt(ptr_val);
+        return py.module_ptr;
+    }
+
+    pub inline fn callback_ptr(self: CallbackData) ?PyObject {
+        if ((self.payload & 1) != 0) return null;
+        const ptr_val = self.payload & ~@as(usize, 7);
+        if (ptr_val == 0) return null;
+        const py: *PythonPayload = @ptrFromInt(ptr_val);
+        return py.callback_ptr;
+    }
+
+    pub inline fn traverse(self: CallbackData) ?*const fn (ptr: ?*anyopaque, visit: ?*anyopaque, arg: ?*anyopaque) c_int {
+        if ((self.payload & 1) != 0) return null;
+        const ptr_val = self.payload & ~@as(usize, 7);
+        if (ptr_val == 0) return null;
+        const py: *PythonPayload = @ptrFromInt(ptr_val);
+        return py.traverse;
+    }
+
+    pub inline fn cancelled(self: CallbackData) bool {
+        return (self.payload & 2) != 0;
+    }
+
+    pub inline fn batch_dispatched(self: CallbackData) bool {
+        return (self.payload & 4) != 0;
+    }
+
+    pub inline fn set_cancelled(self: *CallbackData, value: bool) void {
+        if (value) {
+            self.payload |= 2;
+        } else {
+            self.payload &= ~@as(usize, 2);
+        }
+    }
+
+    pub inline fn set_batch_dispatched(self: *CallbackData, value: bool) void {
+        if (value) {
+            self.payload |= 4;
+        } else {
+            self.payload &= ~@as(usize, 4);
+        }
+    }
+
+    pub inline fn set_io(self: *CallbackData, res: i32, err: std.os.linux.E) void {
+        const flags = self.payload & 6; // preserve cancelled and batch_dispatched
+        const res_u: usize = @as(u32, @bitCast(res));
+        const err_u: usize = @intFromEnum(err);
+        self.payload = 1 | flags | (res_u << 3) | (err_u << 35);
+    }
+
+    pub inline fn set_python(self: *CallbackData, py: ?*PythonPayload) void {
+        const flags = self.payload & 6; // preserve cancelled and batch_dispatched
+        if (py) |p| {
+            const ptr_val = @intFromPtr(p);
+            std.debug.assert((ptr_val & 7) == 0); // Must be 8-byte aligned
+            self.payload = ptr_val | flags; // tag is 0
+        } else {
+            self.payload = flags; // tag is 0, payload is null
+        }
+    }
+
+    pub inline fn init_python(user_data: ?*anyopaque, py: ?*PythonPayload) CallbackData {
+        var data = CallbackData{ .user_data = user_data, .payload = 0 };
+        data.set_python(py);
+        return data;
+    }
+
+    pub inline fn init_io(user_data: ?*anyopaque, res: i32, err: std.os.linux.E) CallbackData {
+        var data = CallbackData{ .user_data = user_data, .payload = 1 };
+        data.set_io(res, err);
+        return data;
+    }
 };
 
 pub const GenericCallback = *const fn (data: *const CallbackData) anyerror!void;
@@ -119,16 +209,16 @@ pub fn RingBuffer(comptime N: usize) type {
                 if (self.executed.isSet(idx)) continue;
 
                 const callback = &self.callbacks[idx];
-                if (callback.data.traverse) |t| {
+                if (callback.data.traverse()) |t| {
                     const vret = t(callback.data.user_data, @constCast(@ptrCast(visit)), arg);
                     if (vret != 0) return vret;
                 }
 
-                if (callback.data.module_ptr) |mod| {
+                if (callback.data.module_ptr()) |mod| {
                     const vret1 = visit.?(@ptrCast(mod), arg);
                     if (vret1 != 0) return vret1;
                 }
-                if (callback.data.callback_ptr) |cp| {
+                if (callback.data.callback_ptr()) |cp| {
                     const vret2 = visit.?(@ptrCast(cp), arg);
                     if (vret2 != 0) return vret2;
                 }
@@ -136,14 +226,6 @@ pub fn RingBuffer(comptime N: usize) type {
             return 0;
         }
     };
-}
-
-fn exec_error_handler(handler: ExceptionHandler, data: ?*anyopaque, cb_data: *const CallbackData) void {
-    handler(cb_data.user_data.?, data, cb_data.module_ptr, cb_data.callback_ptr) catch {};
-}
-
-fn exec_warning_handler(handler: WarningHandler, duration: f64, cb_data: *const CallbackData, data: ?*anyopaque) void {
-    handler(duration, cb_data.module_ptr, data);
 }
 
 pub const DynamicRingBuffer = struct {
@@ -277,16 +359,16 @@ pub const DynamicRingBuffer = struct {
             if (self.executed[idx]) continue;
 
             const callback = &self.callbacks[idx];
-            if (callback.data.traverse) |t| {
+            if (callback.data.traverse()) |t| {
                 const vret = t(callback.data.user_data, @constCast(@ptrCast(visit)), arg);
                 if (vret != 0) return vret;
             }
 
-            if (callback.data.module_ptr) |mod| {
+            if (callback.data.module_ptr()) |mod| {
                 const vret1 = visit.?(@ptrCast(mod), arg);
                 if (vret1 != 0) return vret1;
             }
-            if (callback.data.callback_ptr) |cp| {
+            if (callback.data.callback_ptr()) |cp| {
                 const vret2 = visit.?(@ptrCast(cp), arg);
                 if (vret2 != 0) return vret2;
             }
@@ -311,10 +393,13 @@ pub fn execute_ring_buffer(
     var yield_counter: usize = 0;
 
     while (ring.next()) |callback| {
+        const mod = callback.data.module_ptr();
+        const cb = callback.data.callback_ptr();
+
         if (debug_state != null) {
-            if (callback.data.module_ptr) |mod| {
-                python_c.py_incref(mod);
-                if (callback.data.callback_ptr) |cp| python_c.py_incref(cp);
+            if (mod) |m| {
+                python_c.py_incref(m);
+                if (cb) |c| python_c.py_incref(c);
             }
         }
 
@@ -340,7 +425,7 @@ pub fn execute_ring_buffer(
             }
 
             const handler = exception_handler orelse return err;
-            handler(err, exception_handler_data, callback.data.module_ptr, callback.data.callback_ptr) catch |err2| {
+            handler(err, exception_handler_data, mod, cb) catch |err2| {
                 return err2;
             };
             continue;
@@ -351,12 +436,12 @@ pub fn execute_ring_buffer(
             const duration = @as(f64, @floatFromInt(end_time - start_time)) / 1e9;
             if (duration >= ds.slow_callback_duration) {
                 if (warning_handler) |wh| {
-                    wh(duration, callback.data.module_ptr, exception_handler_data);
+                    wh(duration, mod, exception_handler_data);
                 }
             }
-            if (callback.data.module_ptr) |mod| {
-                python_c.py_decref(mod);
-                if (callback.data.callback_ptr) |cp| python_c.py_decref(cp);
+            if (mod) |m| {
+                python_c.py_decref(m);
+                if (cb) |c| python_c.py_decref(c);
             }
         }
 
@@ -379,7 +464,7 @@ pub fn release_ring_buffer(
     ring: *RingBuffer(N),
 ) void {
     while (ring.next()) |callback| {
-        callback.data.cancelled = true;
+        callback.data.set_cancelled(true);
         _ = callback.func(&callback.data) catch {};
         ring.consume();
     }
@@ -398,10 +483,13 @@ pub fn execute_dynamic_ring_buffer(
     var yield_counter: usize = 0;
 
     while (ring.next()) |callback| {
+        const mod = callback.data.module_ptr();
+        const cb = callback.data.callback_ptr();
+
         if (debug_state != null) {
-            if (callback.data.module_ptr) |mod| {
-                python_c.py_incref(mod);
-                if (callback.data.callback_ptr) |cp| python_c.py_incref(cp);
+            if (mod) |m| {
+                python_c.py_incref(m);
+                if (cb) |c| python_c.py_incref(c);
             }
         }
 
@@ -430,7 +518,7 @@ pub fn execute_dynamic_ring_buffer(
             }
 
             const handler = exception_handler orelse return err;
-            handler(err, exception_handler_data, callback.data.module_ptr, callback.data.callback_ptr) catch |err2| {
+            handler(err, exception_handler_data, mod, cb) catch |err2| {
                 return err2;
             };
             continue;
@@ -441,12 +529,12 @@ pub fn execute_dynamic_ring_buffer(
             const duration = @as(f64, @floatFromInt(end_time - start_time)) / 1e9;
             if (duration >= ds.slow_callback_duration) {
                 if (warning_handler) |wh| {
-                    wh(duration, callback.data.module_ptr, exception_handler_data);
+                    wh(duration, mod, exception_handler_data);
                 }
             }
-            if (callback.data.module_ptr) |mod| {
-                python_c.py_decref(mod);
-                if (callback.data.callback_ptr) |cp| python_c.py_decref(cp);
+            if (mod) |m| {
+                python_c.py_decref(m);
+                if (cb) |c| python_c.py_decref(c);
             }
         }
 
@@ -467,7 +555,7 @@ pub fn release_dynamic_ring_buffer(
     ring: *DynamicRingBuffer,
 ) void {
     while (ring.next()) |callback| {
-        callback.data.cancelled = true;
+        callback.data.set_cancelled(true);
         _ = callback.func(&callback.data) catch {};
         ring.consume();
     }
@@ -476,7 +564,7 @@ pub fn release_dynamic_ring_buffer(
 // ---- Tests ----
 
 fn test_callback(data: *const CallbackData) !void {
-    if (data.cancelled) return;
+    if (data.cancelled()) return;
 
     const executed_ptr: *usize = @alignCast(@ptrCast(data.user_data.?));
     executed_ptr.* += 1;
@@ -495,8 +583,8 @@ fn test_exception_handler(err: anyerror, data: ?*anyopaque, _: ?*python_c.PyObje
 }
 
 test "Callback and CallbackData compact sizes" {
-    try std.testing.expectEqual(@as(usize, 40), @sizeOf(CallbackData));
-    try std.testing.expectEqual(@as(usize, 56), @sizeOf(Callback));
+    try std.testing.expectEqual(@as(usize, 16), @sizeOf(CallbackData));
+    try std.testing.expectEqual(@as(usize, 32), @sizeOf(Callback));
 }
 
 test "RingBuffer basic properties" {
@@ -606,14 +694,16 @@ test "RingBuffer traverse" {
     var visit_count: usize = 0;
     var dummy_obj: usize = 0xDEADBEEF;
 
+    var payload = PythonPayload{
+        .module_ptr = @ptrCast(&dummy_obj),
+        .callback_ptr = null,
+        .traverse = null,
+    };
+
     const callback = Callback{
         .func = &test_callback,
         .cleanup = null,
-        .data = .{
-            .user_data = null,
-            .module_ptr = @ptrCast(&dummy_obj),
-            .callback_ptr = null,
-        }
+        .data = CallbackData.init_python(null, &payload),
     };
 
     rb.push(callback);

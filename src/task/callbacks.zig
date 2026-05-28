@@ -104,15 +104,17 @@ fn create_new_py_exception_and_add_event(
     python_c.py_xdecref(task.exception);
     task.exception = exception;
 
+    const future_data = utils.get_data_ptr(Future, &task.fut);
+    future_data.python_payload = .{
+        .module_ptr = null,
+        .callback_ptr = task.coro.?,
+        .traverse = &python_c.traverse_pyobject_callback,
+    };
+
     const callback: CallbackManager.Callback = .{
         .func = &execute_task_throw,
         .cleanup = &cleanup_task,
-        .data = .{
-            .user_data = task,
-            .module_ptr = null,
-            .callback_ptr = task.coro.?,
-            .traverse = &python_c.traverse_pyobject_callback,
-        }
+        .data = CallbackManager.CallbackData.init_python(task, &future_data.python_payload),
     };
 
     try Loop.Scheduling.Soon.dispatch(loop, &callback);
@@ -271,15 +273,17 @@ inline fn successfully_execution(
         try handle_talyn_future_object(task, @ptrCast(result), loop_data);
         return;
     }else if (python_c.is_none(result)) {
+        const future_data = utils.get_data_ptr(Future, &task.fut);
+        future_data.python_payload = .{
+            .module_ptr = null,
+            .callback_ptr = task.coro.?,
+            .traverse = &python_c.traverse_pyobject_callback,
+        };
+
         const callback = CallbackManager.Callback{
             .func = &execute_task_send,
             .cleanup = &cleanup_task,
-            .data = .{
-                .user_data = task,
-                .module_ptr = null,
-                .callback_ptr = task.coro.?,
-                .traverse = &python_c.traverse_pyobject_callback,
-            }
+            .data = CallbackManager.CallbackData.init_python(task, &future_data.python_payload),
         };
 
         try Loop.Scheduling.Soon.dispatch(loop_data, &callback);
@@ -479,7 +483,7 @@ fn _execute_task_throw(task: *Task.PythonTaskObject, task_exception: ?PyObject) 
 
 pub fn execute_task_throw(data: *const CallbackManager.CallbackData) !void {
     const task: *Task.PythonTaskObject = @alignCast(@ptrCast(data.user_data.?));
-    if (data.cancelled) {
+    if (data.cancelled()) {
         // Loop is shutting down. Set the future's exception directly from
         // the task's stored exception without trying to throw into the
         // coroutine (the loop infrastructure may already be deinitialized).
@@ -567,7 +571,7 @@ fn _execute_task_send(task: *Task.PythonTaskObject) !void {
 
 pub fn execute_task_send(data: *const CallbackManager.CallbackData) !void {
     const task: *Task.PythonTaskObject = @alignCast(@ptrCast(data.user_data.?));
-    if (data.cancelled) {
+    if (data.cancelled()) {
         // The loop is shutting down (release_ring_buffer). Start the
         // coroutine via PyIter_Send just to set gi_frame != NULL, which
         // prevents CPython's "coroutine was never awaited" RuntimeWarning

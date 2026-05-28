@@ -108,20 +108,7 @@ inline fn z_loop_call_soon(
     const callback = CallbackManager.Callback{
         .func = &Handle.callback_for_python_generic_callbacks,
         .cleanup = &Handle.release_python_generic_callback,
-        .data = .{
-            .user_data = py_handle,
-            .module_ptr = null,
-            .callback_ptr = py_callback,
-            .traverse = &python_c.traverse_pyobject_callback,
-        }
-        // .PythonGeneric = .{
-        //     .args = callback_info,
-        //     .exception_handler = self.exception_handler.?,
-        //     .py_callback = py_callback,
-        //     .py_context = context.?,
-        //     .py_handle = py_handle,
-        //     .cancelled = &py_handle.cancelled
-        // }
+        .data = CallbackManager.CallbackData.init_python(py_handle, &py_handle.python_payload),
     };
     try Loop.Scheduling.Soon.dispatch_nonthreadsafe(loop_data, &callback);
     return python_c.py_newref(py_handle);
@@ -243,19 +230,7 @@ inline fn z_loop_delayed_call(
     const callback = CallbackManager.Callback{
         .func = &Handle.callback_for_python_generic_callbacks,
         .cleanup = &Handle.release_python_generic_callback,
-        .data = .{
-            .user_data = py_timer_handle,
-            .module_ptr = @ptrCast(py_timer_handle),
-            .callback_ptr = null,
-        }
-        // .PythonGeneric = .{
-        //     .args = callback_info,
-        //     .exception_handler = self.exception_handler.?,
-        //     .py_callback = py_callback,
-        //     .py_context = context.?,
-        //     .py_handle = @ptrCast(py_timer_handle),
-        //     .cancelled = &py_timer_handle.handle.cancelled
-        // }
+        .data = CallbackManager.CallbackData.init_python(py_timer_handle, &py_timer_handle.handle.python_payload),
     };
     py_timer_handle.handle.blocking_task_id = try loop_data.io.queue(.{
         .WaitTimer = .{

@@ -71,6 +71,7 @@ const TransportCreationData = struct {
     socket_fd: std.posix.fd_t,
     zero_copying: bool,
     fd_created: bool = true,
+    python_payload: CallbackManager.PythonPayload = .{},
 
     comptime {
         python_c.verify_gc_coverage(@This(), &.{});
@@ -202,17 +203,19 @@ inline fn z_loop_create_connection(
             .future = fut,
             .loop = python_c.py_newref(self),
             .socket_fd = @intCast(fd),
-            .zero_copying = false
+            .zero_copying = false,
+            .python_payload = .{
+                .module_ptr = @ptrCast(self),
+                .callback_ptr = @ptrCast(fut),
+                .traverse = &TransportCreationData.traverse,
+            }
         };
         errdefer python_c.py_decref(@ptrCast(self));
 
         const callback = CallbackManager.Callback{
             .func = &create_transport_and_set_future_result,
             .cleanup = null,
-            .data = .{
-                .user_data = transport_creation_data,
-                .traverse = &TransportCreationData.traverse,
-            },
+            .data = CallbackManager.CallbackData.init_python(transport_creation_data, &transport_creation_data.python_payload),
         };
         try Loop.Scheduling.Soon.dispatch(loop_data, &callback);
 
@@ -263,6 +266,7 @@ const SocketConnectionData = struct {
     address_list: ?[]utils.Address,
     local_addr_list: ?[]utils.Address,
     method: SocketConnectionMethod,
+    python_payload: CallbackManager.PythonPayload = .{},
 
     comptime {
         python_c.verify_gc_coverage(@This(), &.{ "creation_data", "address_list", "local_addr_list" });
@@ -323,14 +327,16 @@ fn z_try_resolv_host(creation_data: *SocketCreationData) !void {
     connection_data.creation_data = creation_data;
     connection_data.address_list = null;
     connection_data.local_addr_list = null;
+    connection_data.python_payload = .{
+        .module_ptr = @ptrCast(creation_data.loop.?),
+        .callback_ptr = @ptrCast(creation_data.future.?),
+        .traverse = &SocketConnectionData.traverse,
+    };
 
     const resolver_callback = CallbackManager.Callback{
         .func = &host_resolved_callback,
         .cleanup = null,
-        .data = .{
-            .user_data = connection_data,
-            .traverse = &SocketConnectionData.traverse,
-        },
+        .data = CallbackManager.CallbackData.init_python(connection_data, &connection_data.python_payload),
     };
     const address_list = try loop_data.dns.lookup(hostname, &resolver_callback) orelse return;
 
@@ -340,10 +346,7 @@ fn z_try_resolv_host(creation_data: *SocketCreationData) !void {
     const callback = CallbackManager.Callback{
         .func = &create_socket_connection,
         .cleanup = null,
-        .data = .{
-            .user_data = connection_data,
-            .traverse = &SocketConnectionData.traverse,
-        },
+        .data = CallbackManager.CallbackData.init_python(connection_data, &connection_data.python_payload),
     };
     try Loop.Scheduling.Soon.dispatch(loop_data, &callback);
 }
@@ -352,7 +355,7 @@ fn try_resolv_host(data: *const CallbackManager.CallbackData) !void {
     const socket_creation_data_ptr: *SocketCreationData = @alignCast(@ptrCast(data.user_data.?));
     errdefer python_c.deinitialize_object_fields(socket_creation_data_ptr, &.{});
 
-    if (data.cancelled) {
+    if (data.cancelled()) {
         python_c.raise_python_runtime_error("Event for trying host resolution cancelled");
         return set_future_exception(error.PythonError, socket_creation_data_ptr.future.?);
     }
@@ -380,10 +383,7 @@ fn z_host_resolved_callback(connection_data: *SocketConnectionData) !void {
     const callback = CallbackManager.Callback{
         .func = &create_socket_connection,
         .cleanup = null,
-        .data = .{
-            .user_data = connection_data,
-            .traverse = &SocketConnectionData.traverse,
-        },
+        .data = CallbackManager.CallbackData.init_python(connection_data, &connection_data.python_payload),
     };
     try Loop.Scheduling.Soon.dispatch(loop_data, &callback);
 }
@@ -392,7 +392,7 @@ fn host_resolved_callback(data: *const CallbackManager.CallbackData) !void {
     const connection_data: *SocketConnectionData = @alignCast(@ptrCast(data.user_data.?));
     errdefer connection_data.deinit();
 
-    if (data.cancelled) {
+    if (data.cancelled()) {
         python_c.raise_python_runtime_error("Host resolution failed");
         return set_future_exception(error.PythonError, connection_data.creation_data.future.?);
     }
@@ -457,6 +457,7 @@ const MultiConnectState = struct {
     task_ids: std.ArrayListUnmanaged(usize),
     all_errors: bool,
     exceptions: ?PyObject = null,
+    python_payload: CallbackManager.PythonPayload = .{},
 
     comptime {
         python_c.verify_gc_coverage(@This(), &.{ "connection_data" });
@@ -473,6 +474,11 @@ const MultiConnectState = struct {
             .failed_count = 0,
             .task_ids = .{ .items = &.{}, .capacity = 0 },
             .all_errors = all_errors,
+            .python_payload = .{
+                .module_ptr = @ptrCast(connection_data.creation_data.loop.?),
+                .callback_ptr = @ptrCast(connection_data.creation_data.future.?),
+                .traverse = &MultiConnectState.traverse_raw,
+            }
         };
         if (all_errors) {
             self.exceptions = python_c.PyList_New(0) orelse return error.PythonError;
@@ -541,10 +547,7 @@ fn create_socket_and_submit_connect_req(address: *const utils.Address, data: *So
                 .callback = .{
                     .func = &socket_connected_callback,
                     .cleanup = null,
-                    .data = .{
-                        .user_data = data,
-                        .traverse = &SocketData.traverse,
-                    },
+                    .data = CallbackManager.CallbackData.init_python(data, &data.python_payload),
                 },
             },
         }
@@ -561,6 +564,11 @@ fn submit_connect_for_address(
     socket_data.* = .{
         .multi_state = mcs,
         .socket_fd = -1,
+        .python_payload = .{
+            .module_ptr = @ptrCast(mcs.connection_data.creation_data.loop.?),
+            .callback_ptr = @ptrCast(mcs.connection_data.creation_data.future.?),
+            .traverse = &SocketData.traverse,
+        }
     };
 
     const task_id = create_socket_and_submit_connect_req(address, socket_data, loop) catch |err| {
@@ -573,7 +581,7 @@ fn submit_connect_for_address(
 
 fn schedule_remaining_connects_callback(data: *const CallbackManager.CallbackData) !void {
     const mcs: *MultiConnectState = @alignCast(@ptrCast(data.user_data.?));
-    if (data.cancelled or mcs.succeeded) return;
+    if (data.cancelled() or mcs.succeeded) return;
 
     mcs.timer_fired = true;
 
@@ -666,10 +674,7 @@ fn z_create_socket_connection(data: *SocketConnectionData, connection_submitted:
         const callback = CallbackManager.Callback{
             .func = &schedule_remaining_connects_callback,
             .cleanup = null,
-            .data = .{
-                .user_data = mcs,
-                .traverse = &MultiConnectState.traverse_raw,
-            },
+            .data = CallbackManager.CallbackData.init_python(mcs, &mcs.python_payload),
         };
         const seconds: u64 = @intFromFloat(@floor(delay));
         const nanoseconds: u64 = @intFromFloat((delay - @floor(delay)) * 1e9);
@@ -705,7 +710,7 @@ fn create_socket_connection(data: *const CallbackManager.CallbackData) !void {
         }
     }
 
-    if (data.cancelled) {
+    if (data.cancelled()) {
         python_c.raise_python_runtime_error("Event for socket creation cancelled");
         return set_future_exception(error.PythonError, socket_creation_data.creation_data.future.?);
     }
@@ -721,6 +726,7 @@ fn create_socket_connection(data: *const CallbackManager.CallbackData) !void {
 const SocketData = struct {
     multi_state: *MultiConnectState,
     socket_fd: std.posix.fd_t,
+    python_payload: CallbackManager.PythonPayload = .{},
 
     comptime {
         python_c.verify_gc_coverage(@This(), &.{ "multi_state" });
@@ -748,14 +754,14 @@ fn socket_connected_callback(data: *const CallbackManager.CallbackData) !void {
 
     mcs.pending -= 1;
 
-    if (mcs.succeeded or data.cancelled) {
+    if (mcs.succeeded or data.cancelled()) {
         if (fd >= 0) _ = std.os.linux.close(fd);
         if (mcs.pending == 0) mcs.deinit();
         return;
     }
 
-    const io_uring_res = data.io_uring_res;
-    const io_uring_err = data.io_uring_err;
+    const io_uring_res = data.io_uring_res();
+    const io_uring_err = data.io_uring_err();
 
     if (io_uring_err != .SUCCESS or io_uring_res < 0) {
         if (mcs.all_errors) {
@@ -899,7 +905,7 @@ fn create_transport_and_set_future_result(
             _ = std.os.linux.close(@intCast(transport_creation_data.socket_fd));
         }
     }
-    if (data.cancelled) return;
+    if (data.cancelled()) return;
 
     z_create_transport_and_set_future_result(&transport_creation_data) catch |err| {
         return set_future_exception(err, transport_creation_data.future);

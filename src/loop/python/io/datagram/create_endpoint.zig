@@ -121,7 +121,7 @@ fn get_addr_tuple(addr: PyObject) !struct { host: []const u8, port: u16 } {
 
 fn resolve_local_addr(data: *const CallbackManager.CallbackData) !void {
     const dcd: *DatagramCreationData = @alignCast(@ptrCast(data.user_data.?));
-    if (data.cancelled) return dcd.deinit();
+    if (data.cancelled()) return dcd.deinit();
 
     const loop_data = utils.get_data_ptr(Loop, dcd.loop);
 
@@ -148,7 +148,7 @@ fn resolve_local_addr(data: *const CallbackManager.CallbackData) !void {
 
 fn local_addr_resolved_callback(data: *const CallbackManager.CallbackData) !void {
     const dcd: *DatagramCreationData = @alignCast(@ptrCast(data.user_data.?));
-    if (data.cancelled) return dcd.deinit();
+    if (data.cancelled()) return dcd.deinit();
 
     const loop_data = utils.get_data_ptr(Loop, dcd.loop);
     const addr_info = get_addr_tuple(dcd.py_local_addr.?) catch |err| return set_future_exception(err, dcd.future);
@@ -166,7 +166,7 @@ fn local_addr_resolved_callback(data: *const CallbackManager.CallbackData) !void
 
 fn resolve_remote_addr(data: *const CallbackManager.CallbackData) !void {
     const dcd: *DatagramCreationData = @alignCast(@ptrCast(data.user_data.?));
-    if (data.cancelled) return dcd.deinit();
+    if (data.cancelled()) return dcd.deinit();
 
     const loop_data = utils.get_data_ptr(Loop, dcd.loop);
 
@@ -192,7 +192,7 @@ fn resolve_remote_addr(data: *const CallbackManager.CallbackData) !void {
 
 fn remote_addr_resolved_callback(data: *const CallbackManager.CallbackData) !void {
     const dcd: *DatagramCreationData = @alignCast(@ptrCast(data.user_data.?));
-    if (data.cancelled) return dcd.deinit();
+    if (data.cancelled()) return dcd.deinit();
 
     const loop_data = utils.get_data_ptr(Loop, dcd.loop);
     const addr_info = get_addr_tuple(dcd.py_remote_addr.?) catch |err| return set_future_exception(err, dcd.future);
@@ -211,7 +211,7 @@ fn remote_addr_resolved_callback(data: *const CallbackManager.CallbackData) !voi
 fn create_endpoint(data: *const CallbackManager.CallbackData) !void {
     const dcd: *DatagramCreationData = @alignCast(@ptrCast(data.user_data.?));
     defer dcd.deinit();
-    if (data.cancelled) return;
+    if (data.cancelled()) return;
 
     // Pick family
     var family: u32 = std.posix.AF.INET;

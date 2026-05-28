@@ -2,6 +2,7 @@ const std = @import("std");
 const Loop = @import("../loop/main.zig");
 
 const python_c = @import("python_c");
+const CallbackManager = @import("callback_manager");
 
 pub const FutureStatus = enum {
     pending, finished, canceled
@@ -18,6 +19,7 @@ exceptions_queue: std.ArrayList(?*python_c.PyObject) = undefined,
 loop: *Loop,
 
 released: bool = false,
+python_payload: CallbackManager.PythonPayload = .{},
 
 
 pub fn init(self: *Future, loop: *Loop) !void {

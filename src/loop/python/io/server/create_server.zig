@@ -290,7 +290,7 @@ fn try_resolve_server_host(data: *const CallbackManager.CallbackData) !void {
     const creation_data: *ServerCreationData = @alignCast(@ptrCast(data.user_data.?));
     errdefer creation_data.deinit();
 
-    if (data.cancelled) {
+    if (data.cancelled()) {
         python_c.raise_python_runtime_error("Event for server host resolution cancelled\x00");
         return set_future_exception(error.PythonError, creation_data.future.?);
     }
@@ -336,7 +336,7 @@ fn server_host_resolved_callback(data: *const CallbackManager.CallbackData) !voi
     const server_data: *ServerSocketData = @alignCast(@ptrCast(data.user_data.?));
     errdefer server_data.deinit();
 
-    if (data.cancelled) {
+    if (data.cancelled()) {
         python_c.raise_python_runtime_error("Server host resolution cancelled\x00");
         return set_future_exception(error.PythonError, server_data.creation_data.future.?);
     }
@@ -498,7 +498,7 @@ fn create_server_socket(data: *const CallbackManager.CallbackData) !void {
     const server_data: *ServerSocketData = @alignCast(@ptrCast(data.user_data.?));
     defer server_data.deinit();
 
-    if (data.cancelled) {
+    if (data.cancelled()) {
         python_c.raise_python_runtime_error("Server socket creation cancelled\x00");
         return set_future_exception(error.PythonError, server_data.creation_data.future.?);
     }

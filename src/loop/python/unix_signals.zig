@@ -75,12 +75,7 @@ inline fn z_loop_add_signal_handler(
     try loop_data.unix_signals.link(@as(std.os.linux.SIG, @enumFromInt(sig)), CallbackManager.Callback{
         .func = &Handle.callback_for_python_generic_callbacks,
         .cleanup = &Handle.release_python_generic_callback,
-        .data = .{
-            .user_data = py_handle,
-            .module_ptr = null,
-            .callback_ptr = py_callback,
-            .traverse = &python_c.traverse_pyobject_callback,
-        }
+        .data = CallbackManager.CallbackData.init_python(py_handle, &py_handle.python_payload),
     });
 
     return python_c.get_py_none();

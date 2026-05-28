@@ -19,6 +19,7 @@ pub const PythonHandleObject = extern struct {
     cancelled: bool,
     finished: bool,
     thread_safe: bool,
+    python_payload: CallbackManager.PythonPayload = .{},
 };
 
 pub const ExceptionMessage: [:0]const u8 = "An error ocurred while executing python callback";
@@ -39,7 +40,7 @@ pub fn callback_for_python_generic_callbacks(data: *const CallbackManager.Callba
         handle.finished = true;
     }
 
-    var cancelled: bool = data.cancelled;
+    var cancelled: bool = data.cancelled();
     if (!cancelled) {
         if (thread_safe) {
             cancelled = @atomicLoad(bool, &handle.cancelled, .acquire);
@@ -108,8 +109,19 @@ pub inline fn fast_new_handle(
     instance.cancelled = false;
     instance.finished = false;
     instance.thread_safe = thread_safe;
+    instance.python_payload = .{
+        .module_ptr = @ptrCast(utils.get_parent_ptr(Loop.Python.LoopObject, loop_data)),
+        .callback_ptr = py_callback,
+        .traverse = &traverse_python_generic_callback,
+    };
 
     return instance;
+}
+
+pub fn traverse_python_generic_callback(ptr: ?*anyopaque, visit_ptr: ?*anyopaque, arg: ?*anyopaque) c_int {
+    const handle: *PythonHandleObject = @alignCast(@ptrCast(ptr.?));
+    const visit: python_c.visitproc = @ptrCast(visit_ptr.?);
+    return visit.?(@ptrCast(handle), arg);
 }
 
 fn handle_traverse(self: ?*PythonHandleObject, visit: python_c.visitproc, arg: ?*anyopaque) callconv(.c) c_int {

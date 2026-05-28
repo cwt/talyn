@@ -33,7 +33,7 @@ fn getnameinfo_callback(data: *const CallbackManager.CallbackData) !void {
     }
     const loop_data = utils.get_data_ptr(Loop, gnid.loop);
     
-    if (data.cancelled) {
+    if (data.cancelled()) {
         return;
     }
 

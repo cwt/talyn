@@ -36,27 +36,24 @@ fn loop_watchers_callback(data: *const CallbackManager.CallbackData) !void {
     const watcher: *Loop.FDWatcher = @alignCast(@ptrCast(data.user_data.?));
 
     const fd = watcher.fd;
-    if (data.cancelled or fd < 0) {
+    if (data.cancelled() or fd < 0) {
         @call(.always_inline, loop_watchers_cleanup_callback, .{watcher});
         return;
     }
 
-    if (data.io_uring_err == .SUCCESS) {
+    const io_uring_err = data.io_uring_err();
+    if (io_uring_err == .SUCCESS) {
         const loop_data = watcher.loop_data;
         const handle = watcher.handle;
         const callback = CallbackManager.Callback{
             .func = &Handle.callback_for_python_generic_callbacks,
             .cleanup = &Handle.release_python_generic_callback,
-            .data = .{
-                .user_data = handle,
-                .module_ptr = @ptrCast(handle),
-            .callback_ptr = null,
-            }
+            .data = CallbackManager.CallbackData.init_python(handle, &handle.python_payload),
         };
 
         try Loop.Scheduling.Soon.dispatch(loop_data, &callback);
         python_c.py_incref(@ptrCast(handle));
-    } else if (data.io_uring_err != .CANCELED or data.cancelled) {
+    } else if (io_uring_err != .CANCELED or data.cancelled()) {
         @call(.always_inline, loop_watchers_cleanup_callback, .{watcher});
         return;
     }
