@@ -27,14 +27,10 @@ pub fn connect(ring: *std.os.linux.IoUring, set: *IO.BlockingTasksSet, data: Con
     const data_ptr = try set.push(.SocketConnect, &data.callback);
     errdefer data_ptr.discard();
 
-    const sqe = try ring.connect(
+    _ = try ring.connect(
         @intCast(@intFromPtr(data_ptr)), data.socket_fd, data.addr, data.len
     );
-    sqe.flags |= std.os.linux.IOSQE_ASYNC;
 
-    // IOSQE_ASYNC required: io_uring's inline connect returns -EINPROGRESS
-    // for non-blocking sockets without properly installing a poll callback.
-    // The workqueue handles the TCP handshake synchronously.
     // Deferred: ring.connect stores a pointer to data.addr which points to
     // heap-allocated SockConnectData — safe until completion.
     return @intFromPtr(data_ptr);
