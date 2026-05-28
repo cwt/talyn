@@ -30,11 +30,12 @@ At extreme concurrency scales (e.g. $M=65536$), the primary runtime overhead is 
 
 ---
 
-### 🚀 Phase 2: Zero-Syscall Short-Circuiting & Combined Wait Polling
+### 🚀 Phase 2: Zero-Syscall Short-Circuiting & Combined Wait Polling — ✅ DONE (Pre-implemented in P15 / P19)
 * **Objective:** Short-circuit kernel transitions entirely during hot processing loops.
 * **Mechanism:**
   * Implement an active check for `ring.sq_ready()` before calling into `io_uring_enter`. If there are no pending hardware I/O events, bypass the kernel transition to yield **0 syscalls per tick** on in-memory operations.
   * In instances where hardware I/O is required, enforce unified `io_uring_enter(to_submit, wait_nr, IORING_ENTER_GETEVENTS)` execution to fuse submission and CQE draining into a single system call.
+* **Status Note:** Fully completed during the implementation of Priority 15 (Batch Dispatch Engine + Full io_uring) and Priority 19. The `sq_ready()` check in `flush_pending_sqes()` and unified wait polling via `submit_and_wait(1)` are fully active and validated.
 * **Mandatory Safeguards (Lessons 9 & 13):**
   > [!IMPORTANT]
   > **Prevent EventFD Deadlock:** Infrastructure SQEs (such as initial `eventfd` registration or active cancellations) must never be batched lazily. They **must** be submitted immediately to avoid thread hangs.
