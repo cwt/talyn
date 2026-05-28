@@ -21,6 +21,7 @@ Welcome to the Leviathan TODO and project tracking documentation. This serves as
 - [✅ PRIORITY 18: Deep Audit — Lessons-Learned Scan — ✅ DONE (2026-05-17)](priorities/18-deep-audit-lessons-learned-scan-2026.md)
 - [✅ PRIORITY 19: Remaining Pre-Existing Issues — ✅ DONE (2026-05-27)](priorities/19-remaining-pre-existing-issues-2026-05.md)
 - [✅ PRIORITY 20: TLS/SSL Completion — DONE (2026-05-25)](priorities/20-tls-ssl-completion-2026-05.md)
+- [🔴 PRIORITY 21: Advanced Event Loop Optimization — Master Plan (2026-05-28)](priorities/21-advanced-event-loop-optimization-2026.md)
 
 ## Knowledge Base
 
