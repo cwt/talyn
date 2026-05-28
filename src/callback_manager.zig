@@ -379,6 +379,18 @@ pub const DynamicRingBuffer = struct {
 
 pub const ReadyTasksQueueCapacity = 524288;
 
+inline fn get_adaptive_yield_threshold(initial_count: usize) usize {
+    if (initial_count <= 64) {
+        return 64;
+    } else if (initial_count <= 256) {
+        return 128;
+    } else if (initial_count <= 1024) {
+        return 256;
+    } else {
+        return 512;
+    }
+}
+
 pub fn execute_ring_buffer(
     comptime N: usize,
     ring: *RingBuffer(N),
@@ -391,6 +403,7 @@ pub fn execute_ring_buffer(
 
     var callbacks_executed: usize = 0;
     var yield_counter: usize = 0;
+    const yield_threshold = get_adaptive_yield_threshold(ring.count());
 
     while (ring.next()) |callback| {
         const mod = callback.data.module_ptr();
@@ -449,7 +462,7 @@ pub fn execute_ring_buffer(
         callbacks_executed += 1;
 
         yield_counter += 1;
-        if (!builtin.is_test and yield_counter == 256) {
+        if (!builtin.is_test and yield_counter >= yield_threshold) {
             yield_counter = 0;
             const ts = python_c.PyEval_SaveThread();
             _ = python_c.PyEval_RestoreThread(ts);
@@ -481,6 +494,7 @@ pub fn execute_dynamic_ring_buffer(
 
     var callbacks_executed: usize = 0;
     var yield_counter: usize = 0;
+    const yield_threshold = get_adaptive_yield_threshold(ring.count());
 
     while (ring.next()) |callback| {
         const mod = callback.data.module_ptr();
@@ -541,7 +555,7 @@ pub fn execute_dynamic_ring_buffer(
         callbacks_executed += 1;
 
         yield_counter += 1;
-        if (!builtin.is_test and yield_counter == 256) {
+        if (!builtin.is_test and yield_counter >= yield_threshold) {
             yield_counter = 0;
             const ts = python_c.PyEval_SaveThread();
             _ = python_c.PyEval_RestoreThread(ts);

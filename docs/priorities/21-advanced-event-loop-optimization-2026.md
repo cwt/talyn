@@ -43,10 +43,11 @@ At extreme concurrency scales (e.g. $M=65536$), the primary runtime overhead is 
 
 ---
 
-### 🔒 Phase 3: Adaptive free-threaded GIL Release Tuning
+### 🔒 Phase 3: Adaptive free-threaded GIL Release Tuning — ✅ DONE (Completed on 2026-05-28)
 * **Objective:** Minimize cooperative synchronization churn under free-threaded Python runtimes (`3.13t`/`3.14t`).
 * **Mechanism:**
   * Implement an adaptive algorithm that scales the `PyEval_SaveThread` / `PyEval_RestoreThread` release thresholds dynamically based on processing queue density (e.g., from 64 callbacks up to 512 callbacks under high burst loads).
+* **Status Note:** Implemented in `src/callback_manager.zig`. The dynamic algorithm calculates `yield_threshold` using `get_adaptive_yield_threshold(ring.count())` which scales smoothly: $\le 64$ is $64$, $\le 256$ is $128$, $\le 1024$ is $256$, and $> 1024$ is $512$ callbacks.
 * **Mandatory Safeguards (Lessons 1 & 17):**
   > [!WARNING]
   > **Atomic Wakeups & Lock Safety:** The decision to sleep must remain entirely atomic under the protection of `loop.mutex` to prevent background task wakeups from firing after check sequences but prior to kernel block entries.
