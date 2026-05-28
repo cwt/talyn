@@ -11,9 +11,6 @@ pub const FutureStatus = enum {
 result: ?*anyopaque = null,
 status: FutureStatus = .pending,
 
-callbacks_arena: std.heap.ArenaAllocator,
-callbacks_arena_allocator: std.mem.Allocator = undefined,
-
 callbacks_queue: Callback.CallbacksSetData = undefined,
 exceptions_queue: std.ArrayList(?*python_c.PyObject) = undefined,
 loop: *Loop,
@@ -27,21 +24,20 @@ pub fn init(self: *Future, loop: *Loop) !void {
 
     self.* = .{
         .loop = loop,
-        .callbacks_arena = std.heap.ArenaAllocator.init(loop.allocator)
     };
 
-    self.callbacks_arena_allocator = self.callbacks_arena.allocator();
     self.callbacks_queue = .{ .items = &.{}, .capacity = 0 };
     self.exceptions_queue = .{ .items = &.{}, .capacity = 0 };
 }
 
 pub fn release(self: *Future) void {
     Callback.release_callbacks_queue(&self.callbacks_queue);
+    self.callbacks_queue.deinit(self.loop.allocator);
+    self.exceptions_queue.deinit(self.loop.allocator);
     if (self.status == .pending) {
         self.loop.reserved_slots -= 1;
     }
     self.released = true;
-    self.callbacks_arena.deinit();
 }
 
 pub const Callback = @import("callback.zig");
