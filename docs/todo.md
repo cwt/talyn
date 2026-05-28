@@ -22,6 +22,7 @@ Welcome to the Leviathan TODO and project tracking documentation. This serves as
 - [✅ PRIORITY 19: Remaining Pre-Existing Issues — ✅ DONE (2026-05-27)](priorities/19-remaining-pre-existing-issues-2026-05.md)
 - [✅ PRIORITY 20: TLS/SSL Completion — DONE (2026-05-25)](priorities/20-tls-ssl-completion-2026-05.md)
 - [✅ PRIORITY 21: Advanced Event Loop Optimization — ✅ DONE (2026-05-28)](priorities/21-advanced-event-loop-optimization-2026.md)
+- [🔴 PRIORITY 22: Fused User-Space Socket State Machine (2026-05-28)](priorities/22-fused-user-space-socket-state-machine-2026.md)
 
 ## Knowledge Base
 
