@@ -144,7 +144,7 @@ fn sock_accept_poll_callback(data: *const CallbackManager.CallbackData) !void {
         }
         try resolve_accept_success(ad, client_fd);
     } else |err| {
-        if (err == error.WouldBlock) {
+        if (err == error.WouldBlock or err == error.ConnectionAborted or err == error.ConnectionResetByPeer) {
             // Queue .WaitReadable again
             const loop_data = utils.get_data_ptr(Loop, ad.loop);
             _ = try loop_data.io.queue(.{
@@ -219,7 +219,7 @@ fn z_loop_sock_accept(self: *LoopObject, args: []const ?PyObject) !*FutureObject
         }
         try resolve_accept_success(ad, client_fd);
     } else |err| {
-        if (err == error.WouldBlock) {
+        if (err == error.WouldBlock or err == error.ConnectionAborted or err == error.ConnectionResetByPeer) {
             // Queue .WaitReadable (POLL_IN) to wait for a connection
             _ = try loop_data.io.queue(.{
                 .WaitReadable = .{
