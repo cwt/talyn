@@ -1,8 +1,14 @@
 [⬅️ Back to Index](../todo.md)
 
-# 🔴 PRIORITY 22: Fused User-Space Socket State Machine (2026-05-28)
+# ⛔ PRIORITY 22: Fused User-Space Socket State Machine — ABANDONED (2026-05-28 → 2026-05-29)
 
-This document details the complete design, implementation, validation results, and safeguards of the High-Performance Fused User-Space Socket State Machine designed to eliminate kernel workqueue overhead (`IOSQE_ASYNC`) and guarantee absolute stability under extreme concurrency and load.
+> **Status: REVERTED.** This priority was implemented in changeset 568 and reverted to changeset 566 code in changeset 571. The zero-workqueue state machine approach caused Socket Ops benchmark timeouts under GIL Python and is not worth pursuing. See [Lesson 20](../lessons-learned.md#20-zero-workqueue-socket-state-machines-are-not-worth-it-2026-05-29).
+
+This document is retained as a historical record of the design, the bugs discovered during implementation, and the reasons it was ultimately abandoned.
+
+---
+
+This document originally detailed the complete design, implementation, validation results, and safeguards of the High-Performance Fused User-Space Socket State Machine designed to eliminate kernel workqueue overhead (`IOSQE_ASYNC`) and guarantee absolute stability under extreme concurrency and load.
 
 ---
 

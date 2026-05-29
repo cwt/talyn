@@ -35,33 +35,35 @@ const AcceptData = struct {
     addrlen: std.posix.socklen_t = @sizeOf(std.posix.sockaddr.storage),
 };
 
-fn perform_accept(fd: std.posix.fd_t, addr: ?*std.posix.sockaddr, addrlen: ?*std.posix.socklen_t) !std.posix.fd_t {
-    const res = std.os.linux.accept4(
-        fd,
-        addr,
-        addrlen,
-        @as(u32, @intCast(std.posix.SOCK.NONBLOCK | std.posix.SOCK.CLOEXEC))
-    );
-    // On Linux system calls, a return value from -4095 to -1 indicates an error.
-    // In 64-bit unsigned representation, this corresponds to values >= std.math.maxInt(usize) - 4095.
-    if (res >= std.math.maxInt(usize) - 4095) {
-        const errno_code = -@as(isize, @bitCast(res));
-        if (errno_code == 11) { // EAGAIN / EWOULDBLOCK
-            return error.WouldBlock;
-        }
-        return switch (errno_code) {
-            103 => error.ConnectionAborted,
-            104 => error.ConnectionResetByPeer,
-            24 => error.ProcessFdQuotaExceeded,
-            23 => error.SystemFdQuotaExceeded,
-            12 => error.SystemResources,
-            else => error.Unexpected,
-        };
+fn sock_accept_callback(data: *const CallbackManager.CallbackData) !void {
+    const io_uring_err = data.io_uring_err();
+    const io_uring_res = data.io_uring_res();
+    const ad: *AcceptData = @alignCast(@ptrCast(data.user_data.?));
+    defer {
+        python_c.py_decref(@ptrCast(ad.future));
+        python_c.py_decref(@ptrCast(ad.loop));
+        ad.allocator.destroy(ad);
     }
-    return @intCast(res);
-}
 
-fn resolve_accept_success(ad: *AcceptData, client_fd: std.posix.fd_t) !void {
+    if (data.cancelled()) return;
+
+    if (io_uring_err != .SUCCESS or io_uring_res < 0) {
+        const errno_val = if (io_uring_res < 0) -io_uring_res else @intFromEnum(io_uring_err);
+        const exc = python_c.PyObject_CallFunction(
+            python_c.PyExc_OSError, "is\x00",
+            @as(c_int, @intCast(errno_val)),
+            "Accept call failed\x00"
+        ) orelse return set_future_exception(error.PythonError, ad.future);
+        defer python_c.py_decref(exc);
+        
+        const future_data = utils.get_data_ptr(Future, ad.future);
+        try Future.Python.Result.future_fast_set_exception(
+ad.future, future_data, exc);
+        return;
+    }
+
+    const client_fd: std.posix.fd_t = @intCast(io_uring_res);
+    
     // Convert addr to Python tuple
     const py_addr = try AddressUtils.toPyAddr(utils.Address.initPosix(@ptrCast(&ad.addr)));
     defer python_c.py_decref(py_addr);
@@ -105,71 +107,6 @@ fn resolve_accept_success(ad: *AcceptData, client_fd: std.posix.fd_t) !void {
     try Future.Python.Result.future_fast_set_result(future_data, result_tuple);
 }
 
-fn resolve_accept_error(ad: *AcceptData, err_val: anyerror) !void {
-    const errno_val: c_int = switch (err_val) {
-        error.ConnectionAborted => 103, // ECONNABORTED
-        error.ConnectionResetByPeer => 104, // ECONNRESET
-        error.ProcessFdQuotaExceeded => 24, // EMFILE
-        error.SystemFdQuotaExceeded => 23, // ENFILE
-        error.SystemResources => 12, // ENOMEM
-        else => 22, // EINVAL
-    };
-    const exc = python_c.PyObject_CallFunction(
-        python_c.PyExc_OSError, "is\x00",
-        @as(c_int, @intCast(errno_val)),
-        "Accept call failed\x00"
-    ) orelse return set_future_exception(error.PythonError, ad.future);
-    defer python_c.py_decref(exc);
-    
-    const future_data = utils.get_data_ptr(Future, ad.future);
-    try Future.Python.Result.future_fast_set_exception(ad.future, future_data, exc);
-}
-
-fn sock_accept_poll_callback(data: *const CallbackManager.CallbackData) !void {
-    const ad: *AcceptData = @alignCast(@ptrCast(data.user_data.?));
-
-    if (data.cancelled()) {
-        python_c.py_decref(@ptrCast(ad.future));
-        python_c.py_decref(@ptrCast(ad.loop));
-        ad.allocator.destroy(ad);
-        return;
-    }
-
-    const client_fd_or_err = perform_accept(ad.socket_fd, @ptrCast(&ad.addr), &ad.addrlen);
-    if (client_fd_or_err) |client_fd| {
-        defer {
-            python_c.py_decref(@ptrCast(ad.future));
-            python_c.py_decref(@ptrCast(ad.loop));
-            ad.allocator.destroy(ad);
-        }
-        try resolve_accept_success(ad, client_fd);
-    } else |err| {
-        if (err == error.WouldBlock or err == error.ConnectionAborted or err == error.ConnectionResetByPeer) {
-            // Queue .WaitReadable again
-            const loop_data = utils.get_data_ptr(Loop, ad.loop);
-            _ = try loop_data.io.queue(.{
-                .WaitReadable = .{
-                    .fd = ad.socket_fd,
-                    .callback = .{
-                        .func = &sock_accept_poll_callback,
-                        .cleanup = null,
-                        .data = .{ .user_data = ad },
-                    },
-                    .timeout = null,
-                }
-            });
-            return;
-        } else {
-            defer {
-                python_c.py_decref(@ptrCast(ad.future));
-                python_c.py_decref(@ptrCast(ad.loop));
-                ad.allocator.destroy(ad);
-            }
-            try resolve_accept_error(ad, err);
-        }
-    }
-}
-
 pub fn loop_sock_accept(
     self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t
 ) callconv(.c) ?*FutureObject {
@@ -209,38 +146,18 @@ fn z_loop_sock_accept(self: *LoopObject, args: []const ?PyObject) !*FutureObject
         .allocator = loop_data.allocator,
     };
 
-    // Fast path: attempt immediate non-blocking accept
-    const client_fd_or_err = perform_accept(fd, @ptrCast(&ad.addr), &ad.addrlen);
-    if (client_fd_or_err) |client_fd| {
-        defer {
-            python_c.py_decref(@ptrCast(ad.future));
-            python_c.py_decref(@ptrCast(ad.loop));
-            ad.allocator.destroy(ad);
+    _ = try loop_data.io.queue(.{
+        .SocketAccept = .{
+            .socket_fd = fd,
+            .addr = @ptrCast(&ad.addr),
+            .addrlen = &ad.addrlen,
+            .callback = .{
+                .func = &sock_accept_callback,
+                .cleanup = null,
+                .data = .{ .user_data = ad },
+            },
         }
-        try resolve_accept_success(ad, client_fd);
-    } else |err| {
-        if (err == error.WouldBlock or err == error.ConnectionAborted or err == error.ConnectionResetByPeer) {
-            // Queue .WaitReadable (POLL_IN) to wait for a connection
-            _ = try loop_data.io.queue(.{
-                .WaitReadable = .{
-                    .fd = fd,
-                    .callback = .{
-                        .func = &sock_accept_poll_callback,
-                        .cleanup = null,
-                        .data = .{ .user_data = ad },
-                    },
-                    .timeout = null,
-                }
-            });
-        } else {
-            defer {
-                python_c.py_decref(@ptrCast(ad.future));
-                python_c.py_decref(@ptrCast(ad.loop));
-                ad.allocator.destroy(ad);
-            }
-            try resolve_accept_error(ad, err);
-        }
-    }
+    });
 
     return fut;
 }
@@ -254,10 +171,11 @@ const SockConnectData = struct {
     loop: *LoopObject,
     allocator: std.mem.Allocator,
     addr: utils.Address,
-    socket_fd: std.posix.fd_t,
 };
 
-fn sock_connect_poll_callback(data: *const CallbackManager.CallbackData) !void {
+fn sock_connect_callback(data: *const CallbackManager.CallbackData) !void {
+    const io_uring_err = data.io_uring_err();
+    const io_uring_res = data.io_uring_res();
     const scd: *SockConnectData = @alignCast(@ptrCast(data.user_data.?));
     defer {
         python_c.py_decref(@ptrCast(scd.future));
@@ -266,63 +184,6 @@ fn sock_connect_poll_callback(data: *const CallbackManager.CallbackData) !void {
     }
 
     if (data.cancelled()) return;
-
-    var err: c_int = 0;
-    var optlen: std.posix.socklen_t = @sizeOf(c_int);
-    const rc = std.os.linux.getsockopt(scd.socket_fd, std.posix.SOL.SOCKET, std.posix.SO.ERROR, @ptrCast(&err), &optlen);
-
-    if (rc != 0 or err != 0) {
-        const errno_val = if (rc != 0) @as(c_int, @intCast(-@as(isize, @bitCast(rc)))) else err;
-        const exc = python_c.PyObject_CallFunction(
-            python_c.PyExc_OSError, "is\x00",
-            errno_val,
-            "Connect call failed\x00"
-        ) orelse return set_future_exception(error.PythonError, scd.future);
-        defer python_c.py_decref(exc);
-
-        const future_data = utils.get_data_ptr(Future, scd.future);
-        try Future.Python.Result.future_fast_set_exception(scd.future, future_data, exc);
-        return;
-    }
-
-    const future_data = utils.get_data_ptr(Future, scd.future);
-    try Future.Python.Result.future_fast_set_result(future_data, python_c.get_py_none());
-}
-
-fn sock_connect_callback(data: *const CallbackManager.CallbackData) !void {
-    const io_uring_err = data.io_uring_err();
-    const io_uring_res = data.io_uring_res();
-    const scd: *SockConnectData = @alignCast(@ptrCast(data.user_data.?));
-
-    if (data.cancelled()) {
-        python_c.py_decref(@ptrCast(scd.future));
-        python_c.py_decref(@ptrCast(scd.loop));
-        scd.allocator.destroy(scd);
-        return;
-    }
-
-    if (io_uring_res == -115 or io_uring_err == .INPROGRESS) {
-        // Connection in progress! Queue POLL_OUT for writability
-        const loop_data = utils.get_data_ptr(Loop, scd.loop);
-        _ = try loop_data.io.queue(.{
-            .WaitWritable = .{
-                .fd = scd.socket_fd,
-                .callback = .{
-                    .func = &sock_connect_poll_callback,
-                    .cleanup = null,
-                    .data = .{ .user_data = scd },
-                },
-                .timeout = null,
-            }
-        });
-        return;
-    }
-
-    defer {
-        python_c.py_decref(@ptrCast(scd.future));
-        python_c.py_decref(@ptrCast(scd.loop));
-        scd.allocator.destroy(scd);
-    }
 
     if (io_uring_err != .SUCCESS and io_uring_err != .ALREADY) {
         const errno_val = if (io_uring_res < 0) -io_uring_res else @intFromEnum(io_uring_err);
@@ -334,12 +195,14 @@ fn sock_connect_callback(data: *const CallbackManager.CallbackData) !void {
         defer python_c.py_decref(exc);
         
         const future_data = utils.get_data_ptr(Future, scd.future);
-        try Future.Python.Result.future_fast_set_exception(scd.future, future_data, exc);
+        try Future.Python.Result.future_fast_set_exception(
+scd.future, future_data, exc);
         return;
     }
 
     const future_data = utils.get_data_ptr(Future, scd.future);
-    try Future.Python.Result.future_fast_set_result(future_data, python_c.get_py_none());
+    try Future.Python.Result.future_fast_set_result(future_data,
+ python_c.get_py_none());
 }
 
 pub fn loop_sock_connect(
@@ -382,7 +245,6 @@ fn z_loop_sock_connect(self: *LoopObject, args: []const ?PyObject) !*FutureObjec
         .loop = python_c.py_newref(self),
         .allocator = loop_data.allocator,
         .addr = addr,
-        .socket_fd = fd,
     };
 
     _ = try loop_data.io.queue(.{

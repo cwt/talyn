@@ -115,3 +115,12 @@ In an event loop runner using `io_uring`, the default behavior of flushing pendi
 *   **The Bug:** In high-throughput, non-blocking loops, checking `sq_ready()` before calling `io_uring_submit` / `io_uring_enter` allows immediate short-circuiting. If no new events have been queued, bypassing the system call achieves exactly **0 syscalls per tick** when processing in-memory task queues.
 *   **The Lesson:** Always check `ring.sq_ready()` to short-circuit flushes. Under heavy in-memory workloads, this yields immense CPU saving and maximizes overall execution throughput by minimizing system call overhead.
 
+---
+
+### 20. Zero-Workqueue Socket State Machines Are Not Worth It (2026-05-29)
+Priority 22 attempted to eliminate `IOSQE_ASYNC` from socket `accept`/`connect` operations by replacing single io_uring ops with multi-step user-space state machines (inline syscall → `POLL_ADD` → callback → inline syscall → re-arm).
+*   **The Idea:** `IOSQE_ASYNC` delegates to kernel io-wq worker threads, introducing context-switching overhead. By handling everything inline in user-space, we could match uvloop's efficiency.
+*   **The Reality:** The zero-workqueue design replaced 1 SQE → 1 CQE with 3–4 CQE cycles per connection. Each accept now requires: `POLL_IN` fires → callback runs → `accept4` syscall → re-arm `POLL_IN`. Each connect fallback requires: `CONNECT` returns `EINPROGRESS` → `POLL_OUT` queued → callback runs → `getsockopt` check. Under GIL Python's sequential callback processing, this pipeline stalls — the Socket Ops benchmark went from stable 0.67× asyncio (all sizes) to **TIMEOUT at m=32768** (changeset 568). Attempts to fix it (removing `IOSQE_ASYNC` from `POLL_ADD`, adding `flush_pending_sqes`) made it worse — **TIMEOUT at m=1024**.
+*   **Why Non-GIL Python Was Fine:** Free-threaded Python processes callbacks concurrently, keeping the multi-step pipeline flowing. GIL Python processes them sequentially, so each extra round-trip compounds into a livelock under load.
+*   **The Lesson:** Don't replace a simple, stable kernel path with a complex user-space state machine just to avoid workqueue overhead. The 0.67× speed on Socket Ops is an inherent characteristic of the io_uring workqueue path under GIL Python, not a bug to be fixed. More event loop round-trips ≠ better performance. Reverted to changeset 566 code. See [Priority 22](priorities/22-fused-user-space-socket-state-machine-2026.md).
+
