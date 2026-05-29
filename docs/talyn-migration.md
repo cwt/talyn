@@ -6,7 +6,7 @@ This document outlines the strategic migration, refactoring, and modernization p
 
 ## 1. Vision & Identity
 
-* **Name**: **Talyn** (derived from the biomechanical starship in sci-fi lore, representing speed, adaptive systems, and low-level control).
+* **Name**: **[Talyn](talyn-naming.md)** (derived from the biomechanical starship in sci-fi lore, representing speed, adaptive systems, and low-level control).
 * **Positioning**: A robust, exceptionally stable, and realistically fast `asyncio` event loop drop-in replacement powered by **Zig** and **io_uring**. Talyn prioritizes correctness, system resilience, and high usability over artificial micro-benchmark superiority.
 * **Ethical Open Source Stewardship**:
   * The original project owner (**Enrique Mora**) is fully credited for the original vision, architecture, and pioneering concepts.

@@ -6,7 +6,7 @@
 [![Zig Compatibility](https://img.shields.io/badge/zig-0.16.0-red.svg)](#-requirements)
 [![PyPI Version](https://img.shields.io/pypi/v/talyn.svg)](https://pypi.org/project/talyn/)
 
-**Talyn** is a robust, exceptionally stable, and realistically fast `asyncio` event loop drop-in replacement for Python, powered by the asynchronous capabilities of **Zig** and **io_uring**. 
+**Talyn** is a robust, exceptionally stable, and realistically fast `asyncio` event loop drop-in replacement for Python, powered by the asynchronous capabilities of **Zig** and **io_uring**.
 
 Talyn prioritizes **correctness, complete system safety, and high usability** over artificial micro-benchmark superiority. It is fully compatible with CPython's standard single-threaded and free-threaded (GIL-disabled) runtimes.
 
@@ -24,9 +24,9 @@ Talyn prioritizes **correctness, complete system safety, and high usability** ov
 
 ## 📜 Requirements
 
-* **Python**: `>= 3.13` (Tested and verified under CPython `3.13`, `3.14`, `3.13t` (free-threaded), and `3.14t` (free-threaded))
-* **Linux Kernel**: `>= 7.0` (Verified on Linux Kernel `7.0.x`)
-* **Zig Compiler** (for source builds): `0.16.0` (Fedora packages)
+- **Python**: `>= 3.13` (Tested and verified under CPython `3.13`, `3.14`, `3.13t` (free-threaded), and `3.14t` (free-threaded))
+- **Linux Kernel**: `>= 7.0` (Verified on Linux Kernel `7.0.x`)
+- **Zig Compiler** (for source builds): `0.16.0` (Fedora packages)
 
 > [!NOTE]
 > **Tested Platform Verification**:
@@ -66,13 +66,22 @@ talyn.run(main())
 Talyn is spun off from **[Leviathan](https://github.com/kython28/leviathan)**, an event loop originally pioneered by **[Enrique Mora](https://github.com/kython28)**. Enrique Mora's creative spark and vision of merging Zig, `io_uring`, and `asyncio` laid the critical foundation and architecture of this project.
 
 As Talyn evolved, the implementation underwent a complete systems-level refactoring to transition from a theoretical prototype to a production-grade, crash-resistant runtime:
-* Eliminated multi-crossing Zig/Python vectorcall overhead by implementing a native C step trampoline.
-* Redesigned completion handlers into flat, GC-safe ring buffers.
-* Fully audited and resolved all memory-leak reference cycles under concurrent connections.
+
+- Eliminated multi-crossing Zig/Python vectorcall overhead by implementing a native C step trampoline.
+- Redesigned completion handlers into flat, GC-safe ring buffers.
+- Fully audited and resolved all memory-leak reference cycles under concurrent connections.
 
 To honor the project's roots and Enrique's early work:
-* The original Leviathan README can be viewed at: [docs/historical/leviathan-readme.md](docs/historical/leviathan-readme.md)
-* The original preliminary benchmarks can be viewed at: [docs/historical/leviathan-benchmark.md](docs/historical/leviathan-benchmark.md)
+
+- The original Leviathan README can be viewed at: [docs/historical/leviathan-readme.md](docs/historical/leviathan-readme.md)
+- The original preliminary benchmarks can be viewed at: [docs/historical/leviathan-benchmark.md](docs/historical/leviathan-benchmark.md)
+
+---
+
+## 📖 Project Story
+
+- **[Development Journey](docs/development-journey.md)** — The full story: from discovery to challenges, the shift from "ultra-fast" to "realistic fast and stable", and how Talyn was built.
+- **[Why Talyn?](docs/talyn-naming.md)** — The personal story and meaning behind the new name.
 
 ---
 
