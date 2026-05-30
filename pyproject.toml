@@ -22,6 +22,12 @@ classifiers = [
 ]
 dependencies = []
 
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-asyncio",
+]
+
 [project.urls]
 Homepage = "https://github.com/cwt/talyn"
 Repository = "https://github.com/cwt/talyn"
