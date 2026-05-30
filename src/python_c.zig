@@ -78,6 +78,7 @@ pub const PyErr_Clear = _c.PyErr_Clear;
 pub const PyErr_GetRaisedException = _c.PyErr_GetRaisedException;
 pub const PyErr_SetRaisedException = _c.PyErr_SetRaisedException;
 pub const PyErr_GivenExceptionMatches = _c.PyErr_GivenExceptionMatches;
+pub const PyErr_CheckSignals = _c.PyErr_CheckSignals;
 
 pub extern var PyExc_ValueError: ?*PyObject;
 pub extern var PyExc_TypeError: ?*PyObject;

@@ -129,8 +129,12 @@ def benchmark_with_event_loops(
                 times = json.loads(out.stdout.strip().splitlines()[-1])
                 all_times.append((m, times))
                 print(f"{m}", end=" ", flush=True)
-            except subprocess.TimeoutExpired:
+            except subprocess.TimeoutExpired as e:
                 print(f"TIMEOUT (m={m})", flush=True)
+                if e.stdout:
+                    print(f"STDOUT:\n{e.stdout}", flush=True)
+                if e.stderr:
+                    print(f"STDERR:\n{e.stderr}", flush=True)
                 failed = True
                 break
             finally:

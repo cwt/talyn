@@ -165,11 +165,13 @@ fn accept_callback(data: *const CallbackManager.CallbackData) !void {
     }
 
     const client_fd_ret = std.os.linux.accept4(server.server_fd, null, null, @as(u32, @intCast(std.posix.SOCK.NONBLOCK | std.posix.SOCK.CLOEXEC)));
-    if (client_fd_ret == std.math.maxInt(usize)) {
-        // accept4 failed, check errno
-        const errno_val = @intFromEnum(std.os.linux.errno(0));
+    const client_fd_signed = @as(isize, @bitCast(client_fd_ret));
+    if (client_fd_signed < 0) {
+        // accept4 failed
+        const errno_val = -client_fd_signed;
         const eagain = @intFromEnum(std.os.linux.E.AGAIN);
-        if (errno_val == eagain) {
+        const eintr = @intFromEnum(std.os.linux.E.INTR);
+        if (errno_val == eagain or errno_val == eintr) {
             // Re-arm poll
             try enqueue_accept(server);
             return;
@@ -213,11 +215,6 @@ fn accept_callback(data: *const CallbackManager.CallbackData) !void {
 fn enqueue_accept(server: *StreamServerObject) !void {
     const loop_data = utils.get_data_ptr(Loop, @as(*Loop.Python.LoopObject, @ptrCast(server.loop.?)));
     const fd = server.server_fd;
-
-    const blocking_task_id = server.blocking_task_id;
-    if (blocking_task_id > 0) {
-        _ = try loop_data.io.queue(.{ .Cancel = blocking_task_id });
-    }
 
     server.blocking_task_id = try loop_data.io.queue(.{
         .WaitReadable = .{

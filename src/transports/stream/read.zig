@@ -71,7 +71,7 @@ pub fn read_operation_completed(read_transport: *ReadTransport, data: []const u8
             read_transport.closed = true;
         }
 
-        if (err == .CANCELED) {
+        if (err == .CANCELED and !is_closing) {
             try queue_read_operation(transport, read_transport, transport.protocol_type);
         }
         return;

@@ -10,10 +10,7 @@ const utils = @import("utils");
 
 pub const ReadCompletedCallback = *const fn (*ReadTransport, []const u8, std.os.linux.E) anyerror!void;
 
-pub const MAX_READ = switch (builtin.mode) {
-    .Debug => (1 << 16),
-    else => (2 * 1000 * 1000)
-};
+pub const MAX_READ = 65536; // 64 KB, matches RegisteredBufferPool slot size and fits cache
 
 const ConnectionLostCallback = *const fn (PyObject, PyObject) anyerror!void;
 
@@ -132,10 +129,19 @@ pub fn deinit(self: *ReadTransport) void {
 
 fn cleanup_resources_callback(ptr: ?*anyopaque) void {
     const self: *ReadTransport = @alignCast(@ptrCast(ptr.?));
-    python_c.py_decref(self.parent_transport);
+    const parent_transport = self.parent_transport;
 
     self.blocking_task_id = 0;
     self.cancelling = false;
+
+    if (self.is_closing) {
+        self.closed = true;
+    }
+
+    const StreamLifecycle = @import("stream/lifecycle.zig");
+    StreamLifecycle.maybe_close_fd(@ptrCast(parent_transport));
+
+    python_c.py_decref(parent_transport);
 }
 
 pub fn read_operation_completed(data: *const CallbackManager.CallbackData) !void {

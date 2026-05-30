@@ -235,10 +235,12 @@ fn poll_blocking_events(
             }
 
             const py_thread_state = PyEval_SaveThread();
-            defer PyEval_RestoreThread(py_thread_state);
+            const res = self.io.ring.submit_and_wait(1);
+            PyEval_RestoreThread(py_thread_state);
 
-            _ = self.io.ring.submit_and_wait(1) catch |err| {
+            _ = res catch |err| {
                 if (err == error.SignalInterrupt) {
+                    if (python_c.PyErr_CheckSignals() < 0) return error.PythonError;
                     if (python_c.PyErr_Occurred() != null) return error.PythonError;
                     continue;
                 }
@@ -268,6 +270,7 @@ fn copy_cqes_eintr_safe(ring: *std.os.linux.IoUring, cqes: []std.os.linux.io_uri
     while (true) {
         return ring.copy_cqes(cqes, 0) catch |err| {
             if (err == error.SignalInterrupt) {
+                if (python_c.PyErr_CheckSignals() < 0) return error.PythonError;
                 if (python_c.PyErr_Occurred() != null) return error.PythonError;
                 continue;
             }

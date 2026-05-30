@@ -103,6 +103,8 @@ pub fn close(self: *WriteTransport) !void {
 
     if (!self.write_in_flight and self.buffer_size == 0) {
         self.closed = true;
+        const StreamLifecycle = @import("stream/lifecycle.zig");
+        StreamLifecycle.maybe_close_fd(@ptrCast(self.parent_transport));
     }
 }
 
@@ -111,6 +113,9 @@ pub fn force_close(self: *WriteTransport) !void {
     self.closed = true;
     self.is_closing = true;
     self.connection_lost_callback = null;
+
+    const StreamLifecycle = @import("stream/lifecycle.zig");
+    StreamLifecycle.maybe_close_fd(@ptrCast(self.parent_transport));
 }
 
 pub fn deinit(self: *WriteTransport) void {
@@ -230,6 +235,8 @@ fn write_operation_completed(data: *const CallbackManager.CallbackData) !void {
             defer {
                 self.is_closing = true;
                 self.closed = true;
+                const StreamLifecycle = @import("stream/lifecycle.zig");
+                StreamLifecycle.maybe_close_fd(@ptrCast(self.parent_transport));
                 python_c.py_decref(exception);
             }
 
@@ -257,6 +264,8 @@ fn write_operation_completed(data: *const CallbackManager.CallbackData) !void {
 
         if (self.is_closing) {
             self.closed = true;
+            const StreamLifecycle = @import("stream/lifecycle.zig");
+            StreamLifecycle.maybe_close_fd(@ptrCast(self.parent_transport));
         }
 
         const bw = self.total_bytes_written;
@@ -269,6 +278,8 @@ fn write_operation_completed(data: *const CallbackManager.CallbackData) !void {
             defer {
                 self.is_closing = true;
                 self.closed = true;
+                const StreamLifecycle = @import("stream/lifecycle.zig");
+                StreamLifecycle.maybe_close_fd(@ptrCast(self.parent_transport));
                 python_c.PyErr_SetRaisedException(exception);
             }
 

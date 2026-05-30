@@ -238,13 +238,12 @@ pub const BlockingTasksSet = struct {
 
     pub inline fn inc_finished_tasks_counter(self: *BlockingTasksSet) void {
         const finished_tasks = self.finished_tasks + 1;
-        if (finished_tasks == TotalTasksItems and self.disattached) {
-            self.deinit();
-            return;
-        }
-
         if (finished_tasks == self.index) {
-            self.reset();
+            if (self.disattached) {
+                self.deinit();
+            } else {
+                self.reset();
+            }
             return;
         }
 
