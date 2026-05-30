@@ -13,7 +13,6 @@ class FoodDeliverySystem:
         self.restaurants: Dict[str, bool] = {}
         self.orders: Dict[str, dict[str, Any]] = {}
         self.riders: Dict[str, bool] = {}
-        self._lock = asyncio.Lock()
 
     async def handle_event(self, event: Dict[str, Any]) -> None:
         match event.get("type"):
@@ -33,43 +32,39 @@ class FoodDeliverySystem:
                 await self.update_rider_status(event["rider_id"], event["is_available"])
 
     async def restaurant_open(self, restaurant_id: str) -> None:
-        async with self._lock:
-            self.restaurants[restaurant_id] = True
+        self.restaurants[restaurant_id] = True
 
     async def restaurant_closed(self, restaurant_id: str) -> None:
-        async with self._lock:
-            self.restaurants[restaurant_id] = False
+        self.restaurants[restaurant_id] = False
 
     async def new_order(
         self, order_id: str, restaurant_id: str, items: list[dict[str, Any]]
     ) -> None:
         await asyncio.sleep(0.1)
-        async with self._lock:
-            if not self.restaurants.get(restaurant_id, False):
-                return
+        if not self.restaurants.get(restaurant_id, False):
+            return
 
-            self.orders[order_id] = {
-                "status": "pending",
-                "restaurant": restaurant_id,
-                "items": items,
-                "rider_assigned": None,
-            }
+        self.orders[order_id] = {
+            "status": "pending",
+            "restaurant": restaurant_id,
+            "items": items,
+            "rider_assigned": None,
+        }
 
         await self.notify_user(order_id, "Order created and pending assignment.")
 
     async def assign_rider(self, order_id: str, rider_id: str) -> None:
         await asyncio.sleep(0.1)
-        async with self._lock:
-            order = self.orders.get(order_id)
-            if not order or order["status"] != "pending":
-                return
+        order = self.orders.get(order_id)
+        if not order or order["status"] != "pending":
+            return
 
-            if not self.riders.get(rider_id, False):
-                return
+        if not self.riders.get(rider_id, False):
+            return
 
-            order["status"] = "in_progress"
-            order["rider_assigned"] = rider_id
-            self.riders[rider_id] = False
+        order["status"] = "in_progress"
+        order["rider_assigned"] = rider_id
+        self.riders[rider_id] = False
 
         await asyncio.gather(
             self.notify_user(
@@ -80,15 +75,14 @@ class FoodDeliverySystem:
 
     async def order_delivered(self, order_id: str) -> None:
         await asyncio.sleep(0.1)
-        async with self._lock:
-            order = self.orders.get(order_id)
-            if not order:
-                return
+        order = self.orders.get(order_id)
+        if not order:
+            return
 
-            rider_id = order["rider_assigned"]
-            if rider_id:
-                self.riders[rider_id] = True
-            order["status"] = "delivered"
+        rider_id = order["rider_assigned"]
+        if rider_id:
+            self.riders[rider_id] = True
+        order["status"] = "delivered"
 
         await asyncio.gather(
             self.notify_user(order_id, "Order delivered!"),
@@ -96,8 +90,7 @@ class FoodDeliverySystem:
         )
 
     async def update_rider_status(self, rider_id: str, is_available: bool) -> None:
-        async with self._lock:
-            self.riders[rider_id] = is_available
+        self.riders[rider_id] = is_available
 
     async def notify_user(self, order_id: str, message: str) -> None:
         await asyncio.sleep(0.1)

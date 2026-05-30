@@ -12,10 +12,6 @@ registered_users = {}
 order_history = {}
 data_store = {}
 
-lock_users = asyncio.Lock()
-lock_orders = asyncio.Lock()
-lock_data = asyncio.Lock()
-
 tasks = set()
 
 
@@ -25,8 +21,7 @@ async def handle_user_signup(event_data: dict[str, Any]) -> None:
     user_id = event_data["user_id"]
     user_email = event_data["email"]
 
-    async with lock_users:
-        registered_users[user_id] = {"email": user_email, "status": "registered"}
+    registered_users[user_id] = {"email": user_email, "status": "registered"}
 
     t = asyncio.create_task(notify_signup(user_id, user_email))
     tasks.add(t)

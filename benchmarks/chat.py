@@ -12,7 +12,6 @@ class ChatServer:
     def __init__(self) -> None:
         self.users: Dict[str, bool] = {}
         self.message_log: List[str] = []
-        self._lock = asyncio.Lock()
 
     async def handle_event(self, event: dict[str, Any]) -> None:
         match event.get("type"):
@@ -24,19 +23,16 @@ class ChatServer:
                 await self.logout_user(event["username"])
 
     async def login_user(self, username: str) -> None:
-        async with self._lock:
-            self.users[username] = True
+        self.users[username] = True
 
     async def logout_user(self, username: str) -> None:
-        async with self._lock:
-            if username in self.users and self.users[username]:
-                self.users[username] = False
+        if username in self.users and self.users[username]:
+            self.users[username] = False
 
     async def broadcast_message(self, username: str, content: str) -> None:
         await asyncio.sleep(random.uniform(0.05, 0.1))
-        async with self._lock:
-            msg = f"{username}: {content}"
-            self.message_log.append(msg)
+        msg = f"{username}: {content}"
+        self.message_log.append(msg)
 
 async def simulate_user_life(server: ChatServer, username: str) -> None:
     await server.handle_event({"type": "login", "username": username})

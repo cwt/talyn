@@ -54,7 +54,7 @@ except IOError as e:
 
 N: int = 7
 ITERATIONS = 3
-BENCHMARK_TIMEOUT = 30
+BENCHMARK_TIMEOUT = 120
 
 M_INITIAL: int = 1024
 M_MULTIPLIER: int = 2
@@ -181,7 +181,9 @@ def create_comparison_table(
             else:
                 diff = "-"
                 rel = "-"
-            table.add_row([loop_name, m, f"{mn:.6f}", f"{mx:.6f}", f"{avg:.6f}", f"{std:.6f}", f"{diff:.6f}", f"{rel:.4f}"])
+            diff_str = f"{diff:.6f}" if isinstance(diff, (int, float)) else str(diff)
+            rel_str = f"{rel:.4f}" if isinstance(rel, (int, float)) else str(rel)
+            table.add_row([loop_name, m, f"{mn:.6f}", f"{mx:.6f}", f"{avg:.6f}", f"{std:.6f}", diff_str, rel_str])
 
     print(table)
 
@@ -225,8 +227,17 @@ def plot_results(
 
 
 if __name__ == "__main__":
+    selected_names = None
+    for arg in sys.argv:
+        if arg.startswith("--bench="):
+            selected_names = [name.strip().lower() for name in arg.split("=", 1)[1].split(",")]
+            break
+
     for benchmark in BENCHMARKS:
         bname = benchmark.name
+        if selected_names is not None and bname.lower() not in selected_names:
+            continue
+
         print(f"\n=== {bname} ===")
         r = benchmark_with_event_loops(LOOPS, benchmark.function)
         create_comparison_table(r)
