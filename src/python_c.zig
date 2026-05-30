@@ -1,5 +1,7 @@
 pub const _c = @cImport({
     @cDefine("PY_SSIZE_T_CLEAN", {});
+    @cDefine("_FORTIFY_SOURCE", "0");
+    @cDefine("__USE_FORTIFY_LEVEL", "0");
     // Don't define Py_GIL_DISABLED here - it causes @cImport to pull in
     // inline functions that reference _Py_atomic_load_uint64_relaxed which
     // is NOT exported from libpython. We use Py_IncRef/Py_DecRef (stable ABI)

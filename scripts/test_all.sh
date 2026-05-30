@@ -21,6 +21,13 @@ NC='\033[0m'
 PASS=0
 FAIL=0
 
+OPTIMIZE_MODE="Debug"
+for arg in "$@"; do
+    if [ "$arg" = "--starburst" ]; then
+        OPTIMIZE_MODE="ReleaseSafe"
+    fi
+done
+
 # ---- helpers ----
 
 ensure_test_cert() {
@@ -162,7 +169,7 @@ for py in python3.13 python3.14 python3.13t python3.14t; do
         gilflag="-Dpython-gil-disabled=true"
     fi
 
-    if ! zig build install -Doptimize=Debug \
+    if ! zig build install -Doptimize=$OPTIMIZE_MODE \
         -Dpython-include-dir="$inc" \
         -Dpython-lib-dir="$(dirname "$lib")" \
         -Dpython-lib="$lib" \
@@ -183,7 +190,7 @@ done
 # ---- zig tests ----
 REF_INC="$(get_python_include python3.13)"
 REF_LIB="$(get_python_lib python3.13)"
-ZIG_OPTS="-Dpython-include-dir=$REF_INC -Dpython-lib-dir=$(dirname "$REF_LIB") -Dpython-lib=$REF_LIB"
+ZIG_OPTS="-Doptimize=$OPTIMIZE_MODE -Dpython-include-dir=$REF_INC -Dpython-lib-dir=$(dirname "$REF_LIB") -Dpython-lib=$REF_LIB"
 
 printf "${YELLOW}[zig]${NC} Running zig unit tests...\n"
 if zig build test $ZIG_OPTS 2>/dev/null; then

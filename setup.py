@@ -9,7 +9,7 @@ from typing import Literal
 if sys.version_info < (3, 13):
     raise RuntimeError("talyn requires Python 3.13 or later")
 
-zig_mode: Literal["Debug", "ReleaseSafe"] = "Debug"
+zig_mode = os.environ.get("TALYN_OPTIMIZE", "Debug")
 zig_compiler_options = []
 
 include_dir = sysconfig.get_config_var("INCLUDEPY")
