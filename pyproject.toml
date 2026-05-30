@@ -27,6 +27,9 @@ test = [
     "pytest",
     "pytest-asyncio",
 ]
+benchmark = [
+    "uvloop",
+]
 
 [project.urls]
 Homepage = "https://github.com/cwt/talyn"

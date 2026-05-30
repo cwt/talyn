@@ -3,7 +3,12 @@ from prettytable import PrettyTable
 from benchmarks import Benchmark
 
 import dataclasses
-import uvloop, asyncio, time, talyn
+import asyncio, time, talyn
+try:
+    import uvloop
+    HAS_UVLOOP = True
+except ImportError:
+    HAS_UVLOOP = False
 import matplotlib.pyplot as plt
 import sys, os, statistics, traceback, subprocess, json, signal, tempfile
 import matplotlib
@@ -54,11 +59,12 @@ BENCHMARK_TIMEOUT = 30
 M_INITIAL: int = 1024
 M_MULTIPLIER: int = 2
 
-LOOPS: List[Tuple[str, str, Callable[[], asyncio.AbstractEventLoop]]] = [
+LOOPS = [
     ("asyncio", "asyncio.new_event_loop()", lambda: asyncio.new_event_loop()),
-    ("uvloop", "uvloop.new_event_loop()", uvloop.new_event_loop),
-    ("talyn", "talyn.Loop()", talyn.Loop),
 ]
+if HAS_UVLOOP and "--without-uvloop" not in sys.argv:
+    LOOPS.append(("uvloop", "uvloop.new_event_loop()", uvloop.new_event_loop))
+LOOPS.append(("talyn", "talyn.Loop()", talyn.Loop))
 
 def make_script(modname, m, loop_type):
     imports = "import asyncio, sys, json, time, os"
