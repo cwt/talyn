@@ -1,4 +1,3 @@
-
 import pytest
 
 from talyn import Loop, Task
@@ -6,8 +5,10 @@ from talyn import Loop, Task
 
 def test_task_eager_start_raises() -> None:
     loop = Loop()
+
     async def dummy():
         pass
+
     coro = dummy()
     try:
         with pytest.raises(RuntimeError, match="eager_start"):
@@ -20,9 +21,11 @@ def test_task_eager_start_raises() -> None:
 def test_task_without_loop_inside_running_loop() -> None:
     loop = Loop()
     try:
+
         async def test():
             async def dummy():
                 pass
+
             coro2 = dummy()
             task = Task(coro2)
             assert isinstance(task.get_loop(), Loop)

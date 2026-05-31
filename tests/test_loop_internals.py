@@ -13,9 +13,11 @@ from talyn.loop import PseudoSocket, _SSLTransportWrapper
 @pytest.fixture(autouse=True)
 def disable_gc_under_free_threading():
     import sys
+
     is_ft = not sys._is_gil_enabled() if hasattr(sys, "_is_gil_enabled") else False
     if is_ft:
         import gc
+
         gc.disable()
         try:
             yield
@@ -79,6 +81,7 @@ def test_event_loop_policy() -> None:
     import warnings
 
     from talyn.loop import EventLoopPolicy
+
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
         old_policy = asyncio.get_event_loop_policy()
@@ -100,6 +103,7 @@ def test_install() -> None:
     import warnings
 
     import talyn
+
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
         old_policy = asyncio.get_event_loop_policy()
@@ -107,7 +111,9 @@ def test_install() -> None:
         talyn.install()
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
-            assert isinstance(asyncio.get_event_loop_policy(), talyn.loop.EventLoopPolicy)
+            assert isinstance(
+                asyncio.get_event_loop_policy(), talyn.loop.EventLoopPolicy
+            )
     finally:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
@@ -146,6 +152,7 @@ def test_set_default_executor() -> None:
 def test_run_in_executor_custom() -> None:
     loop = Loop()
     try:
+
         def blocking_func(x: int) -> int:
             return x * 2
 
@@ -163,9 +170,7 @@ def test_run_in_executor_default_closed() -> None:
     loop = Loop()
     loop.close()
     with pytest.raises((RuntimeError, SystemError)):
-        loop.run_until_complete(
-            loop.run_in_executor(None, lambda: 42)
-        )
+        loop.run_until_complete(loop.run_in_executor(None, lambda: 42))
 
 
 def test_exception_handler_default() -> None:
@@ -181,6 +186,7 @@ def test_exception_handler_custom() -> None:
     loop = Loop()
     try:
         handled = []
+
         def handler(ctx):
             handled.append(ctx)
             loop.stop()
@@ -198,12 +204,14 @@ def test_call_exception_handler_with_all_fields() -> None:
     loop = Loop()
     try:
         handled = []
+
         def handler(ctx):
             handled.append(ctx)
 
         loop._exception_handler = handler
         loop._call_exception_handler(
-            ValueError("x"), message="msg",
+            ValueError("x"),
+            message="msg",
             callback=lambda: None,
             socket=socket.socket(),
         )
@@ -219,6 +227,7 @@ def test_call_exception_handler_with_all_fields() -> None:
 def test_run_until_complete_not_done() -> None:
     loop = Loop()
     try:
+
         async def never_complete():
             await asyncio.Event().wait()
 
@@ -233,6 +242,7 @@ def test_run_until_complete_not_done() -> None:
 def test_run_until_complete_exception() -> None:
     loop = Loop()
     try:
+
         async def will_raise():
             raise ValueError("boom")
 
@@ -245,14 +255,13 @@ def test_run_until_complete_exception() -> None:
 def test_connect_accepted_socket() -> None:
     loop = Loop()
     try:
+
         class Proto(asyncio.Protocol):
             pass
 
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         with pytest.raises((ValueError, OSError, RuntimeError)):
-            loop.run_until_complete(
-                loop.connect_accepted_socket(Proto, s)
-            )
+            loop.run_until_complete(loop.connect_accepted_socket(Proto, s))
         s.close()
     finally:
         loop.close()
@@ -261,8 +270,10 @@ def test_connect_accepted_socket() -> None:
 def test_run_until_complete_coro() -> None:
     loop = Loop()
     try:
+
         async def foo():
             return 1
+
         assert loop.run_until_complete(foo()) == 1
     finally:
         loop.close()
@@ -284,6 +295,7 @@ def test_shutdown_default_executor_with_timeout() -> None:
 
         def slow():
             import time
+
             time.sleep(0.05)
             return 1
 
@@ -306,13 +318,12 @@ def test_shutdown_default_executor_negative_timeout() -> None:
 def test_create_connection_with_kwargs() -> None:
     loop = Loop()
     try:
+
         class Proto(asyncio.Protocol):
             pass
 
         with pytest.raises((ValueError, TypeError, OSError, RuntimeError)):
-            loop.run_until_complete(
-                loop.create_connection(Proto, sock=socket.socket())
-            )
+            loop.run_until_complete(loop.create_connection(Proto, sock=socket.socket()))
     finally:
         loop.close()
 
@@ -340,11 +351,11 @@ def test_close_twice() -> None:
 def test_subprocess_exec_cleanup_on_failure() -> None:
     loop = Loop()
     try:
+
         async def test():
             with pytest.raises((RuntimeError, FileNotFoundError)):
                 await loop.subprocess_exec(
-                    asyncio.SubprocessProtocol,
-                    "/nonexistent/binary"
+                    asyncio.SubprocessProtocol, "/nonexistent/binary"
                 )
 
         loop.run_until_complete(test())
@@ -354,9 +365,11 @@ def test_subprocess_exec_cleanup_on_failure() -> None:
 
 def test_ssl_transport_wrapper_close_with_errors() -> None:
     import ssl
+
     class DummyRaw:
         def __init__(self):
             self.close_called = 0
+
         def close(self):
             self.close_called += 1
 
@@ -364,6 +377,7 @@ def test_ssl_transport_wrapper_close_with_errors() -> None:
         def __init__(self):
             self.f_called = 0
             self._sslobj = None
+
         def _f(self):
             self.f_called += 1
 
@@ -371,13 +385,18 @@ def test_ssl_transport_wrapper_close_with_errors() -> None:
         def __init__(self, side_effect=None):
             self.unwrap_called = 0
             self.side_effect = side_effect
+
         def unwrap(self):
             self.unwrap_called += 1
             if self.side_effect:
                 raise self.side_effect
 
-    for exc_type in (ssl.SSLSyscallError, ssl.SSLWantReadError,
-                     ssl.SSLWantWriteError, ssl.SSLError):
+    for exc_type in (
+        ssl.SSLSyscallError,
+        ssl.SSLWantReadError,
+        ssl.SSLWantWriteError,
+        ssl.SSLError,
+    ):
         raw = DummyRaw()
         ssp = DummySSP()
         wrapper = _SSLTransportWrapper(ssp, raw, ssl)
@@ -391,6 +410,7 @@ def test_ssl_transport_wrapper_close_success() -> None:
     class DummyRaw:
         def __init__(self):
             self.close_called = 0
+
         def close(self):
             self.close_called += 1
 
@@ -398,12 +418,14 @@ def test_ssl_transport_wrapper_close_success() -> None:
         def __init__(self):
             self.f_called = 0
             self._sslobj = None
+
         def _f(self):
             self.f_called += 1
 
     class DummySSLObj:
         def __init__(self):
             self.unwrap_called = 0
+
         def unwrap(self):
             self.unwrap_called += 1
 
@@ -426,12 +448,14 @@ def test_ssl_transport_wrapper_write() -> None:
         def __init__(self):
             self.f_called = 0
             self._sslobj = None
+
         def _f(self):
             self.f_called += 1
 
     class DummySSLObj:
         def __init__(self):
             self.write_called_with = None
+
         def write(self, data):
             self.write_called_with = data
 
@@ -459,6 +483,7 @@ def test_call_exception_handler_future_and_task() -> None:
     loop = Loop()
     try:
         handled = []
+
         def handler(ctx):
             handled.append(ctx)
 
@@ -487,6 +512,7 @@ def test_call_exception_handler_future_and_task() -> None:
 def test_shutdown_asyncgens() -> None:
     loop = Loop()
     try:
+
         async def agen():
             try:
                 yield 1
@@ -504,6 +530,7 @@ def test_shutdown_asyncgens() -> None:
 def test_run_until_complete_exception_inside_callback() -> None:
     loop = Loop()
     try:
+
         async def will_fail():
             raise ValueError("explosion")
 
@@ -543,6 +570,7 @@ def test_shutdown_default_executor_timeout() -> None:
 
         def very_slow():
             import time
+
             time.sleep(10)
             return 1
 
@@ -555,6 +583,7 @@ def test_shutdown_default_executor_timeout() -> None:
 def test_create_connection_with_all_kwargs() -> None:
     loop = Loop()
     try:
+
         class Proto(asyncio.Protocol):
             pass
 
@@ -562,8 +591,11 @@ def test_create_connection_with_all_kwargs() -> None:
         with pytest.raises((ValueError, TypeError, OSError, RuntimeError)):
             loop.run_until_complete(
                 loop.create_connection(
-                    Proto, host="127.0.0.1", port=0,
-                    family=socket.AF_INET, proto=6,
+                    Proto,
+                    host="127.0.0.1",
+                    port=0,
+                    family=socket.AF_INET,
+                    proto=6,
                     sock=s,
                     local_addr=("127.0.0.1", 0),
                     server_hostname="localhost",
@@ -577,15 +609,15 @@ def test_create_connection_with_all_kwargs() -> None:
         loop.close()
 
 
-@pytest.mark.skipif(not hasattr(os, 'fork'), reason="fork not available")
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="fork not available")
 def test_subprocess_exec_cleanup_finally() -> None:
     loop = Loop()
     try:
+
         async def test():
             with pytest.raises((RuntimeError, OSError)):
                 await loop.subprocess_exec(
-                    asyncio.SubprocessProtocol,
-                    "/nonexistent/binary_xyz"
+                    asyncio.SubprocessProtocol, "/nonexistent/binary_xyz"
                 )
 
         loop.run_until_complete(test())
@@ -595,6 +627,7 @@ def test_subprocess_exec_cleanup_finally() -> None:
 
 def test_create_unix_connection_no_ssl() -> None:
     import tempfile
+
     loop = Loop()
     try:
         sock_path = tempfile.mktemp(suffix=".sock")
@@ -616,6 +649,7 @@ def test_create_unix_connection_no_ssl() -> None:
 
 def test_create_unix_server_no_ssl() -> None:
     import tempfile
+
     loop = Loop()
     try:
         sock_path = tempfile.mktemp(suffix=".sock")
@@ -653,8 +687,10 @@ def test_default_exception_handler_with_extra_keys() -> None:
 
 def test_shutdown_asyncgens_error() -> None:
     import warnings
+
     loop = Loop()
     try:
+
         async def bad_agen():
             try:
                 yield 1
@@ -677,6 +713,7 @@ def test_shutdown_asyncgens_error() -> None:
 def test_run_until_complete_keyboard_interrupt() -> None:
     loop = Loop()
     try:
+
         async def will_never_stop():
             await asyncio.Event().wait()
 
@@ -702,6 +739,7 @@ def test_loop_close_handles_cancelled_throw() -> None:
     """
     loop = Loop()
     try:
+
         async def await_future():
             await loop.create_future()
 
@@ -721,14 +759,17 @@ def test_do_shutdown_exception() -> None:
     executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="test")
     try:
         real_shutdown = executor.shutdown
+
         def failing_shutdown(wait=True):
             real_shutdown(wait=False)
             raise RuntimeError("shutdown failed")
+
         executor.shutdown = failing_shutdown
         loop.set_default_executor(executor)
 
         def slow():
             import time
+
             time.sleep(0.05)
             return 1
 
@@ -744,6 +785,7 @@ def test_do_shutdown_exception() -> None:
 def test_create_connection_with_ssl_timeout_kwargs() -> None:
     loop = Loop()
     try:
+
         class Proto(asyncio.Protocol):
             pass
 
@@ -751,7 +793,8 @@ def test_create_connection_with_ssl_timeout_kwargs() -> None:
         with pytest.raises((ValueError, TypeError, OSError, RuntimeError)):
             loop.run_until_complete(
                 loop.create_connection(
-                    Proto, sock=s,
+                    Proto,
+                    sock=s,
                     ssl_handshake_timeout=10,
                     ssl_shutdown_timeout=10,
                 )
@@ -764,6 +807,7 @@ def test_create_connection_with_ssl_timeout_kwargs() -> None:
 @pytest.mark.filterwarnings("ignore::pytest.PytestUnraisableExceptionWarning")
 def test_ssl_server_and_connection() -> None:
     import ssl as sslmod
+
     CERT = "/tmp/test_cert.pem"
     KEY = "/tmp/test_key.pem"
     if not os.path.exists(CERT):
@@ -779,29 +823,39 @@ def test_ssl_server_and_connection() -> None:
         client_ctx.check_hostname = False
 
         server_data = []
+
         class ServerProto(asyncio.Protocol):
             def connection_made(self, transport):
                 self.transport = transport
+
             def data_received(self, data):
                 server_data.append(data)
                 self.transport.write(data.upper())
 
         client_data = []
+
         class ClientProto(asyncio.Protocol):
             def connection_made(self, transport):
                 self.transport = transport
+
             def data_received(self, data):
                 client_data.append(data)
 
         async def run_test():
             srv = await loop.create_server(
-                ServerProto, "127.0.0.1", 0, ssl=ssl_ctx,
+                ServerProto,
+                "127.0.0.1",
+                0,
+                ssl=ssl_ctx,
             )
             server_sock = srv.sockets[0]
             addr = server_sock.getsockname()
 
             transport, proto = await loop.create_connection(
-                ClientProto, "127.0.0.1", addr[1], ssl=client_ctx,
+                ClientProto,
+                "127.0.0.1",
+                addr[1],
+                ssl=client_ctx,
             )
             proto.transport.write(b"hello")
             await asyncio.sleep(0.2)
@@ -819,6 +873,7 @@ def test_ssl_server_and_connection() -> None:
 @pytest.mark.filterwarnings("ignore::pytest.PytestUnraisableExceptionWarning")
 def test_ssl_handshake_failure() -> None:
     import ssl as sslmod
+
     CERT = "/tmp/test_cert.pem"
     KEY = "/tmp/test_key.pem"
     if not os.path.exists(CERT):
@@ -837,14 +892,20 @@ def test_ssl_handshake_failure() -> None:
 
         async def run_test():
             srv = await loop.create_server(
-                Proto, "127.0.0.1", 0, ssl=ssl_ctx,
+                Proto,
+                "127.0.0.1",
+                0,
+                ssl=ssl_ctx,
             )
             server_sock = srv.sockets[0]
             addr = server_sock.getsockname()
 
             with pytest.raises((sslmod.SSLError, ConnectionError, OSError)):
                 await loop.create_connection(
-                    Proto, "127.0.0.1", addr[1], ssl=client_ctx,
+                    Proto,
+                    "127.0.0.1",
+                    addr[1],
+                    ssl=client_ctx,
                 )
 
             srv.close()
@@ -858,6 +919,7 @@ def test_ssl_handshake_failure() -> None:
 def test_ssl_server_and_connection_unix() -> None:
     import ssl as sslmod
     import tempfile
+
     CERT = "/tmp/test_cert.pem"
     KEY = "/tmp/test_key.pem"
     if not os.path.exists(CERT):
@@ -874,24 +936,32 @@ def test_ssl_server_and_connection_unix() -> None:
 
         sock_path = tempfile.mktemp(suffix=".sock")
         server_data = []
+
         class ServerProto(asyncio.Protocol):
             def connection_made(self, transport):
                 self.transport = transport
+
             def data_received(self, data):
                 server_data.append(data)
 
         async def run_test():
             srv = await loop.create_unix_server(
-                ServerProto, sock_path, ssl=ssl_ctx,
+                ServerProto,
+                sock_path,
+                ssl=ssl_ctx,
             )
+
             class ClientProto(asyncio.Protocol):
                 def connection_made(self, transport):
                     self.transport = transport
+
                 def data_received(self, data):
                     pass
 
             transport, proto = await loop.create_unix_connection(
-                ClientProto, sock_path, ssl=client_ctx,
+                ClientProto,
+                sock_path,
+                ssl=client_ctx,
             )
             proto.transport.write(b"hello")
             await asyncio.sleep(0.2)

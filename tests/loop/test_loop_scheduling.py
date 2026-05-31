@@ -78,9 +78,7 @@ def test_call_later() -> None:
 
         assert mock_func.call_count == calls_num
         assert (
-            DELAY_TIME * (calls_num + 1)
-            <= (end_time - start_time)
-            <= (calls_num + 2)
+            DELAY_TIME * (calls_num + 1) <= (end_time - start_time) <= (calls_num + 2)
         )
 
         expected_calls = [((i,),) for i in range(calls_num)]
@@ -106,9 +104,7 @@ def test_call_later_with_cancel() -> None:
 
         assert mock_func.call_count == (calls_num // 2)
         assert (
-            DELAY_TIME * (calls_num + 1)
-            <= (end_time - start_time)
-            <= (calls_num + 2)
+            DELAY_TIME * (calls_num + 1) <= (end_time - start_time) <= (calls_num + 2)
         )
 
         expected_calls = [((i,),) for i in range(calls_num) if i % 2 == 1]
@@ -133,9 +129,7 @@ def test_call_later_with_context() -> None:
 
         assert mock_func.call_count == calls_num
         assert (
-            DELAY_TIME * (calls_num + 1)
-            <= (end_time - start_time)
-            <= (calls_num + 2)
+            DELAY_TIME * (calls_num + 1) <= (end_time - start_time) <= (calls_num + 2)
         )
 
         expected_calls = [((i,),) for i in range(calls_num)]
@@ -159,9 +153,7 @@ def test_call_at() -> None:
 
         assert mock_func.call_count == calls_num
         assert (
-            DELAY_TIME * (calls_num + 1)
-            <= (end_time - start_time)
-            <= (calls_num + 2)
+            DELAY_TIME * (calls_num + 1) <= (end_time - start_time) <= (calls_num + 2)
         )
 
         expected_calls = [((i,),) for i in range(calls_num)]
@@ -187,9 +179,7 @@ def test_call_at_with_cancel() -> None:
 
         assert mock_func.call_count == (calls_num // 2)
         assert (
-            DELAY_TIME * (calls_num + 1)
-            <= (end_time - start_time)
-            <= (calls_num + 2)
+            DELAY_TIME * (calls_num + 1) <= (end_time - start_time) <= (calls_num + 2)
         )
 
         expected_calls = [((i,),) for i in range(calls_num) if i % 2 == 1]
@@ -216,15 +206,14 @@ def test_call_at_with_context() -> None:
 
         assert mock_func.call_count == calls_num
         assert (
-            DELAY_TIME * (calls_num + 1)
-            <= (end_time - start_time)
-            <= (calls_num + 2)
+            DELAY_TIME * (calls_num + 1) <= (end_time - start_time) <= (calls_num + 2)
         )
 
         expected_calls = [((i,),) for i in range(calls_num)]
         assert mock_func.call_args_list == expected_calls
     finally:
         loop.close()
+
 
 def test_scheduling_invalid_inputs() -> None:
     loop = Loop()
@@ -255,6 +244,7 @@ def test_scheduling_invalid_inputs() -> None:
     finally:
         loop.close()
 
+
 def test_scheduling_with_complex_callbacks() -> None:
     loop = Loop()
     try:
@@ -263,7 +253,7 @@ def test_scheduling_with_complex_callbacks() -> None:
             pass
 
         mock_func = MagicMock(side_effect=complex_callback)
-        
+
         loop.call_soon(mock_func, 1, "test", [1, 2, 3])
         loop.call_later(DELAY_TIME, mock_func, 2, "another", [4, 5])
         loop.call_at(loop.time() + DELAY_TIME, mock_func, 3, "last", [6])
@@ -275,9 +265,11 @@ def test_scheduling_with_complex_callbacks() -> None:
     finally:
         loop.close()
 
+
 def test_scheduling_with_exception_raising_callback() -> None:
     loop = Loop()
     try:
+
         def raising_callback() -> None:
             raise ValueError("Test exception")
 
@@ -285,10 +277,11 @@ def test_scheduling_with_exception_raising_callback() -> None:
 
         loop.call_soon(mock_func)
         loop.call_later(DELAY_TIME, loop.stop)
-        
+
         loop.run_forever()
     finally:
         loop.close()
+
 
 def test_scheduling_with_context_propagation() -> None:
     loop = Loop()
@@ -315,6 +308,7 @@ def test_scheduling_with_context_propagation() -> None:
         assert mock_func.call_count == 3
     finally:
         loop.close()
+
 
 def test_scheduling_with_error_handling() -> None:
     loop = Loop()
@@ -357,6 +351,7 @@ def test_scheduling_with_error_handling() -> None:
         assert mock_index_error.call_count == 1
     finally:
         loop.close()
+
 
 def test_scheduling_with_mixed_successful_and_error_callbacks() -> None:
     loop = Loop()

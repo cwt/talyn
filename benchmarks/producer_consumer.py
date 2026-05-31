@@ -6,10 +6,9 @@ from benchmarks import Benchmark
 
 BENCHMARK = Benchmark(
     "Producer-Consumer",
-    lambda loop, n: loop.run_until_complete(
-        execute_producers(n)
-    ),
+    lambda loop, n: loop.run_until_complete(execute_producers(n)),
 )
+
 
 async def producer(producer_id: int) -> str:
     loop = asyncio.get_event_loop()
@@ -19,13 +18,14 @@ async def producer(producer_id: int) -> str:
     await asyncio.sleep(0.05)
     return result
 
+
 async def consumer(fut: asyncio.Future[str], producer_id: int) -> None:
     delay = 0.03
     await asyncio.sleep(delay)
     random_value = round(random.random(), 3)
     fut.set_result(f"Value {random_value} after {delay:.2f}s (prod {producer_id})")
 
+
 async def execute_producers(num_producers: int) -> None:
     tasks: List[Awaitable[str]] = [producer(i) for i in range(num_producers)]
     await asyncio.gather(*tasks)
-

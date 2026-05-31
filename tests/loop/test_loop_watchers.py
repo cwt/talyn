@@ -10,6 +10,7 @@ def test_add_and_remove_reader() -> None:
     r, w = os.pipe2(os.O_NONBLOCK)
     try:
         callback_called = False
+
         def reader_callback() -> None:
             nonlocal callback_called
             callback_called = True
@@ -28,18 +29,22 @@ def test_add_and_remove_reader() -> None:
         assert loop.remove_reader(r), "Failed to remove reader"
 
         # Try to remove again, should return False
-        assert not loop.remove_reader(r), "Removing non-existent reader should return False"
+        assert not loop.remove_reader(r), (
+            "Removing non-existent reader should return False"
+        )
 
     finally:
         loop.close()
         os.close(w)
         os.close(r)
 
+
 def test_add_and_remove_writer() -> None:
     loop = Loop()
     r, w = os.pipe2(os.O_NONBLOCK)
     try:
         callback_called = False
+
         def writer_callback() -> None:
             nonlocal callback_called
             callback_called = True
@@ -58,11 +63,14 @@ def test_add_and_remove_writer() -> None:
         assert loop.remove_writer(w), "Failed to remove writer"
 
         # Try to remove again, should return False
-        assert not loop.remove_writer(w), "Removing non-existent writer should return False"
+        assert not loop.remove_writer(w), (
+            "Removing non-existent writer should return False"
+        )
     finally:
         loop.close()
         os.close(w)
         os.close(r)
+
 
 def test_add_reader_invalid_fd() -> None:
     loop = Loop()
@@ -72,6 +80,7 @@ def test_add_reader_invalid_fd() -> None:
     finally:
         loop.close()
 
+
 def test_add_writer_invalid_fd() -> None:
     loop = Loop()
     try:
@@ -80,25 +89,33 @@ def test_add_writer_invalid_fd() -> None:
     finally:
         loop.close()
 
+
 def test_remove_reader_not_registered() -> None:
     loop = Loop()
     try:
-        assert not loop.remove_reader(10), "Removing non-existent reader should return False"
+        assert not loop.remove_reader(10), (
+            "Removing non-existent reader should return False"
+        )
     finally:
         loop.close()
+
 
 def test_remove_writer_not_registered() -> None:
     loop = Loop()
     try:
-        assert not loop.remove_writer(10), "Removing non-existent writer should return False"
+        assert not loop.remove_writer(10), (
+            "Removing non-existent writer should return False"
+        )
     finally:
         loop.close()
+
 
 def test_rewrite_reader() -> None:
     loop = Loop()
     r, w = os.pipe2(os.O_NONBLOCK)
     try:
         callback_count = 0
+
         def reader_callback1() -> None:
             nonlocal callback_count
             callback_count += 1
@@ -120,11 +137,14 @@ def test_rewrite_reader() -> None:
         loop.call_soon(lambda: os.write(w, b"data"))
         loop.run_forever()
 
-        assert callback_count == 10, "Second reader callback was not called or old callback also fired"
+        assert callback_count == 10, (
+            "Second reader callback was not called or old callback also fired"
+        )
     finally:
         loop.close()
         os.close(w)
         os.close(r)
+
 
 def test_rewrite_reader_old_callback_not_called() -> None:
     loop = Loop()
@@ -155,11 +175,13 @@ def test_rewrite_reader_old_callback_not_called() -> None:
         os.close(w)
         os.close(r)
 
+
 def test_rewrite_writer() -> None:
     loop = Loop()
     r, w = os.pipe2(os.O_NONBLOCK)
     try:
         callback_count = 0
+
         def writer_callback1() -> None:
             nonlocal callback_count
             callback_count += 1
@@ -187,11 +209,13 @@ def test_rewrite_writer() -> None:
         os.close(w)
         os.close(r)
 
+
 def test_remove_reader_then_add() -> None:
     loop = Loop()
     r, w = os.pipe2(os.O_NONBLOCK)
     try:
         callback_called = False
+
         def reader_callback() -> None:
             nonlocal callback_called
             callback_called = True
@@ -216,11 +240,13 @@ def test_remove_reader_then_add() -> None:
         os.close(w)
         os.close(r)
 
+
 def test_remove_writer_then_add() -> None:
     loop = Loop()
     r, w = os.pipe2(os.O_NONBLOCK)
     try:
         callback_called = False
+
         def writer_callback() -> None:
             nonlocal callback_called
             callback_called = True
@@ -250,10 +276,12 @@ def test_remove_writer_then_add() -> None:
         os.close(w)
         os.close(r)
 
+
 def test_add_reader_remove_writer() -> None:
     loop = Loop()
     r, w = os.pipe2(os.O_NONBLOCK)
     try:
+
         def reader_callback() -> None:
             pass
 

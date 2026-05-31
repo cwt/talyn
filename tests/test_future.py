@@ -106,6 +106,7 @@ def test_initializing_with_wrong_loop() -> None:
     class DummyLoop(asyncio.AbstractEventLoop):
         def close(self):
             pass
+
     loop = DummyLoop()
     try:
         with pytest.raises(TypeError):
@@ -347,10 +348,10 @@ def test_future_set_invalid_exception() -> None:
     loop = Loop()
     try:
         future = Future(loop=loop)
-        
+
         with pytest.raises(TypeError):
             future.set_exception(None)
-        
+
         with pytest.raises(TypeError):
             future.set_exception("Not an exception")
     finally:
@@ -388,14 +389,14 @@ def test_future_multiple_cancellations() -> None:
     loop = Loop()
     try:
         future = Future(loop=loop)
-        
+
         # First cancellation should return True
         assert future.cancel() is True
-        
+
         # Subsequent cancellations should return False
         assert future.cancel() is False
         assert future.cancel() is False
-        
+
         assert future.cancelled()
     finally:
         loop.close()
@@ -405,12 +406,14 @@ def test_future_cancel_with_invalid_message() -> None:
     loop = Loop()
     try:
         future = Future(loop=loop)
-        
+
         # Test various invalid message types
         future.cancel(msg=None)
-        future.cancel(msg=42) # Aider, aqui solo haremos un cancel por cada instancia future
+        future.cancel(
+            msg=42
+        )  # Aider, aqui solo haremos un cancel por cada instancia future
         future.cancel(msg=["invalid"])
-        
+
         assert future.cancelled()
     finally:
         loop.close()

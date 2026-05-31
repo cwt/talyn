@@ -15,7 +15,7 @@ def test_install():
             warnings.simplefilter("ignore", DeprecationWarning)
             policy = asyncio.get_event_loop_policy()
         assert isinstance(policy, talyn.EventLoopPolicy)
-        
+
         loop = asyncio.new_event_loop()
         try:
             assert isinstance(loop, talyn.Loop)
@@ -25,6 +25,7 @@ def test_install():
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             asyncio.set_event_loop_policy(old_policy)
+
 
 def test_policy_new_event_loop():
     policy = talyn.EventLoopPolicy()

@@ -1,4 +1,3 @@
-
 import pytest
 
 import talyn
@@ -12,6 +11,7 @@ def test_remove_non_existent_reader():
     finally:
         loop.close()
 
+
 def test_remove_invalid_fd():
     loop = talyn.Loop()
     try:
@@ -19,6 +19,7 @@ def test_remove_invalid_fd():
             loop.remove_reader(-1)
     finally:
         loop.close()
+
 
 def test_add_reader_invalid_callback():
     loop = talyn.Loop()

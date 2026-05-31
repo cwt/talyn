@@ -128,4 +128,3 @@ def generate_events(num_events: int) -> list[dict[str, Any]]:
 async def main(nevents: int) -> None:
     events = generate_events(nevents)
     await event_loop_simulator(events)
-

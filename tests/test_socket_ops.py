@@ -17,6 +17,7 @@ import talyn
 
 def test_many_sequential_connections():
     """Mimic Socket Ops benchmark: many sequential connect/accept/close cycles."""
+
     async def main():
         async def handler(reader, writer):
             try:
@@ -48,6 +49,7 @@ def test_many_sequential_connections():
 
 def test_raw_socket_connect_accept():
     """Test low-level loop.sock_connect/sock_accept/sock_sendall/sock_recv."""
+
     async def main():
         loop = asyncio.get_running_loop()
 
@@ -91,6 +93,7 @@ def test_raw_socket_connect_accept():
 
 def test_shutdown_variants():
     """Test that socket shutdown works correctly in all variants."""
+
     async def main():
         loop = asyncio.get_running_loop()
 
@@ -130,6 +133,7 @@ def test_shutdown_variants():
 
 def test_concurrent_connect_accept_stress():
     """Multiple concurrent connections to stress connect/accept without IOSQE_ASYNC."""
+
     async def main():
         async def handler(reader, writer):
             try:
@@ -143,6 +147,7 @@ def test_concurrent_connect_accept_stress():
         server = await asyncio.start_server(handler, "127.0.0.1", 0)
         port = server.sockets[0].getsockname()[1]
         async with server:
+
             async def one_shot(i):
                 reader, writer = await asyncio.open_connection("127.0.0.1", port)
                 msg = f"msg-{i}".encode()

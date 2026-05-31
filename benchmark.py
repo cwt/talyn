@@ -8,6 +8,7 @@ from benchmarks import Benchmark
 
 try:
     import uvloop
+
     HAS_UVLOOP = True
 except ImportError:
     HAS_UVLOOP = False
@@ -74,6 +75,7 @@ if HAS_UVLOOP and "--without-uvloop" not in sys.argv:
     LOOPS.append(("uvloop", "uvloop.new_event_loop()", uvloop.new_event_loop))
 LOOPS.append(("talyn", "talyn.Loop()", talyn.Loop))
 
+
 def make_script(modname, m, loop_type):
     imports = "import asyncio, sys, json, time, os"
     if "talyn" in loop_type:
@@ -102,6 +104,7 @@ loop.close()
 print(json.dumps(results), flush=True)
 """
 
+
 def benchmark_with_event_loops(
     loops: List[Tuple[str, str, Callable]],
     function: Callable,
@@ -126,7 +129,8 @@ def benchmark_with_event_loops(
             try:
                 out = subprocess.run(
                     [sys.executable, tmppath],
-                    capture_output=True, text=True,
+                    capture_output=True,
+                    text=True,
                     timeout=BENCHMARK_TIMEOUT,
                 )
                 if out.returncode != 0:
@@ -167,7 +171,16 @@ def create_comparison_table(
         return
 
     table = PrettyTable()
-    field_names = ["Loop", "M", "Min (s)", "Max (s)", "Avg (s)", "Stdev (s)", "Diff (s)", "Rel Speed"]
+    field_names = [
+        "Loop",
+        "M",
+        "Min (s)",
+        "Max (s)",
+        "Avg (s)",
+        "Stdev (s)",
+        "Diff (s)",
+        "Rel Speed",
+    ]
     table.field_names = field_names
 
     base_name = LOOPS[0][0]
@@ -195,14 +208,24 @@ def create_comparison_table(
                 rel = "-"
             diff_str = f"{diff:.6f}" if isinstance(diff, (int, float)) else str(diff)
             rel_str = f"{rel:.4f}" if isinstance(rel, (int, float)) else str(rel)
-            table.add_row([loop_name, m, f"{mn:.6f}", f"{mx:.6f}", f"{avg:.6f}", f"{std:.6f}", diff_str, rel_str])
+            table.add_row(
+                [
+                    loop_name,
+                    m,
+                    f"{mn:.6f}",
+                    f"{mx:.6f}",
+                    f"{avg:.6f}",
+                    f"{std:.6f}",
+                    diff_str,
+                    rel_str,
+                ]
+            )
 
     print(table)
 
 
 def plot_results(
-    results: Dict[str, Optional[List[Tuple[int, List[float]]]]],
-    name: str
+    results: Dict[str, Optional[List[Tuple[int, List[float]]]]], name: str
 ) -> None:
     plt.figure(figsize=(10, 6))
     plotted = False
@@ -242,7 +265,9 @@ if __name__ == "__main__":
     selected_names = None
     for arg in sys.argv:
         if arg.startswith("--bench="):
-            selected_names = [name.strip().lower() for name in arg.split("=", 1)[1].split(",")]
+            selected_names = [
+                name.strip().lower() for name in arg.split("=", 1)[1].split(",")
+            ]
             break
 
     for benchmark in BENCHMARKS:

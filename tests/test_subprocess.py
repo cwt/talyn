@@ -106,6 +106,7 @@ def test_subprocess_send_signal() -> None:
             SubprocessProtocolStub, "/usr/bin/sleep", "10"
         )
         import signal
+
         transport.send_signal(signal.SIGTERM)
         await protocol.exited
         assert protocol.exit_code is not None
@@ -145,19 +146,15 @@ def test_subprocess_popen_cleaned_on_success() -> None:
         )
         pid = transport.get_pid()
         # Must be cleaned from global dict immediately
-        assert pid not in _subprocess_popens, \
+        assert pid not in _subprocess_popens, (
             f"Popen for pid {pid} leaked in _subprocess_popens"
+        )
         # Must be kept alive on the transport so Popen.__del__ doesn't
         # reap the child before the transport does
-        assert hasattr(transport, '_popen'), \
-            "Popen not attached to transport"
-        assert transport._popen.pid == pid, \
-            "Wrong Popen attached to transport"
+        assert hasattr(transport, "_popen"), "Popen not attached to transport"
+        assert transport._popen.pid == pid, "Wrong Popen attached to transport"
         await protocol.exited
         assert protocol.exit_code == 0
         transport.close()
 
     talyn.run(main())
-
-
-

@@ -1,5 +1,3 @@
-
-
 from talyn import Loop, Runner
 
 
@@ -43,6 +41,7 @@ def test_runner_run_returns_result() -> None:
 
 def test_runner_close_closed_loop() -> None:
     import warnings
+
     runner = Runner()
     runner._loop.close()
     with warnings.catch_warnings():

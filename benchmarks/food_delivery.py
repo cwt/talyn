@@ -9,6 +9,7 @@ BENCHMARK = Benchmark(
     lambda loop, n: loop.run_until_complete(main(n)),
 )
 
+
 class FoodDeliverySystem:
     def __init__(self) -> None:
         self.restaurants: Dict[str, bool] = {}
@@ -71,7 +72,7 @@ class FoodDeliverySystem:
             self.notify_user(
                 order_id, f"Order in progress. Rider '{rider_id}' assigned."
             ),
-            self.log_event("assign_rider", order_id, rider_id)
+            self.log_event("assign_rider", order_id, rider_id),
         )
 
     async def order_delivered(self, order_id: str) -> None:
@@ -155,4 +156,3 @@ async def main(orders: int) -> None:
     events = await generate_events(orders)
     tasks = [fds.handle_event(evt) for evt in events]
     await asyncio.gather(*tasks)
-

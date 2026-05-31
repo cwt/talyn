@@ -63,6 +63,7 @@ def test_server_serve_forever_cancelled() -> None:
     loop = Loop()
     try:
         server = Server(loop, [])
+
         async def test():
             task = asyncio.ensure_future(server.serve_forever())
             await asyncio.sleep(0.05)
@@ -124,12 +125,11 @@ def test_server_wait_closed_with_active() -> None:
     try:
         server = Server(loop, [])
         server._active_count = 1
+
         async def test():
             loop.call_soon(server._detach)
             await server.wait_closed()
+
         loop.run_until_complete(test())
     finally:
         loop.close()
-
-
-

@@ -72,8 +72,6 @@ class Server:
     async def __aenter__(self) -> "Server":
         return self
 
-    async def __aexit__(
-        self, *args: Any, **kwargs: Any
-    ) -> None:
+    async def __aexit__(self, *args: Any, **kwargs: Any) -> None:
         self.close()
         await self.wait_closed()

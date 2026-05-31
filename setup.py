@@ -40,6 +40,7 @@ if not is_gil_enabled:
 
 class BinaryDistribution(Distribution):
     """Distribution which always forces a binary package"""
+
     def has_ext_modules(self) -> bool:
         return True
 
@@ -83,8 +84,19 @@ class TalynTest(Command):
         self.run_command("build")
 
         errno = subprocess.call(
-            [sys.executable, "-m", "pytest", "-s", "-x", "--verbose", "--full-trace",
-             "--cov=talyn", "--cov-report=term", "--cov-report=html", "--cov-config=.coveragerc"],
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "-s",
+                "-x",
+                "--verbose",
+                "--full-trace",
+                "--cov=talyn",
+                "--cov-report=term",
+                "--cov-report=html",
+                "--cov-config=.coveragerc",
+            ],
             cwd=os.path.join("build", "lib"),
         )
         raise SystemExit(errno)

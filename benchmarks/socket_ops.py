@@ -7,6 +7,7 @@ BENCHMARK = Benchmark(
     lambda loop, n: loop.run_until_complete(_main(n)),
 )
 
+
 async def _main(m):
     n = max(1, min(m, 512))
 

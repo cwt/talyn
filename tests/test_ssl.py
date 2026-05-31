@@ -21,9 +21,20 @@ def ssl_certs():
     certf.close()
     subprocess.run(
         [
-            "openssl", "req", "-x509", "-newkey", "rsa:2048",
-            "-keyout", keyf.name, "-out", certf.name,
-            "-days", "1", "-nodes", "-subj", "/CN=localhost",
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-keyout",
+            keyf.name,
+            "-out",
+            certf.name,
+            "-days",
+            "1",
+            "-nodes",
+            "-subj",
+            "/CN=localhost",
         ],
         capture_output=True,
         check=True,
@@ -89,7 +100,10 @@ async def test_ssl_create_connection_handshake(ssl_certs):
 
     loop = asyncio.get_running_loop()
     transport, protocol = await loop.create_connection(
-        EchoClient, addr[0], addr[1], ssl=client_ctx,
+        EchoClient,
+        addr[0],
+        addr[1],
+        ssl=client_ctx,
     )
 
     transport.write(b"hello")
@@ -130,8 +144,11 @@ async def test_ssl_create_connection_server_hostname(ssl_certs):
 
     loop = asyncio.get_running_loop()
     transport, protocol = await loop.create_connection(
-        EchoClient, addr[0], addr[1],
-        ssl=client_ctx, server_hostname="localhost",
+        EchoClient,
+        addr[0],
+        addr[1],
+        ssl=client_ctx,
+        server_hostname="localhost",
     )
 
     transport.write(b"hello")
@@ -179,7 +196,10 @@ async def test_ssl_create_connection_echo_large(ssl_certs):
 
     loop = asyncio.get_running_loop()
     transport, protocol = await loop.create_connection(
-        EchoClient, addr[0], addr[1], ssl=client_ctx,
+        EchoClient,
+        addr[0],
+        addr[1],
+        ssl=client_ctx,
     )
 
     data = b"x" * 10000
@@ -227,7 +247,10 @@ async def test_ssl_create_connection_wrong_context():
 
     with pytest.raises((ConnectionError, ssl.SSLError)):
         transport, protocol = await loop.create_connection(
-            EchoClient, addr[0], addr[1], ssl=client_ctx,
+            EchoClient,
+            addr[0],
+            addr[1],
+            ssl=client_ctx,
         )
         transport.close()
 
@@ -317,7 +340,10 @@ async def test_ssl_create_server_echo_ssl_client(ssl_certs):
     client_ctx.verify_mode = ssl.CERT_NONE
 
     transport, protocol = await loop.create_connection(
-        EchoClient, addr[0], addr[1], ssl=client_ctx,
+        EchoClient,
+        addr[0],
+        addr[1],
+        ssl=client_ctx,
     )
 
     transport.write(b"hello")
@@ -369,6 +395,7 @@ async def test_ssl_create_server_multiple_connections(ssl_certs):
                 ss.close()
             except Exception as e:
                 result["err"] = e
+
         return client, result
 
     for i, msg in enumerate([b"ping", b"pong", b"test"]):
@@ -394,11 +421,11 @@ async def test_start_tls_buffered_data(ssl_certs):
 
     async def handle_client(reader, writer):
         # Wait for TLS ClientHello to be buffered before start_tls().
-        await reader._wait_for_data('test_start_tls_buffered_data')
+        await reader._wait_for_data("test_start_tls_buffered_data")
         assert reader._buffer
 
         await writer.start_tls(server_ctx)
-        
+
         line = await reader.readline()
         assert line == b"ping\n"
         writer.write(b"pong\n")
@@ -448,7 +475,7 @@ async def test_ssl_graceful_shutdown(ssl_certs):
     reader, writer = await asyncio.open_connection(addr[0], addr[1], ssl=client_ctx)
     writer.write(b"ping\n")
     await writer.drain()
-    
+
     resp = await reader.readline()
     assert resp == b"ok\n"
 
@@ -475,10 +502,13 @@ async def test_ssl_flow_control(ssl_certs):
     class FlowControlClient(asyncio.Protocol):
         def connection_made(self, transport):
             self.transport = transport
+
         def data_received(self, data):
             pass
+
         def pause_writing(self):
             events.append("paused")
+
         def resume_writing(self):
             events.append("resumed")
 
@@ -513,4 +543,3 @@ async def test_ssl_flow_control(ssl_certs):
     transport.close()
     srv.close()
     await srv.wait_closed()
-

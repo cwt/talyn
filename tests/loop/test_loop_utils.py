@@ -13,6 +13,7 @@ def test_subclassing() -> None:
     finally:
         loop.close()
 
+
 def test_create_future() -> None:
     loop = Loop()
     try:

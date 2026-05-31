@@ -5,8 +5,12 @@ from .loop import Loop
 
 
 class Runner:
-    def __init__(self, *, debug: bool | None = None,
-                 loop_factory: type[asyncio.AbstractEventLoop] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        debug: bool | None = None,
+        loop_factory: type[asyncio.AbstractEventLoop] | None = None,
+    ) -> None:
         self._loop = (loop_factory or Loop)()
         self._debug = debug
         self._closed = False
@@ -27,9 +31,7 @@ class Runner:
             return
         self._closed = True
         try:
-            self._loop.run_until_complete(
-                self._loop.shutdown_default_executor()
-            )
+            self._loop.run_until_complete(self._loop.shutdown_default_executor())
         except RuntimeError:
             pass
         self._loop.close()

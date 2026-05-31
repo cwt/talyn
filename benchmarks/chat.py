@@ -9,6 +9,7 @@ BENCHMARK = Benchmark(
     lambda loop, n: loop.run_until_complete(main(n)),
 )
 
+
 class ChatServer:
     def __init__(self) -> None:
         self.users: Dict[str, bool] = {}
@@ -35,19 +36,24 @@ class ChatServer:
         msg = f"{username}: {content}"
         self.message_log.append(msg)
 
+
 async def simulate_user_life(server: ChatServer, username: str) -> None:
     await server.handle_event({"type": "login", "username": username})
     num_messages = random.randint(2, 5)
     for i in range(num_messages):
         await asyncio.sleep(0.1)
-        content = f"Hello, i am {username}, message {i+1}"
-        await server.handle_event({"type": "message", "username": username, "content": content})
+        content = f"Hello, i am {username}, message {i + 1}"
+        await server.handle_event(
+            {"type": "message", "username": username, "content": content}
+        )
     await asyncio.sleep(0.3)
     await server.handle_event({"type": "logout", "username": username})
+
 
 async def main(nusers: int) -> None:
     server = ChatServer()
     user_list = [f"user{i}" for i in range(nusers)]
-    tasks = [asyncio.create_task(simulate_user_life(server, user)) for user in user_list]
+    tasks = [
+        asyncio.create_task(simulate_user_life(server, user)) for user in user_list
+    ]
     await asyncio.gather(*tasks)
-

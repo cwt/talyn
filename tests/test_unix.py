@@ -37,9 +37,11 @@ class ClientProtocol(asyncio.Protocol):
 
 # --- create_unix_connection ---
 
+
 def test_create_unix_connection() -> None:
     path = _unix_path()
     try:
+
         async def main() -> None:
             loop = asyncio.get_running_loop()
             # Start a server first
@@ -64,6 +66,7 @@ def test_create_unix_connection() -> None:
 def test_create_unix_server() -> None:
     path = _unix_path()
     try:
+
         async def main() -> None:
             loop = asyncio.get_running_loop()
             server = await loop.create_unix_server(EchoProtocol, path)
@@ -82,6 +85,7 @@ def test_create_unix_server() -> None:
 def test_create_unix_server_sockets() -> None:
     path = _unix_path()
     try:
+
         async def main() -> None:
             loop = asyncio.get_running_loop()
             server = await loop.create_unix_server(EchoProtocol, path)
@@ -120,6 +124,7 @@ def test_create_unix_server_missing_args() -> None:
 def test_create_unix_connection_multiple() -> None:
     path = _unix_path()
     try:
+
         async def main() -> None:
             loop = asyncio.get_running_loop()
             server = await loop.create_unix_server(EchoProtocol, path)

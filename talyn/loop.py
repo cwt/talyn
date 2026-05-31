@@ -22,7 +22,9 @@ class _SSLTransportWrapper:
 
     _start_tls_compatible = True
 
-    def __init__(self, ssp, raw_transport, ssl_module, shutdown_timeout=None, loop=None):
+    def __init__(
+        self, ssp, raw_transport, ssl_module, shutdown_timeout=None, loop=None
+    ):
         self._ssp = ssp
         self._raw_t = raw_transport
         self._sslmod = ssl_module
@@ -46,7 +48,11 @@ class _SSLTransportWrapper:
             self._ssp._sslobj.unwrap()
         except self._sslmod.SSLWantReadError:
             self._ssp._f()
-            if self._shutdown_timeout_handle is None and self._loop is not None and not self._loop.is_closed():
+            if (
+                self._shutdown_timeout_handle is None
+                and self._loop is not None
+                and not self._loop.is_closed()
+            ):
                 timeout = self._ssl_shutdown_timeout or 30.0
                 self._shutdown_timeout_handle = self._loop.call_later(
                     timeout, self._force_close
@@ -56,7 +62,11 @@ class _SSLTransportWrapper:
             return
         except self._sslmod.SSLWantWriteError:
             self._ssp._f()
-            if self._shutdown_timeout_handle is None and self._loop is not None and not self._loop.is_closed():
+            if (
+                self._shutdown_timeout_handle is None
+                and self._loop is not None
+                and not self._loop.is_closed()
+            ):
                 timeout = self._ssl_shutdown_timeout or 30.0
                 self._shutdown_timeout_handle = self._loop.call_later(
                     timeout, self._force_close
@@ -78,9 +88,9 @@ class _SSLTransportWrapper:
 
     def get_extra_info(self, name, default=None):
         match name:
-            case 'sslcontext':
+            case "sslcontext":
                 return self._ssp._sslobj.context
-            case 'ssl_object':
+            case "ssl_object":
                 return self._ssp._sslobj
             case _:
                 return self._raw_t.get_extra_info(name, default)
@@ -135,15 +145,13 @@ class ExceptionContext(TypedDict):
 class Loop(_Loop):
     def __init__(self, ready_tasks_queue_capacity: int = 1048576) -> None:
         self._asyncio_tasks: set[asyncio.Task[Any]] = set()
-        _Loop.__init__(
-            self, ready_tasks_queue_capacity, self.call_exception_handler
-        )
+        _Loop.__init__(self, ready_tasks_queue_capacity, self.call_exception_handler)
 
         self._exception_handler: Callable[[ExceptionContext], None] = (
             self.default_exception_handler
         )
 
-        self._default_executor: ThreadPoolExecutor|None = None
+        self._default_executor: ThreadPoolExecutor | None = None
         self._shutdown_executor_called: bool = False
 
     def close(self) -> None:
@@ -189,7 +197,7 @@ class Loop(_Loop):
 
         self._exception_handler(context)
 
-    def default_exception_handler(self, context: ExceptionContext) -> None: # type: ignore
+    def default_exception_handler(self, context: ExceptionContext) -> None:  # type: ignore
         message = context.get("message")
         if not message:
             message = "Unhandled exception in event loop"
@@ -203,7 +211,7 @@ class Loop(_Loop):
         exception = context.get("exception")
         logger.error("\n".join(log_lines), exc_info=exception)
 
-    def call_exception_handler(self, context: ExceptionContext) -> None: # type: ignore
+    def call_exception_handler(self, context: ExceptionContext) -> None:  # type: ignore
         if self._exception_handler == self.default_exception_handler:
             self.default_exception_handler(context)
         else:
@@ -222,7 +230,9 @@ class Loop(_Loop):
                 # Fallback or log if custom handler fails
                 self.default_exception_handler(context)
 
-    def set_exception_handler(self, handler: Callable[[Any, ExceptionContext], None] | None) -> None:
+    def set_exception_handler(
+        self, handler: Callable[[Any, ExceptionContext], None] | None
+    ) -> None:
         if handler is None:
             self._exception_handler = self.default_exception_handler
         else:
@@ -275,7 +285,7 @@ class Loop(_Loop):
 
     def _dispatch_completions_with_list(self, records: list) -> None:
         """Dispatch IO completions from a list of (op, protocol_ptr, data, nbytes) tuples.
-        
+
         protocol_ptr is a raw pointer to the protocol object.
         """
         for op, protocol_ptr, data, nbytes in records:
@@ -297,44 +307,52 @@ class Loop(_Loop):
         try:
             protocol.data_received(data)
         except Exception:
-            self.call_exception_handler({
-                "message": "Exception in data_received callback",
-                "exception": Exception("data_received failed"),
-                "protocol": protocol,
-            })
+            self.call_exception_handler(
+                {
+                    "message": "Exception in data_received callback",
+                    "exception": Exception("data_received failed"),
+                    "protocol": protocol,
+                }
+            )
 
     def _dispatch_eof_received(self, protocol) -> None:
         """Call protocol.eof_received."""
         try:
             protocol.eof_received()
         except Exception:
-            self.call_exception_handler({
-                "message": "Exception in eof_received callback",
-                "exception": Exception("eof_received failed"),
-                "protocol": protocol,
-            })
+            self.call_exception_handler(
+                {
+                    "message": "Exception in eof_received callback",
+                    "exception": Exception("eof_received failed"),
+                    "protocol": protocol,
+                }
+            )
 
     def _dispatch_buffer_updated(self, protocol, nbytes: int) -> None:
         """Call protocol.buffer_updated on a BufferedProtocol."""
         try:
             protocol.buffer_updated(nbytes)
         except Exception:
-            self.call_exception_handler({
-                "message": "Exception in buffer_updated callback",
-                "exception": Exception("buffer_updated failed"),
-                "protocol": protocol,
-            })
+            self.call_exception_handler(
+                {
+                    "message": "Exception in buffer_updated callback",
+                    "exception": Exception("buffer_updated failed"),
+                    "protocol": protocol,
+                }
+            )
 
     def _dispatch_connection_lost(self, protocol, exc) -> None:
         """Call protocol.connection_lost on a transport."""
         try:
             protocol.connection_lost(exc)
         except Exception:
-            self.call_exception_handler({
-                "message": "Exception in connection_lost callback",
-                "exception": Exception("connection_lost failed"),
-                "protocol": protocol,
-            })
+            self.call_exception_handler(
+                {
+                    "message": "Exception in connection_lost callback",
+                    "exception": Exception("connection_lost failed"),
+                    "protocol": protocol,
+                }
+            )
 
     # --------------------------------------------------------------------------------------------------------
 
@@ -396,7 +414,7 @@ class Loop(_Loop):
             self._default_executor = executor
 
         concurrent_future = executor.submit(func, *args)
-        return asyncio.wrap_future(concurrent_future, loop=self) # type: ignore
+        return asyncio.wrap_future(concurrent_future, loop=self)  # type: ignore
 
     def set_default_executor(self, executor: Any) -> None:
         if not isinstance(executor, ThreadPoolExecutor):
@@ -405,8 +423,8 @@ class Loop(_Loop):
         self._default_executor = executor
 
     def _do_shutdown(self, future: asyncio.Future[None], executor: Any = None) -> None:
-        is_closed: Callable[[], bool] = self.is_closed # type: ignore
-        call_soon_threadsafe: Callable[..., asyncio.Handle] = self.call_soon_threadsafe # type: ignore
+        is_closed: Callable[[], bool] = self.is_closed  # type: ignore
+        call_soon_threadsafe: Callable[..., asyncio.Handle] = self.call_soon_threadsafe  # type: ignore
 
         if executor is None:
             executor = self._default_executor
@@ -418,14 +436,15 @@ class Loop(_Loop):
             executor.shutdown(wait=True)
             if not is_closed():
                 call_soon_threadsafe(
-                    asyncio.futures._set_result_unless_cancelled, # type: ignore
-                    future, None
+                    asyncio.futures._set_result_unless_cancelled,  # type: ignore
+                    future,
+                    None,
                 )
         except Exception as ex:
             if not is_closed() and not future.cancelled():
                 call_soon_threadsafe(future.set_exception, ex)
 
-    async def shutdown_default_executor(self, timeout: float|None = None) -> None:
+    async def shutdown_default_executor(self, timeout: float | None = None) -> None:
         if timeout is not None and timeout < 0:
             raise ValueError("Invalid timeout")
 
@@ -436,8 +455,10 @@ class Loop(_Loop):
 
         self._default_executor = None
 
-        future: asyncio.Future[None] = self.create_future() # type: ignore
-        thread = threading.Thread(target=self._do_shutdown, args=(future, executor), daemon=True)
+        future: asyncio.Future[None] = self.create_future()  # type: ignore
+        thread = threading.Thread(
+            target=self._do_shutdown, args=(future, executor), daemon=True
+        )
         thread.start()
         try:
             async with asyncio.timeouts.timeout(timeout):
@@ -448,27 +469,41 @@ class Loop(_Loop):
             thread.join()
 
     async def create_connection(
-        self, protocol_factory: Callable[[], asyncio.BaseProtocol],
-        host: str|None = None, port: int|None = None, *,
-        ssl: Any = None, family: int = 0, proto: int = 0,
-        flags: int = 0, sock: Any = None,
-        local_addr: tuple[str, int]|None = None,
-        server_hostname: str|None = None,
-        ssl_handshake_timeout: float|None = None,
-        ssl_shutdown_timeout: float|None = None,
-        happy_eyeballs_delay: float|None = None,
-        interleave: int|None = None,
+        self,
+        protocol_factory: Callable[[], asyncio.BaseProtocol],
+        host: str | None = None,
+        port: int | None = None,
+        *,
+        ssl: Any = None,
+        family: int = 0,
+        proto: int = 0,
+        flags: int = 0,
+        sock: Any = None,
+        local_addr: tuple[str, int] | None = None,
+        server_hostname: str | None = None,
+        ssl_handshake_timeout: float | None = None,
+        ssl_shutdown_timeout: float | None = None,
+        happy_eyeballs_delay: float | None = None,
+        interleave: int | None = None,
         all_errors: bool = False,
     ) -> tuple[asyncio.Transport, asyncio.BaseProtocol]:
         if ssl is not None:
             return await self._create_ssl_connection(
-                protocol_factory, host, port, ssl=ssl,
-                family=family, proto=proto, flags=flags, sock=sock,
-                local_addr=local_addr, server_hostname=server_hostname,
+                protocol_factory,
+                host,
+                port,
+                ssl=ssl,
+                family=family,
+                proto=proto,
+                flags=flags,
+                sock=sock,
+                local_addr=local_addr,
+                server_hostname=server_hostname,
                 ssl_handshake_timeout=ssl_handshake_timeout,
                 ssl_shutdown_timeout=ssl_shutdown_timeout,
                 happy_eyeballs_delay=happy_eyeballs_delay,
-                interleave=interleave, all_errors=all_errors,
+                interleave=interleave,
+                all_errors=all_errors,
             )
         # Only pass non-None/non-default kwargs
         kwargs = {}
@@ -494,26 +529,38 @@ class Loop(_Loop):
             kwargs["all_errors"] = all_errors
 
         return await _Loop.create_connection(
-            self, protocol_factory, host, port, **kwargs,
+            self,
+            protocol_factory,
+            host,
+            port,
+            **kwargs,
         )
 
     async def start_tls(
-        self, transport, protocol, sslcontext, *,
-        server_side=False, server_hostname=None,
-        ssl_handshake_timeout=None, ssl_shutdown_timeout=None,
+        self,
+        transport,
+        protocol,
+        sslcontext,
+        *,
+        server_side=False,
+        server_hostname=None,
+        ssl_handshake_timeout=None,
+        ssl_shutdown_timeout=None,
     ):
         self_loop = self
         import ssl as ssl_module
 
         if not isinstance(sslcontext, ssl_module.SSLContext):
             raise TypeError(
-                f'sslcontext is expected to be an instance of ssl.SSLContext, '
-                f'got {sslcontext!r}')
+                f"sslcontext is expected to be an instance of ssl.SSLContext, "
+                f"got {sslcontext!r}"
+            )
 
         incoming = ssl_module.MemoryBIO()
         outgoing = ssl_module.MemoryBIO()
         sslobj_temp = sslcontext.wrap_bio(
-            incoming, outgoing,
+            incoming,
+            outgoing,
             server_side=server_side,
             server_hostname=server_hostname,
         )
@@ -539,7 +586,7 @@ class Loop(_Loop):
             def buffer_updated(self, n):
                 try:
                     self._incoming.write(self._buf[:n])
-                    if hasattr(self, '_wrapper') and self._wrapper._closing:
+                    if hasattr(self, "_wrapper") and self._wrapper._closing:
                         self._wrapper._start_shutdown()
                     elif not self._hs:
                         self._h()
@@ -552,7 +599,12 @@ class Loop(_Loop):
             def connection_made(self, t):
                 self._raw_t = t
                 self._wrapper = _SSLTransportWrapper(
-                    self, t, ssl_module, shutdown_timeout=ssl_shutdown_timeout, loop=self_loop)
+                    self,
+                    t,
+                    ssl_module,
+                    shutdown_timeout=ssl_shutdown_timeout,
+                    loop=self_loop,
+                )
                 wrapper_holder[0] = self._wrapper
                 self._h()
 
@@ -572,14 +624,14 @@ class Loop(_Loop):
                     return False
 
             def pause_writing(self):
-                if hasattr(self, '_ap') and hasattr(self._ap, 'pause_writing'):
+                if hasattr(self, "_ap") and hasattr(self._ap, "pause_writing"):
                     try:
                         self._ap.pause_writing()
                     except Exception:
                         pass
 
             def resume_writing(self):
-                if hasattr(self, '_ap') and hasattr(self._ap, 'resume_writing'):
+                if hasattr(self, "_ap") and hasattr(self._ap, "resume_writing"):
                     try:
                         self._ap.resume_writing()
                     except Exception:
@@ -629,8 +681,9 @@ class Loop(_Loop):
         ssl_protocol = _SP()
 
         from asyncio.streams import StreamReaderProtocol
+
         if isinstance(protocol, StreamReaderProtocol):
-            stream_reader = getattr(protocol, '_stream_reader', None)
+            stream_reader = getattr(protocol, "_stream_reader", None)
             if stream_reader is not None:
                 buffer = stream_reader._buffer
                 if buffer:
@@ -651,12 +704,22 @@ class Loop(_Loop):
         return wrapper_holder[0] or transport
 
     async def _create_ssl_connection(
-        self, protocol_factory: Callable[[], asyncio.BaseProtocol],
-        host: str|None, port: int|None, *,
-        ssl: Any, family: int, proto: int, flags: int, sock: Any,
-        local_addr: Any, server_hostname: str|None,
-        ssl_handshake_timeout: float|None, ssl_shutdown_timeout: float|None,
-        happy_eyeballs_delay: float|None, interleave: int|None,
+        self,
+        protocol_factory: Callable[[], asyncio.BaseProtocol],
+        host: str | None,
+        port: int | None,
+        *,
+        ssl: Any,
+        family: int,
+        proto: int,
+        flags: int,
+        sock: Any,
+        local_addr: Any,
+        server_hostname: str | None,
+        ssl_handshake_timeout: float | None,
+        ssl_shutdown_timeout: float | None,
+        happy_eyeballs_delay: float | None,
+        interleave: int | None,
         all_errors: bool,
     ) -> tuple[asyncio.Transport, asyncio.BaseProtocol]:
         self_loop = self
@@ -668,7 +731,8 @@ class Loop(_Loop):
         incoming = ssl_module.MemoryBIO()
         outgoing = ssl_module.MemoryBIO()
         sslobj = sslcontext.wrap_bio(
-            incoming, outgoing,
+            incoming,
+            outgoing,
             server_side=False,
             server_hostname=sni,
         )
@@ -686,41 +750,57 @@ class Loop(_Loop):
                 self._incoming = incoming
                 self._outgoing = outgoing
                 self._ap = app_protocol
+
             def get_buffer(self, n):
                 return self._view[:n]
+
             def buffer_updated(self, n):
                 self._incoming.write(self._buf[:n])
-                if hasattr(self, '_wrapper') and self._wrapper._closing:
+                if hasattr(self, "_wrapper") and self._wrapper._closing:
                     self._wrapper._start_shutdown()
-                elif not self._hs: self._h()
-                else: self._r()
+                elif not self._hs:
+                    self._h()
+                else:
+                    self._r()
+
             def connection_made(self, t):
                 self._raw_t = t
-                self._wrapper = _SSLTransportWrapper(self, t, ssl_module, shutdown_timeout=ssl_shutdown_timeout, loop=self_loop)
+                self._wrapper = _SSLTransportWrapper(
+                    self,
+                    t,
+                    ssl_module,
+                    shutdown_timeout=ssl_shutdown_timeout,
+                    loop=self_loop,
+                )
                 wrapper_holder[0] = self._wrapper
                 self._h()
+
             def connection_lost(self, e):
                 try:
                     self._ap.connection_lost(e)
                 except Exception:
                     pass
+
             def eof_received(self):
                 try:
                     return self._ap.eof_received()
                 except Exception:
                     return False
+
             def pause_writing(self):
-                if hasattr(self, '_ap') and hasattr(self._ap, 'pause_writing'):
+                if hasattr(self, "_ap") and hasattr(self._ap, "pause_writing"):
                     try:
                         self._ap.pause_writing()
                     except Exception:
                         pass
+
             def resume_writing(self):
-                if hasattr(self, '_ap') and hasattr(self._ap, 'resume_writing'):
+                if hasattr(self, "_ap") and hasattr(self._ap, "resume_writing"):
                     try:
                         self._ap.resume_writing()
                     except Exception:
                         pass
+
             def _h(self):
                 try:
                     self._sslobj.do_handshake()
@@ -737,6 +817,7 @@ class Loop(_Loop):
                         waiter.set_result(None)
                     self._f()
                     app_protocol.connection_made(self._wrapper)
+
             def _r(self):
                 chunks = []
                 while True:
@@ -751,13 +832,17 @@ class Loop(_Loop):
                     chunks.append(d)
                 if chunks:
                     app_protocol.data_received(b"".join(chunks))
+
             def _f(self):
                 d = self._outgoing.read()
                 if d:
                     self._raw_t.write(d)
 
         transport, _ = await _Loop.create_connection(
-            self, SP, host, port,
+            self,
+            SP,
+            host,
+            port,
         )
 
         try:
@@ -769,20 +854,34 @@ class Loop(_Loop):
         return wrapper_holder[0] or transport, app_protocol
 
     async def create_server(
-        self, protocol_factory: Callable[[], asyncio.BaseProtocol],
-        host: str|None = None, port: int|None = None, *,
-        family: int = 0, flags: int = 0, sock: Any = None,
-        backlog: int = 100, ssl: Any = None,
-        reuse_address: bool|None = None, reuse_port: bool|None = None,
-        ssl_handshake_timeout: float|None = None,
-        ssl_shutdown_timeout: float|None = None,
+        self,
+        protocol_factory: Callable[[], asyncio.BaseProtocol],
+        host: str | None = None,
+        port: int | None = None,
+        *,
+        family: int = 0,
+        flags: int = 0,
+        sock: Any = None,
+        backlog: int = 100,
+        ssl: Any = None,
+        reuse_address: bool | None = None,
+        reuse_port: bool | None = None,
+        ssl_handshake_timeout: float | None = None,
+        ssl_shutdown_timeout: float | None = None,
         start_serving: bool = True,
     ) -> "Server":
         if ssl is not None:
             return await self._create_ssl_server(
-                protocol_factory, host, port,
-                family=family, flags=flags, sock=sock, backlog=backlog,
-                ssl=ssl, reuse_address=reuse_address, reuse_port=reuse_port,
+                protocol_factory,
+                host,
+                port,
+                family=family,
+                flags=flags,
+                sock=sock,
+                backlog=backlog,
+                ssl=ssl,
+                reuse_address=reuse_address,
+                reuse_port=reuse_port,
                 ssl_handshake_timeout=ssl_handshake_timeout,
                 ssl_shutdown_timeout=ssl_shutdown_timeout,
                 start_serving=start_serving,
@@ -801,16 +900,30 @@ class Loop(_Loop):
         if reuse_port is not None:
             kwargs["reuse_port"] = reuse_port
         srvs = await _Loop.create_server(
-            self, protocol_factory, host, port, backlog=backlog, **kwargs,
+            self,
+            protocol_factory,
+            host,
+            port,
+            backlog=backlog,
+            **kwargs,
         )
         return Server(self, srvs)
 
     async def _create_ssl_server(
-        self, protocol_factory: Callable[[], asyncio.BaseProtocol],
-        host: str|None, port: int|None, *,
-        family: int, flags: int, sock: Any, backlog: int,
-        ssl: Any, reuse_address: bool|None, reuse_port: bool|None,
-        ssl_handshake_timeout: float|None, ssl_shutdown_timeout: float|None,
+        self,
+        protocol_factory: Callable[[], asyncio.BaseProtocol],
+        host: str | None,
+        port: int | None,
+        *,
+        family: int,
+        flags: int,
+        sock: Any,
+        backlog: int,
+        ssl: Any,
+        reuse_address: bool | None,
+        reuse_port: bool | None,
+        ssl_handshake_timeout: float | None,
+        ssl_shutdown_timeout: float | None,
         start_serving: bool,
     ) -> "Server":
         self_loop = self
@@ -826,7 +939,8 @@ class Loop(_Loop):
                 incoming = ssl_module.MemoryBIO()
                 outgoing = ssl_module.MemoryBIO()
                 self._sslobj = sslcontext.wrap_bio(
-                    incoming, outgoing,
+                    incoming,
+                    outgoing,
                     server_side=True,
                 )
                 self._incoming = incoming
@@ -834,34 +948,49 @@ class Loop(_Loop):
 
             def get_buffer(self, n):
                 return self._view[:n]
+
             def buffer_updated(self, n):
                 self._incoming.write(self._buf[:n])
-                if hasattr(self, '_wrapper') and self._wrapper._closing:
+                if hasattr(self, "_wrapper") and self._wrapper._closing:
                     self._wrapper._start_shutdown()
-                elif not self._hs: self._h()
-                else: self._r()
+                elif not self._hs:
+                    self._h()
+                else:
+                    self._r()
+
             def connection_made(self, t):
                 self._raw_t = t
                 self._ap = protocol_factory()
-                self._wrapper = _SSLTransportWrapper(self, self._raw_t, ssl_module, shutdown_timeout=ssl_shutdown_timeout, loop=self_loop)
+                self._wrapper = _SSLTransportWrapper(
+                    self,
+                    self._raw_t,
+                    ssl_module,
+                    shutdown_timeout=ssl_shutdown_timeout,
+                    loop=self_loop,
+                )
                 self._h()
+
             def connection_lost(self, e):
                 self._ap.connection_lost(e)
+
             def eof_received(self):
                 self._ap.eof_received()
                 return False
+
             def pause_writing(self):
-                if hasattr(self, '_ap') and hasattr(self._ap, 'pause_writing'):
+                if hasattr(self, "_ap") and hasattr(self._ap, "pause_writing"):
                     try:
                         self._ap.pause_writing()
                     except Exception:
                         pass
+
             def resume_writing(self):
-                if hasattr(self, '_ap') and hasattr(self._ap, 'resume_writing'):
+                if hasattr(self, "_ap") and hasattr(self._ap, "resume_writing"):
                     try:
                         self._ap.resume_writing()
                     except Exception:
                         pass
+
             def _h(self):
                 try:
                     self._sslobj.do_handshake()
@@ -875,6 +1004,7 @@ class Loop(_Loop):
                     self._hs = True
                     self._f()
                     self._ap.connection_made(self._wrapper)
+
             def _r(self):
                 chunks = []
                 while True:
@@ -889,6 +1019,7 @@ class Loop(_Loop):
                     chunks.append(d)
                 if chunks:
                     self._ap.data_received(b"".join(chunks))
+
             def _f(self):
                 d = self._outgoing.read()
                 if d:
@@ -906,44 +1037,60 @@ class Loop(_Loop):
         if reuse_port is not None:
             kwargs["reuse_port"] = reuse_port
         srvs = await _Loop.create_server(
-            self, SSP, host, port, backlog=backlog, **kwargs,
+            self,
+            SSP,
+            host,
+            port,
+            backlog=backlog,
+            **kwargs,
         )
         return Server(self, srvs)
 
     async def connect_accepted_socket(
-        self, protocol_factory: Callable[[], asyncio.BaseProtocol],
-        sock: Any, *,
+        self,
+        protocol_factory: Callable[[], asyncio.BaseProtocol],
+        sock: Any,
+        *,
         ssl: Any = None,
-        ssl_handshake_timeout: float|None = None,
-        ssl_shutdown_timeout: float|None = None,
+        ssl_handshake_timeout: float | None = None,
+        ssl_shutdown_timeout: float | None = None,
     ) -> tuple[asyncio.Transport, asyncio.BaseProtocol]:
         return await self.create_connection(
-            protocol_factory, sock=sock, ssl=ssl,
+            protocol_factory,
+            sock=sock,
+            ssl=ssl,
             ssl_handshake_timeout=ssl_handshake_timeout,
             ssl_shutdown_timeout=ssl_shutdown_timeout,
         )
 
     async def create_unix_connection(
-        self, protocol_factory: Callable[[], asyncio.BaseProtocol],
-        path: str, *, ssl: Any = None,
-        server_hostname: str|None = None,
-        ssl_handshake_timeout: float|None = None,
-        ssl_shutdown_timeout: float|None = None,
+        self,
+        protocol_factory: Callable[[], asyncio.BaseProtocol],
+        path: str,
+        *,
+        ssl: Any = None,
+        server_hostname: str | None = None,
+        ssl_handshake_timeout: float | None = None,
+        ssl_shutdown_timeout: float | None = None,
     ) -> tuple[asyncio.Transport, asyncio.BaseProtocol]:
         if ssl is not None:
             return await self._create_ssl_unix_connection(
-                protocol_factory, path, ssl=ssl,
+                protocol_factory,
+                path,
+                ssl=ssl,
                 server_hostname=server_hostname,
                 ssl_shutdown_timeout=ssl_shutdown_timeout,
             )
-        return await _Loop.create_unix_connection(
-            self, protocol_factory, path, ssl=ssl
-        )
+        return await _Loop.create_unix_connection(self, protocol_factory, path, ssl=ssl)
 
     async def _create_ssl_unix_connection(
-        self, protocol_factory: Callable[[], asyncio.BaseProtocol],
-        path: str, *, ssl: Any, server_hostname: str|None,
-        ssl_shutdown_timeout: float|None = None,
+        self,
+        protocol_factory: Callable[[], asyncio.BaseProtocol],
+        path: str,
+        *,
+        ssl: Any,
+        server_hostname: str | None,
+        ssl_shutdown_timeout: float | None = None,
     ) -> tuple[asyncio.Transport, asyncio.BaseProtocol]:
         self_loop = self
         import ssl as ssl_module
@@ -954,7 +1101,8 @@ class Loop(_Loop):
         incoming = ssl_module.MemoryBIO()
         outgoing = ssl_module.MemoryBIO()
         sslobj = sslcontext.wrap_bio(
-            incoming, outgoing,
+            incoming,
+            outgoing,
             server_side=False,
             server_hostname=sni,
         )
@@ -972,41 +1120,57 @@ class Loop(_Loop):
                 self._incoming = incoming
                 self._outgoing = outgoing
                 self._ap = app_protocol
+
             def get_buffer(self, n):
                 return self._view[:n]
+
             def buffer_updated(self, n):
                 self._incoming.write(self._buf[:n])
-                if hasattr(self, '_wrapper') and self._wrapper._closing:
+                if hasattr(self, "_wrapper") and self._wrapper._closing:
                     self._wrapper._start_shutdown()
-                elif not self._hs: self._h()
-                else: self._r()
+                elif not self._hs:
+                    self._h()
+                else:
+                    self._r()
+
             def connection_made(self, t):
                 self._raw_t = t
-                self._wrapper = _SSLTransportWrapper(self, t, ssl_module, shutdown_timeout=ssl_shutdown_timeout, loop=self_loop)
+                self._wrapper = _SSLTransportWrapper(
+                    self,
+                    t,
+                    ssl_module,
+                    shutdown_timeout=ssl_shutdown_timeout,
+                    loop=self_loop,
+                )
                 wrapper_holder[0] = self._wrapper
                 self._h()
+
             def connection_lost(self, e):
                 try:
                     self._ap.connection_lost(e)
                 except Exception:
                     pass
+
             def eof_received(self):
                 try:
                     return self._ap.eof_received()
                 except Exception:
                     return False
+
             def pause_writing(self):
-                if hasattr(self, '_ap') and hasattr(self._ap, 'pause_writing'):
+                if hasattr(self, "_ap") and hasattr(self._ap, "pause_writing"):
                     try:
                         self._ap.pause_writing()
                     except Exception:
                         pass
+
             def resume_writing(self):
-                if hasattr(self, '_ap') and hasattr(self._ap, 'resume_writing'):
+                if hasattr(self, "_ap") and hasattr(self._ap, "resume_writing"):
                     try:
                         self._ap.resume_writing()
                     except Exception:
                         pass
+
             def _h(self):
                 try:
                     self._sslobj.do_handshake()
@@ -1023,6 +1187,7 @@ class Loop(_Loop):
                         waiter.set_result(None)
                     self._f()
                     app_protocol.connection_made(self._wrapper)
+
             def _r(self):
                 chunks = []
                 while True:
@@ -1037,13 +1202,16 @@ class Loop(_Loop):
                     chunks.append(d)
                 if chunks:
                     app_protocol.data_received(b"".join(chunks))
+
             def _f(self):
                 d = self._outgoing.read()
                 if d:
                     self._raw_t.write(d)
 
         transport, _ = await _Loop.create_unix_connection(
-            self, SP, path,
+            self,
+            SP,
+            path,
         )
 
         try:
@@ -1055,29 +1223,43 @@ class Loop(_Loop):
         return wrapper_holder[0] or transport, app_protocol
 
     async def create_unix_server(
-        self, protocol_factory: Callable[[], asyncio.BaseProtocol],
-        path: str, *, backlog: int = 100, ssl: Any = None,
-        ssl_handshake_timeout: float|None = None,
-        ssl_shutdown_timeout: float|None = None,
+        self,
+        protocol_factory: Callable[[], asyncio.BaseProtocol],
+        path: str,
+        *,
+        backlog: int = 100,
+        ssl: Any = None,
+        ssl_handshake_timeout: float | None = None,
+        ssl_shutdown_timeout: float | None = None,
         start_serving: bool = True,
     ) -> "Server":
         if ssl is not None:
             return await self._create_ssl_unix_server(
-                protocol_factory, path, backlog=backlog, ssl=ssl,
+                protocol_factory,
+                path,
+                backlog=backlog,
+                ssl=ssl,
                 ssl_shutdown_timeout=ssl_shutdown_timeout,
             )
         srv = await _Loop.create_unix_server(
-            self, protocol_factory, path, backlog=backlog,
+            self,
+            protocol_factory,
+            path,
+            backlog=backlog,
         )
         server = Server(self, [srv])
-        if hasattr(srv, 'server_ref'):
+        if hasattr(srv, "server_ref"):
             srv.server_ref = server
         return server
 
     async def _create_ssl_unix_server(
-        self, protocol_factory: Callable[[], asyncio.BaseProtocol],
-        path: str, *, backlog: int, ssl: Any,
-        ssl_shutdown_timeout: float|None = None,
+        self,
+        protocol_factory: Callable[[], asyncio.BaseProtocol],
+        path: str,
+        *,
+        backlog: int,
+        ssl: Any,
+        ssl_shutdown_timeout: float | None = None,
     ) -> "Server":
         self_loop = self
         import ssl as ssl_module
@@ -1092,7 +1274,8 @@ class Loop(_Loop):
                 incoming = ssl_module.MemoryBIO()
                 outgoing = ssl_module.MemoryBIO()
                 self._sslobj = sslcontext.wrap_bio(
-                    incoming, outgoing,
+                    incoming,
+                    outgoing,
                     server_side=True,
                 )
                 self._incoming = incoming
@@ -1100,20 +1283,33 @@ class Loop(_Loop):
 
             def get_buffer(self, n):
                 return self._view[:n]
+
             def buffer_updated(self, n):
                 self._incoming.write(self._buf[:n])
-                if not self._hs: self._h()
-                else: self._r()
+                if not self._hs:
+                    self._h()
+                else:
+                    self._r()
+
             def connection_made(self, t):
                 self._raw_t = t
                 self._ap = protocol_factory()
-                self._wrapper = _SSLTransportWrapper(self, self._raw_t, ssl_module, shutdown_timeout=ssl_shutdown_timeout, loop=self_loop)
+                self._wrapper = _SSLTransportWrapper(
+                    self,
+                    self._raw_t,
+                    ssl_module,
+                    shutdown_timeout=ssl_shutdown_timeout,
+                    loop=self_loop,
+                )
                 self._h()
+
             def connection_lost(self, e):
                 self._ap.connection_lost(e)
+
             def eof_received(self):
                 self._ap.eof_received()
                 return False
+
             def _h(self):
                 try:
                     self._sslobj.do_handshake()
@@ -1127,6 +1323,7 @@ class Loop(_Loop):
                     self._hs = True
                     self._f()
                     self._ap.connection_made(self._wrapper)
+
             def _r(self):
                 while True:
                     try:
@@ -1138,34 +1335,47 @@ class Loop(_Loop):
                     if not d:
                         break
                     self._ap.data_received(d)
+
             def _f(self):
                 d = self._outgoing.read()
                 if d:
                     self._raw_t.write(d)
 
         srv = await _Loop.create_unix_server(
-            self, SSP, path, backlog=backlog,
+            self,
+            SSP,
+            path,
+            backlog=backlog,
         )
         server = Server(self, [srv])
-        if hasattr(srv, 'server_ref'):
+        if hasattr(srv, "server_ref"):
             srv.server_ref = server
         return server
 
     async def subprocess_exec(
-        self, protocol_factory: Callable[[], asyncio.BaseProtocol],
-        program: Any, *args: Any,
-        stdin: Any = None, stdout: Any = None,
-        stderr: Any = None, cwd: str|None = None,
-        env: dict[str, str]|None = None, pass_fds: Any = None,
+        self,
+        protocol_factory: Callable[[], asyncio.BaseProtocol],
+        program: Any,
+        *args: Any,
+        stdin: Any = None,
+        stdout: Any = None,
+        stderr: Any = None,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
+        pass_fds: Any = None,
         **kwargs: Any,
     ) -> tuple[Any, Any]:
         import subprocess
+
         cmd = (program, *args)
         popen = subprocess.Popen(
-            cmd, stdin=subprocess.DEVNULL if stdin is None else stdin,
+            cmd,
+            stdin=subprocess.DEVNULL if stdin is None else stdin,
             stdout=subprocess.DEVNULL if stdout is None else stdout,
             stderr=subprocess.DEVNULL if stderr is None else stderr,
-            cwd=cwd, env=env, pass_fds=pass_fds if pass_fds is not None else (),
+            cwd=cwd,
+            env=env,
+            pass_fds=pass_fds if pass_fds is not None else (),
         )
         _subprocess_popens[popen.pid] = popen
         try:
@@ -1252,7 +1462,9 @@ class Loop(_Loop):
                 return protocol
 
             transport, protocol = await _Loop.subprocess_exec(
-                self, _wrapped_factory, pid=popen.pid,
+                self,
+                _wrapped_factory,
+                pid=popen.pid,
             )
             wrapper = _TransportWrapper(transport)
             return wrapper, protocol
@@ -1269,6 +1481,7 @@ import warnings
 
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", DeprecationWarning)
+
     class EventLoopPolicy(asyncio.DefaultEventLoopPolicy):
         """Event loop policy for Talyn."""
 

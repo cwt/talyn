@@ -108,6 +108,7 @@ def test_run_until_complete_with_multiple_tasks() -> None:
     finally:
         loop.close()
 
+
 def test_run_until_complete_with_invalid_inputs() -> None:
     loop = Loop()
     try:
@@ -133,6 +134,7 @@ def test_run_until_complete_with_invalid_inputs() -> None:
     finally:
         loop.close()
 
+
 def test_run_until_complete_with_recursive_coroutine() -> None:
     async def recursive_coro(depth: int) -> int:
         if depth <= 0:
@@ -146,6 +148,7 @@ def test_run_until_complete_with_recursive_coroutine() -> None:
         assert result == 55  # Sum of numbers from 1 to 10
     finally:
         loop.close()
+
 
 def test_run_until_complete_with_multiple_nested_coroutines() -> None:
     async def inner_coro(x: int) -> int:

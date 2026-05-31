@@ -7,7 +7,9 @@ import pytest
 import talyn
 
 
-def _run_echo_server(sock: socket.socket, ready: threading.Event, stop: threading.Event) -> None:
+def _run_echo_server(
+    sock: socket.socket, ready: threading.Event, stop: threading.Event
+) -> None:
     sock.listen(1)
     ready.set()
     sock.settimeout(0.5)
@@ -73,14 +75,14 @@ class EchoProtocol(asyncio.Protocol):
 
 # --- Happy path ---
 
+
 def test_create_connection_basic() -> None:
     host, port, stop = _start_echo_server()
     try:
+
         async def main() -> None:
             loop = asyncio.get_running_loop()
-            transport, protocol = await loop.create_connection(
-                EchoProtocol, host, port
-            )
+            transport, protocol = await loop.create_connection(EchoProtocol, host, port)
             assert isinstance(transport, asyncio.Transport)
             assert isinstance(protocol, EchoProtocol)
             assert protocol.connected.done()
@@ -94,11 +96,10 @@ def test_create_connection_basic() -> None:
 def test_create_connection_send_recv() -> None:
     host, port, stop = _start_echo_server()
     try:
+
         async def main() -> None:
             loop = asyncio.get_running_loop()
-            transport, protocol = await loop.create_connection(
-                EchoProtocol, host, port
-            )
+            transport, protocol = await loop.create_connection(EchoProtocol, host, port)
             transport.write(b"hello")
             data = await protocol.received
             assert data == b"hello"
@@ -112,11 +113,10 @@ def test_create_connection_send_recv() -> None:
 def test_create_connection_close() -> None:
     host, port, stop = _start_echo_server()
     try:
+
         async def main() -> None:
             loop = asyncio.get_running_loop()
-            transport, protocol = await loop.create_connection(
-                EchoProtocol, host, port
-            )
+            transport, protocol = await loop.create_connection(EchoProtocol, host, port)
             transport.close()
             await protocol.disconnected
 
@@ -126,6 +126,7 @@ def test_create_connection_close() -> None:
 
 
 # --- Error paths ---
+
 
 def test_create_connection_refused() -> None:
     async def main() -> None:
@@ -144,7 +145,7 @@ def test_create_connection_missing_args() -> None:
     async def main() -> None:
         loop = asyncio.get_running_loop()
         with pytest.raises(TypeError):
-            await loop.create_connection() # type: ignore
+            await loop.create_connection()  # type: ignore
 
     talyn.run(main())
 
@@ -153,15 +154,15 @@ def test_create_connection_invalid_protocol_factory() -> None:
     async def main() -> None:
         loop = asyncio.get_running_loop()
         with pytest.raises(ValueError, match="Invalid protocol_factory"):
-            await loop.create_connection("not a callable", "127.0.0.1", 12345) # type: ignore
+            await loop.create_connection("not a callable", "127.0.0.1", 12345)  # type: ignore
 
     talyn.run(main())
-
 
 
 def test_create_connection_lambda_factory() -> None:
     host, port, stop = _start_echo_server()
     try:
+
         async def main() -> None:
             loop = asyncio.get_running_loop()
             transport, protocol = await loop.create_connection(
@@ -178,11 +179,10 @@ def test_create_connection_lambda_factory() -> None:
 def test_create_connection_multiple_messages() -> None:
     host, port, stop = _start_echo_server()
     try:
+
         async def main() -> None:
             loop = asyncio.get_running_loop()
-            transport, protocol = await loop.create_connection(
-                EchoProtocol, host, port
-            )
+            transport, protocol = await loop.create_connection(EchoProtocol, host, port)
             for i in range(5):
                 msg = f"msg{i}".encode()
                 transport.write(msg)
@@ -198,11 +198,10 @@ def test_create_connection_multiple_messages() -> None:
 def test_create_connection_extra_info() -> None:
     host, port, stop = _start_echo_server()
     try:
+
         async def main() -> None:
             loop = asyncio.get_running_loop()
-            transport, protocol = await loop.create_connection(
-                EchoProtocol, host, port
-            )
+            transport, protocol = await loop.create_connection(EchoProtocol, host, port)
             peername = transport.get_extra_info("peername")
             assert peername is not None
             assert peername[0] == "127.0.0.1"
@@ -210,9 +209,10 @@ def test_create_connection_extra_info() -> None:
             assert sockname is not None
             sock = transport.get_extra_info("socket")
             assert sock is not None
-            assert hasattr(sock, 'fileno')
+            assert hasattr(sock, "fileno")
             assert sock.fileno() > 0
             transport.close()
+
         talyn.run(main())
     finally:
         stop.set()
@@ -221,11 +221,10 @@ def test_create_connection_extra_info() -> None:
 def test_create_connection_write_eof() -> None:
     host, port, stop = _start_echo_server()
     try:
+
         async def main() -> None:
             loop = asyncio.get_running_loop()
-            transport, _ = await loop.create_connection(
-                EchoProtocol, host, port
-            )
+            transport, _ = await loop.create_connection(EchoProtocol, host, port)
             assert transport.can_write_eof()
             transport.write_eof()
             transport.close()
@@ -238,11 +237,10 @@ def test_create_connection_write_eof() -> None:
 def test_create_connection_is_closing() -> None:
     host, port, stop = _start_echo_server()
     try:
+
         async def main() -> None:
             loop = asyncio.get_running_loop()
-            transport, _ = await loop.create_connection(
-                EchoProtocol, host, port
-            )
+            transport, _ = await loop.create_connection(EchoProtocol, host, port)
             assert not transport.is_closing()
             transport.close()
             assert transport.is_closing()
@@ -269,6 +267,8 @@ def test_create_connection_all_errors() -> None:
             return
 
         with pytest.raises(ExceptionGroup, match="Multiple connection failures"):
-            await loop.create_connection(EchoProtocol, "127.0.0.1", port, all_errors=True)
+            await loop.create_connection(
+                EchoProtocol, "127.0.0.1", port, all_errors=True
+            )
 
     talyn.run(main())

@@ -13,10 +13,13 @@ def test_checking_subclassing_and_arguments() -> None:
     class DummyLoop(asyncio.AbstractEventLoop):
         def close(self):
             pass
+
     another_loop = DummyLoop()
     loop = Loop()
+
     async def dummy():
         pass
+
     try:
         coro = dummy()
         with pytest.raises(TypeError):
@@ -35,8 +38,10 @@ def test_checking_subclassing_and_arguments() -> None:
 
 def test_get_coro() -> None:
     loop = Loop()
+
     async def dummy():
         pass
+
     coro = dummy()
     try:
         task = Task(coro, loop=loop)
@@ -48,8 +53,10 @@ def test_get_coro() -> None:
 
 def test_get_context() -> None:
     loop = Loop()
+
     async def dummy():
         pass
+
     coro1 = dummy()
     coro2 = dummy()
     try:
@@ -67,8 +74,10 @@ def test_get_context() -> None:
 
 def test_get_loop() -> None:
     loop = Loop()
+
     async def dummy():
         pass
+
     coro = dummy()
     try:
         task = Task(coro, loop=loop)
@@ -80,8 +89,10 @@ def test_get_loop() -> None:
 
 def test_name() -> None:
     loop = Loop()
+
     async def dummy():
         pass
+
     coros = [dummy() for _ in range(2)]
     try:
         task = Task(coros[0], loop=loop)
@@ -103,8 +114,10 @@ def test_name() -> None:
 
 def test_stack() -> None:
     loop = Loop()
+
     async def dummy():
         pass
+
     coro = dummy()
     try:
         task = Task(coro, loop=loop)
@@ -131,7 +144,7 @@ def test_coro_running() -> None:
 
 
 def test_current_task() -> None:
-    async def test_func(loop: asyncio.AbstractEventLoop) -> asyncio.Task[Any]|None:
+    async def test_func(loop: asyncio.AbstractEventLoop) -> asyncio.Task[Any] | None:
         return asyncio.current_task(loop)
 
     loop = Loop()
@@ -144,15 +157,16 @@ def test_current_task() -> None:
     finally:
         loop.close()
 
+
 def test_parent_task_cancels_child() -> None:
-    async def child_task() -> str|None:
+    async def child_task() -> str | None:
         try:
             await asyncio.sleep(1)
             return None
         except asyncio.CancelledError:
             return "Child cancelled"
 
-    async def parent_task() -> str|None:
+    async def parent_task() -> str | None:
         child = asyncio.create_task(child_task())
         await asyncio.sleep(0.1)
         child.cancel()
@@ -166,15 +180,16 @@ def test_parent_task_cancels_child() -> None:
     finally:
         loop.close()
 
+
 def test_parent_task_cancels_while_awaiting() -> None:
-    async def child_task() -> str|None:
+    async def child_task() -> str | None:
         try:
             await asyncio.sleep(1)
             return None
         except asyncio.CancelledError:
             return "Child cancelled"
 
-    async def parent_task(child: asyncio.Task[Any]) -> str|None:
+    async def parent_task(child: asyncio.Task[Any]) -> str | None:
         result = await child
         return result
 
@@ -187,6 +202,7 @@ def test_parent_task_cancels_while_awaiting() -> None:
     finally:
         loop.close()
 
+
 def test_cancel_parent_not_child() -> None:
     child_done = asyncio.Event()
 
@@ -198,7 +214,7 @@ def test_cancel_parent_not_child() -> None:
         except asyncio.CancelledError:
             return "Child cancelled"
 
-    async def parent_task() -> tuple[str, str]|None:
+    async def parent_task() -> tuple[str, str] | None:
         child = asyncio.create_task(child_task())
         try:
             await asyncio.sleep(1)
@@ -217,6 +233,7 @@ def test_cancel_parent_not_child() -> None:
     finally:
         loop.close()
 
+
 def test_cancel_parent_with_long_wait() -> None:
     child_done = asyncio.Event()
 
@@ -228,7 +245,7 @@ def test_cancel_parent_with_long_wait() -> None:
         except asyncio.CancelledError:
             return "Child cancelled"
 
-    async def parent_task() -> tuple[str, str]|None:
+    async def parent_task() -> tuple[str, str] | None:
         child = asyncio.create_task(child_task())
         try:
             await asyncio.sleep(3600)
@@ -247,6 +264,7 @@ def test_cancel_parent_with_long_wait() -> None:
     finally:
         loop.close()
 
+
 def test_task_exception_propagation() -> None:
     async def raise_exception() -> None:
         raise ValueError("Test exception")
@@ -260,6 +278,7 @@ def test_task_exception_propagation() -> None:
             loop.run_until_complete(parent_task())
     finally:
         loop.close()
+
 
 def test_task_result_timing() -> None:
     async def slow_task() -> str:
@@ -275,6 +294,7 @@ def test_task_result_timing() -> None:
         assert task.result() == "Done"  # Should not raise now
     finally:
         loop.close()
+
 
 def test_task_cancel_callback() -> None:
     cancel_called = False

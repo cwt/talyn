@@ -21,6 +21,7 @@ def test_getaddrinfo_literal_ipv4() -> None:
 
 def test_getaddrinfo_multiple() -> None:
     """Multiple calls should work."""
+
     async def main() -> None:
         loop = asyncio.get_running_loop()
         r1 = await loop.getaddrinfo("127.0.0.1", 80)
