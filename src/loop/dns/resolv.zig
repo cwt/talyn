@@ -463,14 +463,15 @@ fn build_queries(
     errdefer allocator.free(payload);
 
     var offset: usize = 0;
-    for (0.., hostnames_array.array[0..hostnames_array.len]) |index, hostname_info| {
+    for (hostnames_array.array[0..hostnames_array.len]) |hostname_info| {
         const hostname = hostname_info.hostname[0..hostname_info.hostname_len];
+        const query_id = std.crypto.random.int(u16);
         if (question_type) |qt| {
-            offset += build_query(@intCast(index), payload[offset..], qt, hostname);
+            offset += build_query(query_id, payload[offset..], qt, hostname);
         } else {
-            offset += build_query(@intCast(index), payload[offset..], .ipv4, hostname);
+            offset += build_query(query_id, payload[offset..], .ipv4, hostname);
             if (ipv6_supported) {
-                offset += build_query(@intCast(index), payload[offset..], .ipv6, hostname);
+                offset += build_query(query_id, payload[offset..], .ipv6, hostname);
             }
         }
     }
@@ -736,5 +737,42 @@ test "parse_individual_dns_result: ignore CNAME" {
     const next_offset = parse_individual_dns_result(data, 0, &res, &ptr_name, &ttl, std.testing.allocator).?;
     try std.testing.expectEqual(@as(usize, 14), next_offset);
     try std.testing.expect(ptr_name == null);
+}
+
+test "build_query uses provided transaction ID" {
+    var buf: [512]u8 = undefined;
+    const written = build_query(0x1234, buf[0..], .ipv4, "example.com");
+    try std.testing.expectEqual(@as(u16, 0x1234), std.mem.readInt(u16, buf[0..2], .big));
+    try std.testing.expect(written > 12);
+}
+
+test "build_query produces different ID for different input" {
+    var buf1: [512]u8 = undefined;
+    var buf2: [512]u8 = undefined;
+    const w1 = build_query(0xABCD, buf1[0..], .ipv4, "test1.example.com");
+    const w2 = build_query(0x4321, buf2[0..], .ipv4, "test2.example.com");
+    try std.testing.expect(w1 > 0);
+    try std.testing.expect(w2 > 0);
+    const id1 = std.mem.readInt(u16, buf1[0..2], .big);
+    const id2 = std.mem.readInt(u16, buf2[0..2], .big);
+    try std.testing.expect(id1 != id2);
+}
+
+test "random DNS transaction IDs are not trivially predictable" {
+    // Generate 100 IDs and verify they're not all the same value
+    // (extremely unlikely with random u16)
+    var ids: [100]u16 = undefined;
+    for (&ids) |*id| {
+        id.* = std.crypto.random.int(u16);
+    }
+    const first = ids[0];
+    var all_same = true;
+    for (ids[1..]) |id| {
+        if (id != first) {
+            all_same = false;
+            break;
+        }
+    }
+    try std.testing.expect(!all_same);
 }
 

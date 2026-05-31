@@ -181,8 +181,10 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
 *   **The Fix:** Replaced the success-path-only `PyContext_Exit` call with a `defer _ = python_c.PyContext_Exit(py_context);` immediately after the successful `PyContext_Enter`. Zig's `defer` ensures the context is exited on _all_ exit paths, including early error returns, without requiring manual cleanup before each `return` statement.
 *   **The Lesson:** When a function acquires a reversible resource (like entering a CPython context), always use Zig's `defer` (or `errdefer`) to guarantee cleanup on all exit paths. Manual cleanup before each `return` is fragile and inevitably misses edge cases as the code evolves. CPython's `PyContext_Enter`/`PyContext_Exit` pairs are particularly dangerous because a leaked context entry corrupts the global interpreter state for all subsequent operations.
 
+---
 
-
-
-
+### 29. Predictable DNS Transaction IDs (2026-06-01)
+*   **The Bug:** In `build_queries` at `src/loop/dns/resolv.zig:469`, the DNS query transaction ID was set by casting the loop iteration index (`0, 1, 2, ...`) directly to `u16`. This produced highly predictable DNS transaction IDs, making DNS cache poisoning and domain spoofing attacks trivial for an on-path attacker.
+*   **The Fix:** Replaced `@intCast(index)` with `std.crypto.random.int(u16)` to generate a cryptographically secure random transaction ID for each query.
+*   **The Lesson:** Network protocols that rely on transaction IDs for security (like DNS) must use unpredictable random values, not sequential counters. Always use a cryptographically secure random number generator (`std.crypto.random`) for security-sensitive identifiers. Sequential counters in DNS queries are a well-known vulnerability (CVE-2008-1447 and related).
 
