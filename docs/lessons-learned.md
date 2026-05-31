@@ -132,4 +132,12 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
 *   **The Fix:** Split `IO.queue` into a thread-safe `queue(...)` wrapper that acquires the lock, and a non-locking `queue_unlocked(...)` helper. Updated all native functions executing under the loop mutex to invoke `queue_unlocked(...)` directly, bypassing the duplicate locking path.
 *   **The Lesson:** Never acquire a non-recursive mutex recursively. When building locking APIs, always provide unlocked internal helper functions (e.g. `_unlocked` or `_nonthreadsafe`) to be used safely from paths where the calling context has already acquired the lock.
 
+---
+
+### 22. Level-Triggered Socket Deadlocks via Incorrect Direct Syscall Error Check (2026-05-31)
+*   **The Bug:** The Socket Ops benchmark suffered from intermittent but severe timeouts/deadlocks under load. In `src/transports/streamserver/main.zig`, the server accepted new connections using direct Linux syscall `std.os.linux.accept4`. The code checked for failure using `if (client_fd_ret == std.math.maxInt(usize))` and queried `std.os.linux.errno(0)`. However, raw Linux syscalls do NOT set thread-local `errno`; instead, they return negative values representing `-errno` directly. As a result, when `accept4` failed with `-EAGAIN` or `-EINTR`, the failure was completely missed, and the negative error code was treated as a valid client file descriptor. This led to silent connection drops, corrupted socket descriptors, and permanent hangs in level-triggered `POLL_IN` wakeups under high socket stress.
+*   **The Fix:** Corrected the error check in `accept_callback` by casting the result to a signed integer (`isize`) and checking `if (client_fd_signed < 0)`. The exact error code was retrieved via `const errno_val = -client_fd_signed`.
+*   **The Lesson:** Raw assembly syscalls in Zig (`std.os.linux`) differ fundamentally from C standard library functions. They do not populate `errno`; they return negative error codes directly. Failing to handle direct syscall return codes correctly will corrupt resource tracking and produce mysterious, load-dependent deadlocks.
+
+
 
