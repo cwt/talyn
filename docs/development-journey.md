@@ -36,19 +36,27 @@ This experience led to an important shift in the project’s direction.
 
 **Talyn is no longer trying to be an “ultra-fast event loop”.** Instead, it has become a **realistic fast and stable** alternative — one that prioritizes correctness, reliability, and production readiness over chasing benchmark records.
 
-## Performance (Changeset 566)
+## Performance Journey to v0.5.0
 
-As of changeset 566, here are the benchmark results on Python [3.14](benchmarks-566-3.14.txt) and [3.14t](benchmarks-566-3.14t.txt):
+As of changeset 566, our preliminary benchmark results on Python [3.14](benchmarks-566-3.14.txt) and [3.14t](benchmarks-566-3.14t.txt) were promising. But there was a massive catch: those benchmarks were run on a **Debug** build!
+
+When I finally compiled a **ReleaseSafe** build (our `--starburst` mode), everything broke. The optimized build exposed severe, hidden concurrency bugs, especially under free-threading. I tried to isolate the bugs by compiling only the `io` module in `Debug` mode while keeping the rest of the modules in `ReleaseSafe`. While this hybrid approach worked well for a while, it still wasn't 100% stable under high stress. 
+
+At that point, I suspected that my main development machine (an Intel Core Ultra 7 265) was simply too powerful. Its sheer speed and fast core switching were effectively hiding real, subtle race conditions and timing-dependent deadlocks. 
+
+To flush these bugs out, I switched my development environment to my mini PC powered by a much slower Intel N6000 CPU. The resource-constrained processor immediately exposed the race conditions, deadlocks, and scheduling issues. I spent days debugging and iterating on this mini PC until we resolved every single crash, hang, and deadlock, finally bringing us to a rock-solid, production-grade **v0.5.0**.
+
+Here are the fresh, fully optimized benchmark results in `ReleaseSafe` mode for v0.5.0:
+- Python [3.14](benchmarks-v0.5.0-3.14.txt)
+- Python [3.14t](benchmarks-v0.5.0-3.14t.txt)
 
 **Key observations:**
-
 - Talyn performs very close to standard `asyncio` in many real-world-like workloads (Chat, Food Delivery, Subprocess, etc.).
-- It shows good scaling on free-threaded Python (3.14t).
-- Still noticeably behind `uvloop` in high-performance scenarios (especially socket-heavy and task-spawning workloads).
-- Some areas are competitive, while others need more optimization work.
+- It shows great scaling and stability on free-threaded Python (3.14t) even under high concurrency.
+- It is still noticeably behind `uvloop` in raw socket-heavy and task-spawning workloads under standard GIL Python, but is highly competitive and stable under free-threading.
 
 ---
 
-This project has been a long, humbling, and incredibly rewarding journey. From a prototype to a stable, fully test-suite-passing event loop built with the help of a swarm of AI agents.
+This project has been a long, humbling, and incredibly rewarding journey. From an inactive, crash-prone prototype to a stable, fully test-suite-passing event loop built with the help of a swarm of AI agents.
 
 And that’s how Talyn came to life.
