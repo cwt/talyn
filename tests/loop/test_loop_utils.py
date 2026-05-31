@@ -1,9 +1,9 @@
-from talyn import Loop
-
-from contextvars import Context, copy_context
-from unittest.mock import AsyncMock
-from time import monotonic
 import asyncio
+from contextvars import Context, copy_context
+from time import monotonic
+from unittest.mock import AsyncMock
+
+from talyn import Loop
 
 
 def test_subclassing() -> None:

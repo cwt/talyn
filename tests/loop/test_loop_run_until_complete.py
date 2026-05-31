@@ -1,6 +1,8 @@
-from talyn import Loop
 import asyncio
+
 import pytest
+
+from talyn import Loop
 
 
 def test_run_until_complete_with_coroutine() -> None:

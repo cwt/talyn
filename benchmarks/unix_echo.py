@@ -1,6 +1,8 @@
-from benchmarks import Benchmark
 import asyncio
-import tempfile, os
+import os
+import tempfile
+
+from benchmarks import Benchmark
 
 BENCHMARK = Benchmark(
     "Unix Echo",

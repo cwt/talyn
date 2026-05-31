@@ -1,14 +1,12 @@
+import asyncio
+from typing import Any, Coroutine
+
 from .talyn_zig import Task as _Task
 
-from typing import TypeVar, Coroutine, Optional, Any
-import asyncio
 
-T = TypeVar('T')
-
-
-class Task(_Task):
-    def __init__(self, coro: Coroutine[Any, Any, T], *, loop: Optional[asyncio.AbstractEventLoop] = None,
-                 name: Optional[Any] = None, context: Optional[Any] = None, eager_start: bool = False) -> None:
+class Task[T](_Task):
+    def __init__(self, coro: Coroutine[Any, Any, T], *, loop: asyncio.AbstractEventLoop | None = None,
+                 name: Any | None = None, context: Any | None = None, eager_start: bool = False) -> None:
         if eager_start:
             raise RuntimeError("eager_start is not supported")
 

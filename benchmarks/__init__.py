@@ -1,6 +1,7 @@
+import dataclasses
 from asyncio import AbstractEventLoop
 from typing import Callable
-import dataclasses
+
 
 @dataclasses.dataclass
 class Benchmark:

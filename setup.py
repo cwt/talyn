@@ -1,10 +1,14 @@
-from setuptools import setup, Command, Distribution
-from setuptools.command.develop import develop
-from setuptools.command.build_ext import build_ext
-from setuptools.command.build import build
+import os
+import shutil
+import stat
+import subprocess
+import sys
+import sysconfig
 
-import os, shutil, subprocess, stat, sys, sysconfig
-from typing import Literal
+from setuptools import Command, Distribution, setup
+from setuptools.command.build import build
+from setuptools.command.build_ext import build_ext
+from setuptools.command.develop import develop
 
 if sys.version_info < (3, 13):
     raise RuntimeError("talyn requires Python 3.13 or later")

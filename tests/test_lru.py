@@ -1,6 +1,7 @@
 import asyncio
+
 import talyn
-import pytest
+
 
 def test_lru_cache():
     async def main():

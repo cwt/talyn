@@ -1,7 +1,9 @@
-from talyn import Loop
-import talyn
+import asyncio
+import socket
 
-import asyncio, socket, pytest
+import pytest
+
+import talyn
 
 
 def test_getaddrinfo_literal_ipv4() -> None:

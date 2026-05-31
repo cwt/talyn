@@ -1,8 +1,8 @@
 import asyncio
-import talyn
 import socket
-import pytest
-import os
+
+import talyn
+
 
 def test_sock_accept_connect():
     async def main():

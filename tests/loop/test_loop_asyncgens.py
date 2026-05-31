@@ -1,7 +1,7 @@
-from talyn import Loop
+import asyncio
 from typing import AsyncGenerator
 
-import asyncio
+from talyn import Loop
 
 
 def test_normal_async_generator() -> None:

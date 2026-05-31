@@ -1,6 +1,7 @@
-from benchmarks import Benchmark
 import asyncio
 import sys
+
+from benchmarks import Benchmark
 
 BENCHMARK = Benchmark(
     "Subprocess",

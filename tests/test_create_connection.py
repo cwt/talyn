@@ -1,8 +1,10 @@
-from talyn import Loop
-import talyn
+import asyncio
+import socket
+import threading
 
-import asyncio, socket, threading, pytest
-from typing import Any
+import pytest
+
+import talyn
 
 
 def _run_echo_server(sock: socket.socket, ready: threading.Event, stop: threading.Event) -> None:
@@ -156,7 +158,6 @@ def test_create_connection_invalid_protocol_factory() -> None:
     talyn.run(main())
 
 
-import pytest
 
 def test_create_connection_lambda_factory() -> None:
     host, port, stop = _start_echo_server()

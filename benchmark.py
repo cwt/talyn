@@ -1,30 +1,38 @@
-from typing import Callable, List, Tuple, Dict, Optional
+import asyncio
+from typing import Callable, Dict, List, Optional, Tuple
+
 from prettytable import PrettyTable
+
+import talyn
 from benchmarks import Benchmark
 
-import dataclasses
-import asyncio, time, talyn
 try:
     import uvloop
     HAS_UVLOOP = True
 except ImportError:
     HAS_UVLOOP = False
-import matplotlib.pyplot as plt
-import sys, os, statistics, traceback, subprocess, json, signal, tempfile
+import json
+import os
+import statistics
+import subprocess
+import sys
+import tempfile
+
 import matplotlib
+import matplotlib.pyplot as plt
 
 from benchmarks import (
-    event_fiesta_factory,
-    producer_consumer,
-    food_delivery,
-    task_workflow,
     chat,
-    tcp_echo,
-    unix_echo,
-    udp_pingpong,
+    event_fiesta_factory,
+    food_delivery,
+    producer_consumer,
+    socket_ops,
     subprocess_bench,
     task_spawn,
-    socket_ops,
+    task_workflow,
+    tcp_echo,
+    udp_pingpong,
+    unix_echo,
 )
 
 BENCHMARKS: List[Benchmark] = [

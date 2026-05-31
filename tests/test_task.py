@@ -1,11 +1,12 @@
-from talyn import Task, Loop
-
+import asyncio
+import io
+from contextvars import Context, copy_context
+from typing import Any
 from unittest.mock import AsyncMock
 
-from contextvars import copy_context, Context
-from typing import Any
+import pytest
 
-import pytest, asyncio, io
+from talyn import Loop, Task
 
 
 def test_checking_subclassing_and_arguments() -> None:

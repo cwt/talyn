@@ -1,7 +1,8 @@
-from benchmarks import Benchmark
 import asyncio
 import random
-from typing import Dict, Any
+from typing import Any, Dict
+
+from benchmarks import Benchmark
 
 BENCHMARK = Benchmark(
     "Food Delivery",

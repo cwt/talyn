@@ -1,26 +1,17 @@
+import _ctypes
+import asyncio
+import ctypes
+import socket
+import struct
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from logging import getLogger
+from typing import Any, AsyncGenerator, Awaitable, Callable, NotRequired, TypedDict
+
+from .server import Server
 from .talyn_zig import Loop as _Loop
 
-from concurrent.futures import ThreadPoolExecutor
-from typing import (
-    Any,
-    Callable,
-    TypedDict,
-    NotRequired,
-    AsyncGenerator,
-    Awaitable,
-    TypeVar,
-    TypeVarTuple,
-    Unpack
-)
-from logging import getLogger
-
-import asyncio, socket
-import threading
-
 logger = getLogger(__package__)
-
-_T = TypeVar("_T")
-_Ts = TypeVarTuple("_Ts")
 
 # Keep Popen objects alive to prevent __del__ from reaping processes before our exit watcher
 _subprocess_popens: dict[int, Any] = {}
@@ -86,11 +77,13 @@ class _SSLTransportWrapper:
         self._raw_t.close()
 
     def get_extra_info(self, name, default=None):
-        if name == 'sslcontext':
-            return self._ssp._sslobj.context
-        if name == 'ssl_object':
-            return self._ssp._sslobj
-        return self._raw_t.get_extra_info(name, default)
+        match name:
+            case 'sslcontext':
+                return self._ssp._sslobj.context
+            case 'ssl_object':
+                return self._ssp._sslobj
+            case _:
+                return self._raw_t.get_extra_info(name, default)
 
     def is_closing(self):
         return self._raw_t.is_closing()
@@ -141,7 +134,7 @@ class ExceptionContext(TypedDict):
 
 class Loop(_Loop):
     def __init__(self, ready_tasks_queue_capacity: int = 1048576) -> None:
-        self._asyncio_tasks = set()
+        self._asyncio_tasks: set[asyncio.Task[Any]] = set()
         _Loop.__init__(
             self, ready_tasks_queue_capacity, self.call_exception_handler
         )
@@ -257,9 +250,6 @@ class Loop(_Loop):
         #   transport: ptr  (offset 8)
         #   data: ptr       (offset 16)
         #   nbytes: i64     (offset 24)
-        import ctypes
-        import struct
-
         record_size = 32
         for i in range(count):
             offset = i * record_size
@@ -269,14 +259,15 @@ class Loop(_Loop):
             data_ptr = struct.unpack_from("Q", raw, 16)[0]
             nbytes = struct.unpack_from("q", raw, 24)[0]
 
-            if op == 0:  # DataReceived
-                self._dispatch_data_received(transport_ptr, data_ptr, nbytes)
-            elif op == 1:  # EofReceived
-                self._dispatch_eof_received(transport_ptr)
-            elif op == 2:  # BufferUpdated
-                self._dispatch_buffer_updated(transport_ptr, nbytes)
-            elif op == 3:  # ConnectionLost
-                self._dispatch_connection_lost(transport_ptr, data_ptr)
+            match op:
+                case 0:  # DataReceived
+                    self._dispatch_data_received(transport_ptr, data_ptr, nbytes)
+                case 1:  # EofReceived
+                    self._dispatch_eof_received(transport_ptr)
+                case 2:  # BufferUpdated
+                    self._dispatch_buffer_updated(transport_ptr, nbytes)
+                case 3:  # ConnectionLost
+                    self._dispatch_connection_lost(transport_ptr, data_ptr)
 
     def _test_batch_dispatch(self, count: int) -> None:
         """Test: just receive count, do nothing."""
@@ -287,19 +278,19 @@ class Loop(_Loop):
         
         protocol_ptr is a raw pointer to the protocol object.
         """
-        import _ctypes
         for op, protocol_ptr, data, nbytes in records:
             if protocol_ptr is None:
                 continue
             protocol = _ctypes.PyObj_FromPtr(protocol_ptr)
-            if op == 0:  # DataReceived
-                self._dispatch_data_received(protocol, data, nbytes)
-            elif op == 1:  # EofReceived
-                self._dispatch_eof_received(protocol)
-            elif op == 2:  # BufferUpdated
-                self._dispatch_buffer_updated(protocol, nbytes)
-            elif op == 3:  # ConnectionLost
-                self._dispatch_connection_lost(protocol, data)
+            match op:
+                case 0:  # DataReceived
+                    self._dispatch_data_received(protocol, data, nbytes)
+                case 1:  # EofReceived
+                    self._dispatch_eof_received(protocol)
+                case 2:  # BufferUpdated
+                    self._dispatch_buffer_updated(protocol, nbytes)
+                case 3:  # ConnectionLost
+                    self._dispatch_connection_lost(protocol, data)
 
     def _dispatch_data_received(self, protocol, data, nbytes: int) -> None:
         """Call protocol.data_received."""
@@ -371,7 +362,7 @@ class Loop(_Loop):
         loop = future.get_loop()
         loop.stop()
 
-    def run_until_complete(self, future: Awaitable[_T]) -> _T:
+    def run_until_complete[T](self, future: Awaitable[T]) -> T:
         if self.is_closed() or self.is_running():
             raise RuntimeError("Event loop is closed or already running")
 
@@ -392,9 +383,9 @@ class Loop(_Loop):
 
         return new_future.result()
 
-    def run_in_executor(
-        self, executor: Any, func: Callable[[Unpack[_Ts]], _T], *args: Unpack[_Ts]
-    ) -> asyncio.Future[_T]:
+    def run_in_executor[T, *Ts](
+        self, executor: Any, func: Callable[[*Ts], T], *args: *Ts
+    ) -> asyncio.Future[T]:
         if self.is_closed():
             raise RuntimeError("Event loop is closed")
         if executor is None and (executor := self._default_executor) is None:
@@ -787,7 +778,6 @@ class Loop(_Loop):
         ssl_shutdown_timeout: float|None = None,
         start_serving: bool = True,
     ) -> "Server":
-        from .server import Server
         if ssl is not None:
             return await self._create_ssl_server(
                 protocol_factory, host, port,
@@ -824,7 +814,6 @@ class Loop(_Loop):
         start_serving: bool,
     ) -> "Server":
         self_loop = self
-        from .server import Server
         import ssl as ssl_module
 
         sslcontext = ssl
@@ -1072,7 +1061,6 @@ class Loop(_Loop):
         ssl_shutdown_timeout: float|None = None,
         start_serving: bool = True,
     ) -> "Server":
-        from .server import Server
         if ssl is not None:
             return await self._create_ssl_unix_server(
                 protocol_factory, path, backlog=backlog, ssl=ssl,
@@ -1092,7 +1080,6 @@ class Loop(_Loop):
         ssl_shutdown_timeout: float|None = None,
     ) -> "Server":
         self_loop = self
-        from .server import Server
         import ssl as ssl_module
 
         sslcontext = ssl
@@ -1279,6 +1266,7 @@ class Loop(_Loop):
 
 
 import warnings
+
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", DeprecationWarning)
     class EventLoopPolicy(asyncio.DefaultEventLoopPolicy):
@@ -1312,7 +1300,6 @@ class PseudoSocket:
         return self._proto
 
     def getsockname(self):
-        import socket
         tmp = socket.fromfd(self._fd, self._family, self._type)
         try:
             return tmp.getsockname()
@@ -1320,7 +1307,6 @@ class PseudoSocket:
             tmp.close()
 
     def getpeername(self):
-        import socket
         tmp = socket.fromfd(self._fd, self._family, self._type)
         try:
             return tmp.getpeername()

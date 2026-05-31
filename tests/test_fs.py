@@ -1,8 +1,9 @@
 import asyncio
-import talyn
-import pytest
 import os
 import tempfile
+
+import talyn
+
 
 def test_path_watcher():
     async def main():

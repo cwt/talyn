@@ -1,8 +1,9 @@
-from talyn import Loop
-import talyn
+import asyncio
+import os
 
-import asyncio, os, tempfile, pytest
-from typing import Any
+import pytest
+
+import talyn
 
 
 def _unix_path() -> str:

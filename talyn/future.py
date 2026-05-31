@@ -1,5 +1,6 @@
-from .talyn_zig import Future as _Future
 import asyncio
+
+from .talyn_zig import Future as _Future
 
 
 class Future(_Future):

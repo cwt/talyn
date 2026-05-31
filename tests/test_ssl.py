@@ -1,10 +1,12 @@
-import pytest
+import os
 import ssl
 import subprocess
 import tempfile
-import os
+
+import pytest
 
 import talyn
+
 talyn.install()
 import asyncio
 
@@ -386,7 +388,6 @@ async def test_start_tls_buffered_data(ssl_certs):
     """Verify start_tls works even when there is buffered data in the StreamReader."""
     server_ctx, key_path, cert_path = ssl_certs
 
-    loop = asyncio.get_running_loop()
     client_ctx = ssl.create_default_context()
     client_ctx.check_hostname = False
     client_ctx.verify_mode = ssl.CERT_NONE
@@ -430,7 +431,6 @@ async def test_ssl_graceful_shutdown(ssl_certs):
     """Verify that SSL transport wrapper close performs a graceful shutdown sequence."""
     server_ctx, key_path, cert_path = ssl_certs
 
-    loop = asyncio.get_running_loop()
     client_ctx = ssl.create_default_context()
     client_ctx.check_hostname = False
     client_ctx.verify_mode = ssl.CERT_NONE

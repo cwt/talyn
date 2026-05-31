@@ -1,6 +1,6 @@
-from talyn import Future, Loop
 
-import pytest, asyncio
+
+from talyn import Future, Loop
 
 
 def test_future_without_loop_inside_running_loop() -> None:

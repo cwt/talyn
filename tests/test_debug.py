@@ -1,10 +1,11 @@
 import asyncio
-import talyn
-import time
-import pytest
 import logging
 import threading
+import time
 import weakref
+
+import talyn
+
 
 def test_debug_mode_basic():
     loop = talyn.Loop()

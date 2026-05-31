@@ -1,11 +1,11 @@
-from talyn import Loop
-
 import contextvars
+import random
 from contextvars import copy_context
 from unittest.mock import MagicMock
 
-import random
 import pytest
+
+from talyn import Loop
 
 DELAY_TIME = 0.01
 

@@ -1,8 +1,8 @@
 import asyncio
-import talyn
-import pytest
-
 import warnings
+
+import talyn
+
 
 def test_install():
     # Save original policy

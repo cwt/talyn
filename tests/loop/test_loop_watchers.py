@@ -1,5 +1,9 @@
+import os
+
+import pytest
+
 from talyn import Loop
-import pytest, os
+
 
 def test_add_and_remove_reader() -> None:
     loop = Loop()

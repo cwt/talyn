@@ -1,5 +1,6 @@
-from benchmarks import Benchmark
 import asyncio
+
+from benchmarks import Benchmark
 
 BENCHMARK = Benchmark(
     "Async Task Workflow",

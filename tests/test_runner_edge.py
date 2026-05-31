@@ -1,6 +1,6 @@
-from talyn import Loop, Runner
 
-import pytest, asyncio
+
+from talyn import Loop, Runner
 
 
 def test_runner_context_manager() -> None:

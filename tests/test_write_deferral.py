@@ -1,7 +1,8 @@
 import asyncio
-import talyn
 import socket
-import pytest
+
+import talyn
+
 
 def test_write_deferral():
     async def main():

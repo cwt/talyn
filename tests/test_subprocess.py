@@ -1,8 +1,9 @@
-from talyn import Loop
+import asyncio
+
+import pytest
+
 import talyn
 from talyn.loop import _subprocess_popens
-
-import asyncio, pytest
 
 
 class SubprocessProtocolStub(asyncio.SubprocessProtocol):

@@ -1,9 +1,10 @@
-from talyn import Future, Loop
-
-from unittest.mock import MagicMock
+import asyncio
 from typing import Any
+from unittest.mock import MagicMock
 
-import pytest, asyncio
+import pytest
+
+from talyn import Future, Loop
 
 
 def test_checking_subclassing() -> None:

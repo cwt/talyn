@@ -1,9 +1,7 @@
-from .loop import Loop
-
-from typing import Any, Coroutine, TypeVar, Optional
 import asyncio
+from typing import Any, Coroutine
 
-_T = TypeVar("_T")
+from .loop import Loop
 
 
 class Runner:
@@ -19,7 +17,7 @@ class Runner:
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         self.close()
 
-    def run(self, coro: Coroutine[Any, Any, _T], *, context: Any = None) -> _T:
+    def run[T](self, coro: Coroutine[Any, Any, T], *, context: Any = None) -> T:
         return self._loop.run_until_complete(
             asyncio.ensure_future(coro, loop=self._loop)
         )
@@ -37,5 +35,5 @@ class Runner:
         self._loop.close()
 
 
-def run(coro_or_future: Coroutine[Any, Any, _T]) -> _T:
+def run[T](coro_or_future: Coroutine[Any, Any, T]) -> T:
     return asyncio.run(coro_or_future, loop_factory=Loop)

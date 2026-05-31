@@ -1,6 +1,8 @@
+import asyncio
+import random
+from typing import Awaitable, List
+
 from benchmarks import Benchmark
-from typing import List, Awaitable
-import random, asyncio
 
 BENCHMARK = Benchmark(
     "Producer-Consumer",

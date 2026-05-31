@@ -1,8 +1,8 @@
 import asyncio
 import os
-import pytest
+
 import talyn
-import time
+
 
 def test_fork_safety():
     loop = talyn.Loop()

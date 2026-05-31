@@ -10,9 +10,9 @@ The test verifies correctness is preserved after the flag removal.
 """
 
 import asyncio
-import talyn
 import socket
-import pytest
+
+import talyn
 
 
 def test_many_sequential_connections():
@@ -161,11 +161,10 @@ def test_concurrent_connect_accept_stress():
 
 def test_unix_socket_connect_accept():
     """Unix domain sockets also exercise connect/accept/shutdown paths."""
-    import tempfile
     import os
+    import tempfile
 
     async def main():
-        loop = asyncio.get_running_loop()
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "test.sock")
 

@@ -1,8 +1,9 @@
+import time
 from concurrent.futures import ThreadPoolExecutor
 
-from talyn import Loop
+import pytest
 
-import pytest, time
+from talyn import Loop
 
 
 def simple_function(return_value: str) -> str:

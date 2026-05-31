@@ -1,7 +1,9 @@
+import asyncio
+
+import pytest
+
 from talyn import Loop
 from talyn.server import Server
-
-import pytest, asyncio
 
 
 def test_server_attach_detach() -> None:

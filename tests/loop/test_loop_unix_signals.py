@@ -1,7 +1,10 @@
-from talyn import Loop
-
+import os
+import signal
 from typing import Callable
-import pytest, os, signal
+
+import pytest
+
+from talyn import Loop
 
 
 def test_add_and_remove_signal_handler() -> None:

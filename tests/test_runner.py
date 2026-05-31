@@ -1,8 +1,7 @@
-from talyn.loop import Loop
-
-from talyn.runner import run
-
 import asyncio
+
+from talyn.loop import Loop
+from talyn.runner import run
 
 
 def test_run() -> None:

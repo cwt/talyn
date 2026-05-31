@@ -1,8 +1,8 @@
-import asyncio
-import talyn
+
 import pytest
-import socket
-import os
+
+import talyn
+
 
 def test_remove_non_existent_reader():
     loop = talyn.Loop()

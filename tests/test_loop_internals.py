@@ -1,10 +1,13 @@
+import asyncio
+import os
+import socket
+from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import MagicMock
+
+import pytest
+
 from talyn import Loop
 from talyn.loop import PseudoSocket, _SSLTransportWrapper
-
-from unittest.mock import MagicMock
-from concurrent.futures import ThreadPoolExecutor
-
-import pytest, asyncio, socket, os
 
 
 @pytest.fixture(autouse=True)
@@ -60,7 +63,6 @@ def test_pseudo_socket_getpeername() -> None:
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.bind(("127.0.0.1", 0))
-        port = s.getsockname()[1]
         s.listen(1)
         fd = s.detach()
 
@@ -73,8 +75,10 @@ def test_pseudo_socket_getpeername() -> None:
 
 
 def test_event_loop_policy() -> None:
+    import asyncio
+    import warnings
+
     from talyn.loop import EventLoopPolicy
-    import asyncio, warnings
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
         old_policy = asyncio.get_event_loop_policy()
@@ -92,8 +96,10 @@ def test_event_loop_policy() -> None:
 
 
 def test_install() -> None:
+    import asyncio
+    import warnings
+
     import talyn
-    import asyncio, warnings
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
         old_policy = asyncio.get_event_loop_policy()

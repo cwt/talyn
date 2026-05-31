@@ -1,7 +1,8 @@
 import asyncio
-import talyn
-import pytest
 import socket
+
+import pytest
+
 
 class DatagramProtocol(asyncio.DatagramProtocol):
     def __init__(self):

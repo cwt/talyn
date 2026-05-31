@@ -1,8 +1,7 @@
-from talyn import Task, Loop
 
-from unittest.mock import AsyncMock
+import pytest
 
-import pytest, asyncio
+from talyn import Loop, Task
 
 
 def test_task_eager_start_raises() -> None:

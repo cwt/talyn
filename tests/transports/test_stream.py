@@ -1,8 +1,12 @@
-from talyn import StreamTransport
-import talyn
+import asyncio
+import os
+import socket
 
-import asyncio, socket, os, pytest
-from typing import Any
+import pytest
+
+import talyn
+from talyn import StreamTransport
+
 
 class BufferedEchoProtocol(asyncio.BufferedProtocol):
     def __init__(self) -> None:

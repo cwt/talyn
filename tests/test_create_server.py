@@ -1,8 +1,9 @@
-from talyn import Loop
-import talyn
+import asyncio
+import socket
 
-import asyncio, socket, pytest
-from typing import Any
+import pytest
+
+import talyn
 
 
 class EchoProtocol(asyncio.Protocol):

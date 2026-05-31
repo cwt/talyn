@@ -1,10 +1,10 @@
 import asyncio
-import talyn
-import pytest
-import os
 import signal
 import subprocess
 import time
+
+import talyn
+
 
 def test_child_handler():
     async def main():
