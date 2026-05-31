@@ -139,5 +139,12 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
 *   **The Fix:** Corrected the error check in `accept_callback` by casting the result to a signed integer (`isize`) and checking `if (client_fd_signed < 0)`. The exact error code was retrieved via `const errno_val = -client_fd_signed`.
 *   **The Lesson:** Raw assembly syscalls in Zig (`std.os.linux`) differ fundamentally from C standard library functions. They do not populate `errno`; they return negative error codes directly. Failing to handle direct syscall return codes correctly will corrupt resource tracking and produce mysterious, load-dependent deadlocks.
 
+---
+
+### 23. BTree Split Key Count During Non-Root Splits (2026-05-31)
+*   **The Bug:** The BTree implementation used hardcoded `current_node.nkeys = 1` unconditionally inside `split_nodes`. While this is correct for a root-node split (where the root has split and retains only the single middle key), it is completely incorrect for a non-root node split. A non-root split leaves the left half of the keys in `current_node`, meaning it retains exactly `middle_index` keys (`(Degree - 1) / 2`). For `Degree = 3`, `middle_index` is 1, so the bug was hidden. But for `Degree = 11` (used by `WatchersBTree`), it discarded 4 keys, silently corrupting the tree structure under heavy file descriptor watcher load.
+*   **The Fix:** In `split_nodes`, set `current_node.nkeys = (Degree - 1) / 2` when the split node has a parent, and only set it to `1` on root split.
+*   **The Lesson:** Never use hardcoded constants for data structure counts that depend on parameter/degree configurations. Always write unit tests with diverse parameters (e.g., larger degrees) to ensure algorithms scale correctly.
+
 
 

@@ -284,13 +284,14 @@ pub fn BTree(
                     try split_node(keys, values, childs, p_node, new_node1);
                     change_parent(current_node);
                     new_node1.parent = p_node;
-                }else{
+                    current_node.nkeys = (Degree - 1) / 2;
+                } else {
                     const new_node2 = try create_node(allocator);
                     try split_root_node(keys, values, childs, new_node1, new_node2);
                     new_node1.parent = current_node;
                     new_node2.parent = current_node;
+                    current_node.nkeys = 1;
                 }
-                current_node.nkeys = 1;
 
                 current_node = parent orelse break;
             }
@@ -652,3 +653,36 @@ test "BTree: Random order insertion and deletion with floating point" {
         try std.testing.expect(diff <= std.math.floatEps(f64));
     }
 }
+
+test "BTree: Random order insertion and deletion with Degree 11" {
+    var new_btree = try BTree(usize, usize, 11).init(std.testing.allocator);
+    defer new_btree.deinit() catch unreachable;
+
+    const element_count = 200;
+    var values: [element_count]usize = undefined;
+    for (&values, 0..) |*v, i| v.* = i * 3;
+
+    var prng = std.Random.DefaultPrng.init(42);
+    const rand = prng.random();
+    rand.shuffle(usize, &values);
+
+    for (values) |v| {
+        const value = (v + 1) * 23;
+        const inserted = new_btree.insert(v, value);
+        try std.testing.expect(inserted);
+    }
+
+    rand.shuffle(usize, &values);
+
+    for (values) |v| {
+        const value = new_btree.get_value(v, null);
+        try std.testing.expectEqual((v + 1) * 23, value);
+    }
+
+    rand.shuffle(usize, &values);
+    for (values) |v| {
+        const value = new_btree.delete(v);
+        try std.testing.expectEqual((v + 1) * 23, value);
+    }
+}
+
