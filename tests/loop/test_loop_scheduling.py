@@ -383,3 +383,33 @@ def test_scheduling_with_mixed_successful_and_error_callbacks() -> None:
         assert mock_error.call_count == 5
     finally:
         loop.close()
+
+
+def test_context_not_corrupted_by_failed_callbacks() -> None:
+    loop = Loop()
+    try:
+        ctx_var: contextvars.ContextVar[str] = contextvars.ContextVar(
+            "ctx_var", default="default"
+        )
+
+        ctx1 = copy_context()
+        ctx1.run(ctx_var.set, "ctx1_value")
+
+        ctx2 = copy_context()
+        ctx2.run(ctx_var.set, "ctx2_value")
+
+        error_mock = MagicMock(side_effect=ValueError("intentional error"))
+
+        def check_ctx2_value() -> None:
+            assert ctx_var.get() == "ctx2_value"
+
+        # Schedule: error callback in ctx1, then success callback in ctx2
+        loop.call_soon(error_mock, context=ctx1)
+        loop.call_soon(check_ctx2_value, context=ctx2)
+        loop.call_soon(loop.stop)
+        loop.run_forever()
+
+        assert error_mock.call_count == 1
+        # If context was corrupted, check_ctx2_value would have failed
+    finally:
+        loop.close()

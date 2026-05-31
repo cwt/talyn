@@ -174,6 +174,13 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
 *   **The Fix:** Updated `fromPyAddr` to explicitly call `python_c.raise_python_type_error("address must be a tuple\x00")` when the input address is not a tuple, satisfying CPython's exception-setting contracts.
 *   **The Lesson:** Never return `error.PythonError` (or a `NULL` PyObject) without ensuring a Python-level exception has been set via `PyErr_SetString` (or its `raise_python_*` wrappers). Any un-exceptioned NULL return results in a fatal interpreter-level `SystemError`.
 
+---
+
+### 28. Context Stack Leak on Callback Execution Error (2026-06-01)
+*   **The Bug:** In `callback_for_python_generic_callbacks` at `src/handle.zig`, `PyContext_Enter(py_context)` was called to push the handle's context onto the CPython context stack. However, when any subsequent operation failed (`PyTuple_New`, `PyTuple_SetItem`, `PyObject_Call`, `PyObject_CallNoArgs`), the function returned `error.PythonError` _without_ calling `PyContext_Exit`. This permanently corrupted the current thread's context variable context stack, causing subsequent tasks scheduled with different contexts to run in the wrong context.
+*   **The Fix:** Replaced the success-path-only `PyContext_Exit` call with a `defer _ = python_c.PyContext_Exit(py_context);` immediately after the successful `PyContext_Enter`. Zig's `defer` ensures the context is exited on _all_ exit paths, including early error returns, without requiring manual cleanup before each `return` statement.
+*   **The Lesson:** When a function acquires a reversible resource (like entering a CPython context), always use Zig's `defer` (or `errdefer`) to guarantee cleanup on all exit paths. Manual cleanup before each `return` is fragile and inevitably misses edge cases as the code evolves. CPython's `PyContext_Enter`/`PyContext_Exit` pairs are particularly dangerous because a leaked context entry corrupts the global interpreter state for all subsequent operations.
+
 
 
 
