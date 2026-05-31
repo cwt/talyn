@@ -400,21 +400,28 @@ pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
 
     self.loop = loop;
 
+    // Initialize the io_uring ring. To maximize performance and minimize scheduling
+    // overhead/context switches, we attempt to configure the ring with:
+    // 1. IORING_SETUP_COOP_TASKRUN (Linux >= 5.11): Avoids hardware interrupts by running
+    //    completion task work cooperatively on the main thread during io_uring_enter.
+    // 2. IORING_SETUP_SINGLE_ISSUER (Linux >= 6.0): Bypasses internal ring locks in the
+    //    kernel since only the registering main thread issues and reaps events.
+    // We implement a graceful runtime fallback chain for backward compatibility.
     const coop_flag = std.os.linux.IORING_SETUP_COOP_TASKRUN;
     const single_issuer_flag = std.os.linux.IORING_SETUP_SINGLE_ISSUER;
 
     self.ring = init_ring: {
-        // Try combined Coop Taskrun + Single Issuer (Linux 6.0+)
+        // Attempt: Coop Taskrun + Single Issuer (High performance, Linux 6.0+)
         if (std.os.linux.IoUring.init(TotalTasksItems, coop_flag | single_issuer_flag)) |r| {
             break :init_ring r;
         } else |err| {
             if (err == error.ArgumentsInvalid) {
-                // Try only Coop Taskrun (Linux 5.11+)
+                // Fallback 1: Coop Taskrun only (Linux 5.11+)
                 if (std.os.linux.IoUring.init(TotalTasksItems, coop_flag)) |r| {
                     break :init_ring r;
                 } else |err2| {
                     if (err2 == error.ArgumentsInvalid) {
-                        // Fall back to default ring flags (Linux 5.1+)
+                        // Fallback 2: Default scheduling flags (Linux 5.1+)
                         break :init_ring try std.os.linux.IoUring.init(TotalTasksItems, 0);
                     }
                     return err2;
