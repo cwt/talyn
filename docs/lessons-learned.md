@@ -185,6 +185,13 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
 
 ### 29. Predictable DNS Transaction IDs (2026-06-01)
 *   **The Bug:** In `build_queries` at `src/loop/dns/resolv.zig:469`, the DNS query transaction ID was set by casting the loop iteration index (`0, 1, 2, ...`) directly to `u16`. This produced highly predictable DNS transaction IDs, making DNS cache poisoning and domain spoofing attacks trivial for an on-path attacker.
-*   **The Fix:** Replaced `@intCast(index)` with `std.crypto.random.int(u16)` to generate a cryptographically secure random transaction ID for each query.
-*   **The Lesson:** Network protocols that rely on transaction IDs for security (like DNS) must use unpredictable random values, not sequential counters. Always use a cryptographically secure random number generator (`std.crypto.random`) for security-sensitive identifiers. Sequential counters in DNS queries are a well-known vulnerability (CVE-2008-1447 and related).
+*   **The Fix:** Replaced `@intCast(index)` with `std.os.linux.getrandom` to generate a cryptographically secure random transaction ID for each query.
+*   **The Lesson:** Network protocols that rely on transaction IDs for security (like DNS) must use unpredictable random values, not sequential counters. Always use a cryptographically secure random number generator (like the `getrandom` Linux syscall) for security-sensitive identifiers. Sequential counters in DNS queries are a well-known vulnerability (CVE-2008-1447 and related).
+
+---
+
+### 30. Double Incref in Future set_exception — Reference Leak (2026-06-01)
+*   **The Bug:** In `z_future_set_exception` at `src/future/python/result.zig:92`, `python_c.py_newref(exception)` was passed to `future_fast_set_exception`, which itself called `python_c.py_newref(exception)` at line 72. The exception was incremented twice (+2) but only one reference was stored, leaking one reference per `future.set_exception()` call.
+*   **The Fix:** Removed the redundant `python_c.py_newref()` from the call site at line 92, passing `exception` directly as a borrowed reference. `future_fast_set_exception` already takes ownership by calling `py_newref` internally — consistent with how `future_fast_set_result` works.
+*   **The Lesson:** When a function takes ownership of a borrowed reference via `py_newref`, all callers must pass raw borrowed references. Inconsistent ownership conventions between callers and callees cause insidious reference leaks. Always verify reference count discipline by writing tests using `sys.getrefcount()` — especially for frequently-called APIs like `set_exception`.
 

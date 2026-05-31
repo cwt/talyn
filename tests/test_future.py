@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -415,5 +416,30 @@ def test_future_cancel_with_invalid_message() -> None:
         future.cancel(msg=["invalid"])
 
         assert future.cancelled()
+    finally:
+        loop.close()
+
+
+def test_future_set_exception_no_reference_leak() -> None:
+    loop = Loop()
+    try:
+        exc = ValueError("test")
+        ref_before = sys.getrefcount(exc)
+
+        future = Future(loop=loop)
+        future.set_exception(exc)
+
+        # After set_exception, future holds one reference (not two)
+        # sys.getrefcount returns refcount + 1 (includes temp from getrefcount)
+        # So ref_before = actual_ref + 1 (from getrefcount call)
+        # After: actual_ref increased by 1 (future holds it)
+        # So sys.getrefcount should show ref_before + 1
+        ref_after = sys.getrefcount(exc)
+        assert ref_after == ref_before + 1, (
+            f"Expected refcount {ref_before + 1}, got {ref_after}. "
+            f"Double incref would give {ref_before + 2}"
+        )
+
+        assert future.exception() is exc
     finally:
         loop.close()

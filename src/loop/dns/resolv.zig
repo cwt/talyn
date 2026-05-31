@@ -465,7 +465,9 @@ fn build_queries(
     var offset: usize = 0;
     for (hostnames_array.array[0..hostnames_array.len]) |hostname_info| {
         const hostname = hostname_info.hostname[0..hostname_info.hostname_len];
-        const query_id = std.crypto.random.int(u16);
+        var id_buf: [2]u8 = undefined;
+        _ = std.os.linux.getrandom(&id_buf, 2, 0);
+        const query_id = std.mem.readInt(u16, &id_buf, .little);
         if (question_type) |qt| {
             offset += build_query(query_id, payload[offset..], qt, hostname);
         } else {
@@ -763,7 +765,9 @@ test "random DNS transaction IDs are not trivially predictable" {
     // (extremely unlikely with random u16)
     var ids: [100]u16 = undefined;
     for (&ids) |*id| {
-        id.* = std.crypto.random.int(u16);
+        var id_buf: [2]u8 = undefined;
+        _ = std.os.linux.getrandom(&id_buf, 2, 0);
+        id.* = std.mem.readInt(u16, &id_buf, .little);
     }
     const first = ids[0];
     var all_same = true;

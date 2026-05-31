@@ -89,7 +89,7 @@ inline fn z_future_set_exception(self: *PythonFutureObject, exception: PyObject)
         else => {}
     }
 
-    try future_fast_set_exception(self, future_data, python_c.py_newref(exception));
+    try future_fast_set_exception(self, future_data, exception);
     return python_c.get_py_none();
 }
 
