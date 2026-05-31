@@ -80,7 +80,7 @@ inline fn z_transport_get_extra_info(
         }
     }else if (std.mem.eql(u8, name, "sockname")) {
         if (self.sockname) |py_sockname| {
-            result = py_sockname;
+            result = python_c.py_newref(py_sockname);
         }else{
             var socket: PyObject = undefined;
             if (self.socket) |py_sock| {

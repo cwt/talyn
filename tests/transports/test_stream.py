@@ -714,12 +714,22 @@ async def _test_stream_transport_extra_info() -> None:
         peername = client_transport.get_extra_info("peername")
         assert peername == client_socket.getpeername()
 
-        # Test sockname
-        sockname = server_transport.get_extra_info("sockname")
-        assert sockname == server_socket.getsockname()
+        # Test sockname multiple times to verify no borrowed reference leak/double-free (BUG-03)
+        sockname1 = server_transport.get_extra_info("sockname")
+        sockname2 = server_transport.get_extra_info("sockname")
+        assert sockname1 == sockname2
+        assert sockname1 == server_socket.getsockname()
 
-        sockname = client_transport.get_extra_info("sockname")
-        assert sockname == server_socket.getsockname()
+        sockname3 = client_transport.get_extra_info("sockname")
+        sockname4 = client_transport.get_extra_info("sockname")
+        assert sockname3 == sockname4
+        assert sockname3 == server_socket.getsockname()
+
+        # Test peername multiple times too
+        peername1 = server_transport.get_extra_info("peername")
+        peername2 = server_transport.get_extra_info("peername")
+        assert peername1 == peername2
+        assert peername1 == server_socket.getpeername()
     finally:
         server_transport.close()
         client_transport.close()

@@ -153,6 +153,14 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
 *   **The Fix:** Wrapped all `link_timeout` calls in `catch |err|` blocks. If `link_timeout` fails, we decrement `ring.sq.sqe_tail` by 1 to roll back the main SQE's slot allocation before propagating the error up, ensuring the SQE is never flushed to the kernel.
 *   **The Lesson:** When allocating sequential resources that must be submitted or updated atomically, always handle errors gracefully by rolling back any partially completed allocations in the sequence.
 
+---
+
+### 25. Borrowed Reference Memory Corruption in get_extra_info (2026-05-31)
+*   **The Bug:** When Python transport objects query `get_extra_info("sockname")`, and the socket address is already cached, the native Zig transport returned the cached `PyObject` reference directly without incrementing its reference count (a borrowed reference). Python code receiving this object decrements its reference count when discarded. Because the reference wasn't owned, the count dropped below 1, causing CPython to deallocate the socket name tuple while it was still cached in the native transport. Subsequent accesses triggered use-after-free or double-free memory corruption.
+*   **The Fix:** Updated `src/transports/stream/extra_info.zig` to use `python_c.py_newref(py_sockname)` when returning the cached socket name, ensuring Python receives an owned new reference.
+*   **The Lesson:** Any native API returning a cached CPython object to the interpreter must return a *new* reference (using `py_newref` or `py_incref`). Borrowing cached references that Python will later decref is a direct path to memory corruption and double-free exceptions.
+
+
 
 
 
