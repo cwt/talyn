@@ -12,6 +12,10 @@ if sys.version_info < (3, 13):
 zig_mode = os.environ.get("TALYN_OPTIMIZE", "Debug")
 zig_compiler_options = []
 
+zig_target = os.environ.get("TALYN_TARGET")
+if zig_target:
+    zig_compiler_options.append(f"-Dtarget={zig_target}")
+
 include_dir = sysconfig.get_config_var("INCLUDEPY")
 zig_compiler_options.append(f"-Dpython-include-dir={include_dir}")
 
