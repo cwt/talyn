@@ -42,7 +42,10 @@ pub fn wait_ready(ring: *std.os.linux.IoUring, set: *IO.BlockingTasksSet, data: 
 
     if (data.timeout) |*timeout| {
         sqe.flags |= std.os.linux.IOSQE_IO_LINK;
-        const timeout_sqe = try ring.link_timeout(0, timeout, 0);
+        const timeout_sqe = ring.link_timeout(0, timeout, 0) catch |err| {
+            ring.sq.sqe_tail -%= 1;
+            return err;
+        };
         timeout_sqe.flags |= std.os.linux.IOSQE_ASYNC;
     }
 
@@ -104,7 +107,10 @@ pub fn perform(ring: *std.os.linux.IoUring, set: *IO.BlockingTasksSet, data: Per
 
     if (data.timeout) |*timeout| {
         sqe.flags |= std.os.linux.IOSQE_IO_LINK;
-        const timeout_sqe = try ring.link_timeout(0, timeout, 0);
+        const timeout_sqe = ring.link_timeout(0, timeout, 0) catch |err| {
+            ring.sq.sqe_tail -%= 1;
+            return err;
+        };
         timeout_sqe.flags |= std.os.linux.IOSQE_ASYNC;
     }
 
@@ -137,7 +143,10 @@ pub fn perform_with_iovecs(ring: *std.os.linux.IoUring, set: *IO.BlockingTasksSe
 
     if (data.timeout) |*timeout| {
         sqe.flags |= std.os.linux.IOSQE_IO_LINK;
-        const timeout_sqe = try ring.link_timeout(0, timeout, 0);
+        const timeout_sqe = ring.link_timeout(0, timeout, 0) catch |err| {
+            ring.sq.sqe_tail -%= 1;
+            return err;
+        };
         timeout_sqe.flags |= std.os.linux.IOSQE_ASYNC;
     }
 

@@ -146,5 +146,13 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
 *   **The Fix:** In `split_nodes`, set `current_node.nkeys = (Degree - 1) / 2` when the split node has a parent, and only set it to `1` on root split.
 *   **The Lesson:** Never use hardcoded constants for data structure counts that depend on parameter/degree configurations. Always write unit tests with diverse parameters (e.g., larger degrees) to ensure algorithms scale correctly.
 
+---
+
+### 24. SQE Use-After-Free via link_timeout Failure Rollback (2026-05-31)
+*   **The Bug:** When a timeout-linked operation (e.g., `poll_add`, `read`, `write`) was submitted, the main SQE was allocated successfully from the `io_uring` ring buffer. If the subsequent `link_timeout` call failed (for instance, when the SQ ring was completely full), the error propagated, invoking `errdefer data_ptr.discard()` to recycle the task slot. However, the main SQE remained in the ring buffer, pointing to the recycled slot. During the next flush/submit, the kernel processed this dangling SQE, delivering completion events (CQEs) to the recycled slot (which may have been reused by an entirely different task), causing silent data corruption or use-after-free crashes.
+*   **The Fix:** Wrapped all `link_timeout` calls in `catch |err|` blocks. If `link_timeout` fails, we decrement `ring.sq.sqe_tail` by 1 to roll back the main SQE's slot allocation before propagating the error up, ensuring the SQE is never flushed to the kernel.
+*   **The Lesson:** When allocating sequential resources that must be submitted or updated atomically, always handle errors gracefully by rolling back any partially completed allocations in the sequence.
+
+
 
 

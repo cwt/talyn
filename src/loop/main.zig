@@ -273,4 +273,50 @@ test "syscall optimization" {
     try std.testing.expectEqual(@as(u32, 0), submitted2);
 }
 
+test "BUG-02: link_timeout failure rollback" {
+    const allocator = std.testing.allocator;
+    const loop = try allocator.create(Loop);
+    defer allocator.destroy(loop);
+
+    try loop.init(allocator, 1024);
+    defer loop.release();
+
+    const ring = &loop.io.ring;
+    const capacity = ring.sq.sqes.len;
+
+    // Clear any infrastructure SQEs
+    _ = try loop.io.flush_pending_sqes();
+
+    // Fill the ring until there is exactly 1 slot left
+    var i: usize = 0;
+    while (i < capacity - 1) : (i += 1) {
+        _ = try ring.get_sqe();
+    }
+
+    try std.testing.expectEqual(@as(u32, @intCast(capacity - 1)), ring.sq_ready());
+
+    const mock_callback = CallbackManager.Callback{
+        .func = undefined,
+        .cleanup = undefined,
+        .data = .{ .user_data = null },
+    };
+    const timeout_ts = std.os.linux.kernel_timespec{ .sec = 1, .nsec = 0 };
+    const wait_data = Scheduling.IO.WaitData{
+        .fd = 0,
+        .callback = mock_callback,
+        .timeout = timeout_ts,
+    };
+
+    const set = try loop.io.get_blocking_tasks_set();
+    const result = Scheduling.IO.Read.wait_ready(ring, set, wait_data);
+
+    // The call should fail with SubmissionQueueFull
+    try std.testing.expectError(error.SubmissionQueueFull, result);
+
+    // If rollback succeeded, ring.sq_ready() should still be capacity - 1, and NOT capacity!
+    try std.testing.expectEqual(@as(u32, @intCast(capacity - 1)), ring.sq_ready());
+}
+
 const Loop = @This();
+
+
