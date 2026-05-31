@@ -181,3 +181,19 @@ async def test_datagram_get_extra_info_socket():
         assert sock.type == socket.SOCK_DGRAM
     finally:
         t.close()
+
+
+@pytest.mark.asyncio
+async def test_datagram_sendto_invalid_addr():
+    loop = asyncio.get_running_loop()
+    t, p = await loop.create_datagram_endpoint(
+        DatagramProtocol, local_addr=("127.0.0.1", 0)
+    )
+    try:
+        # Pass an invalid address structure to trigger a failure in fromPyAddr,
+        # executing the corrected errdefer chain without double-freeing or leaking.
+        with pytest.raises((TypeError, OSError, ValueError)):
+            t.sendto(b"hello", 12345)
+    finally:
+        t.close()
+

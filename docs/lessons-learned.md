@@ -160,6 +160,21 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
 *   **The Fix:** Updated `src/transports/stream/extra_info.zig` to use `python_c.py_newref(py_sockname)` when returning the cached socket name, ensuring Python receives an owned new reference.
 *   **The Lesson:** Any native API returning a cached CPython object to the interpreter must return a *new* reference (using `py_newref` or `py_incref`). Borrowing cached references that Python will later decref is a direct path to memory corruption and double-free exceptions.
 
+---
+
+### 26. Double-Free and Struct Leak in Datagram sendto Error Path (2026-05-31)
+*   **The Bug:** In `src/transports/datagram/write.zig`, when `z_datagram_sendto` failed after allocating `SendToData`, two identical `errdefer allocator.free(data_buf)` statements were executed (one declared before allocating `SendToData`, and one declared after). This resulted in double-freeing the `data_buf` heap allocation. Simultaneously, the `SendToData` struct allocation itself was completely leaked because no `errdefer` cleaned it up.
+*   **The Fix:** Corrected the second `errdefer` to be `errdefer loop_data.allocator.destroy(sd)` so that the `SendToData` struct is correctly deallocated, and `data_buf` is only freed once.
+*   **The Lesson:** Carefully audit duplicate or copy-pasted `errdefer` blocks. When sequentially allocating multiple related heap resources, each step's `errdefer` must clean up exactly what that step allocated.
+
+---
+
+### 27. Setting Python Exceptions on Type/Value Verification in Native Code (2026-05-31)
+*   **The Bug:** When validating Python arguments inside native functions (like `fromPyAddr` in `src/utils/address.zig`), returning a generic `error.PythonError` without calling `raise_python_type_error` or `raise_python_value_error` causes CPython to detect that the function returned `NULL` without setting an exception, raising a `SystemError: <method ...> returned NULL without setting an exception`.
+*   **The Fix:** Updated `fromPyAddr` to explicitly call `python_c.raise_python_type_error("address must be a tuple\x00")` when the input address is not a tuple, satisfying CPython's exception-setting contracts.
+*   **The Lesson:** Never return `error.PythonError` (or a `NULL` PyObject) without ensuring a Python-level exception has been set via `PyErr_SetString` (or its `raise_python_*` wrappers). Any un-exceptioned NULL return results in a fatal interpreter-level `SystemError`.
+
+
 
 
 

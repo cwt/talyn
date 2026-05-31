@@ -102,7 +102,7 @@ pub fn z_datagram_sendto(self: *DatagramTransport.DatagramTransportObject, args:
     @memcpy(data_buf, @as([*]const u8, @ptrCast(pbuffer.buf))[0..len]);
 
     const sd = try loop_data.allocator.create(SendToData);
-    errdefer loop_data.allocator.free(data_buf);
+    errdefer loop_data.allocator.destroy(sd);
     sd.* = .{
         .alloc = loop_data.allocator,
         .transport = self,

@@ -285,7 +285,10 @@ pub const Address = extern union {
             return .{ .un = sun };
         }
 
-        if (python_c.PyTuple_Check(py_addr) <= 0) return error.PythonError;
+        if (python_c.PyTuple_Check(py_addr) <= 0) {
+            python_c.raise_python_type_error("address must be a tuple\x00");
+            return error.PythonError;
+        }
         const py_size = python_c.PyTuple_Size(py_addr);
 
         const py_host = python_c.PyTuple_GetItem(py_addr, 0) orelse return error.PythonError;
