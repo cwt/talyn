@@ -56,6 +56,12 @@ inline fn set_result(
     }else{
         try Future.Python.Result.future_fast_set_result(future_data, result);
     }
+    if (task.fut.py_loop) |py_loop| {
+        const loop_obj: *Loop.Python.LoopObject = @alignCast(@ptrCast(py_loop));
+        if (loop_obj.asyncio_tasks_set) |tasks_set| {
+            _ = python_c.PySet_Discard(tasks_set, @ptrCast(task));
+        }
+    }
     if (task.coro) |c| {
         python_c.py_decref(c);
         task.coro = null;

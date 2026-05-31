@@ -85,7 +85,7 @@ fn enqueue_signal_fd(self: *UnixSignals) !void {
     const blocking_task_id = self.blocking_task_id;
     const loop = self.loop;
     if (blocking_task_id > 0) {
-        _ = try loop.io.queue(.{
+        _ = try loop.io.queue_unlocked(.{
             .Cancel = blocking_task_id
         });
     }
@@ -94,7 +94,7 @@ fn enqueue_signal_fd(self: *UnixSignals) !void {
         .buffer = @as([*]u8, @ptrCast(&self.signalfd_info))[0..@sizeOf(std.os.linux.signalfd_siginfo)],
     };
 
-    self.blocking_task_id = try loop.io.queue(.{
+    self.blocking_task_id = try loop.io.queue_unlocked(.{
         .PerformRead = .{
             .fd = self.fd,
             .data = buffer_to_read,

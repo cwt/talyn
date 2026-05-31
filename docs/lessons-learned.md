@@ -124,3 +124,12 @@ Priority 22 attempted to eliminate `IOSQE_ASYNC` from socket `accept`/`connect` 
 *   **Why Non-GIL Python Was Fine:** Free-threaded Python processes callbacks concurrently, keeping the multi-step pipeline flowing. GIL Python processes them sequentially, so each extra round-trip compounds into a livelock under load.
 *   **The Lesson:** Don't replace a simple, stable kernel path with a complex user-space state machine just to avoid workqueue overhead. The 0.67× speed on Socket Ops is an inherent characteristic of the io_uring workqueue path under GIL Python, not a bug to be fixed. More event loop round-trips ≠ better performance. Reverted to changeset 566 code. See [Priority 22](priorities/22-fused-user-space-socket-state-machine-2026.md).
 
+---
+
+### 21. Recursive SpinMutex Deadlock Under Free-Threading (2026-05-31)
+When standard CPython's GIL is disabled under free-threading (`python3.13t` / `python3.14t`), standard thread-safe locking is active, using a native `SpinMutex` (implemented on top of `std.atomic.Mutex`). If a thread attempts to acquire this lock recursively, it will result in an infinite deadlock spin.
+*   **The Bug:** Native wrapper functions (such as `z_loop_delayed_call`, `z_loop_add_watcher`/`z_loop_remove_watcher`, `fast_handle_cancel`, and `enqueue_signal_fd`) held the loop's mutex lock to perform atomic operations. However, they then invoked `IO.queue(...)` to register timers, cancellations, or fd watchers in `io_uring`. Since `IO.queue` locked the loop's mutex *again*, this caused an immediate self-deadlock spin, freezing unit tests at the very first timeout/sleep or watcher adjustment.
+*   **The Fix:** Split `IO.queue` into a thread-safe `queue(...)` wrapper that acquires the lock, and a non-locking `queue_unlocked(...)` helper. Updated all native functions executing under the loop mutex to invoke `queue_unlocked(...)` directly, bypassing the duplicate locking path.
+*   **The Lesson:** Never acquire a non-recursive mutex recursively. When building locking APIs, always provide unlocked internal helper functions (e.g. `_unlocked` or `_nonthreadsafe`) to be used safely from paths where the calling context has already acquired the lock.
+
+

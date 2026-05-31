@@ -232,7 +232,7 @@ inline fn z_loop_delayed_call(
         .cleanup = &Handle.release_python_generic_callback,
         .data = CallbackManager.CallbackData.init_python(py_timer_handle, &py_timer_handle.handle.python_payload),
     };
-    py_timer_handle.handle.blocking_task_id = try loop_data.io.queue(.{
+    py_timer_handle.handle.blocking_task_id = try loop_data.io.queue_unlocked(.{
         .WaitTimer = .{
             .callback = callback,
             .duration = time,

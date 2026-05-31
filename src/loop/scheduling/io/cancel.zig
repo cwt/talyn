@@ -10,9 +10,5 @@ pub fn perform(ring: *std.os.linux.IoUring, task_id: usize) !usize {
         _ = try ring.cancel(0, task_id, 0);
     }
 
-    const ret = try IO.submit_guaranteed(ring);
-    if (ret != 1) {
-        return error.SQENotSubmitted;
-    }
     return 0;
 }

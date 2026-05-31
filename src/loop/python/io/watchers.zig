@@ -200,7 +200,7 @@ inline fn z_loop_add_watcher(
         // Cancel in-flight IO; cleanup callback will free the struct & decref handle
         if (existing_watcher_data.blocking_task_id != 0) {
             existing_watcher_data.fd = -1;
-            _ = try loop_data.io.queue(.{ .Cancel = existing_watcher_data.blocking_task_id });
+            _ = try loop_data.io.queue_unlocked(.{ .Cancel = existing_watcher_data.blocking_task_id });
         } else {
             // No in-flight IO, clean up directly
             python_c.py_decref(@ptrCast(existing_watcher_data.handle));
@@ -236,7 +236,7 @@ inline fn z_loop_add_watcher(
         // }
     };
 
-    const blocking_task_id = try loop_data.io.queue(
+    const blocking_task_id = try loop_data.io.queue_unlocked(
         switch (operation) {
             .WaitReadable => Loop.Scheduling.IO.BlockingOperationData{
                 .WaitReadable = .{
@@ -324,7 +324,7 @@ inline fn z_loop_remove_watcher(
         }
 
         existing_watcher_data.fd = -1;
-        _ = try loop_data.io.queue(
+        _ = try loop_data.io.queue_unlocked(
             .{
                 .Cancel = blocking_task_id
             }

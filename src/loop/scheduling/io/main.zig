@@ -64,8 +64,9 @@ pub const BlockingTask = struct {
     write_iov: std.posix.iovec = undefined,
 
     inline fn reset(self: *BlockingTask) *BlockingTasksSet {
+        const pool_start = @intFromPtr(self) - @as(usize, self.index) * @sizeOf(BlockingTask);
         const set: *BlockingTasksSet = @ptrFromInt(
-            @intFromPtr(self) - @as(usize, self.index) * @sizeOf(BlockingTask)
+            pool_start - @offsetOf(BlockingTasksSet, "task_data_pool")
         );
 
         self.data = .none;
@@ -158,13 +159,14 @@ pub const BlockingTasksSet = struct {
 
     loop: *Loop,
     index: u16,
-    finished_tasks: u16,
+    active_tasks: u16,
 
     disattached: bool,
 
     list: *BlockingTasksSetLinkedList,
+    node: BlockingTasksSetLinkedList.Node,
 
-    pub fn init(self: *BlockingTasksSet, list: *BlockingTasksSetLinkedList, loop: *Loop) void {
+    pub fn init(self: *BlockingTasksSet, node: BlockingTasksSetLinkedList.Node, list: *BlockingTasksSetLinkedList, loop: *Loop) void {
         for (&self.task_data_pool, 0..) |*task, index| {
             task.* = .{
                 .data = .none,
@@ -174,23 +176,20 @@ pub const BlockingTasksSet = struct {
         }
 
         self.index = 0;
-        self.finished_tasks = 0;
+        self.active_tasks = 0;
         self.disattached = false;
 
         self.loop = loop;
         self.list = list;
+        self.node = node;
     }
 
     pub fn deinit(self: *BlockingTasksSet) void { 
-        const node: BlockingTasksSetLinkedList.Node = @ptrFromInt(
-            @intFromPtr(self) - @offsetOf(BlockingTasksSetLinkedList._linked_list_node, "data")
-        );
-
         if (self.disattached) {
-            self.list.unlink_node(node) catch {};
+            self.list.unlink_node(self.node) catch {};
         }
 
-        self.list.release_node(node);
+        self.list.release_node(self.node);
     }
 
     pub fn cancel_all(self: *BlockingTasksSet, loop: *Loop) !void {
@@ -207,7 +206,7 @@ pub const BlockingTasksSet = struct {
 
     inline fn reset(self: *BlockingTasksSet) void {
         self.index = 0;
-        self.finished_tasks = 0;
+        self.active_tasks = 0;
     }
 
     pub fn push(
@@ -226,6 +225,7 @@ pub const BlockingTasksSet = struct {
         data_slot.data = if (callback) |v| .{ .callback = v.* } else .none;
         data_slot.operation = operation;
         
+        self.active_tasks += 1;
         @atomicStore(u16, &self.index, index + 1, .release);
 
         return data_slot;
@@ -233,12 +233,13 @@ pub const BlockingTasksSet = struct {
 
     pub inline fn pop(self: *BlockingTasksSet) void {
         self.index -= 1;
+        self.active_tasks -= 1;
         self.loop.reserved_slots -= 1;
     }
 
     pub inline fn inc_finished_tasks_counter(self: *BlockingTasksSet) void {
-        const finished_tasks = self.finished_tasks + 1;
-        if (finished_tasks == self.index) {
+        const active_tasks = self.active_tasks - 1;
+        if (active_tasks == 0) {
             if (self.disattached) {
                 self.deinit();
             } else {
@@ -247,7 +248,7 @@ pub const BlockingTasksSet = struct {
             return;
         }
 
-        self.finished_tasks = finished_tasks;
+        self.active_tasks = active_tasks;
     }
 
     pub inline fn free(self: *BlockingTasksSet) bool {
@@ -374,7 +375,7 @@ set_node: BlockingTasksSetLinkedList.Node = undefined,
 set: *BlockingTasksSet = undefined,
 
 ring: std.os.linux.IoUring = undefined,
-ring_blocked: bool = false,
+ring_blocked: u8 = 0,
 
 eventfd: std.posix.fd_t = -1,
 eventfd_val: u64 = 0,
@@ -394,7 +395,7 @@ pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
 
     self.set_node = try self.busy_sets.create_new_node(undefined);
     self.set = &self.set_node.data;
-    self.set.init(&self.busy_sets, loop);
+    self.set.init(self.set_node, &self.busy_sets, loop);
     errdefer self.set.deinit();
 
     self.loop = loop;
@@ -415,7 +416,7 @@ pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
     self.blocking_ready_tasks = try allocator.alloc(std.os.linux.io_uring_cqe, TotalTasksItems);
     errdefer allocator.free(self.blocking_ready_tasks);
 
-    self.ring_blocked = false;
+    @atomicStore(u8, &self.ring_blocked, 0, .seq_cst);
 
     // Initialize fixed file table for IOSQE_FIXED_FILE optimization.
     // Raise RLIMIT_NOFILE if needed — fixed file table needs TotalTasksItems slots.
@@ -591,7 +592,7 @@ pub fn get_blocking_tasks_set(self: *IO) !*BlockingTasksSet {
     errdefer self.busy_sets.release_node(new_node);
 
     const new_set = &new_node.data;
-    new_set.init(&self.busy_sets, self.loop);
+    new_set.init(new_node, &self.busy_sets, self.loop);
 
     self.busy_sets.append_node(self.set_node);
 
@@ -607,8 +608,9 @@ pub fn flush_pending_sqes(self: *IO) !u32 {
     return try submit_guaranteed(&self.ring);
 }
 
-pub fn queue(self: *IO, event: BlockingOperationData) !usize {
+pub fn queue_unlocked(self: *IO, event: BlockingOperationData) !usize {
     if (self.ring.fd < 0) return error.LoopDeinitialized;
+
     const set = try self.get_blocking_tasks_set();
 
     if (event == .Cancel) {
@@ -630,11 +632,23 @@ pub fn queue(self: *IO, event: BlockingOperationData) !usize {
         .SocketAccept => |data| Socket.accept(&self.ring, set, data)
     };
 
-    if (event != .Cancel and self.ring.sq_ready() >= TotalTasksItems - 2) {
+    if (event == .Cancel or (event != .Cancel and self.ring.sq_ready() >= TotalTasksItems - 2)) {
         _ = try self.flush_pending_sqes();
     }
 
+    if (@atomicLoad(u8, &self.ring_blocked, .seq_cst) != 0) {
+        try self.wakeup_eventfd();
+    }
+
     return data_ptr;
+}
+
+pub fn queue(self: *IO, event: BlockingOperationData) !usize {
+    const mutex = &self.loop.mutex;
+    mutex.lock();
+    defer mutex.unlock();
+
+    return try self.queue_unlocked(event);
 }
 
 pub fn submit_guaranteed(ring: *std.os.linux.IoUring) !u32 {

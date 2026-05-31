@@ -6,7 +6,7 @@ pub inline fn dispatch_nonthreadsafe(self: *Loop, callback: *const CallbackManag
     const ready_queue = &self.ready_tasks_queues[self.ready_tasks_queue_index];
     try ready_queue.push_or_grow(callback.*);
 
-    if (self.io.ring_blocked) {
+    if (@atomicLoad(u8, &self.io.ring_blocked, .seq_cst) != 0) {
         try self.io.wakeup_eventfd();
     }
 }
@@ -26,7 +26,7 @@ pub inline fn dispatch_guaranteed_nonthreadsafe(self: *Loop, callback: *const Ca
 
     try ready_queue.push_or_grow(callback.*);
 
-    if (self.io.ring_blocked) {
+    if (@atomicLoad(u8, &self.io.ring_blocked, .seq_cst) != 0) {
         try self.io.wakeup_eventfd();
     }
 }

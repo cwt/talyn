@@ -230,7 +230,7 @@ pub inline fn fast_handle_cancel(self: *PythonHandleObject) !void {
             mutex.lock();
             defer mutex.unlock();
 
-            _ = try loop_data.io.queue(.{
+            _ = try loop_data.io.queue_unlocked(.{
                 .Cancel = blocking_task_id
             });
         }

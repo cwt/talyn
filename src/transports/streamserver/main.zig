@@ -25,6 +25,7 @@ pub const StreamServerObject = extern struct {
     server_ref: ?PyObject,
 
     pub fn deinit(self: *StreamServerObject) void {
+        self.closed = true;
         python_c.py_xdecref(self.loop);
         self.loop = null;
         python_c.py_xdecref(self.protocol_factory);
@@ -153,6 +154,12 @@ fn accept_callback(data: *const CallbackManager.CallbackData) !void {
     const server: *StreamServerObject = @alignCast(@ptrCast(data.user_data.?));
     if (data.cancelled() or server.closed) return;
 
+    defer {
+        if (!server.closed and server.loop != null) {
+            enqueue_accept(server) catch {};
+        }
+    }
+
     const io_uring_err = data.io_uring_err();
     if (io_uring_err != .SUCCESS) {
         const exception = python_c.PyObject_CallFunction(
@@ -172,8 +179,6 @@ fn accept_callback(data: *const CallbackManager.CallbackData) !void {
         const eagain = @intFromEnum(std.os.linux.E.AGAIN);
         const eintr = @intFromEnum(std.os.linux.E.INTR);
         if (errno_val == eagain or errno_val == eintr) {
-            // Re-arm poll
-            try enqueue_accept(server);
             return;
         }
         return error.SystemResources;
@@ -199,9 +204,6 @@ fn accept_callback(data: *const CallbackManager.CallbackData) !void {
     const ret = python_c.PyObject_CallOneArg(connection_made, @ptrCast(transport))
         orelse return error.PythonError;
     python_c.py_decref(ret);
-
-    // Re-arm poll for next connection
-    try enqueue_accept(server);
 
     // Notify server of new connection
     if (server.server_ref) |srv| {
