@@ -400,10 +400,29 @@ pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
 
     self.loop = loop;
 
-    self.ring = try std.os.linux.IoUring.init(
-        TotalTasksItems,
-        0,
-    );
+    const coop_flag = std.os.linux.IORING_SETUP_COOP_TASKRUN;
+    const single_issuer_flag = std.os.linux.IORING_SETUP_SINGLE_ISSUER;
+
+    self.ring = init_ring: {
+        // Try combined Coop Taskrun + Single Issuer (Linux 6.0+)
+        if (std.os.linux.IoUring.init(TotalTasksItems, coop_flag | single_issuer_flag)) |r| {
+            break :init_ring r;
+        } else |err| {
+            if (err == error.ArgumentsInvalid) {
+                // Try only Coop Taskrun (Linux 5.11+)
+                if (std.os.linux.IoUring.init(TotalTasksItems, coop_flag)) |r| {
+                    break :init_ring r;
+                } else |err2| {
+                    if (err2 == error.ArgumentsInvalid) {
+                        // Fall back to default ring flags (Linux 5.1+)
+                        break :init_ring try std.os.linux.IoUring.init(TotalTasksItems, 0);
+                    }
+                    return err2;
+                }
+            }
+            return err;
+        }
+    };
     errdefer self.ring.deinit();
 
     _ = std.os.linux.fcntl(self.ring.fd, std.posix.F.SETFD, @intCast(std.posix.FD_CLOEXEC));
