@@ -79,9 +79,8 @@ fn ensure_fd_limit() void {
     // Raise RLIMIT_NOFILE before any types are initialized.
     // pytest collection and IO fixed-file registration both need
     // more than the SSH-default 1024 fds.
-    var rlim: std.os.linux.rlimit = undefined;
-    _ = std.os.linux.getrlimit(.NOFILE, &rlim);
-    _ = std.os.linux.setrlimit(.NOFILE, &.{ .cur = 8256, .max = rlim.max });
+    const rlim = std.posix.getrlimit(.NOFILE) catch return;
+    std.posix.setrlimit(.NOFILE, .{ .cur = 8256, .max = rlim.max }) catch {};
 }
 
 fn initialize_talyn_types() !void {
