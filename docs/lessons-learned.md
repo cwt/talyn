@@ -195,3 +195,10 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
 *   **The Fix:** Removed the redundant `python_c.py_newref()` from the call site at line 92, passing `exception` directly as a borrowed reference. `future_fast_set_exception` already takes ownership by calling `py_newref` internally — consistent with how `future_fast_set_result` works.
 *   **The Lesson:** When a function takes ownership of a borrowed reference via `py_newref`, all callers must pass raw borrowed references. Inconsistent ownership conventions between callers and callees cause insidious reference leaks. Always verify reference count discipline by writing tests using `sys.getrefcount()` — especially for frequently-called APIs like `set_exception`.
 
+---
+
+### 31. SSL create_connection Silently Drops All Kwargs (2026-06-01)
+*   **The Bug:** In `_create_ssl_connection` at `talyn/loop.py:841`, when wrapping a non-SSL connection inside an SSL transport, the method called `_Loop.create_connection(self, SP, host, port)` without passing any of the user-provided keyword arguments (`family`, `proto`, `flags`, `sock`, `local_addr`, `happy_eyeballs_delay`, `interleave`, `all_errors`). Every connection parameter except host and port was silently discarded when SSL was active.
+*   **The Fix:** Build a kwargs dict from the non-None/non-zero connection parameters and pass them through to `_Loop.create_connection` via `**kwargs`.
+*   **The Lesson:** When wrapping an internal call that mirrors the public API, always forward all parameters explicitly. Silent kwargs dropping is a class of bug that's invisible to callers who don't verify that their extra parameters take effect. Use `**kwargs` dict construction with only non-default values to avoid passing `None` values that might conflict with internal parameter validation.
+

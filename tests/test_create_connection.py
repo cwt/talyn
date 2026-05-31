@@ -1,6 +1,8 @@
 import asyncio
 import socket
 import threading
+from collections.abc import Callable
+from typing import Any
 
 import pytest
 
@@ -272,3 +274,59 @@ def test_create_connection_all_errors() -> None:
             )
 
     talyn.run(main())
+
+
+def test_create_connection_ssl_passes_kwargs() -> None:
+    """BUG-19: _create_ssl_connection must forward connection kwargs."""
+    from talyn.loop import Loop as TalynLoop
+    from unittest.mock import patch
+    import ssl
+
+    captured_kwargs: dict[str, object] = {}
+
+    async def patched_create_connection(
+        self: TalynLoop,
+        protocol_factory: Callable[[], asyncio.BaseProtocol],
+        host: str | None = None,
+        port: int | None = None,
+        **kwargs: Any,
+    ) -> tuple[asyncio.Transport, asyncio.BaseProtocol]:
+        nonlocal captured_kwargs
+        captured_kwargs = kwargs
+        raise OSError("intentional stop")
+
+    async def test() -> None:
+        loop = asyncio.get_running_loop()
+        ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+        with patch.object(TalynLoop, "create_connection", patched_create_connection):
+            with pytest.raises(OSError, match="intentional stop"):
+                await loop.create_connection(
+                    asyncio.Protocol,
+                    "127.0.0.1",
+                    12345,
+                    ssl=ctx,
+                    family=socket.AF_INET,
+                    local_addr=("0.0.0.0", 0),
+                    happy_eyeballs_delay=0.1,
+                    interleave=1,
+                    all_errors=False,
+                )
+
+        assert "family" in captured_kwargs, (
+            f"family kwarg was dropped! captured_kwargs={captured_kwargs}"
+        )
+        assert captured_kwargs.get("family") == socket.AF_INET
+        assert captured_kwargs.get("local_addr") == ("0.0.0.0", 0)
+        assert captured_kwargs.get("happy_eyeballs_delay") == 0.1
+        assert captured_kwargs.get("interleave") == 1
+        assert captured_kwargs.get("all_errors") == False
+
+    from talyn import Loop
+    loop = Loop()
+    try:
+        loop.run_until_complete(test())
+    finally:
+        loop.close()

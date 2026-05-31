@@ -838,11 +838,28 @@ class Loop(_Loop):
                 if d:
                     self._raw_t.write(d)
 
+        kwargs: dict[str, Any] = {}
+        if family:
+            kwargs["family"] = family
+        if proto:
+            kwargs["proto"] = proto
+        if sock is not None:
+            kwargs["sock"] = sock
+        if local_addr is not None:
+            kwargs["local_addr"] = local_addr
+        if happy_eyeballs_delay is not None:
+            kwargs["happy_eyeballs_delay"] = happy_eyeballs_delay
+        if interleave is not None:
+            kwargs["interleave"] = interleave
+        if all_errors:
+            kwargs["all_errors"] = all_errors
+
         transport, _ = await _Loop.create_connection(
             self,
             SP,
             host,
             port,
+            **kwargs,
         )
 
         try:
