@@ -50,6 +50,7 @@ pub fn future_cancel(
         python_c.py_xdecref(cancel_msg_py_object);
         return utils.handle_zig_function_error(err, null);
     };
+    python_c.py_xdecref(cancel_msg_py_object);
 
     return python_c.PyBool_FromLong(@intCast(@intFromBool(ret)));
 }

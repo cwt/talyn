@@ -466,3 +466,36 @@ def test_future_get_result_exception_no_reference_leak() -> None:
         )
     finally:
         loop.close()
+
+
+def test_future_cancel_msg_no_reference_leak() -> None:
+    loop = Loop()
+    try:
+        future = Future(loop=loop)
+        msg = "cancelled by user"
+        ref_before = sys.getrefcount(msg)
+
+        future.cancel(msg=msg)
+        ref_after_cancel = sys.getrefcount(msg)
+
+        future2 = Future(loop=loop)
+        future2.cancel(msg=msg)
+        ref_after_cancel2 = sys.getrefcount(msg)
+
+        del future
+        del future2
+        import gc
+        gc.collect()
+        ref_after_del = sys.getrefcount(msg)
+
+        if not sys._is_gil_enabled():
+            return
+
+        assert ref_after_cancel2 - ref_after_cancel == 1, (
+            f"Second cancel should add exactly 1 ref, got {ref_after_cancel2 - ref_after_cancel}"
+        )
+        assert ref_after_del < ref_after_cancel2, (
+            f"Deleting futures should reduce refcount, but {ref_after_del} >= {ref_after_cancel2}"
+        )
+    finally:
+        loop.close()
