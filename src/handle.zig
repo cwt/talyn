@@ -56,8 +56,10 @@ pub fn callback_for_python_generic_callbacks(data: *const CallbackManager.Callba
 
     const py_context = handle.contextvars.?;
     if (python_c.PyContext_Enter(py_context) < 0) {
+        python_c.py_decref(@ptrCast(handle));
         return error.PythonError;
     }
+    defer python_c.py_decref(@ptrCast(handle));
     defer _ = python_c.PyContext_Exit(py_context);
 
     var result: PyObject = undefined;
@@ -81,8 +83,6 @@ pub fn callback_for_python_generic_callbacks(data: *const CallbackManager.Callba
             orelse return error.PythonError;
     }
     python_c.py_decref(result);
-
-    python_c.py_decref(@ptrCast(handle));
 }
 
 pub inline fn fast_new_handle(

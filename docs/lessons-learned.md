@@ -202,3 +202,15 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
 *   **The Fix:** Build a kwargs dict from the non-None/non-zero connection parameters and pass them through to `_Loop.create_connection` via `**kwargs`.
 *   **The Lesson:** When wrapping an internal call that mirrors the public API, always forward all parameters explicitly. Silent kwargs dropping is a class of bug that's invisible to callers who don't verify that their extra parameters take effect. Use `**kwargs` dict construction with only non-default values to avoid passing `None` values that might conflict with internal parameter validation.
 
+---
+
+### 32. Defer Ordering and Incomplete Cleanup in Callback Execution (2026-06-01)
+*   **The Bug:** Commit c02314f (Fix BUG-05) added `defer _ = python_c.PyContext_Exit(py_context);` to ensure context cleanup on all exit paths. However, it introduced a segfault because the `py_decref(handle)` cleanup was not properly handled. The original code had `py_decref(handle)` only on the success path at line 85, so error paths leaked the handle. Adding `defer py_decref(handle)` after the context defer created a use-after-free: Zig defers execute in LIFO order, so the handle was decref'd BEFORE the context was exited, but the handle holds the context reference.
+*   **The Fix:** Added both defers in the correct order immediately after successful `PyContext_Enter`:
+    ```zig
+    defer python_c.py_decref(@ptrCast(handle));  // declared first, runs LAST
+    defer _ = python_c.PyContext_Exit(py_context);  // declared second, runs FIRST
+    ```
+    This ensures the context is exited before the handle is decref'd, and both cleanups happen on all exit paths (success and error).
+*   **The Lesson:** Zig's `defer` statements execute in **LIFO (Last In, First Out) order**. When multiple defers have dependencies (e.g., object A holds a reference to object B), the defer that should run LAST must be declared FIRST. Always verify defer ordering when cleaning up interdependent resources. Additionally, when adding defers to fix resource leaks, ensure ALL resources are covered — partial cleanup is worse than no cleanup because it creates subtle use-after-free bugs that are harder to debug than obvious leaks.
+
