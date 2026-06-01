@@ -31,7 +31,7 @@ pub fn close_transports(
     write_transport: *WriteTransport,
     exception: PyObject
 ) void {
-    const closed_already = read_transport.closed or write_transport.closed;
+    const closed_already = transport.closed;
 
     read_transport.close() catch {};
     write_transport.close() catch {};
