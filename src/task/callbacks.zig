@@ -131,9 +131,11 @@ inline fn cancel_future_object(
     task: *Task.PythonTaskObject, future: anytype
 ) !void {
     if (@TypeOf(future) == *Future.Python.FutureObject) {
+        // Pass cancel_msg as a borrowed reference. future_fast_cancel creates
+        // its own reference internally (via py_newref / PyObject_Str), so we
+        // must NOT pre-incref here — doing so leaks one reference per cancel
+        // (the BUG-25 pattern). Residual from the BUG-13 fix.
         const cancel_msg = task.fut.cancel_msg_py_object;
-        python_c.py_xincref(cancel_msg);
-
         _ = try Future.Python.Cancel.future_fast_cancel(
             future, utils.get_data_ptr(Future, future), cancel_msg
         );
@@ -477,7 +479,17 @@ fn _execute_task_throw(task: *Task.PythonTaskObject, task_exception: ?PyObject) 
 
     const leave_ret = python_c.PyObject_Vectorcall(
         utils.PythonImports.leave_task_func, &enter_task_args, enter_task_args.len, null
-    ) orelse return error.PythonError;
+    ) orelse {
+        // leave_task_func failed. If check_gen_ret had already captured an
+        // exception into `exception`, re-raise it (it is the more meaningful
+        // error for the user); otherwise leave Python's current error state
+        // (from leave_task_func itself) intact. Either way, decref the task
+        // so we don't leak it.
+        if (exception) |exc| {
+            python_c.PyErr_SetRaisedException(exc);
+        }
+        return error.PythonError;
+    };
     python_c.py_decref(leave_ret);
 
 
