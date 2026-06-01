@@ -197,3 +197,31 @@ async def test_datagram_sendto_invalid_addr():
     finally:
         t.close()
 
+
+@pytest.mark.asyncio
+async def test_datagram_close_with_pending_operations():
+    """Test that closing a datagram transport with pending read/write
+    io_uring operations does not crash. BUG-20."""
+    loop = asyncio.get_running_loop()
+
+    t1, p1 = await loop.create_datagram_endpoint(
+        EchoServerProtocol, local_addr=("127.0.0.1", 0)
+    )
+    addr = t1.get_extra_info("sockname")
+
+    t2, p2 = await loop.create_datagram_endpoint(
+        DatagramProtocol, local_addr=("127.0.0.1", 0)
+    )
+
+    # Send while reads are pending on both transports
+    t2.sendto(b"ping", addr)
+
+    # Close immediately while operations are still in-flight
+    t2.close()
+    t1.close()
+
+    await asyncio.sleep(0.1)
+
+    assert t2.is_closing()
+    assert t1.is_closing()
+

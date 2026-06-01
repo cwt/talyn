@@ -29,6 +29,7 @@ pub const DatagramTransportObject = extern struct {
     writing_low_water_mark: usize,
     is_writing: bool,
     closed: bool,
+    read_task_id: usize = 0,
     fixed_file_index: u16 = 0,
     fixed_buffer_index: u16 = 0xffff,
     buffer_ptr: ?[*]u8 = null,
@@ -157,6 +158,18 @@ fn datagram_close(self: ?*DatagramTransportObject, _: ?PyObject) callconv(.c) ?P
     const instance = self.?;
     if (!instance.closed) {
         instance.closed = true;
+        if (instance.loop) |loop| {
+            const loop_obj: *LoopObject = @alignCast(@ptrCast(loop));
+            const loop_data = utils.get_data_ptr(Loop, loop_obj);
+            if (loop_data.initialized) {
+                if (instance.read_task_id != 0) {
+                    _ = loop_data.io.queue(.{ .Cancel = instance.read_task_id }) catch {};
+                }
+                if (instance.fd >= 0) {
+                    _ = loop_data.io.queue(.{ .CancelByFd = @intCast(instance.fd) }) catch {};
+                }
+            }
+        }
         if (instance.fd >= 0) {
             _ = std.os.linux.close(instance.fd);
             instance.fd = -1;

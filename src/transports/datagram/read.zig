@@ -38,7 +38,7 @@ pub fn queue_read(self: *DatagramTransport.DatagramTransportObject) !void {
 
     const ffi = if (self.fixed_file_index != 0) self.fixed_file_index else null;
 
-    _ = try loop_data.io.queue(.{
+    self.read_task_id = try loop_data.io.queue(.{
         .PerformRecvMsg = .{
             .fd = self.fd,
             .fixed_file_index = ffi,
@@ -67,6 +67,7 @@ const ReadData = struct {
 fn cleanup_read(ptr: ?*anyopaque) void {
     const rd: *ReadData = @ptrCast(@alignCast(ptr.?));
     const transport = rd.transport;
+    transport.read_task_id = 0;
     python_c.py_decref(@ptrCast(transport));
     rd.alloc.destroy(rd);
 }

@@ -29,6 +29,7 @@ pub const BlockingOperation = enum {
     PerformSendMsg,
     WaitTimer,
     Cancel,
+    CancelByFd,
     SocketShutdown,
     SocketConnect,
     SocketAccept,
@@ -96,6 +97,7 @@ pub const BlockingTask = struct {
                 }
             },
             .Cancel => {},
+            .CancelByFd => {},
             .PerformWriteV, .PerformWrite, .PerformSendMsg => {
                 switch (result) {
                     .SUCCESS => {},
@@ -303,6 +305,7 @@ pub const BlockingOperationData = union(BlockingOperation) {
     PerformSendMsg: Write.SendMsgData,
     WaitTimer: Timer.WaitData,
     Cancel: usize,
+    CancelByFd: usize,
     SocketShutdown: Socket.ShutdownData,
     SocketConnect: Socket.ConnectData,
     SocketAccept: Socket.AcceptData,
@@ -640,7 +643,7 @@ pub fn queue_unlocked(self: *IO, event: BlockingOperationData) !usize {
 
     const set = try self.get_blocking_tasks_set();
 
-    if (event == .Cancel) {
+    if (event == .Cancel or event == .CancelByFd) {
         _ = try self.flush_pending_sqes();
     }
 
@@ -655,11 +658,12 @@ pub fn queue_unlocked(self: *IO, event: BlockingOperationData) !usize {
         .WaitTimer => |data| Timer.wait(&self.ring, set, data),
         .SocketShutdown => |data| Socket.shutdown(&self.ring, set, data),
         .Cancel => |data| Cancel.perform(&self.ring, data),
+        .CancelByFd => |fd| Cancel.perform_by_fd(&self.ring, fd),
         .SocketConnect => |data| Socket.connect(&self.ring, set, data),
         .SocketAccept => |data| Socket.accept(&self.ring, set, data)
     };
 
-    if (event == .Cancel or (event != .Cancel and self.ring.sq_ready() >= TotalTasksItems - 2)) {
+    if (event == .Cancel or event == .CancelByFd or (event != .Cancel and event != .CancelByFd and self.ring.sq_ready() >= TotalTasksItems - 2)) {
         _ = try self.flush_pending_sqes();
     }
 
