@@ -582,16 +582,30 @@ fn prepare_data(
     const control_data = try allocator.create(ControlData);
     errdefer allocator.destroy(control_data);
 
-    control_data.allocator = allocator;
-    control_data.arena = std.heap.ArenaAllocator.init(allocator);
-    control_data.loop = loop;
+    // Use a struct literal so the compiler enforces that every field of
+    // ControlData is explicitly initialized here. Adding a new field to
+    // ControlData without initializing it in prepare_data will cause a
+    // compile error, preventing the class of bug fixed in this commit
+    // (record_evicted left uninitialized → garbage bool → silent wrong behaviour).
+    control_data.* = ControlData{
+        .allocator      = allocator,
+        .arena          = std.heap.ArenaAllocator.init(allocator),
+        .loop           = loop,
+        .user_callbacks = .{ .items = &.{}, .capacity = 0 },
+        // .record and .queries_data are filled in just below; use undefined
+        // only for fields that are unconditionally assigned before any use.
+        .record         = undefined,
+        .queries_data   = undefined,
+        .tasks_finished = 0,
+        .resolved       = false,
+        .record_evicted = false,
+        // .node is set by create_new_node / append_node below.
+        .node           = undefined,
+    };
     const arena_allocator = control_data.arena.allocator();
 
-    control_data.user_callbacks = .{ .items = &.{}, .capacity = 0 };
     control_data.record = try cache_slot.create_new_record(hostname, control_data);
 
-    control_data.resolved = false;
-    control_data.tasks_finished = 0;
     errdefer {
         control_data.release();
     }
@@ -810,5 +824,35 @@ test "random DNS transaction IDs are not trivially predictable" {
         }
     }
     try std.testing.expect(!all_same);
+}
+
+test "ControlData.record_evicted is false after struct-literal init (regression: e1db5b9)" {
+    // This test guards against the bug where prepare_data used field-by-field
+    // assignment and forgot to set record_evicted, leaving it as undefined
+    // garbage bytes in ReleaseSafe/Release builds.  The struct-literal
+    // initialisation in prepare_data must cover every field; the compiler
+    // enforces this at compile time, but we also verify the runtime value to
+    // make the intent unmistakable.
+    const control_data = try std.testing.allocator.create(ControlData);
+    defer std.testing.allocator.destroy(control_data);
+
+    // Mimic exactly what prepare_data now does: struct-literal assignment.
+    control_data.* = ControlData{
+        .allocator      = std.testing.allocator,
+        .arena          = std.heap.ArenaAllocator.init(std.testing.allocator),
+        .loop           = undefined,
+        .user_callbacks = .{ .items = &.{}, .capacity = 0 },
+        .record         = undefined,
+        .queries_data   = undefined,
+        .tasks_finished = 0,
+        .resolved       = false,
+        .record_evicted = false,
+        .node           = undefined,
+    };
+    defer control_data.arena.deinit();
+
+    try std.testing.expect(!control_data.record_evicted);
+    try std.testing.expect(!control_data.resolved);
+    try std.testing.expectEqual(@as(usize, 0), control_data.tasks_finished);
 }
 

@@ -375,3 +375,40 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
 *   **The Fix:** Added `read_task_id: usize = 0` to track the pending read operation. In `datagram_close`, before closing the fd, the pending read is cancelled by its task_id and all pending operations for the fd are cancelled via `IORING_ASYNC_CANCEL_FD`. The Cancel operation flushes all pending SQEs to the kernel before the fd is closed. Added `perform_by_fd` function to `cancel.zig` and `CancelByFd` variant to the io scheduler to support fd-based cancellation of all in-flight operations.
 *   **The Lesson:** When an io_uring-based transport closes its file descriptor, it must first cancel any pending operations that reference that fd. Otherwise, the kernel may process stale SQEs after the fd is closed and potentially reused, leading to data corruption. Use `IORING_OP_ASYNC_CANCEL` with `IORING_ASYNC_CANCEL_FD` flag to cancel all operations for a given fd in one shot. Always flush pending SQEs before closing the fd to ensure the kernel has received the cancellation.
 
+---
+
+### 49. Uninitialized Struct Field via `allocator.create` + Field-by-Field Assignment (2026-06-02)
+
+*   **The Bug (Regression from e1db5b9):** When fixing BUG-10/BUG-11 (DNS cache eviction use-after-free, lessons 42–43), a new `record_evicted: bool` field was added to `ControlData`. The field carries the default value `= false` in the struct definition. However, `prepare_data` in `src/loop/dns/resolv.zig` allocated `ControlData` with `allocator.create(ControlData)` — which returns raw uninitialised memory — and then assigned fields one by one. The new field was never assigned in that sequence. In **Debug** builds, Zig fills heap allocations with `0xaa` sentinel bytes, so `record_evicted` = `0xaa` = non-zero = `true` (ironically the same state as "evicted"). In **ReleaseSafe / Release** builds (`--starburst`), the bytes come from the actual heap allocator and are unpredictable: sometimes `0x00` (correct), sometimes non-zero (wrong). When `record_evicted` was garbage-`true`, `mark_resolved_and_execute_user_callbacks` skipped writing the resolved address list back into the cache record. The cache entry stayed in `.pending` state. The user callbacks were still dispatched, so `host_resolved_callback` ran and called `dns.lookup(host, null)` — which found a record but `get_address_list()` returned `null` (still pending) — raising `"Failed to resolve host"`.
+*   **Why `--starburst` triggered it reproducibly:**
+    1. **Uninitialized memory** — ReleaseSafe heap patterns produced non-zero bytes for the new field far more often than Debug's uniform `0xaa` (which also happened to be non-zero, but the test suite didn't exercise the second-lookup path under Debug).
+    2. **Cache size difference** — `DNSCacheEntries` is `4` in Debug and `65536` in ReleaseSafe. With only 4 slots, LRU eviction fires so quickly that `record_evicted` is set to `true` by the legitimate eviction path almost immediately, masking the uninitialized-field path. With 65536 slots, eviction rarely happens, so the uninitialized garbage is the dominant source of the `true` value.
+*   **The Fix:** Replaced the `allocator.create()` + field-by-field sequence with a **struct literal** assignment:
+    ```zig
+    // Before (field-by-field — new fields silently left uninitialized):
+    const control_data = try allocator.create(ControlData);
+    control_data.allocator      = allocator;
+    control_data.resolved       = false;
+    control_data.tasks_finished = 0;
+    // ❌ record_evicted never set → garbage bytes in Release builds
+
+    // After (struct literal — compiler error if any field is missing):
+    control_data.* = ControlData{
+        .allocator      = allocator,
+        .arena          = std.heap.ArenaAllocator.init(allocator),
+        .loop           = loop,
+        .user_callbacks = .{ .items = &.{}, .capacity = 0 },
+        .record         = undefined,   // assigned unconditionally just below
+        .queries_data   = undefined,   // assigned unconditionally just below
+        .tasks_finished = 0,
+        .resolved       = false,
+        .record_evicted = false,       // ✅ explicit
+        .node           = undefined,   // assigned by append_node below
+    };
+    ```
+    With a struct literal, the Zig compiler emits a **compile error** if any field of `ControlData` is not listed, so future fields can never be silently forgotten.
+*   **Tests added:**
+    *   **Zig unit test** (`resolv.zig`) — `"ControlData.record_evicted is false after struct-literal init (regression: e1db5b9)"`: allocates and struct-literal-initialises a `ControlData` in the exact same pattern as `prepare_data` and asserts `record_evicted == false`, `resolved == false`, `tasks_finished == 0`.
+    *   **Python regression tests** (`tests/test_getaddrinfo.py`) — `test_getaddrinfo_localhost_hostname` and `test_getaddrinfo_repeated_resolution_same_hostname`: resolve `"localhost"` through the full async DNS path (not the literal-IP shortcut) and verify both a single and a repeated resolution return a valid loopback address. These are the exact callers that raised `"Failed to resolve host"` before the fix.
+*   **The Lesson:** `allocator.create(T)` returns **uninitialised memory**. Struct field defaults (e.g., `field: bool = false`) are **only applied when using a struct literal** — they are not applied by `create`. When initialising a heap-allocated struct field-by-field, adding a new field to the struct without adding the corresponding assignment at the call site is a silent, compiler-invisible bug. In Debug builds it may be masked by Zig's `0xaa` fill; in Release builds it becomes a non-deterministic corruption. **Always use a struct literal** (`ptr.* = T{ .field = value, ... }`) for heap-allocated structs so the compiler enforces completeness. Use `undefined` only for fields that are provably assigned before any read.
+

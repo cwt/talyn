@@ -64,3 +64,52 @@ def test_getaddrinfo_returns_tuple() -> None:
         assert len(entry) == 5
 
     talyn.run(main())
+
+
+def test_getaddrinfo_localhost_hostname() -> None:
+    """Regression test for e1db5b9: ControlData.record_evicted uninitialized.
+
+    In ReleaseSafe (--starburst) builds the field-by-field initialization of
+    ControlData in prepare_data left record_evicted as garbage bytes.  When
+    those bytes were non-zero the DNS resolution callback skipped writing the
+    resolved addresses into the cache record, so the second dns.lookup() call
+    (inside host_resolved_callback) found no resolved data and raised
+    "Failed to resolve host".
+
+    This test resolves "localhost" through getaddrinfo, which follows the full
+    async DNS code path (unlike a raw IP which is handled synchronously).
+    """
+    async def main() -> None:
+        loop = asyncio.get_running_loop()
+        # getaddrinfo("localhost", ...) goes through the async resolver path
+        # because "localhost" must be looked up (via /etc/hosts or DNS).
+        result = await loop.getaddrinfo("localhost", 80, type=socket.SOCK_STREAM)
+        assert result, "getaddrinfo returned empty list — DNS resolution failed"
+        fam, typ, proto, canon, sockaddr = result[0]
+        assert fam in (socket.AF_INET, socket.AF_INET6)
+        host_addr = sockaddr[0]
+        assert host_addr in ("127.0.0.1", "::1"), (
+            f"Expected loopback address, got {host_addr!r}"
+        )
+
+    talyn.run(main())
+
+
+def test_getaddrinfo_repeated_resolution_same_hostname() -> None:
+    """DNS resolution must succeed on repeated calls for the same hostname.
+
+    Regression: if record_evicted is garbage-true, only the first call
+    succeeds (or both fail).  After the fix the cache is written correctly
+    and the second call can be served from cache.
+    """
+    async def main() -> None:
+        loop = asyncio.get_running_loop()
+        r1 = await loop.getaddrinfo("localhost", 80, type=socket.SOCK_STREAM)
+        r2 = await loop.getaddrinfo("localhost", 443, type=socket.SOCK_STREAM)
+        assert r1, "First getaddrinfo call returned empty — DNS failed"
+        assert r2, "Second getaddrinfo call returned empty — DNS failed (regression e1db5b9)"
+        # Both should resolve to a loopback address
+        assert r1[0][4][0] in ("127.0.0.1", "::1")
+        assert r2[0][4][0] in ("127.0.0.1", "::1")
+
+    talyn.run(main())
