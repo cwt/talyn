@@ -80,6 +80,8 @@ const ServerQueryData = struct {
     min_ttl: u32 = std.math.maxInt(u32),
     finished: bool = false,
 
+    query_ids: []u16 = &.{},
+
     pub inline fn cancel(self: *ServerQueryData) void {
         const socket_fd = self.socket_fd;
         if (socket_fd >= 0) {
@@ -99,6 +101,10 @@ const ServerQueryData = struct {
             control_data.allocator.free(v);
         }
         self.ptr_results.deinit(control_data.allocator);
+
+        if (self.query_ids.len > 0) {
+            control_data.allocator.free(self.query_ids);
+        }
 
         control_data.tasks_finished += 1;
 
@@ -346,8 +352,22 @@ fn process_dns_response(data: *const CallbackManager.CallbackData) !void {
         switch (state) {
             .process_header => {
                 if (data_received - offset >= 12) {
+                    const response_id = std.mem.readInt(u16, response[offset .. offset + 2][0..2], .big);
                     const qdcount = std.mem.readInt(u16, response[offset + 4 .. offset + 6][0..2], .big);
                     const ancount = std.mem.readInt(u16, response[offset + 6 .. offset + 8][0..2], .big);
+
+                    var id_valid = false;
+                    for (server_data.query_ids) |expected_id| {
+                        if (response_id == expected_id) {
+                            id_valid = true;
+                            break;
+                        }
+                    }
+                    if (!id_valid) {
+                        server_data.release();
+                        return;
+                    }
+
                     offset += 12;
 
                     if (ancount == 0) {
@@ -462,13 +482,17 @@ fn build_queries(
     const payload = try allocator.alloc(u8, (1 + @as(usize, @intFromBool(ipv6_supported))) * 512 * hostnames_array.len);
     errdefer allocator.free(payload);
 
+    const query_ids = try allocator.alloc(u16, hostnames_array.len);
+    errdefer allocator.free(query_ids);
+
     var offset: usize = 0;
-    for (hostnames_array.array[0..hostnames_array.len]) |hostname_info| {
+    for (hostnames_array.array[0..hostnames_array.len], 0..) |hostname_info, idx| {
         const hostname = hostname_info.hostname[0..hostname_info.hostname_len];
         var id_buf: [2]u8 = undefined;
         const bytes_read = std.os.linux.getrandom(&id_buf, 2, 0);
         if (bytes_read != 2) return error.SystemResources;
         const query_id = std.mem.readInt(u16, &id_buf, .little);
+        query_ids[idx] = query_id;
         if (question_type) |qt| {
             offset += build_query(query_id, payload[offset..], qt, hostname);
         } else {
@@ -492,6 +516,8 @@ fn build_queries(
 
         .results = .{ .items = &.{}, .capacity = 0 },
         .ptr_results = .{ .items = &.{}, .capacity = 0 },
+
+        .query_ids = query_ids,
     };
 }
 
