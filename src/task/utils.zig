@@ -61,7 +61,9 @@ pub fn task_set_name(self: ?*Task.PythonTaskObject, args: ?PyObject) callconv(.c
         return null;
     }
 
-    instance.name = python_c.PyObject_Str(name.?) orelse return null;
+    const new_name = python_c.PyObject_Str(name.?) orelse return null;
+    python_c.py_xdecref(instance.name);
+    instance.name = new_name;
     return python_c.get_py_none();
 }
 

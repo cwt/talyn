@@ -319,3 +319,45 @@ def test_task_cancel_callback() -> None:
         assert cancel_called
     finally:
         loop.close()
+
+
+def test_task_set_name_no_reference_leak() -> None:
+    import sys
+
+    async def dummy():
+        await asyncio.sleep(0)
+
+    loop = Loop()
+    try:
+        task = loop.create_task(dummy())
+
+        name1 = "first_name"
+        name2 = "second_name"
+        ref1_before = sys.getrefcount(name1)
+        ref2_before = sys.getrefcount(name2)
+
+        task.set_name(name1)
+        ref1_after_set = sys.getrefcount(name1)
+
+        task.set_name(name2)
+        ref1_after_replace = sys.getrefcount(name1)
+        ref2_after_set = sys.getrefcount(name2)
+
+        if sys._is_gil_enabled():
+            assert ref1_after_set == ref1_before + 1, (
+                f"set_name should add 1 ref, got {ref1_after_set - ref1_before}"
+            )
+            assert ref1_after_replace == ref1_before, (
+                f"Replacing name should decref old name, got {ref1_after_replace}"
+            )
+            assert ref2_after_set == ref2_before + 1, (
+                f"set_name should add 1 ref for new name, got {ref2_after_set - ref2_before}"
+            )
+
+        task.cancel()
+        try:
+            loop.run_until_complete(task)
+        except (asyncio.CancelledError, Exception):
+            pass
+    finally:
+        loop.close()
