@@ -135,7 +135,7 @@ inline fn cancel_future_object(
         python_c.py_xincref(cancel_msg);
 
         _ = try Future.Python.Cancel.future_fast_cancel(
-            future, utils.get_data_ptr(Future, &task.fut), cancel_msg
+            future, utils.get_data_ptr(Future, future), cancel_msg
         );
     }else{
         const cancel_function: PyObject = python_c.PyObject_GetAttrString(

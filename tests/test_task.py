@@ -361,3 +361,39 @@ def test_task_set_name_no_reference_leak() -> None:
             pass
     finally:
         loop.close()
+
+
+def test_task_cancel_awaited_future() -> None:
+    """BUG-13: Cancelling a task should cancel the awaited future, not the task's own future."""
+    loop = Loop()
+    try:
+        inner_future = loop.create_future()
+        cancelled_futures = []
+
+        async def await_inner():
+            try:
+                await inner_future
+            except asyncio.CancelledError:
+                cancelled_futures.append("inner")
+                raise
+
+        task = loop.create_task(await_inner())
+
+        # Give the task a chance to start and await inner_future
+        loop.run_until_complete(asyncio.sleep(0))
+
+        # Cancel the task
+        task.cancel()
+
+        # Run until the task completes
+        try:
+            loop.run_until_complete(task)
+        except asyncio.CancelledError:
+            pass
+
+        # The inner future should have been cancelled
+        assert inner_future.cancelled(), "Inner future should be cancelled when task is cancelled"
+        assert "inner" in cancelled_futures, "Inner future's CancelledError should have been caught"
+        assert task.cancelled(), "Task should be cancelled"
+    finally:
+        loop.close()
