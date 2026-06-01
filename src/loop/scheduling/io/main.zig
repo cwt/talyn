@@ -363,6 +363,7 @@ pub const RegisteredBufferPool = struct {
 
     pub fn release(self: *RegisteredBufferPool, index: u16) void {
         if (self.free_slots.len == 0) return;
+        if (self.free_count >= SlotCount) return; // Overflow guard: prevent double-release
         self.free_slots[self.free_count] = index;
         self.free_count += 1;
     }
