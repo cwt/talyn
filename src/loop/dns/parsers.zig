@@ -92,6 +92,7 @@ pub fn parse_name(full_data: []const u8, initial_offset: usize, allocator: std.m
         }
         if ((byte & 0xC0) == 0xC0) {
             if (visited_pointers >= max_pointers) return error.MalformedDnsResponse;
+            if (offset + 1 >= full_data.len) return error.MalformedDnsResponse;
             if (jump_offset == null) jump_offset = offset + 2;
             visited_pointers += 1;
             offset = (@as(usize, byte & 0x3F) << 8) | full_data[offset + 1];
@@ -525,4 +526,40 @@ test "resolve_address IPv6" {
 test "resolve_address invalid hostname" {
     const result = resolve_address("invalid--domain", false);
     try std.testing.expectError(error.InvalidHostname, result);
+}
+
+test "parse_name simple uncompressed name" {
+    const data = [_]u8{ 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0 };
+    const name = try parse_name(&data, 0, std.testing.allocator);
+    defer std.testing.allocator.free(name);
+    try std.testing.expectEqualStrings("example.com", name);
+}
+
+test "parse_name compression pointer" {
+    const data = [_]u8{
+        3, 'c', 'o', 'm', 0,
+        7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 0xC0, 0,
+    };
+    const name = try parse_name(&data, 5, std.testing.allocator);
+    defer std.testing.allocator.free(name);
+    try std.testing.expectEqualStrings("example.com", name);
+}
+
+test "parse_name compression pointer at last byte is out-of-bounds" {
+    const data = [_]u8{ 0xC0 };
+    try std.testing.expectError(error.MalformedDnsResponse, parse_name(&data, 0, std.testing.allocator));
+}
+
+test "parse_name compression pointer second byte missing" {
+    const data = [_]u8{ 3, 'f', 'o', 'o', 0xC0 };
+    try std.testing.expectError(error.MalformedDnsResponse, parse_name(&data, 4, std.testing.allocator));
+}
+
+test "parse_name too many compression pointers" {
+    var data: [22]u8 = undefined;
+    for (0..11) |i| {
+        data[i * 2] = 0xC0;
+        data[i * 2 + 1] = @intCast((i + 1) * 2);
+    }
+    try std.testing.expectError(error.MalformedDnsResponse, parse_name(&data, 0, std.testing.allocator));
 }
