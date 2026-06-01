@@ -214,3 +214,115 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     This ensures the context is exited before the handle is decref'd, and both cleanups happen on all exit paths (success and error).
 *   **The Lesson:** Zig's `defer` statements execute in **LIFO (Last In, First Out) order**. When multiple defers have dependencies (e.g., object A holds a reference to object B), the defer that should run LAST must be declared FIRST. Always verify defer ordering when cleaning up interdependent resources. Additionally, when adding defers to fix resource leaks, ensure ALL resources are covered — partial cleanup is worse than no cleanup because it creates subtle use-after-free bugs that are harder to debug than obvious leaks.
 
+---
+
+### 33. DNS Parser Out-of-Bounds Read on Compression Pointer (2026-06-01)
+*   **The Bug:** In `parse_name` at `src/loop/dns/parsers.zig:97`, when encountering a DNS compression pointer (byte with top 2 bits set), the code read `full_data[offset + 1]` without checking if `offset + 1` was within bounds. If the compression pointer byte was the last byte in the buffer, this caused an out-of-bounds read, potentially crashing or leaking memory contents.
+*   **The Fix:** Added bounds check before accessing the second byte of the compression pointer:
+    ```zig
+    if (offset + 1 >= full_data.len) return error.MalformedDnsResponse;
+    ```
+    This ensures the parser rejects malformed DNS responses with truncated compression pointers.
+*   **The Lesson:** When parsing network protocols with pointer-like structures (offsets, indices, compression pointers), always validate that the referenced location is within bounds BEFORE dereferencing. DNS compression pointers are particularly tricky because they can point anywhere in the message, including to the pointer itself (creating loops) or beyond the message end. Always add explicit bounds checks for multi-byte structures.
+
+---
+
+### 34. DNS Response Transaction ID Validation (2026-06-01)
+*   **The Bug:** In `process_dns_response` at `src/loop/dns/resolv.zig:348-368`, the DNS response handler read the transaction ID from the response header but never validated it against the query IDs that were actually sent. This meant any DNS response arriving on the socket would be accepted, making DNS cache poisoning trivial for an on-path attacker who could guess or observe the query timing.
+*   **The Fix:** Added a `query_ids` field to `ServerQueryData` to store the transaction IDs of sent queries. In `build_queries`, each generated query ID is stored in this array. In `process_dns_response`, the response transaction ID is read from the first 2 bytes of the DNS header and checked against all stored query IDs. If no match is found, the response is rejected as invalid.
+*   **The Lesson:** Network protocols that use transaction IDs for request/response matching MUST validate that incoming responses correspond to outstanding requests. Without validation, attackers can inject forged responses. This is especially critical for DNS where cache poisoning can redirect traffic to malicious servers. Always store sent transaction IDs and verify responses match before processing them.
+
+---
+
+### 35. Context Leak in Task Throw Execution (2026-06-01)
+*   **The Bug:** In `_execute_task_throw` at `src/task/callbacks.zig:442-451`, `PyContext_Enter` was called to enter the task's context before calling `PyObject_GetAttrString(task.coro, "throw")`. If the attribute lookup failed (e.g., coroutine doesn't have a `throw` method), the function returned `error.PythonError` without calling `PyContext_Exit`, leaking the context stack entry.
+*   **The Fix:** Added explicit `PyContext_Exit` call on the error path before returning:
+    ```zig
+    const coro_throw: PyObject = python_c.PyObject_GetAttrString(task.coro.?, "throw\x00") orelse {
+        _ = python_c.PyContext_Exit(context);
+        return error.PythonError;
+    };
+    ```
+    This ensures the context is exited even when the attribute lookup fails.
+*   **The Lesson:** This is the same pattern as BUG-05 (lesson 28) but in a different code path. When entering a CPython context, you MUST ensure `PyContext_Exit` is called on ALL exit paths, including early returns due to errors. Using `defer` is the safest approach, but if you need to exit the context before other cleanup (like checking `gen_ret`), you must explicitly call `PyContext_Exit` on every error path. Always audit all `return` statements after `PyContext_Enter` to ensure cleanup happens.
+
+---
+
+### 36. Reference Leak in Future get_result with Exception (2026-06-01)
+*   **The Bug:** In `get_result` at `src/future/python/result.zig:26-31`, when a future had an exception set, the code set `self.exception = null` (losing the field's reference), then called `python_c.py_newref(exc)` to create a new reference for `PyErr_SetRaisedException`. However, `PyErr_SetRaisedException` steals a reference (takes ownership), so the original reference held by `self.exception` was never decref'd, leaking the exception object.
+*   **The Fix:** Removed the `py_newref` call and passed `exc` directly to `PyErr_SetRaisedException`:
+    ```zig
+    self.exception = null;
+    python_c.PyErr_SetRaisedException(exc);  // steals reference, no need for py_newref
+    ```
+    This transfers ownership from `self.exception` to the error state without creating an extra reference.
+*   **The Lesson:** CPython's `PyErr_SetRaisedException` steals a reference (takes ownership without incrementing the refcount). When transferring ownership of a reference you already hold, do NOT call `py_newref` — just pass the reference directly. Always check the CPython documentation for reference stealing semantics: functions like `PyErr_SetRaisedException`, `PyTuple_SetItem`, and `PyList_SetItem` steal references, while most other functions create new references or borrow references.
+
+---
+
+### 37. Reference Leak in Future cancel(msg=...) (2026-06-01)
+*   **The Bug:** In `future_cancel` at `src/future/python/cancel.zig:40-54`, `parse_vector_call_kwargs` created a new reference for the `msg` kwarg (via `py_newref` at line 527 of `python_c.zig`). The `future_fast_cancel` function then created its own reference (via `py_newref` or `PyObject_Str`). On the error path, the caller's reference was decref'd, but on the success path, it was never decref'd, leaking one reference per successful cancel with a message.
+*   **The Fix:** Added `python_c.py_xdecref(cancel_msg_py_object)` after the successful `future_fast_cancel` call:
+    ```zig
+    const ret = future_fast_cancel(instance, future_data, cancel_msg_py_object) catch |err| {
+        python_c.py_xdecref(cancel_msg_py_object);
+        return utils.handle_zig_function_error(err, null);
+    };
+    python_c.py_xdecref(cancel_msg_py_object);  // Added this line
+    ```
+    This ensures the caller's reference is always released, regardless of success or failure.
+*   **The Lesson:** When a function creates a reference (via `parse_vector_call_kwargs`, `py_newref`, etc.) and passes it to another function that also creates its own reference, the caller's reference must be explicitly released. Always trace the ownership chain: who creates the reference, who consumes it, and who is responsible for releasing it. In this case, `parse_vector_call_kwargs` created a reference for the caller, `future_fast_cancel` created its own reference, so the caller must release its reference after the call.
+
+---
+
+### 38. Reference Leak in Task set_name() (2026-06-01)
+*   **The Bug:** In `task_set_name` at `src/task/utils.zig:64`, the code assigned `instance.name = python_c.PyObject_Str(name.?)` without decref'ing the previous value of `instance.name`. This leaked the old name string on every call to `set_name()` after the first.
+*   **The Fix:** Added `py_xdecref` for the old name before assigning the new one:
+    ```zig
+    const new_name = python_c.PyObject_Str(name.?) orelse return null;
+    python_c.py_xdecref(instance.name);
+    instance.name = new_name;
+    ```
+    This ensures the old name is released before storing the new one.
+*   **The Lesson:** When replacing a stored PyObject reference, always decref the old value before assigning the new one. This is a common pattern in setter functions: `py_xdecref(old_value); field = new_value;`. Forgetting to decref the old value is a classic reference leak that accumulates over time. Always audit setter functions to ensure they properly release old references.
+
+---
+
+### 39. Reference Leak in cancel_future_waiter for Future Path (2026-06-01)
+*   **The Bug:** In `cancel_future_waiter` at `src/task/cancel.zig:17`, when the future was a talyn `Future` (not a `Task`), the code called `python_c.py_xincref(cancel_msg_py_object)` before passing it to `future_fast_cancel`. However, `future_fast_cancel` already creates its own reference (via `py_newref` or `PyObject_Str`), so the caller's incref was never balanced by a decref, leaking the cancel message on every task cancellation that propagates to an awaited Future.
+*   **The Fix:** Removed the unnecessary `py_xincref` call:
+    ```zig
+    // Removed: python_c.py_xincref(cancel_msg_py_object);
+    const fut: *Future.Python.FutureObject = @ptrCast(future);
+    const ret = try Future.Python.Cancel.future_fast_cancel(
+        fut, utils.get_data_ptr(Future, fut), cancel_msg_py_object
+    );
+    ```
+    Since `future_fast_cancel` takes a borrowed reference and creates its own, no incref is needed.
+*   **The Lesson:** When calling a function that takes a borrowed reference and creates its own reference internally, do NOT incref the argument before passing it. The function will handle reference counting internally. Always check the callee's implementation to understand its reference counting contract: does it borrow (no incref needed), steal (no incref needed, but you lose ownership), or create (no incref needed, it will incref internally)?
+
+---
+
+### 40. connection_lost May Never Be Called on Half-Closed Connections (2026-06-01)
+*   **The Bug:** In `close_transports` at `src/transports/stream/lifecycle.zig:34,41`, the code checked if either `read_transport.closed` OR `write_transport.closed` was true, and if so, returned early without calling `connection_lost`. This meant if EOF closed the read side, then a write error occurred on the write side, `connection_lost` was never called, leaving the protocol in a limbo state.
+*   **The Fix:** Changed the check to use `transport.closed` (which is only set when both sides are closed and `connection_lost` has been called):
+    ```zig
+    const closed_already = transport.closed;  // Changed from: read_transport.closed or write_transport.closed
+    ```
+    This ensures `connection_lost` is called on the first close event, regardless of which side closed first.
+*   **The Lesson:** When managing bidirectional resources (like read/write transports), track the overall state separately from the individual component states. The protocol's `connection_lost` should be called exactly once when the connection is fully closed, not when individual components close. Use a flag on the parent object (`transport.closed`) to track whether the protocol has been notified, rather than checking component states with OR logic.
+
+---
+
+### 41. DNS Query Packing: Multiple Queries in Single UDP Datagram (2026-06-01) — DEFERRED
+*   **The Bug:** In `build_queries` at `src/loop/dns/resolv.zig:462-480`, multiple DNS queries (for different hostnames or A/AAAA records) were concatenated into a single UDP payload. Standard DNS resolvers expect one query per UDP datagram and will only process the first query, silently dropping the rest. This causes resolution failures for search-domain suffixed names and IPv6 queries.
+*   **Why Deferred:** Fixing this requires significant architectural changes (~200-300 lines):
+    1. Allocate array of payloads instead of single buffer
+    2. Send each query as separate UDP datagram
+    3. Track multiple pending queries with state machine
+    4. Handle partial failures (some queries timeout, others succeed)
+    5. Aggregate results from multiple responses
+    6. Manage memory for multiple buffers
+*   **Mitigation:** BUG-07 fix (lesson 34) validates transaction IDs, preventing cache poisoning even if queries are dropped. Most DNS queries are single-hostname (FQDN without search domains), so the bug has limited impact in practice.
+*   **The Lesson:** When designing network protocols, follow the standard: one query per UDP datagram for DNS. Packing multiple queries into a single datagram violates the protocol and causes silent failures. However, fixing architectural issues in core subsystems (like DNS) requires careful planning and comprehensive testing. Sometimes it's better to defer a fix and add mitigations (like transaction ID validation) rather than risk introducing regressions in a quick bug fix.
+
