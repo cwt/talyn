@@ -223,7 +223,7 @@ fn write_operation_completed(data: *const CallbackManager.CallbackData) !void {
         }
     }
 
-    if (io_uring_err != .SUCCESS and io_uring_err != .CANCELED and io_uring_res <= 0) {
+    if (io_uring_err != .SUCCESS and io_uring_err != .CANCELED) {
         // Real error — report via connection_lost
         if (!self.is_closing) {
             var exception: PyObject = undefined;
