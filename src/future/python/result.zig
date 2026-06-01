@@ -25,9 +25,7 @@ pub inline fn get_result(self: *PythonFutureObject) ?PyObject {
         .finished => blk: {
             if (self.exception) |exc| {
                 self.exception = null;
-                python_c.PyErr_SetRaisedException(
-                    python_c.py_newref(exc)
-                );
+                python_c.PyErr_SetRaisedException(exc);
                 break :blk null;
             }
             break :blk @as(PyObject, @alignCast(@ptrCast(future_data.result.?)));

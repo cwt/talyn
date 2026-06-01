@@ -443,3 +443,26 @@ def test_future_set_exception_no_reference_leak() -> None:
         assert future.exception() is exc
     finally:
         loop.close()
+
+
+def test_future_get_result_exception_no_reference_leak() -> None:
+    loop = Loop()
+    try:
+        exc = ValueError("test")
+        future = Future(loop=loop)
+        future.set_exception(exc)
+
+        ref_before = sys.getrefcount(exc)
+
+        try:
+            future.result()
+        except ValueError:
+            pass
+
+        ref_after = sys.getrefcount(exc)
+        assert ref_after == ref_before - 1, (
+            f"Expected refcount {ref_before - 1}, got {ref_after}. "
+            f"get_result should transfer ownership to PyErr_SetRaisedException"
+        )
+    finally:
+        loop.close()
