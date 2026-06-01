@@ -447,8 +447,10 @@ fn _execute_task_throw(task: *Task.PythonTaskObject, task_exception: ?PyObject) 
     defer python_c.py_xdecref(coro_ret);
 
     var gen_ret: python_c.PySendResult = python_c.PYGEN_ERROR;
-    const coro_throw: PyObject = python_c.PyObject_GetAttrString(task.coro.?, "throw\x00")
-        orelse return error.PythonError;
+    const coro_throw: PyObject = python_c.PyObject_GetAttrString(task.coro.?, "throw\x00") orelse {
+        _ = python_c.PyContext_Exit(context);
+        return error.PythonError;
+    };
     defer python_c.py_decref(coro_throw);
 
     if (python_c.PyObject_CallOneArg(coro_throw, exception_value)) |v| {
