@@ -110,6 +110,8 @@ fn dispatch_completion_batch(
     if (batch.is_empty()) return;
 
     const records = batch.records[0..batch.ready_count];
+    var had_error = false;
+
     for (records) |*record| {
         const transport: *Stream.StreamTransportObject = @alignCast(@ptrCast(record.stream_transport orelse continue));
 
@@ -117,24 +119,24 @@ fn dispatch_completion_batch(
             .DataReceived => {
                 const ptr: [*]u8 = @ptrCast(record.buffer_ptr orelse continue);
                 const py_bytes = python_c.PyBytes_FromStringAndSize(ptr, @intCast(record.nbytes)) orelse {
-                    batch.reset();
-                    return error.PythonError;
+                    had_error = true;
+                    continue;
                 };
                 defer python_c.py_decref(py_bytes);
                 if (python_c.PyObject_CallOneArg(transport.protocol_data_received.?, py_bytes) == null) {
-                    batch.reset();
-                    return error.PythonError;
+                    had_error = true;
+                    continue;
                 }
             },
             .BufferUpdated => {
                 const nbytes_obj = python_c.PyLong_FromUnsignedLongLong(@intCast(record.nbytes)) orelse {
-                    batch.reset();
-                    return error.PythonError;
+                    had_error = true;
+                    continue;
                 };
                 defer python_c.py_decref(nbytes_obj);
                 if (python_c.PyObject_CallOneArg(transport.protocol_buffer_updated.?, nbytes_obj) == null) {
-                    batch.reset();
-                    return error.PythonError;
+                    had_error = true;
+                    continue;
                 }
             },
             else => {},
@@ -142,6 +144,10 @@ fn dispatch_completion_batch(
     }
 
     batch.reset();
+
+    if (had_error) {
+        return error.PythonError;
+    }
 }
 
 fn execute_hooks(hooks: *Loop.HooksList) !void {
