@@ -419,7 +419,18 @@ pub fn execute_ring_buffer(
         const start_time = if (debug_state != null) nanoTime() else 0;
 
         callback.func(&callback.data) catch |err| {
-            // Check for fatal exceptions BEFORE calling the handler
+            // Always consume the slot and run cleanup before any branching.
+            // Previously, cleanup+consume were inside a defer registered AFTER
+            // the fatal-exception early return, so KeyboardInterrupt/SystemExit
+            // would leave the ring buffer slot permanently occupied and leak the
+            // task/handle reference. (BUG-24)
+            if (callback.cleanup) |cleanup| {
+                cleanup(callback.data.user_data);
+            }
+            ring.consume();
+            callbacks_executed += 1;
+
+            // Now check for fatal exceptions BEFORE calling the handler.
             if (err == error.PythonError) {
                 if (python_c.PyErr_Occurred()) |exc| {
                     if (python_c.PyErr_GivenExceptionMatches(exc, python_c.PyExc_KeyboardInterrupt.?) != 0 or
@@ -429,20 +440,13 @@ pub fn execute_ring_buffer(
                 }
             }
 
-            defer {
-                if (callback.cleanup) |cleanup| {
-                    cleanup(callback.data.user_data);
-                }
-                ring.consume();
-                callbacks_executed += 1;
-            }
-
             const handler = exception_handler orelse return err;
             handler(err, exception_handler_data, mod, cb) catch |err2| {
                 return err2;
             };
             continue;
         };
+
 
         if (debug_state) |ds| {
             const end_time = nanoTime();
