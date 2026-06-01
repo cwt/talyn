@@ -843,6 +843,8 @@ class Loop(_Loop):
             kwargs["family"] = family
         if proto:
             kwargs["proto"] = proto
+        if flags:
+            kwargs["flags"] = flags
         if sock is not None:
             kwargs["sock"] = sock
         if local_addr is not None:

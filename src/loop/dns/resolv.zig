@@ -466,7 +466,8 @@ fn build_queries(
     for (hostnames_array.array[0..hostnames_array.len]) |hostname_info| {
         const hostname = hostname_info.hostname[0..hostname_info.hostname_len];
         var id_buf: [2]u8 = undefined;
-        _ = std.os.linux.getrandom(&id_buf, 2, 0);
+        const bytes_read = std.os.linux.getrandom(&id_buf, 2, 0);
+        if (bytes_read != 2) return error.SystemResources;
         const query_id = std.mem.readInt(u16, &id_buf, .little);
         if (question_type) |qt| {
             offset += build_query(query_id, payload[offset..], qt, hostname);

@@ -309,6 +309,7 @@ def test_create_connection_ssl_passes_kwargs() -> None:
                     12345,
                     ssl=ctx,
                     family=socket.AF_INET,
+                    flags=socket.AI_ADDRCONFIG,
                     local_addr=("0.0.0.0", 0),
                     happy_eyeballs_delay=0.1,
                     interleave=1,
@@ -319,6 +320,7 @@ def test_create_connection_ssl_passes_kwargs() -> None:
             f"family kwarg was dropped! captured_kwargs={captured_kwargs}"
         )
         assert captured_kwargs.get("family") == socket.AF_INET
+        assert captured_kwargs.get("flags") == socket.AI_ADDRCONFIG
         assert captured_kwargs.get("local_addr") == ("0.0.0.0", 0)
         assert captured_kwargs.get("happy_eyeballs_delay") == 0.1
         assert captured_kwargs.get("interleave") == 1
