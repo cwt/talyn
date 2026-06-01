@@ -76,9 +76,12 @@ fn evict_record(ctx: ?*anyopaque, key: []const u8, record: *Record) void {
     const self: *Cache = @alignCast(@ptrCast(ctx.?));
     self.allocator.free(key);
     switch (record.state) {
+        .pending => |control_data| {
+            control_data.record_evicted = true;
+        },
         .resolved => |v| self.allocator.free(v),
         .ptr => |v| self.allocator.free(v),
-        else => {},
+        .none => {},
     }
     self.allocator.destroy(record);
 }
@@ -172,23 +175,50 @@ const Cache = @This();
 const testing = std.testing;
 
 test "create_new_record" {
+    // Create a mock ControlData
+    const control_data = try testing.allocator.create(Resolv.ControlData);
+    control_data.* = .{
+        .allocator = testing.allocator,
+        .arena = std.heap.ArenaAllocator.init(testing.allocator),
+        .record = undefined,
+        .loop = undefined,
+        .user_callbacks = .{ .items = &.{}, .capacity = 0 },
+        .queries_data = &.{},
+        .record_evicted = false,
+    };
+
     var cache: Cache = undefined;
     cache.init(testing.allocator);
-    defer cache.deinit();
 
-    const record = try cache.create_new_record("example.com", undefined);
+    const record = try cache.create_new_record("example.com", control_data);
 
     try testing.expectEqualStrings("example.com", record.hostname);
     try testing.expect(record.state == .pending);
     try testing.expect(record.expire_at == std.math.maxInt(i64));
+
+    // Cleanup in correct order: cache first (evicts records), then control_data
+    cache.deinit();
+    control_data.arena.deinit();
+    testing.allocator.destroy(control_data);
 }
 
 test "set_resolved_data" {
+    // Create a mock ControlData
+    const control_data = try testing.allocator.create(Resolv.ControlData);
+    control_data.* = .{
+        .allocator = testing.allocator,
+        .arena = std.heap.ArenaAllocator.init(testing.allocator),
+        .record = undefined,
+        .loop = undefined,
+        .user_callbacks = .{ .items = &.{}, .capacity = 0 },
+        .queries_data = &.{},
+        .record_evicted = false,
+    };
+
     var cache: Cache = undefined;
     cache.init(testing.allocator);
-    defer cache.deinit();
 
-    const record = try cache.create_new_record("example.com", undefined);
+    const record = try cache.create_new_record("example.com", control_data);
 
     const addresses = try testing.allocator.alloc(utils.Address, 2);
     addresses[0] = utils.Address.initIp4(.{8, 8, 8, 8}, 53);
@@ -201,14 +231,30 @@ test "set_resolved_data" {
     try testing.expectEqual(std.posix.AF.INET, record.get_address_list().?[0].any.family);
     try testing.expectEqual(std.posix.AF.INET, record.get_address_list().?[1].any.family);
     try testing.expect(record.expire_at > timestamp());
+
+    // Cleanup in correct order
+    cache.deinit();
+    control_data.arena.deinit();
+    testing.allocator.destroy(control_data);
 }
 
 test "get record from cache" {
+    // Create a mock ControlData
+    const control_data = try testing.allocator.create(Resolv.ControlData);
+    control_data.* = .{
+        .allocator = testing.allocator,
+        .arena = std.heap.ArenaAllocator.init(testing.allocator),
+        .record = undefined,
+        .loop = undefined,
+        .user_callbacks = .{ .items = &.{}, .capacity = 0 },
+        .queries_data = &.{},
+        .record_evicted = false,
+    };
+
     var cache: Cache = undefined;
     cache.init(testing.allocator);
-    defer cache.deinit();
 
-    const record = try cache.create_new_record("example.com", undefined);
+    const record = try cache.create_new_record("example.com", control_data);
 
     const addresses = try testing.allocator.alloc(utils.Address, 2);
     addresses[0] = utils.Address.initIp4(.{8, 8, 8, 8}, 53);
@@ -220,14 +266,30 @@ test "get record from cache" {
     try testing.expectEqualStrings("example.com", retrieved_record.hostname);
     try testing.expect(retrieved_record.state == .resolved);
     try testing.expectEqual(@as(usize, 2), retrieved_record.get_address_list().?.len);
+
+    // Cleanup in correct order
+    cache.deinit();
+    control_data.arena.deinit();
+    testing.allocator.destroy(control_data);
 }
 
 test "get expired record" {
+    // Create a mock ControlData
+    const control_data = try testing.allocator.create(Resolv.ControlData);
+    control_data.* = .{
+        .allocator = testing.allocator,
+        .arena = std.heap.ArenaAllocator.init(testing.allocator),
+        .record = undefined,
+        .loop = undefined,
+        .user_callbacks = .{ .items = &.{}, .capacity = 0 },
+        .queries_data = &.{},
+        .record_evicted = false,
+    };
+
     var cache: Cache = undefined;
     cache.init(testing.allocator);
-    defer cache.deinit();
 
-    const record = try cache.create_new_record("example.com", undefined);
+    const record = try cache.create_new_record("example.com", control_data);
 
     const addresses = try testing.allocator.alloc(utils.Address, 2);
     addresses[0] = utils.Address.initIp4(.{8, 8, 8, 8}, 53);
@@ -238,4 +300,43 @@ test "get expired record" {
 
     const retrieved_record = cache.get("example.com");
     try testing.expect(retrieved_record == null);
+
+    // Cleanup in correct order
+    cache.deinit();
+    control_data.arena.deinit();
+    testing.allocator.destroy(control_data);
+}
+
+test "evict pending record sets record_evicted flag" {
+    // Create a mock ControlData
+    const control_data = try testing.allocator.create(Resolv.ControlData);
+    control_data.* = .{
+        .allocator = testing.allocator,
+        .arena = std.heap.ArenaAllocator.init(testing.allocator),
+        .record = undefined,
+        .loop = undefined,
+        .user_callbacks = .{ .items = &.{}, .capacity = 0 },
+        .queries_data = &.{},
+        .record_evicted = false,
+    };
+
+    var cache: Cache = undefined;
+    cache.init(testing.allocator);
+
+    const record = try cache.create_new_record("example.com", control_data);
+    control_data.record = record;
+
+    try testing.expect(record.state == .pending);
+    try testing.expect(!control_data.record_evicted);
+
+    // Force eviction by removing the record
+    _ = cache.cache.remove("example.com");
+
+    // The record_evicted flag should now be set
+    try testing.expect(control_data.record_evicted);
+
+    // Cleanup in correct order
+    cache.deinit();
+    control_data.arena.deinit();
+    testing.allocator.destroy(control_data);
 }

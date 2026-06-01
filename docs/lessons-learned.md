@@ -326,3 +326,17 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
 *   **Mitigation:** BUG-07 fix (lesson 34) validates transaction IDs, preventing cache poisoning even if queries are dropped. Most DNS queries are single-hostname (FQDN without search domains), so the bug has limited impact in practice.
 *   **The Lesson:** When designing network protocols, follow the standard: one query per UDP datagram for DNS. Packing multiple queries into a single datagram violates the protocol and causes silent failures. However, fixing architectural issues in core subsystems (like DNS) requires careful planning and comprehensive testing. Sometimes it's better to defer a fix and add mitigations (like transaction ID validation) rather than risk introducing regressions in a quick bug fix.
 
+---
+
+### 42. DNS Cache Eviction Use-After-Free (2026-06-01)
+*   **The Bug:** In `evict_record` at `src/loop/dns/cache.zig:75-84`, when a pending DNS record was evicted from the cache (due to LRU eviction or expiration), the record was freed immediately. However, the `ControlData` structure still held a pointer to the freed record. When the DNS query completed, `mark_resolved_and_execute_user_callbacks` at `src/loop/dns/resolv.zig:181-202` accessed `control_data.record` to store the results, causing a use-after-free.
+*   **The Fix:** Added a `record_evicted: bool` field to `ControlData`. In `evict_record`, when evicting a pending record, set `control_data.record_evicted = true`. In `mark_resolved_and_execute_user_callbacks` and `ControlData.release`, check this flag before accessing the record pointer. This ensures that if the record has been evicted, we skip operations that would access the freed memory.
+*   **The Lesson:** When managing cached resources with asynchronous operations, you must track the lifecycle of both the cache entry and the operation that references it. If a cache entry can be evicted while an operation is still in-flight, the operation must check whether its reference is still valid before using it. Use explicit flags (like `record_evicted`) to track eviction state, and always validate pointers before dereferencing them in asynchronous callbacks.
+
+---
+
+### 43. DNS Cache get() Removes Pending Records Without Cancellation (2026-06-01)
+*   **The Bug:** In `Cache.get` at `src/loop/dns/cache.zig:155-168`, when an expired record was found, the code called `self.cache.remove(hostname)` which triggered `evict_record`. If the record was in `.pending` state, this caused the same use-after-free as BUG-10 (lesson 42). The pending DNS query was not cancelled, so when it completed, it tried to access the freed record.
+*   **The Fix:** This is actually the same issue as BUG-10, and the fix in lesson 42 handles both cases. The `record_evicted` flag is set whenever a pending record is evicted, regardless of whether it's due to LRU eviction or expiration in `get()`. The asynchronous completion callback checks this flag and skips record access if it's been evicted.
+*   **The Lesson:** When removing cache entries, consider whether there are any in-flight operations that reference those entries. Simply freeing the entry is not enough — you must either cancel the operations or mark the entry as invalid so the operations can detect the eviction. In this case, the fix for BUG-10 automatically fixed BUG-11 because both issues stemmed from the same root cause: accessing a freed record pointer.
+

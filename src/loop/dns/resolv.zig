@@ -127,6 +127,7 @@ pub const ControlData = struct {
     queries_data: []ServerQueryData,
     tasks_finished: usize = 0,
     resolved: bool = false,
+    record_evicted: bool = false,
 
     node: Loop.DNS.PendingList.Node = undefined,
 
@@ -137,7 +138,9 @@ pub const ControlData = struct {
     pub fn release(self: *ControlData) void {
         const loop = self.loop;
         if (!self.resolved) {
-            self.record.discard();
+            if (!self.record_evicted) {
+                self.record.discard();
+            }
 
             for (self.user_callbacks.items) |*v| {
                 v.data.set_cancelled(true);
@@ -187,12 +190,14 @@ fn mark_resolved_and_execute_user_callbacks(server_data: *ServerQueryData) !void
         sd.cancel();
     }
 
-    if (server_data.ptr_results.items.len > 0) {
-        const ptr_name = try control_data.allocator.dupe(u8, server_data.ptr_results.items[0]);
-        control_data.record.set_ptr_data(ptr_name, server_data.min_ttl);
-    } else {
-        const address_list = try control_data.allocator.dupe(utils.Address, server_data.results.items);
-        control_data.record.set_resolved_data(address_list, server_data.min_ttl);
+    if (!control_data.record_evicted) {
+        if (server_data.ptr_results.items.len > 0) {
+            const ptr_name = try control_data.allocator.dupe(u8, server_data.ptr_results.items[0]);
+            control_data.record.set_ptr_data(ptr_name, server_data.min_ttl);
+        } else {
+            const address_list = try control_data.allocator.dupe(utils.Address, server_data.results.items);
+            control_data.record.set_resolved_data(address_list, server_data.min_ttl);
+        }
     }
 
     const loop = control_data.loop;
