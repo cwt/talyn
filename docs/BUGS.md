@@ -344,6 +344,7 @@ Crash, UAF, data loss, or DoS reachable in normal usage paths.
 - **Description**: Between checking `finished` and setting `cancelled`, the callback could start executing on another thread, read `cancelled=false`, and proceed. The cancel then sets `cancelled=true` too late.
 - **Trigger**: Concurrent `handle.cancel()` and callback execution for thread_safe handles.
 - **Consequences**: Callback executes despite being cancelled.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-30: `perform_with_iovecs` stores caller's iovec pointer — lifetime not enforced
 

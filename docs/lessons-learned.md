@@ -560,3 +560,17 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     4. **Date/time formats** — silent wrong timezone is a logic bug.
     The general rule: **if a field is required for correctness, make it required at parse time.** Don't fill in "reasonable defaults" — make the caller explicit. This is a small UX cost (a few extra lines of error handling at the call site) for a huge correctness win.
 
+---
+
+### 59. Close TOCTOU Races with Atomic CAS, Not Locks (2026-06-02)
+
+*   **The Bug:** In `PythonHandleObject` at `src/handle.zig:206-241`, the original `fast_handle_cancel` followed a check-then-act pattern: read `finished`, if false read `cancelled`, if false queue the cancel SQE and set `cancelled=true`. The callback at line 34-55 had a similar pattern. The problem: between the cancel thread reading `cancelled=false` and setting it to `true`, the callback could start executing on the loop's main thread, read `cancelled=false`, and proceed with the work. The cancel then set `cancelled=true` too late — the callback had already run.
+*   **The Fix:** Replaced both read-then-set patterns with a single atomic compare-and-swap (CAS). The cancel does `@cmpxchgStrong(bool, &self.cancelled, false, true, .acq_rel, .acquire)`; the callback does the same. The first to win the CAS gets to act (cancel queues the SQE, callback proceeds with the work). The second sees `cancelled=true` and skips. This guarantees mutual exclusion without holding the io_uring lock for the duration of the callback, which would be expensive.
+*   **Tests added:**
+    *   No new tests were added. The bug only manifested under concurrent cancel+callback execution, which is hard to reproduce reliably in a unit test (would require a stress test with a free-threading build). All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Close TOCTOU races with atomic CAS, not locks.** The naive fix for a check-then-act race is to take a lock around the check and the act. But that has two problems: (1) locks are expensive (especially kernel-assisted ones), and (2) they don't compose well — if the "act" part is slow (like a callback that runs user code), you'd be holding the lock for too long. The right tool is a compare-and-swap: the first to win the CAS gets to act, the second sees the side effect and skips. This is the same pattern as `pthread_mutex_lock` vs `std::atomic_flag::test_and_set`, or `synchronized` blocks in Java vs `AtomicReference.compareAndSet`. The general rule:
+    1. **For "claim and proceed" patterns** (cancel vs callback, producer vs consumer, leader election): use a CAS on a single shared flag.
+    2. **For "protect a critical section"** (multiple reads/writes to related state): use a lock.
+    3. **For "publish a value to readers"** (one writer, many readers): use a release-store on the writer side and acquire-load on the reader side.
+    The CAS pattern is also great because it's **lock-free**: no kernel transitions, no priority inversion, no deadlock risk. And it composes: you can have multiple CAS flags for different concerns, each protecting a different invariant. The trade-off is that CAS is harder to reason about than locks (you have to think about memory ordering, ABA, etc.), but for simple flag-style races like this one, it's the right tool.
+

@@ -42,10 +42,21 @@ pub fn callback_for_python_generic_callbacks(data: *const CallbackManager.Callba
 
     var cancelled: bool = data.cancelled();
     if (!cancelled) {
+        // BUG-31: Use a CAS to atomically claim the right to proceed
+        // (or skip). Pairs with the CAS in `fast_handle_cancel`. The
+        // first to win the CAS gets to act; the second sees
+        // `cancelled=true` and skips. This closes the TOCTOU race
+        // between the cancel setting `cancelled=true` and the callback
+        // reading it.
         if (thread_safe) {
-            cancelled = @atomicLoad(bool, &handle.cancelled, .acquire);
+            const cmpxchg = @cmpxchgStrong(bool, &handle.cancelled, false, true, .acq_rel, .acquire);
+            cancelled = cmpxchg != null;
         }else{
-            cancelled = handle.cancelled;
+            if (handle.cancelled) {
+                cancelled = true;
+            } else {
+                handle.cancelled = true;
+            }
         }
     }
 
@@ -213,30 +224,41 @@ pub inline fn fast_handle_cancel(self: *PythonHandleObject) !void {
         return;
     }
 
-    const cancelled = switch (thread_safe) {
-        false => self.cancelled,
-        true => @atomicLoad(bool, &self.cancelled, .acquire)
-    };
-
-    if (!cancelled) {
-        const blocking_task_id = self.blocking_task_id;
-        if (blocking_task_id > 0) {
-            const loop_data = self.loop_data.?;
-
-            const mutex = &loop_data.mutex;
-            mutex.lock();
-            defer mutex.unlock();
-
-            _ = try loop_data.io.queue_unlocked(.{
-                .Cancel = blocking_task_id
-            });
+    // BUG-31: The previous check-then-act pattern had a TOCTOU race: we
+    // read `cancelled` here, and if it was false, we'd queue the cancel
+    // and set `cancelled=true` later. But between the read and the
+    // store, the callback could start executing on the loop's main
+    // thread, read `cancelled=false`, and proceed with the work — the
+    // cancel then set `cancelled=true` too late.
+    //
+    // The fix: claim the cancellation atomically with a CAS. The
+    // callback also uses a CAS to claim the right to proceed (see
+    // `callback_for_python_generic_callbacks`). The first to win the
+    // CAS gets to act; the second sees `cancelled=true` and skips.
+    // This ensures mutual exclusion without holding the io_uring lock
+    // for the duration of the callback, which would be expensive.
+    if (thread_safe) {
+        const cmpxchg = @cmpxchgStrong(bool, &self.cancelled, false, true, .acq_rel, .acquire);
+        if (cmpxchg != null) {
+            // Already cancelled or already finished — nothing to do.
+            return;
         }
+    } else {
+        if (self.cancelled) return;
+        self.cancelled = true;
+    }
 
-        if (thread_safe) {
-            @atomicStore(bool, &self.cancelled, true, .release);
-        }else{
-            self.cancelled = true;
-        }
+    const blocking_task_id = self.blocking_task_id;
+    if (blocking_task_id > 0) {
+        const loop_data = self.loop_data.?;
+
+        const mutex = &loop_data.mutex;
+        mutex.lock();
+        defer mutex.unlock();
+
+        _ = try loop_data.io.queue_unlocked(.{
+            .Cancel = blocking_task_id
+        });
     }
 }
 
