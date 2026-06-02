@@ -346,17 +346,107 @@ fn process_dns_response(data: *const CallbackManager.CallbackData) !void {
     // Validate the response ID against all pending query IDs.
     if (bytes >= 2) {
         const response_id = std.mem.readInt(u16, response[0..2], .big);
-        var id_valid = false;
-        for (server_data.queries) |slot| {
+        var matched_slot: ?*QuerySlot = null;
+        for (server_data.queries) |*slot| {
             if (response_id == slot.id) {
-                id_valid = true;
+                matched_slot = slot;
                 break;
             }
         }
 
-        if (id_valid and bytes >= 12) {
+        if (matched_slot != null and bytes >= 12) {
+            // BUG-46: Validate the response flags.
+            //   - QR bit (bit 7 of byte 2) must be 1 (this is a response, not a query).
+            //   - RCODE (bits 0-3 of byte 3) must be 0 (no error).
+            //   - OPCODE (bits 3-6 of byte 2) must be 0 (standard query, not e.g. UPDATE).
+            // A response with QR=0 is a query being replayed at us; reject it.
+            // A response with non-zero RCODE (NXDOMAIN, SERVFAIL, etc.) should
+            // be treated as an error, not as "no records" — the caller should
+            // know the query failed.
+            const flags = std.mem.readInt(u16, response[2..4], .big);
+            const qr = (flags & 0x8000) != 0;
+            const opcode = (flags >> 11) & 0x0F;
+            const rcode = flags & 0x000F;
+            if (!qr or opcode != 0 or rcode != 0) {
+                // Invalid flags: silently drop this response. We still
+                // count it as received (so the wait loop can proceed),
+                // but we don't try to parse answers.
+                server_data.responses_received += 1;
+                if (server_data.responses_received < server_data.queries.len and !control_data.resolved) {
+                    try queue_next_response_read(server_data);
+                } else {
+                    try mark_resolved_and_execute_user_callbacks(server_data);
+                    server_data.release();
+                }
+                return;
+            }
+
+            // BUG-45: Check the TC (truncated) bit. If set, the response
+            // was cut off and is incomplete. UDP responses can be
+            // truncated for large answers; the client should retry over
+            // TCP. For now, we reject truncated responses and fall back
+            // to the next server / treat as empty.
+            const tc = (flags & 0x0200) != 0;
+            if (tc) {
+                // Truncated: drop and continue waiting for more responses
+                // (or fall through to error handling below).
+                server_data.responses_received += 1;
+                if (server_data.responses_received < server_data.queries.len and !control_data.resolved) {
+                    try queue_next_response_read(server_data);
+                } else {
+                    try mark_resolved_and_execute_user_callbacks(server_data);
+                    server_data.release();
+                }
+                return;
+            }
+
             const qdcount = std.mem.readInt(u16, response[4..6], .big);
             const ancount = std.mem.readInt(u16, response[6..8], .big);
+
+            // BUG-44: Validate the question section. The response should
+            // echo the query's question section exactly. Without this
+            // check, a forged response for a different domain (or a
+            // different QTYPE) could be accepted.
+            if (qdcount != 1) {
+                server_data.responses_received += 1;
+                if (server_data.responses_received < server_data.queries.len and !control_data.resolved) {
+                    try queue_next_response_read(server_data);
+                } else {
+                    try mark_resolved_and_execute_user_callbacks(server_data);
+                    server_data.release();
+                }
+                return;
+            }
+
+            // The question section in the response starts at byte 12 and
+            // is `slot.len - 12` bytes long (the original query buffer
+            // minus the 12-byte header). The full question section
+            // includes the label-encoded hostname plus QTYPE and QCLASS.
+            const slot = matched_slot.?;
+            const question_len = slot.len - 12;
+            if (bytes < 12 + question_len) {
+                server_data.responses_received += 1;
+                if (server_data.responses_received < server_data.queries.len and !control_data.resolved) {
+                    try queue_next_response_read(server_data);
+                } else {
+                    try mark_resolved_and_execute_user_callbacks(server_data);
+                    server_data.release();
+                }
+                return;
+            }
+            const response_question = response[12 .. 12 + question_len];
+            const query_question = slot.buf[12..slot.len];
+            if (!std.mem.eql(u8, response_question, query_question)) {
+                // Question mismatch: forged response for a different query.
+                server_data.responses_received += 1;
+                if (server_data.responses_received < server_data.queries.len and !control_data.resolved) {
+                    try queue_next_response_read(server_data);
+                } else {
+                    try mark_resolved_and_execute_user_callbacks(server_data);
+                    server_data.release();
+                }
+                return;
+            }
 
             if (ancount > 0) {
                 // Skip the question section.

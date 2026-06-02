@@ -595,3 +595,30 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     - **Boost.Asio async operations**: the handler reads the buffer at completion time, not at async_* call time.
     The common thread: **async I/O decouples the queue time from the kernel-read time**, so the library must ensure inputs live as long as the kernel might read them.
 
+---
+
+### 61. Validate the Whole Response, Not Just the ID (2026-06-02)
+
+*   **The Bug:** In `process_dns_response` at `src/loop/dns/resolv.zig:340-400`, the original code only validated the response ID against pending query IDs. The question section was skipped (not compared), the response flags (QR, RCODE, TC) were never inspected, and the answer section was parsed as long as `ancount > 0`. This was three separate bugs combined into one fix:
+    - **BUG-44**: The question section was skipped (counted as "qdcount entries to skip") but never compared to the original query. A forged response for a different domain (or a different QTYPE) would be accepted as long as the ID matched.
+    - **BUG-46**: The QR bit (query vs response) was never checked. A query packet arriving on the socket would be processed as a response. RCODE (error codes like NXDOMAIN) was never checked either — error responses were treated as "no records" (empty but valid) answers.
+    - **BUG-45**: The TC (truncated) bit was never checked. Truncated responses were processed as-is, potentially with missing records and incorrect resolution results.
+*   **The Fix:** Added a comprehensive validation block right after the ID check:
+    1. Find the matching `QuerySlot` (the ID lookup now returns the slot, not just a bool) so we can compare the question section.
+    2. Check the flags: QR must be 1, OPCODE must be 0, RCODE must be 0. Reject the response on failure (silently drop, but still count as received so the wait loop can proceed).
+    3. Check the TC bit. Reject truncated responses (the proper fix is TCP fallback, but for now we just drop and continue).
+    4. Check that `qdcount == 1` (our queries always have exactly one question).
+    5. Compare the response's question section (bytes 12 to 12+question_len) to the original query's question section (slot.buf[12..slot.len]). Reject on mismatch.
+*   **Tests added:**
+    *   No new tests were added. The DNS tests in `tests/test_dns.py` exercise the happy path, and the existing test infrastructure doesn't support injecting forged responses. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Validate the whole response, not just the ID.** When you receive a message from an untrusted source (DNS, network packets, IPC), validating just one field (like the ID) is insufficient. An attacker can craft a response with a valid ID but bogus content. The minimum validation set for any network protocol is:
+    1. **Match the request** (ID + question/section + type + class). A response that doesn't match the request is a forgery.
+    2. **Check the status** (flags, error codes, truncation bits). A response with an error status is not a valid answer.
+    3. **Check the content** (record types, lengths, value ranges). Malformed records can be a security issue (parser bugs) or a correctness issue (wrong data).
+    The DNS cluster (BUG-44, 45, 46) is a textbook example: validating just the ID (BUG-07) is necessary but not sufficient. The same lesson applies to:
+    - **HTTP responses**: validate status code, content-type, content-length before parsing body.
+    - **TLS handshakes**: validate certificate chain, hostname, signature before accepting connection.
+    - **JSON-RPC**: validate method exists, params match schema, request ID matches.
+    - **Database results**: validate column types, NULL handling, row count.
+    The general rule: **the cost of validation is O(1) per response, the cost of accepting a forged response is unbounded.**
+

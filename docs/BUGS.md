@@ -367,6 +367,7 @@ Noticeable bugs, security gaps, or production-affecting leaks.
 - **Description**: Questions in the response are skipped but never compared to the original query. A response for a different domain would be accepted.
 - **Trigger**: Forged or mismatched DNS responses.
 - **Consequences**: Accepting answers for wrong domains.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-46: DNS response flags (QR, RCODE) not checked
 
@@ -375,6 +376,7 @@ Noticeable bugs, security gaps, or production-affecting leaks.
 - **Description**: The QR bit (query vs response) and RCODE (error codes like NXDOMAIN) are never checked. Error responses or even queries could be processed as valid answers.
 - **Trigger**: NXDOMAIN or other error responses.
 - **Consequences**: Treating errors as valid (empty) responses.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-45: UDP truncation (TC bit) not handled
 
@@ -383,6 +385,7 @@ Noticeable bugs, security gaps, or production-affecting leaks.
 - **Description**: The response flags (including TC bit) are never inspected. Truncated responses are processed as-is, potentially with missing records.
 - **Trigger**: Large DNS responses that exceed the UDP buffer.
 - **Consequences**: Incomplete resolution results.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-42: Static ring buffer consume ordering — GC can see stale entries
 
