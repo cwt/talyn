@@ -717,3 +717,17 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     4. **Include context** (timestamps, source file/line, etc.) automatically.
     The general rule: **if you find yourself writing `std.debug.print` in a hot path, you've already made a mistake.** Use a proper logger with levels, and set the level appropriately for production.
 
+---
+
+### 67. Errdefers for OOM Rollback Need Careful Scoping (2026-06-02)
+
+*   **The Bug:** In `get_blocking_tasks_set` at `src/loop/scheduling/io/main.zig:631-650`, the original code had `errdefer set.disattached = false;` at the top of the function, just after `set.free()` returned false. The intent was: if OOM occurs, roll back the disattached flag on the OLD set so its node is not freed prematurely. The original code was actually correct in behavior, but the intent was unclear from the code, and the bug report suggested there was a leak. After careful analysis, the errdefer is correctly scoped: it only runs if `create_new_node` fails, at which point the OLD set is still `self.set` and has not been moved to busy_sets, so re-using it (via reset() when its tasks complete) is safe.
+*   **The Fix:** Added a detailed comment explaining the subtle correctness of the errdefer. The errdefer placement (BEFORE create_new_node) is correct: it rolls back the disattached flag if allocation fails, and runs no-op if allocation succeeds (because no error path is taken after that). The function is unchanged in behavior, but the new comment makes the intent clear and prevents future "fixes" that might break the OOM-rollback logic.
+*   **Tests added:**
+    *   No new tests were added. The bug was a code-quality / documentation issue, not a functional bug. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Errdefers for OOM rollback need careful scoping.** In Zig (and similar languages with defer/finally semantics), it's tempting to add an `errdefer` at the top of a function to handle every error path. But this can be wrong if the function has multiple "phases" with different rollback requirements. The correct pattern is:
+    1. **Phase 1**: allocate resources that need to be cleaned up on error. Add errdefers for these allocations.
+    2. **Phase 2**: commit to a new state (e.g., move a set from one list to another). Add errdefers that undo phase 2 changes.
+    3. **Phase 3**: clean up phase 1 errdefers (because we're now committed) and replace with phase 3 errdefers.
+    The general pattern: **errdefer order is the reverse of setup order.** A late errdefer can roll back an early errdefer's effects. And the placement of errdefers matters: a "roll back disattached" errdefer is correct only if the disattached flag was set in the same scope.
+

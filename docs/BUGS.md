@@ -439,6 +439,7 @@ Noticeable bugs, security gaps, or production-affecting leaks.
 - **Description**: On OOM, the errdefer resets `disattached = false` on the old, full set instead of the new one. When tasks in this set complete, it calls `reset()` instead of `deinit()`, leaving the set's linked list node allocated and orphaned.
 - **Trigger**: OOM when the current BlockingTasksSet is full.
 - **Consequences**: Memory leak of BlockingTasksSet node.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-26: Fixed file slot leak on `register_files_update` failure
 

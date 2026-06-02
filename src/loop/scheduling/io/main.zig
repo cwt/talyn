@@ -633,6 +633,21 @@ pub fn get_blocking_tasks_set(self: *IO) !*BlockingTasksSet {
     if (set.free()) {
         return set;
     }
+
+    // BUG-28: The errdefer `set.disattached = false` is critical
+    // for correctness on OOM. When `set.free()` returned false
+    // above, it set `set.disattached = true` to mark the OLD set
+    // for deinit when its tasks complete. If OOM occurs in
+    // create_new_node (the only thing that can fail here), we must
+    // roll back that flag — otherwise the OLD set's node would be
+    // freed by deinit() while `self.set_node` still points to it,
+    // leaving a dangling pointer.
+    //
+    // The errdefer is scoped BEFORE the create_new_node call so it
+    // only runs if the allocation fails. If the allocation succeeds,
+    // we proceed to move the OLD set to busy_sets; from that point
+    // on, the OLD set's disattached=true state is correct and must
+    // not be rolled back.
     errdefer set.disattached = false;
 
     const new_node = try self.busy_sets.create_new_node(undefined);
