@@ -1190,3 +1190,24 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     5. **JSON parsers**: JSON spec is strict (only space, tab, newline, carriage return), but custom parsers may be lenient.
     The general rule: **for any whitespace delimiter, ask yourself: which whitespace characters? If the answer is "just space", think again.**
 
+---
+
+### 91. Reject Ambiguous Numeric Formats (2026-06-02)
+
+*   **The Bug:** In `parseIp4` at `src/utils/address.zig:106-109`, octets with leading zeros (e.g., `010`) were parsed as decimal 10. Some system parsers (notably glibc's `inet_aton` before 2.34) treated them as octal 8. This led to address mismatches with system tools.
+*   **The Fix:** Reject octets with leading zeros (except for the single digit `0`). A single `0` is still valid, but `00`, `01`, `010`, etc. are now rejected. This matches the modern behavior of `inet_pton` and Python's `ipaddress` module.
+*   **Tests added:**
+    *   No new tests were added. The fix is a defensive check. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Reject ambiguous numeric formats.** The pattern is:
+    1. **Leading zeros**: is `010` decimal 10 or octal 8? Different parsers disagree.
+    2. **Leading `0x`/ `0X`**: is `0x10` hex 16? Different parsers disagree.
+    3. **Leading `+`/ `-`**: is `+10` valid? Different parsers disagree.
+    4. **Trailing characters**: is `10abc` valid? Different parsers disagree.
+    The "be lenient in what you accept" anti-pattern (Postel's law) leads to security vulnerabilities and interoperability bugs. The same lesson applies to:
+    1. **URL parsing**: lenient URL parsing leads to SSRF vulnerabilities.
+    2. **JSON parsing**: lenient JSON parsing leads to injection attacks.
+    3. **HTML parsing**: lenient HTML parsing leads to XSS vulnerabilities.
+    4. **Filename parsing**: lenient filename parsing leads to path traversal attacks.
+    5. **Email parsing**: lenient email parsing leads to phishing attacks.
+    The general rule: **for any input format with ambiguity, reject the ambiguous form.** Postel's law was written for the early Internet, when interoperability was more important than security. In modern systems, strict parsing is usually the right choice.
+

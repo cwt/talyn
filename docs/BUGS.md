@@ -643,6 +643,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **File**: `src/utils/address.zig:106-109`
 - **Description**: Octets like `010` are parsed as decimal 10, not octal 8. Differs from some system parsers (e.g., `inet_aton`).
 - **Consequences**: Address mismatches with system tools.
+- **Status**: ✅ Fixed (see commit log)
 
 ### BUG-70: `parseIp6` doesn't reject addresses with too many groups when `::` is present
 

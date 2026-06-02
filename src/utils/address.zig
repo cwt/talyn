@@ -103,12 +103,23 @@ pub const Address = extern union {
         var i: usize = 0;
         while (i < host.len) {
             if (octet_i >= 4) return error.InvalidIPAddressFormat;
+            // BUG-69: Reject leading zeros in octets (e.g., "010").
+            // The previous code accepted "010" as decimal 10, but
+            // some system parsers (and glibc since 2.34) treat it
+            // as octal 8, leading to address mismatches. The
+            // modern behavior (matching inet_pton and Python's
+            // ipaddress) is to reject leading zeros to avoid
+            // ambiguity. A single "0" is still valid.
+            if (host[i] == '0' and i + 1 < host.len and host[i + 1] != '.') {
+                return error.InvalidIPAddressFormat;
+            }
             var val: u16 = 0;
+            const octet_start = i;
             while (i < host.len and host[i] != '.') : (i += 1) {
                 if (host[i] < '0' or host[i] > '9') return error.InvalidIPAddressFormat;
                 val = val * 10 + (host[i] - '0');
             }
-            if (i > 0 and host[i - 1] == '.') return error.InvalidIPAddressFormat;
+            if (i == octet_start) return error.InvalidIPAddressFormat;
             if (val > 255) return error.InvalidIPAddressFormat;
             bytes[octet_i] = @intCast(val);
             octet_i += 1;
