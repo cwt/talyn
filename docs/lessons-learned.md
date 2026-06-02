@@ -820,3 +820,22 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     4. **Reference-counted smart pointers**: assigning a new value decrefs the old.
     The general rule: **for every "insert" operation, ask yourself: what if there's already a value at this position? What cleanup does the old value need?** The fix is to add the cleanup at the top of the function, before the new value is written.
 
+---
+
+### 73. Distinguish Transient vs Fatal Syscall Errors (2026-06-02)
+
+*   **The Bug:** In `on_child_exit` at `src/loop/child_watcher.zig:115`, after `waitid` returned non-zero, the code re-armed the WaitReadable watcher unconditionally. The retry loop in lines 105-112 handles `EINTR` (transient) by continuing, but if `waitid` returned any other error (e.g., `ECHILD` because the pidfd was already closed, or `EINVAL` because the pidfd is invalid), the code re-armed the watcher. This would cause an infinite loop: each iteration of `POLLIN`-triggered callback would re-arm, which would re-trigger, which would re-call `waitid`, ad infinitum.
+*   **The Fix:** After the retry loop, check the errno again. Only re-arm on transient errors (`EINTR`, `EAGAIN`). For any other error, log it and return without re-arming. This terminates the loop on fatal errors and gives the operator a chance to see the error.
+*   **Tests added:**
+    *   No new tests were added. The bug is a race condition that only manifests when the child process is killed externally and the pidfd is closed in a separate code path. The fix mirrors the standard "transient vs fatal" error handling pattern. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Syscalls can fail with both transient errors (worth retrying) and fatal errors (worth giving up on). The retry path must distinguish between them.** The pattern is:
+    1. Retry transient errors in a tight loop (`EINTR`, `EAGAIN`).
+    2. Log fatal errors and propagate them up.
+    3. Never blindly re-arm a watcher on a non-recoverable error.
+    The "loop on any non-zero return" pattern is a footgun. The same lesson applies to:
+    1. **All I/O syscalls**: read, write, accept, connect, etc. have transient vs fatal errors.
+    2. **Synchronization primitives**: mutex_lock, sem_wait, etc. distinguish between retryable (EAGAIN) and fatal (EINVAL, EDEADLK) errors.
+    3. **Process management**: waitpid, waitid, etc. have transient (EINTR, ECHILD after the process was reaped) and fatal (EINVAL) errors.
+    4. **Timer APIs**: timer_settime, clock_gettime, etc. have transient (EAGAIN, EINTR) and fatal (EINVAL) errors.
+    The general rule: **for every "retry on non-zero return" loop, ask yourself: which errors are worth retrying? If you can't answer, treat all errors as fatal.**
+

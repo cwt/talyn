@@ -497,6 +497,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **Description**: If `waitid` returns any non-zero error (e.g., ECHILD — child doesn't exist), the watcher is re-armed. For ECHILD, this creates an infinite loop of pidfd readability -> waitid failure -> re-arm.
 - **Trigger**: Child process already reaped by another handler.
 - **Consequences**: Infinite event loop spin; 100% CPU usage.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-48: `resolve_address` returns pointer to global mutable state
 

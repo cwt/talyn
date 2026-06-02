@@ -111,8 +111,21 @@ fn on_child_exit(data: *const CallbackManager.CallbackData) !void {
             break :res r;
         }
     };
-    
+
     if (res != 0) {
+        const errno: u32 = @truncate(~res + 1);
+        // BUG-38: Only re-arm on transient errors (EINTR, EAGAIN).
+        // Previously we re-armed on ANY non-zero return, which
+        // included unrecoverable errors like ECHILD (no such
+        // child — pidfd was already closed) or EINVAL. Re-arming
+        // on those would loop forever calling waitid on a dead
+        // pidfd.
+        const eintr: u32 = @intFromEnum(std.os.linux.E.INTR);
+        const eagain: u32 = @intFromEnum(std.os.linux.E.AGAIN);
+        if (errno != eintr and errno != eagain) {
+            std.log.err("on_child_exit: waitid failed with errno {d}, not re-arming", .{errno});
+            return;
+        }
         // Process might still be alive (though POLLIN triggered)?
         // Re-arm
         handler.task_id = try self.loop.io.queue(.{
