@@ -587,6 +587,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **File**: `src/loop/scheduling/io/main.zig:234-238`
 - **Description**: `pop()` decrements `self.index` unconditionally, assuming the discarded task is always the most recently allocated one. Holds today because `discard()` is only called in `errdefer` immediately after `push()`.
 - **Consequences**: Pool index corruption if any future code calls `discard()` on a non-last task.
+- **Status**: ✅ Fixed (see commit log)
 
 ### BUG-62: Hook list `clear()` doesn't invoke callback cleanup
 

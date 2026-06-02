@@ -251,6 +251,18 @@ pub const BlockingTasksSet = struct {
     }
 
     pub inline fn pop(self: *BlockingTasksSet) void {
+        // BUG-61: Clear the slot we're about to "release".
+        // The previous code just decremented self.index, leaving
+        // the slot's data and operation fields populated. If any
+        // future code path calls pop() on a non-last task, the
+        // old data would be read incorrectly. By clearing the slot
+        // we make pop() safe regardless of which task it pops.
+        const idx = self.index - 1;
+        const slot = &self.task_data_pool[idx];
+        slot.data = .none;
+        slot.operation = undefined;
+        slot.index = 0;
+        slot.write_iovs_copy = null;
         self.index -= 1;
         self.active_tasks -= 1;
         self.loop.reserved_slots -= 1;

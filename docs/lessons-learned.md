@@ -1028,3 +1028,22 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     4. **Mutex contention logging**: logging every lock acquisition is fine for a debug mutex, not for a hot mutex.
     The general rule: **any code that runs in a loop on a hot path should be O(1) and side-effect-free.** The "I left the debug print in for now" anti-pattern is a common source of performance regressions.
 
+---
+
+### 83. Make Data-Structure Operations Robust to Assumed Invariants (2026-06-02)
+
+*   **The Bug:** In `BlockingTasksSet.pop()` at `src/loop/scheduling/io/main.zig:253-257`, the function decremented `self.index`, `self.active_tasks`, and `self.loop.reserved_slots`, but did NOT clear the slot that was being "released". This is fine as long as `pop()` is only called on the most recently pushed task (the LIFO assumption), because the slot won't be read again. But if any future code path calls `pop()` on a non-last task, the stale data in the slot would be read incorrectly.
+*   **The Fix:** Clear the slot's `data`, `operation`, `index`, and `write_iovs_copy` fields before decrementing. Now `pop()` is safe regardless of which task it pops.
+*   **Tests added:**
+    *   No new tests were added. The fix is a defensive measure against future code changes. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Don't rely on assumed invariants that the function's signature doesn't enforce.** The pattern is:
+    1. **The signature**: `pop()` doesn't take an index — it implies "pop the last one".
+    2. **The invariant**: the caller always pushes and pops in LIFO order.
+    3. **The fragility**: if a future caller breaks the invariant, the bug is silent.
+    The fix is to **make the function safe even when the invariant is broken.** This is defensive programming: don't trust callers, don't trust the future, don't trust yourself. The same lesson applies to:
+    1. **Stack pop**: if you pop a non-top frame, the stack should be coherent.
+    2. **Allocator free**: freeing an arbitrary pointer should work (the allocator should validate).
+    3. **Reference count decrement**: decrementing any refcount should work, not just the "expected" ones.
+    4. **Database row deletion**: deleting any row should work, not just the "last inserted" one.
+    The general rule: **for any data-structure operation, ask yourself: what state am I leaving behind? Is that state safe to read?** If the answer is "it depends on caller behavior", make the function self-sufficient.
+
