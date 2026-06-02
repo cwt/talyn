@@ -551,6 +551,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **Description**: On timeout, the daemon thread running `executor.shutdown(wait=True)` is not joined. It continues running after the function returns.
 - **Trigger**: `shutdown_default_executor(timeout=...)` with a timeout shorter than the executor's shutdown time.
 - **Consequences**: Thread leak; potential access to freed resources if loop is closed.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-56: `start_tls` doesn't handle pre-existing read buffer data
 

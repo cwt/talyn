@@ -491,7 +491,11 @@ class Loop(_Loop):
             async with asyncio.timeouts.timeout(timeout):
                 await future
         except asyncio.TimeoutError:
-            pass
+            # BUG-55: Don't leak the daemon thread. Best-effort
+            # join with the same timeout; if it doesn't return,
+            # the thread is daemon so it will be cleaned up on
+            # process exit, but at least we tried.
+            thread.join(timeout)
         else:
             thread.join()
 

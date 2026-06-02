@@ -946,3 +946,22 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     4. **Network protocols**: HTTP/2, WebSockets, gRPC all have want-read/want-write patterns.
     The general rule: **for any non-blocking I/O API, catch the "want" status and re-arm the appropriate side; catch the "error" status and close the connection.**
 
+---
+
+### 79. Best-Effort Thread Join on Timeout (2026-06-02)
+
+*   **The Bug:** In `shutdown_default_executor` at `talyn/loop.py:485-496`, the function spawns a daemon thread to run `executor.shutdown(wait=True)` and then awaits a future with a timeout. If the future completes within the timeout, the `else` branch joins the thread. But if the timeout expires (raising `asyncio.TimeoutError`), the thread is not joined — it's left running. Since the thread is a daemon, it won't block process exit, but it may still be running and accessing resources that are about to be freed.
+*   **The Fix:** In the `except asyncio.TimeoutError` branch, call `thread.join(timeout)` as a best-effort join. This gives the thread the same amount of time to complete after the future timed out. If it still doesn't return, we can't do anything more — the thread is daemon and will be cleaned up on process exit.
+*   **Tests added:**
+    *   No new tests were added. The fix is a one-line addition to the timeout path. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Always attempt to join a spawned thread, even on timeout.** The pattern is:
+    1. **Spawn the thread.**
+    2. **Wait for the work to complete (with timeout if applicable).**
+    3. **Always join the thread** — either in the success path or in the timeout path.
+    The "join only on success" anti-pattern is a common source of thread leaks. The same lesson applies to:
+    1. **Process spawning**: subprocess.Popen should be waited on, not just polled.
+    2. **Async tasks with background threads**: the asyncio task may complete but the thread is still running.
+    3. **Resource pools**: thread pool executors should be shut down, not abandoned.
+    4. **Timer threads**: scheduled callbacks running on a worker thread should be joined on cancel.
+    The general rule: **for every spawned thread, the very last thing you do with it should be a join (or a daemon declaration).** The "thread leaks" bug is one of the most insidious because the process keeps running but the thread is just consuming resources in the background.
+
