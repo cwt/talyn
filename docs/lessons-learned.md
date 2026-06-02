@@ -1087,3 +1087,22 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     5. **Network protocol opcodes**: unknown opcodes should be logged.
     The general rule: **for every "default" branch, ask yourself: is this the right default? If not, log it.** The "silent default" anti-pattern is one of the most common sources of subtle bugs.
 
+---
+
+### 86. Distinguish Expected From Unexpected Outcomes (2026-06-02)
+
+*   **The Bug:** In `BlockingTask.check_result` at `src/loop/scheduling/io/main.zig:116-117`, the cancel operations (`.Cancel` and `.CancelByFd`) had empty handlers. Cancel is fire-and-forget by design, but the result code (success, ENOENT indicating the task was already complete, or other errors) was being silently dropped. If a cancel returned an unexpected error (e.g., EINVAL, EBADF), there was no way for the operator to know.
+*   **The Fix:** Added explicit handling: SUCCESS and NOENT are expected (the task either was canceled or had already completed and isn't there). Any other result code is logged as a warning. The cancel still doesn't act on the result (fire-and-forget), but unexpected results are now visible.
+*   **Tests added:**
+    *   No new tests were added. The fix is a defensive log statement. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Distinguish between "expected outcome" and "unexpected outcome" — even for fire-and-forget operations.** The pattern is:
+    1. **Expected outcomes**: SUCCESS, expected non-error results.
+    2. **Benign outcomes**: e.g., NOENT for a cancel that raced with completion.
+    3. **Unexpected outcomes**: any other result code.
+    The "fire and forget, ignore the result" anti-pattern hides bugs. The same lesson applies to:
+    1. **Thread detach**: detach is fire-and-forget, but logging the exit status helps debugging.
+    2. **Async cancel**: cancel is fire-and-forget, but logging unexpected errors helps debugging.
+    3. **UDP send**: UDP is unreliable, but logging ICMP errors helps debugging.
+    4. **Best-effort cleanup**: cleanup is best-effort, but logging failures helps debugging.
+    The general rule: **for every "fire-and-forget" operation, ask yourself: what's the result code, and is the result code what I expected?** If the answer is "I don't know" or "I haven't thought about it", log it.
+

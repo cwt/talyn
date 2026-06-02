@@ -608,6 +608,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **File**: `src/loop/scheduling/io/cancel.zig:4-13`
 - **Description**: Cancel SQEs are submitted with `user_data = 0`. The resulting CQE is silently dropped. If the cancel fails, there's no way to know.
 - **Consequences**: No observable impact (fire-and-forget by design), but makes debugging difficult.
+- **Status**: ✅ Fixed (see commit log)
 
 ### BUG-65: `task_get_name` includes null terminator in string length
 

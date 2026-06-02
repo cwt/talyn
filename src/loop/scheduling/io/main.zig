@@ -113,8 +113,18 @@ pub const BlockingTask = struct {
                     else => {}
                 }
             },
-            .Cancel => {},
-            .CancelByFd => {},
+            // BUG-64: Cancel operations are fire-and-forget by
+            // design, but log unexpected result codes. -ENOENT
+            // is expected (the task already completed), but other
+            // errors may indicate a problem.
+            .Cancel => switch (result) {
+                .SUCCESS, .NOENT => {},
+                else => std.log.warn("Cancel: unexpected result {s}", .{@tagName(result)}),
+            },
+            .CancelByFd => switch (result) {
+                .SUCCESS, .NOENT => {},
+                else => std.log.warn("CancelByFd: unexpected result {s}", .{@tagName(result)}),
+            },
             .PerformWriteV, .PerformWrite, .PerformSendMsg => {
                 switch (result) {
                     .SUCCESS => {},
