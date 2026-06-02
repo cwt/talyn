@@ -488,6 +488,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **Description**: When `put` is called with an existing key, the old value is overwritten without invoking the eviction callback. In the DNS cache, this means the old `Record` (and its associated hostname string) is leaked.
 - **Trigger**: Inserting a duplicate key into the LRU cache.
 - **Consequences**: Memory leak of old values that hold allocated resources.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-38: `on_child_exit` re-arms on non-EINTR errors from `waitid`
 

@@ -52,6 +52,14 @@ pub fn LRUCache(comptime K: type, comptime V: type) type {
 
         pub fn put(self: *Self, key: K, value: V) !void {
             if (self.map.get(key)) |node| {
+                // BUG-40: Fire the evict callback for the old value
+                // before overwriting. Without this, callers who
+                // register a callback to release resources tied to
+                // the cached value (e.g., freeing a buffer) leak
+                // the old value when they re-put the same key.
+                if (self.evict_callback) |cb| {
+                    cb(self.evict_ctx, node.key, node.value);
+                }
                 node.value = value;
                 self.move_to_front(node);
                 return;
@@ -66,7 +74,7 @@ pub fn LRUCache(comptime K: type, comptime V: type) type {
                 .key = key,
                 .value = value,
             };
-            
+
             try self.map.put(key, node);
             self.prepend(node);
         }
@@ -151,9 +159,38 @@ test "LRUCache basic" {
     try cache.put(1, 100);
     try cache.put(2, 200);
     try std.testing.expectEqual(@as(?u32, 100), cache.get(1));
-    
+
     try cache.put(3, 300); // Should evict 2 (1 was used recently)
     try std.testing.expectEqual(@as(?u32, null), cache.get(2));
     try std.testing.expectEqual(@as(?u32, 100), cache.get(1));
     try std.testing.expectEqual(@as(?u32, 300), cache.get(3));
+}
+
+test "LRUCache put with existing key fires evict callback (BUG-40)" {
+    const allocator = std.testing.allocator;
+    var cache = LRUCache(u32, []const u8).init(allocator, 4);
+    defer cache.deinit();
+
+    const Ctx = struct {
+        count: u32 = 0,
+        last_value: []const u8 = "",
+    };
+    var ctx = Ctx{};
+    cache.evict_callback = struct {
+        fn cb(c: ?*anyopaque, _: u32, v: []const u8) void {
+            const c_ptr: *Ctx = @ptrCast(@alignCast(c.?));
+            c_ptr.count += 1;
+            c_ptr.last_value = v;
+        }
+    }.cb;
+    cache.evict_ctx = @ptrCast(&ctx);
+
+    try cache.put(1, "first");
+    try std.testing.expectEqual(@as(u32, 0), ctx.count);
+
+    // Re-putting the same key must fire the callback for the old value
+    try cache.put(1, "second");
+    try std.testing.expectEqual(@as(u32, 1), ctx.count);
+    try std.testing.expectEqualStrings("first", ctx.last_value);
+    try std.testing.expectEqualStrings("second", cache.get(1).?);
 }

@@ -805,3 +805,18 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     4. **DNS queries**: the one we just fixed.
     The general rule: **for every "if cached, return" check, ask yourself: what about in-flight operations?**
 
+---
+
+### 72. Replace Operations Must Fire Eviction Callbacks (2026-06-02)
+
+*   **The Bug:** In `LRUCache.put()` at `src/utils/lru.zig:53-72`, when the key already exists in the cache, the new value overwrites the old value directly with `node.value = value`. The `evict_callback` is only called when a node is evicted due to capacity overflow or removed explicitly. Callers who register an evict callback to release resources tied to the cached value (e.g., freeing a buffer, decrementing a refcount) would leak those resources on every `put()` that overwrites an existing entry.
+*   **The Fix:** Before overwriting the value, call the `evict_callback` (if set) with the OLD value. This matches the semantic of "an entry is being removed from the cache" — the caller can then release any resources tied to the old value.
+*   **Tests added:**
+    *   Zig unit test `LRUCache put with existing key fires evict callback (BUG-40)` in `src/utils/lru.zig` that sets a callback, puts a key, re-puts the same key with a new value, and verifies the callback was called exactly once with the OLD value.
+*   **The Lesson:** **A "replace" operation is a "remove + insert" in disguise — both must fire eviction callbacks.** The mental model of "the entry is still in the cache, we just updated it" hides the fact that the OLD value is no longer accessible. From the caller's perspective, the old value is just as gone as if it had been evicted. The same lesson applies to:
+    1. **Map/HashMap update**: when updating an existing key, fire any per-entry cleanup for the old value.
+    2. **ArrayList set/index assignment**: in languages with manual memory, this can leak the old element.
+    3. **Database UPDATE**: if the column is a foreign key, the old row may need to be deleted or updated.
+    4. **Reference-counted smart pointers**: assigning a new value decrefs the old.
+    The general rule: **for every "insert" operation, ask yourself: what if there's already a value at this position? What cleanup does the old value need?** The fix is to add the cleanup at the top of the function, before the new value is written.
+
