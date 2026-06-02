@@ -479,6 +479,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **Description**: If a record exists but is in `.pending` state, a new query is queued instead of attaching the callback to the existing pending query.
 - **Trigger**: Multiple concurrent reverse lookups for the same address.
 - **Consequences**: Wasted network resources; potential duplicate callbacks.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-40: LRU `put()` with existing key leaks old value
 
