@@ -1309,3 +1309,23 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     5. **Network operation timeouts**: connect, accept, send, recv — all should be configurable.
     The general rule: **for any timeout in async code, make it a parameter with a sensible default.** A 60s default is fine for most cases, but power users need to override it. The cost of a parameter is 1 line; the cost of a non-configurable timeout is hours of debugging.
 
+---
+
+### 97. Never Silently Swallow Exceptions (2026-06-02)
+
+*   **The Bug:** In `talyn/loop.py`, 14 SSL protocol callbacks used the `except Exception: pass` pattern to swallow exceptions from user protocol methods (`connection_lost`, `data_received`, `eof_received`, `pause_writing`, `resume_writing`). If user code raised an exception, it would be silently dropped, making it nearly impossible to debug.
+*   **The Fix:** Replaced all 14 `pass` statements with `logger.exception("Unhandled exception in event loop callback")`. The exception is still swallowed (so the event loop doesn't crash), but it's now logged with full traceback via Python's `logging` module.
+*   **Tests added:**
+    *   No new tests were added. The fix is a logging change. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Never silently swallow exceptions.** The pattern is:
+    1. **Silent swallow**: `except Exception: pass` — exception is lost, no record of it.
+    2. **Log and swallow**: `except Exception: logger.exception(...)` — exception is recorded, can be debugged later.
+    3. **Re-raise**: `except Exception: raise` — exception propagates, may crash the event loop.
+    The "silent swallow" anti-pattern is the worst kind of bug because the code "works" but produces wrong results. The same lesson applies to:
+    1. **Signal handlers**: catch and log SIGSEGV, don't just `exit(1)`.
+    2. **Background threads**: log exceptions from thread.run() catch blocks.
+    3. **Finalizers (__del__)**: log exceptions instead of swallowing them.
+    4. **atexit handlers**: log exceptions from cleanup code.
+    5. **Library code**: log exceptions before raising wrapped exceptions.
+    The general rule: **for any `except Exception: pass` block, add a log call.** The cost of a log line is 1 line of code; the cost of a silent bug is hours of debugging. If you must swallow, log first.
+

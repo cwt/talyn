@@ -102,7 +102,7 @@ class _SSLTransportWrapper:
             self._force_close()
             return
         except Exception:
-            pass
+            logger.exception("Unhandled exception in event loop callback")
 
         self._ssp._f()
         self._force_close()
@@ -644,7 +644,7 @@ class Loop(_Loop):
                 try:
                     self._ap.connection_lost(e)
                 except Exception:
-                    pass
+                    logger.exception("Unhandled exception in event loop callback")
                 if not waiter.done():
                     waiter.set_exception(e or ConnectionResetError())
 
@@ -659,14 +659,14 @@ class Loop(_Loop):
                     try:
                         self._ap.pause_writing()
                     except Exception:
-                        pass
+                        logger.exception("Unhandled exception in event loop callback")
 
             def resume_writing(self):
                 if hasattr(self, "_ap") and hasattr(self._ap, "resume_writing"):
                     try:
                         self._ap.resume_writing()
                     except Exception:
-                        pass
+                        logger.exception("Unhandled exception in event loop callback")
 
             def _h(self):
                 try:
@@ -702,7 +702,7 @@ class Loop(_Loop):
                     try:
                         self._ap.data_received(b"".join(chunks))
                     except Exception:
-                        pass
+                        logger.exception("Unhandled exception in event loop callback")
 
             def _f(self):
                 d = self._outgoing.read()
@@ -741,7 +741,7 @@ class Loop(_Loop):
                 raw_buffer.clear()
                 incoming.write(data)
             except Exception:
-                pass
+                logger.exception("Unhandled exception in event loop callback")
 
         transport.pause_reading()
         transport.set_protocol(ssl_protocol)
@@ -832,7 +832,7 @@ class Loop(_Loop):
                 try:
                     self._ap.connection_lost(e)
                 except Exception:
-                    pass
+                    logger.exception("Unhandled exception in event loop callback")
 
             def eof_received(self):
                 try:
@@ -845,14 +845,14 @@ class Loop(_Loop):
                     try:
                         self._ap.pause_writing()
                     except Exception:
-                        pass
+                        logger.exception("Unhandled exception in event loop callback")
 
             def resume_writing(self):
                 if hasattr(self, "_ap") and hasattr(self._ap, "resume_writing"):
                     try:
                         self._ap.resume_writing()
                     except Exception:
-                        pass
+                        logger.exception("Unhandled exception in event loop callback")
 
             def _h(self):
                 try:
@@ -1054,14 +1054,14 @@ class Loop(_Loop):
                     try:
                         self._ap.pause_writing()
                     except Exception:
-                        pass
+                        logger.exception("Unhandled exception in event loop callback")
 
             def resume_writing(self):
                 if hasattr(self, "_ap") and hasattr(self._ap, "resume_writing"):
                     try:
                         self._ap.resume_writing()
                     except Exception:
-                        pass
+                        logger.exception("Unhandled exception in event loop callback")
 
             def _h(self):
                 try:
@@ -1223,7 +1223,7 @@ class Loop(_Loop):
                 try:
                     self._ap.connection_lost(e)
                 except Exception:
-                    pass
+                    logger.exception("Unhandled exception in event loop callback")
 
             def eof_received(self):
                 try:
@@ -1236,14 +1236,14 @@ class Loop(_Loop):
                     try:
                         self._ap.pause_writing()
                     except Exception:
-                        pass
+                        logger.exception("Unhandled exception in event loop callback")
 
             def resume_writing(self):
                 if hasattr(self, "_ap") and hasattr(self._ap, "resume_writing"):
                     try:
                         self._ap.resume_writing()
                     except Exception:
-                        pass
+                        logger.exception("Unhandled exception in event loop callback")
 
             def _h(self):
                 try:

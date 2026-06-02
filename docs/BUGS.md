@@ -686,6 +686,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **File**: `talyn/loop.py:670-674, 780-782, 1021`
 - **Description**: Multiple SSL protocol implementations silently swallow exceptions from `data_received` and `connection_lost`.
 - **Consequences**: Hides bugs in user code.
+- **Status**: ✅ Fixed (see commit log)
 
 ### BUG-76: Dead code in signal `unlink`
 
