@@ -426,7 +426,9 @@ fn z_create_server_socket(server_data: *ServerSocketData) !void {
             }
 
             const bind_rc = std.os.linux.bind(fd, @ptrCast(&addr_with_port.any), addr_with_port.getOsSockLen());
-            std.debug.print("Z_BIND FD: {}, RET: {}, ERR: {}\n", .{fd, bind_rc, utils.getSyscallErrno(bind_rc)});
+            // BUG-36: Removed a std.debug.print that leaked internal
+            // fd numbers and error codes to stderr on every server
+            // bind. The actual error handling is below.
             if (utils.getSyscallErrno(bind_rc) != .SUCCESS) {
                 if (utils.getSyscallErrno(bind_rc) == .ADDRNOTAVAIL) {
                     last_err = error.AddressNotAvailable;

@@ -430,6 +430,7 @@ Noticeable bugs, security gaps, or production-affecting leaks.
 - **Description**: `std.debug.print("Z_BIND FD: {}, RET: {}, ERR: {}\n", ...)` leaks internal fd numbers and error codes to stderr on every server bind.
 - **Trigger**: Any server creation.
 - **Consequences**: Information disclosure, log pollution.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-28: `get_blocking_tasks_set()` errdefer resets wrong set on OOM
 

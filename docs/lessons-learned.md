@@ -694,3 +694,26 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     4. **Audio/video pipelines**: don't drop frames, either buffer or notify.
     The general rule: **if you're tempted to add `if (paused) { return; }` to a write path, ask yourself: where does the data go? If the answer is "nowhere", you're silently dropping. Buffer it, block on it, or fail explicitly.**
 
+---
+
+### 66. Strip Debug Prints Before Commit (2026-06-02)
+
+*   **The Bug:** In `create_server` at `src/loop/python/io/server/create_server.zig:429`, a `std.debug.print("Z_BIND FD: {}, RET: {}, ERR: {}\n", ...)` was left in the production code path. Every call to `create_server` (or any other server creation API) would leak internal fd numbers, the bind return code, and the errno to stderr. The actual error handling was below the print, so the print was redundant (it was added for debugging and never removed).
+*   **The Fix:** Removed the debug print. The error handling below the print was already correct.
+*   **Tests added:**
+    *   No new tests were added. The bug was a code-quality / information-disclosure issue, not a functional bug. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Strip debug prints before commit.** `std.debug.print` (and `println!` in Rust, `printf` in C, `console.log` in JS) is great for development — it's unbuffered, simple, and goes to stderr by default. But it has two problems in production:
+    1. **Information disclosure**: prints often include internal state (fd numbers, pointer addresses, error codes) that the user shouldn't see.
+    2. **Performance**: `std.debug.print` writes to stderr on every call. In a hot path, this is a significant overhead — stderr is unbuffered, so every print involves a syscall.
+    The fix is to **strip debug prints before commit**. The best way to do this is to use a proper logging framework:
+    - **Zig**: `std.log` with log levels (`.err`, `.warn`, `.info`, `.debug`). Set the log level via `--summary all` or a compile-time flag.
+    - **Rust**: `log` crate with `env_logger` or similar.
+    - **C**: `syslog` or a logging library.
+    - **Python**: `logging` module with levels.
+    With a proper logging framework, you can:
+    1. **Set the log level** in production (e.g., `.warn` only) to suppress `.info` and `.debug` logs.
+    2. **Filter by module** to suppress noisy third-party modules.
+    3. **Direct to a file** instead of stderr to avoid spamming the user's terminal.
+    4. **Include context** (timestamps, source file/line, etc.) automatically.
+    The general rule: **if you find yourself writing `std.debug.print` in a hot path, you've already made a mistake.** Use a proper logger with levels, and set the level appropriately for production.
+
