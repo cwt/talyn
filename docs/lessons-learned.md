@@ -1389,3 +1389,22 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     5. **Capacity=0 degenerate case**: many data structures break when capacity is 0. Always test the boundary.
     The general rule: **for any code that has a "capacity" or "limit" parameter, add an explicit boundary check.** The 1-line check `if (capacity == 0) return;` is worth more than 1000 lines of test coverage.
 
+---
+
+### 101. Use Configuration Fields, Don't Hardcode (2026-06-02)
+
+*   **The Bug:** In `WriteTransport.writev` at `src/transports/write_transport.zig:208`, the io_uring submission entry used `.zero_copy = false` — hardcoded. The `WriteTransport` struct had a `zero_copying: bool` field that callers could set when constructing the transport (e.g., for high-throughput servers that want to skip the kernel's copy from userspace to kernel buffer), but the field was being ignored. The result: zero-copy writes were always disabled, defeating the purpose of the configuration option.
+*   **The Fix:** Replaced the hardcoded `false` with `self.zero_copying`. Now the user's choice is respected: if they construct the transport with `zero_copying=true`, writes will use io_uring's registered-buffer fast path.
+*   **Tests added:**
+    *   No new tests were added. The fix is a constant replacement. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Use configuration fields, don't hardcode.** The pattern is:
+    1. **Hardcoded**: `.zero_copy = false,` — user's choice is ignored.
+    2. **Field-based**: `.zero_copy = self.zero_copying,` — user's choice is respected.
+    The "configuration field exists but is unused" anti-pattern is a common source of "why isn't my optimization working?" bugs. The same lesson applies to:
+    1. **HTTP keep-alive**: config has `keep_alive: bool` but the response always sets `Connection: close`.
+    2. **TCP_NODELAY**: config has `no_delay: bool` but `setsockopt` is never called.
+    3. **Worker pool size**: config has `pool_size: usize` but the pool always starts with 1 worker.
+    4. **Buffer size**: config has `buffer_size: usize` but the buffer is always 4096.
+    5. **Log level**: config has `log_level: LogLevel` but the logger always uses INFO.
+    The general rule: **for any configuration field on a struct, use it.** If you add a field, it should be read somewhere. A field that's defined but never read is a code smell — either it's dead code, or it's a bug waiting to happen when someone tries to use it.
+

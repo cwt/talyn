@@ -715,6 +715,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **File**: `src/transports/write_transport.zig:179`
 - **Description**: The `WriteTransport` has a `zero_copying` field but it's never used. Zero-copy writes are always disabled.
 - **Consequences**: Missed performance optimization.
+- **Status**: ✅ Fixed (see commit log)
 
 ---
 

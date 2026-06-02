@@ -205,7 +205,12 @@ fn submit_next_chunk(self: *WriteTransport) !void {
             .fd = self.fd,
             .fixed_file_index = self.fixed_file_index,
             .data = data_slice,
-            .zero_copy = false,
+            // BUG-79: Use self.zero_copying instead of hardcoded
+            // false. The WriteTransport has a zero_copying field
+            // that callers can set when constructing the transport,
+            // but it was being ignored. Now the user's choice is
+            // respected.
+            .zero_copy = self.zero_copying,
         },
     });
     _ = try self.loop.io.flush_pending_sqes();
