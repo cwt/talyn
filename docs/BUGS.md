@@ -629,6 +629,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **File**: `src/python_c.zig:353, 364`
 - **Description**: `@intFromPtr(op) <= 0xFFFF` skips incref/decref for low-address pointers. Doesn't match CPython's actual singleton handling.
 - **Consequences**: Theoretical missed incref/decref leading to premature free or leak.
+- **Status**: ✅ Fixed (see commit log)
 
 ### BUG-68: `parse_resolv_configuration` doesn't handle tabs
 

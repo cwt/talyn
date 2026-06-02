@@ -1148,3 +1148,23 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     4. **Test setup**: every fixture needs teardown on test failure.
     The general rule: **for every successful step, ask yourself: if the NEXT step fails, does the cleanup of THIS step run?** If not, add it.
 
+---
+
+### 89. Don't Reinvent the Wheel — Use the Standard Library (2026-06-02)
+
+*   **The Bug:** In `py_incref` and `py_decref` at `src/python_c.zig:352-366`, there was a heuristic check `@intFromPtr(op) <= 0xFFFF` that skipped the refcount operation for low-address pointers. This was an attempt to skip None/True/False/interned-integer singletons, but the heuristic was wrong: CPython's actual singletons are at high addresses (e.g., `_Py_NoneStruct` is in the interpreter state, not at address 0).
+*   **The Fix:** Removed the heuristic check entirely. CPython's `Py_IncRef` and `Py_DecRef` are safe to call on all valid objects, including None/True/False. They handle the singleton case internally.
+*   **Tests added:**
+    *   No new tests were added. The fix is a removal of a buggy heuristic. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Don't reinvent the wheel — use the standard library.** The pattern is:
+    1. **You think you have an optimization**: "I can skip this refcount operation for singletons."
+    2. **You write a heuristic**: "If the pointer is < 0xFFFF, skip."
+    3. **The heuristic is wrong**: CPython's singletons are at high addresses.
+    4. **You have a bug**: premature free or leak.
+    The "I know better than the standard library" anti-pattern is a common source of bugs. The same lesson applies to:
+    1. **Custom memory allocators**: usually slower and buggier than `malloc`.
+    2. **Custom hash functions**: usually worse than the standard library's.
+    3. **Custom sort algorithms**: usually worse than `std::sort` or `list.sort`.
+    4. **Custom string handling**: usually worse than `std::string` or CPython's `PyUnicode`.
+    The general rule: **before writing a custom version of a standard library function, ask yourself: do I really know better? Usually, the answer is no.** The standard library has been tested by millions of users; your custom version has been tested by you.
+

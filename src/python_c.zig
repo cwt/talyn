@@ -350,7 +350,12 @@ inline fn get_refcnt_split(obj: *Python.PyObject) *[2]u32 {
 }
 
 pub inline fn py_incref(op: *Python.PyObject) void {
-    if (@intFromPtr(op) <= 0xFFFF) return;
+    // BUG-67: Removed the `@intFromPtr(op) <= 0xFFFF` heuristic
+    // check. That was a fragile sentinel check that didn't match
+    // CPython's actual interned-object handling. CPython's
+    // Py_IncRef/Py_DecRef are safe to call on None, True, False,
+    // and other small-integer singletons. Always call the real
+    // function to ensure correct refcount behavior.
     _c.Py_IncRef(op);
 }
 
@@ -361,7 +366,9 @@ pub inline fn py_xincref(op: ?*Python.PyObject) void {
 }
 
 pub fn py_decref(op: *Python.PyObject) void {
-    if (@intFromPtr(op) <= 0xFFFF) return;
+    // BUG-67: Removed the `@intFromPtr(op) <= 0xFFFF` heuristic
+    // check. Always call Py_DecRef to ensure correct refcount
+    // behavior, even for None/True/False.
     _c.Py_DecRef(op);
 }
 
