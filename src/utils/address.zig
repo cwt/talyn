@@ -175,6 +175,18 @@ pub const Address = extern union {
                 target_i += 1;
             }
         } else {
+            // BUG-47: Without a `::` shorthand, the address must contain
+            // exactly 8 groups. The original code would silently accept
+            // incomplete addresses like `1:2:3:4:5:6:7` by writing only 7
+            // groups to the 16-byte buffer and leaving the remaining 2
+            // bytes as zero — effectively zero-padding the 8th group.
+            // That's ambiguous (the user might have meant to write 8
+            // groups) and silently transforms an invalid address into a
+            // valid one, which can lead to connection attempts to
+            // unexpected hosts. Now we reject the address explicitly.
+            if (group_i != 8) {
+                return error.IncompleteAddress;
+            }
             for (0..group_i) |j| {
                 const g = groups[j];
                 bytes[target_i * 2] = @as(u8, @intCast(g >> 8));

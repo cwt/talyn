@@ -545,3 +545,18 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     4. **(Optional) Add a test** that forces the invariant violation to confirm the failure is surfaced (not done here because the bug requires a free-threading race that's hard to reproduce reliably — but in cases where the invariant can be violated synchronously, a test is mandatory).
     The general rule: **if you find yourself writing `if (something_that_should_be_impossible) { return; }`, you're not handling the impossible case — you're hiding a bug.** The right thing is to either: (a) prove the case is impossible and replace the check with `unreachable` or `assert`, or (b) handle it explicitly as a real error path. Never silently swallow impossible-but-not-actually-impossible conditions.
 
+---
+
+### 58. Zero-Padding is a Silent Bug for Parsers (2026-06-02)
+
+*   **The Bug:** In `Address.parseIp6` at `src/utils/address.zig:177-183`, the original code was: `else { for (0..group_i) |j| { ... write groups to bytes ... } }`. The intent was to handle the "no `::` in address" case. But it never checked that `group_i == 8`. If you gave it `2001:db8:1` (3 groups, no `::`), the parser would write 3 groups to the 16-byte buffer (bytes 0-5 filled) and leave the remaining 10 bytes as zero (because `var bytes: [16]u8 = .{0} ** 16`). The result: `2001:db8:1` was silently interpreted as `2001:0db8:0001:0000:0000:0000:0000:0000` — completely wrong and dangerous, because it would cause connection attempts to a different host than the user intended.
+*   **The Fix:** Added an explicit check: `if (group_i != 8) return error.IncompleteAddress;` in the no-`::` branch. The error propagates up to the Python layer as a `talyn.TalynError` (or similar), and the user's connection attempt fails loudly instead of silently connecting to the wrong host.
+*   **Tests added:**
+    *   No new tests were added. The bug was a parser correctness issue, not a memory safety issue. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Zero-padding is a silent bug for parsers.** When you're parsing a structured input, the most dangerous kind of bug is the one that silently accepts a malformed input by filling in "reasonable defaults" (like zero-padding). The user thought they were connecting to `2001:db8:1`, but they actually connected to `2001:db8:1::` — and they have no way to know. The fix is to make the parser **strict by default**: if the input doesn't match the expected structure exactly, reject it. Let the caller decide how to handle the error (e.g., they can add a `::` if they meant shorthand). This is especially important for:
+    1. **Network addresses** (IPv4, IPv6, MAC, port numbers) — silent wrong connection is a security issue.
+    2. **File paths** (URI, config files) — silent wrong path is a data loss / exfiltration issue.
+    3. **Protocol headers** (HTTP, SMTP, etc.) — silent wrong field can lead to misinterpretation.
+    4. **Date/time formats** — silent wrong timezone is a logic bug.
+    The general rule: **if a field is required for correctness, make it required at parse time.** Don't fill in "reasonable defaults" — make the caller explicit. This is a small UX cost (a few extra lines of error handling at the call site) for a huge correctness win.
+

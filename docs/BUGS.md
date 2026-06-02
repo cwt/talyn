@@ -317,6 +317,7 @@ Crash, UAF, data loss, or DoS reachable in normal usage paths.
 - **Description**: If no `::` is present and fewer than 8 groups are provided, the remaining bytes are silently zero-filled. E.g., `2001:db8:1` would parse as `2001:0db8:0001:0000:0000:0000:0000:0000` instead of returning an error.
 - **Trigger**: Malformed IPv6 addresses without `::`.
 - **Consequences**: Incorrect address parsing; connecting to wrong addresses.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-58: Missing null checks on `PyLong_FromLong` return values
 
