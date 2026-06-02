@@ -272,6 +272,7 @@ Crash, UAF, data loss, or DoS reachable in normal usage paths.
 - **Description**: The `defer` block re-enqueues accept even when `accept_callback` returns an error. Fatal errors (e.g., EMFILE, ENFILE) cause the accept loop to spin indefinitely.
 - **Trigger**: Exhaust file descriptors while server is accepting connections.
 - **Consequences**: CPU spin, log flooding, denial of service.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-29: FDWatcher cleanup happens after `io.deinit()` — watchers can't cancel pending IO
 

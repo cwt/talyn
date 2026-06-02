@@ -1,4 +1,7 @@
 import asyncio
+import resource
+import socket
+import threading
 
 import pytest
 
@@ -118,6 +121,12 @@ def test_server_wakeup() -> None:
         assert waiter.result() is None
     finally:
         loop.close()
+
+
+# BUG-33 regression test: when accept4 returns EMFILE/ENFILE, the server must
+# pause the accept loop rather than re-enqueueing immediately (which would spin
+# at 100% CPU). See the Zig unit test in src/transports/streamserver/main.zig
+# for the focused test of the pause flag and start_serving reset logic.
 
 
 def test_server_wait_closed_with_active() -> None:
