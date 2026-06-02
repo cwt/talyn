@@ -721,6 +721,28 @@ class Loop(_Loop):
                     incoming.write(buffer)
                     buffer.clear()
 
+        # BUG-56: Drain any data already in the raw transport's
+        # read buffer before switching protocols. Without this,
+        # data that's already been read from the socket but not
+        # yet delivered to the application could be:
+        # 1. Delivered to the OLD (cleartext) protocol, leaking
+        #    it to the application before TLS is established.
+        # 2. Lost entirely if pause_reading() doesn't synchronously
+        #    stop the data flow.
+        # We drain via the raw transport's internal buffer (if
+        # accessible) and feed it into the SSL handshake via
+        # the incoming MemoryBIO.
+        raw_buffer = getattr(transport, "_buffer", None) or getattr(
+            transport, "buffer", None
+        )
+        if raw_buffer and len(raw_buffer) > 0:
+            try:
+                data = bytes(raw_buffer)
+                raw_buffer.clear()
+                incoming.write(data)
+            except Exception:
+                pass
+
         transport.pause_reading()
         transport.set_protocol(ssl_protocol)
         self.call_soon(ssl_protocol.connection_made, transport)

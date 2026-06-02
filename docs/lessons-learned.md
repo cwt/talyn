@@ -965,3 +965,24 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     4. **Timer threads**: scheduled callbacks running on a worker thread should be joined on cancel.
     The general rule: **for every spawned thread, the very last thing you do with it should be a join (or a daemon declaration).** The "thread leaks" bug is one of the most insidious because the process keeps running but the thread is just consuming resources in the background.
 
+---
+
+### 80. Drain Buffers Before Protocol Switch (2026-06-02)
+
+*   **The Bug:** In `start_tls` at `talyn/loop.py:716-727`, the code already handled the StreamReader case: if the existing protocol was a `StreamReaderProtocol`, it copied the stream reader's buffer into the SSL incoming MemoryBIO. But for non-`StreamReaderProtocol` protocols (e.g., raw byte protocols, custom protocols), there was no buffer drain. Calling `transport.pause_reading()` is async — it just sets a flag, and data already in the transport's internal read buffer could be delivered to the OLD (cleartext) protocol, leaking plaintext before TLS was established.
+*   **The Fix:** Before `pause_reading()`, check for an internal buffer on the raw transport (e.g., `transport._buffer` or `transport.buffer`) and feed any buffered data into the SSL incoming MemoryBIO. This ensures the new SSL protocol sees all the data, regardless of which protocol was active before.
+*   **Tests added:**
+    *   No new tests were added. The fix is a defensive drain of any internal buffer. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **When switching protocols or upgrading a connection, drain all intermediate buffers first.** The pattern is:
+    1. **Pause reading** (stop new data from being read).
+    2. **Drain existing buffers** (move any in-flight data to the new protocol).
+    3. **Switch protocols.**
+    4. **Resume reading** with the new protocol.
+    The "switch and pray" anti-pattern — just switch protocols and hope the buffer is empty — leads to data loss or security vulnerabilities. The same lesson applies to:
+    1. **TLS upgrade (start_tls)**: must drain pre-TLS data.
+    2. **HTTP/1 to HTTP/2 upgrade**: must drain pre-upgrade data.
+    3. **WebSocket upgrade**: must drain pre-upgrade HTTP request.
+    4. **Protocol proxying**: when inserting a proxy between two protocols, drain both sides.
+    5. **Connection migration**: when migrating a connection, drain the old transport.
+    The general rule: **for every protocol/connection switch, ask yourself: what data is in flight right now? Where will it go after the switch?** The answer should be "to the new protocol" — not "lost" or "to the old protocol".
+

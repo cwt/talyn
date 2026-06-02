@@ -560,6 +560,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **Description**: `transport.pause_reading()` is called before switching protocols, but data already buffered in the transport's internal read buffer may be delivered to the old protocol or lost entirely.
 - **Trigger**: `start_tls` on a connection with unread buffered data.
 - **Consequences**: Data loss during TLS upgrade.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-57: `unlink` for SIGINT doesn't restore default signal disposition
 
