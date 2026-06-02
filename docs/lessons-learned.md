@@ -731,3 +731,25 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     3. **Phase 3**: clean up phase 1 errdefers (because we're now committed) and replace with phase 3 errdefers.
     The general pattern: **errdefer order is the reverse of setup order.** A late errdefer can roll back an early errdefer's effects. And the placement of errdefers matters: a "roll back disattached" errdefer is correct only if the disattached flag was set in the same scope.
 
+---
+
+### 68. Pop, Mutate, Push — Or Use Errdefer (2026-06-02)
+
+*   **The Bug:** In `register_fixed_file` at `src/loop/scheduling/io/main.zig:509-520`, the original code popped a slot index from `fixed_file_free`, wrote the fd to `fixed_file_table[index]`, then called `register_files_update`. If `register_files_update` failed (e.g., kernel rejection, EBADF), the slot was permanently lost — it had been popped but never re-pushed. Over time, all fixed file slots would be exhausted, and new connections would fail with `NoFixedFileSlots`.
+*   **The Fix:** Added an `errdefer self.fixed_file_free.append(...)` that re-pushes the slot if `register_files_update` fails. The slot is restored to the free list for re-use.
+*   **Tests added:**
+    *   No new tests were added. The bug only manifested on kernel rejection, which is hard to reproduce in a unit test. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Pop, mutate, push — or use errdefer.** When you have a "free list" (or "pool" or "stack") pattern, the typical sequence is:
+    1. **Pop** a resource from the free list.
+    2. **Mutate** the resource (write your data to it).
+    3. **Use** the resource (pass to the kernel, hand to another thread, etc.).
+    If step 3 fails, you need to roll back step 1. There are two ways to do this:
+    - **Pattern A: Pop, mutate, push, then use.** Pop from free list, mutate, push back to free list, then use. If use fails, the slot is still in the free list (but you've lost the original free-list state).
+    - **Pattern B: Pop, mutate, use, with errdefer.** Pop from free list, mutate, register an errdefer that re-pushes on failure, then use. If use fails, the errdefer runs and re-pushes. If use succeeds, the errdefer is no-op.
+    Pattern B is more explicit about the rollback. Pattern A is simpler but requires careful tracking of "is the slot in the free list or not?". For a fixed-size pool with strict accounting, Pattern B is safer. The same lesson applies to:
+    1. **Memory pools** (e.g., `slab`): if the slab allocation succeeds but the user fails to use it, return the slab to the pool.
+    2. **Connection pools** (e.g., database): if the connection is acquired but the operation fails, return the connection to the pool.
+    3. **Lock-free queues** (e.g., `mpsc`): if the dequeue succeeds but the operation fails, re-enqueue the item.
+    4. **Reference counts** (e.g., `Arc`): if the refcount is incremented but the operation fails, decrement the refcount.
+    The general rule: **any time you remove a resource from a pool and the subsequent operation can fail, ensure the resource is returned to the pool on failure.**
+

@@ -514,7 +514,14 @@ pub fn register_fixed_file(self: *IO, fd: std.posix.fd_t) !u16 {
     if (!self.fixed_files_enabled) return error.FixedFilesDisabled;
     if (self.ring.fd < 0) return error.LoopDeinitialized;
     const index = self.fixed_file_free.pop() orelse return error.NoFixedFileSlots;
+    // BUG-26: If register_files_update fails, the slot has been
+    // popped from fixed_file_free but never re-pushed. The slot
+    // would be permanently lost, leading to gradual exhaustion of
+    // fixed file slots and eventually NoFixedFileSlots errors on
+    // all new connections. Added an errdefer to re-push the slot
+    // on failure.
     self.fixed_file_table[index] = fd;
+    errdefer self.fixed_file_free.append(self.loop.allocator, index) catch {};
     try self.ring.register_files_update(index, self.fixed_file_table[index..index + 1]);
     return index;
 }

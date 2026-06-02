@@ -448,6 +448,7 @@ Noticeable bugs, security gaps, or production-affecting leaks.
 - **Description**: If `register_files_update` throws, the slot `index` has been popped from `fixed_file_free` but is never pushed back. The slot is permanently lost.
 - **Trigger**: Kernel rejects file registration (invalid fd, kernel bug).
 - **Consequences**: Gradual exhaustion of fixed file slots. Eventually `NoFixedFileSlots` errors on all new connections.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-52: Datagram close doesn't clean up fixed file/buffer resources
 
