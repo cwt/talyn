@@ -297,6 +297,7 @@ Crash, UAF, data loss, or DoS reachable in normal usage paths.
 - **Description**: `PyModule_AddObject` steals a reference to each type object. When the module is deallocated, CPython decref's all its attributes (including the types). Then `module_cleanup` calls `deinitialize_talyn_types` which decref's the same types again.
 - **Trigger**: Interpreter shutdown in single-threaded (non-free-threaded) builds.
 - **Consequences**: Potential crash or heap corruption during interpreter teardown.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-50: Recursive `submit_next_chunk` potential stack overflow
 

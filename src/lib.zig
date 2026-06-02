@@ -97,12 +97,17 @@ fn initialize_talyn_types() !void {
 }
 
 fn deinitialize_talyn_types() void {
-    inline for (static_talyn_types) |v| {
-        python_c.py_decref(@ptrCast(v));
-    }
-
+    // BUG-41: Do NOT decref the type objects here. They were added to the
+    // module via `PyModule_AddObject`, which **steals** the reference. When
+    // Python's module cleanup runs, it decrefs them back to 0 (or frees
+    // static types whose refcount was 1 from PyType_Ready). If we also
+    // decref here, the second decref underflows the refcount and causes
+    // use-after-free on interpreter shutdown. The types are now owned by
+    // Python's module machinery; we must not touch their refcounts.
+    //
+    // We still null out the dynamic-type pointer slots so any future
+    // accidental access hits a clear null rather than a dangling pointer.
     inline for (dynamic_talyn_types_ptrs) |ptr| {
-        python_c.py_decref(@ptrCast(ptr.*));
         ptr.* = undefined;
     }
 }
