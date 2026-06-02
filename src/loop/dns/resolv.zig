@@ -55,10 +55,13 @@ const HostnamesArray = struct {
     processed: u32 = 0,
 };
 
-const ResponseProcessingState = enum {
-    process_header,
-    process_body,
+/// One DNS query payload — header + encoded question.  Maximum 512 bytes per RFC 1035.
+const QuerySlot = struct {
+    buf: [512]u8 = undefined,
+    len: u16 = 0,
+    id: u16 = 0,
 };
+
 
 const ServerQueryData = struct {
     loop: *Loop,
@@ -69,18 +72,20 @@ const ServerQueryData = struct {
 
     control_data: *ControlData,
 
-    payload: []u8,
-    payload_len: usize,
-    payload_offset: usize = 0,
+    /// One slot per (hostname × question_type) — each sent as its own datagram.
+    queries: []QuerySlot,
+    /// Index of the query currently being (or about to be) sent.
+    send_idx: u32 = 0,
+    /// Number of individual DNS responses received so far.
+    responses_received: u32 = 0,
+    /// Stable 512-byte buffer reused for every response read.
+    recv_buf: [512]u8 = undefined,
 
     results: std.ArrayList(utils.Address),
     ptr_results: std.ArrayList([]u8),
-    results_to_process: u16 = 0,
 
     min_ttl: u32 = std.math.maxInt(u32),
     finished: bool = false,
-
-    query_ids: []u16 = &.{},
 
     pub inline fn cancel(self: *ServerQueryData) void {
         const socket_fd = self.socket_fd;
@@ -102,8 +107,8 @@ const ServerQueryData = struct {
         }
         self.ptr_results.deinit(control_data.allocator);
 
-        if (self.query_ids.len > 0) {
-            control_data.allocator.free(self.query_ids);
+        if (self.queries.len > 0) {
+            control_data.allocator.free(self.queries);
         }
 
         control_data.tasks_finished += 1;
@@ -206,65 +211,57 @@ fn mark_resolved_and_execute_user_callbacks(server_data: *ServerQueryData) !void
     }
 }
 
-fn check_send_operation_result(data: *const CallbackManager.CallbackData) !void {
+/// Queue an io_uring read for the next DNS response datagram into recv_buf.
+fn queue_next_response_read(server_data: *ServerQueryData) !void {
+    _ = try server_data.loop.io.queue(.{
+        .PerformRead = .{
+            .callback = .{
+                .func = &process_dns_response,
+                .cleanup = &cleanup_server_query_data,
+                .data = .{ .user_data = server_data },
+            },
+            .data = .{ .buffer = &server_data.recv_buf },
+            .fd = server_data.socket_fd,
+            .zero_copy = true,
+            .timeout = DEFAULT_TIMEOUT,
+        },
+    });
+}
+
+/// io_uring completion callback for each individual DNS query write.
+/// Sends the next query if one is pending; otherwise starts reading responses.
+fn on_query_sent(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
-    const io_uring_res = data.io_uring_res();
-
     const server_data: *ServerQueryData = @alignCast(@ptrCast(data.user_data.?));
-
     const control_data = server_data.control_data;
+
     if (io_uring_err != .SUCCESS or control_data.resolved or data.cancelled()) {
+        server_data.release();
         return;
     }
 
-    const data_sent = server_data.payload_offset + @as(usize, @intCast(io_uring_res));
-    server_data.payload_offset = data_sent;
+    server_data.send_idx += 1;
 
-    var operation_data: Loop.Scheduling.IO.BlockingOperationData = undefined;
-
-    const payload_len = server_data.payload_len;
-    if (data_sent == payload_len) {
-        server_data.payload_offset = 0;
-        server_data.payload_len = 0;
-
-        operation_data = .{
-            .PerformRead = .{
-                .callback = .{
-                    .func = &process_dns_response,
-                    .cleanup = &cleanup_server_query_data,
-                    .data = .{
-                        .user_data = server_data,
-                    },
-                },
-                .data = .{
-                    .buffer = server_data.payload,
-                },
-                .fd = server_data.socket_fd,
-                .zero_copy = true,
-                .timeout = DEFAULT_TIMEOUT,
-            },
-        };
-    } else if (data_sent < payload_len) {
-        operation_data = .{
+    if (server_data.send_idx < server_data.queries.len) {
+        // Send the next individual query datagram.
+        const next = &server_data.queries[server_data.send_idx];
+        _ = try server_data.loop.io.queue(.{
             .PerformWrite = .{
                 .callback = .{
-                    .func = &check_send_operation_result,
+                    .func = &on_query_sent,
                     .cleanup = &cleanup_server_query_data,
-                    .data = .{
-                        .user_data = server_data,
-                    },
+                    .data = .{ .user_data = server_data },
                 },
-                .data = server_data.payload[data_sent..payload_len],
+                .data = next.buf[0..next.len],
                 .fd = server_data.socket_fd,
                 .zero_copy = true,
                 .timeout = DEFAULT_TIMEOUT,
             },
-        };
+        });
     } else {
-        return error.UnexpectedState;
+        // All queries sent — start the receive phase.
+        try queue_next_response_read(server_data);
     }
-
-    _ = try server_data.loop.io.queue(operation_data);
 }
 
 fn skip_name(data: []const u8, initial_offset: usize) ?usize {
@@ -329,110 +326,97 @@ fn process_dns_response(data: *const CallbackManager.CallbackData) !void {
     const io_uring_res = data.io_uring_res();
 
     const server_data: *ServerQueryData = @alignCast(@ptrCast(data.user_data.?));
-
     const control_data = server_data.control_data;
-    if (io_uring_err != .SUCCESS or control_data.resolved or data.cancelled()) {
+
+    if (data.cancelled() or control_data.resolved) {
         server_data.release();
         return;
     }
 
-    const data_received = server_data.payload_len + @as(usize, @intCast(io_uring_res));
-    server_data.payload_len = data_received;
-
-    var offset = server_data.payload_offset;
-
-    const hostnames_len = server_data.hostnames_array.len;
-    var hostnames_processed = server_data.hostnames_array.processed;
-
-    const response = server_data.payload;
-
-    var results_to_process: u16 = server_data.results_to_process;
-
-    var state: ResponseProcessingState = ResponseProcessingState.process_header;
-    if (results_to_process > 0) {
-        state = ResponseProcessingState.process_body;
+    if (io_uring_err != .SUCCESS) {
+        // Timeout or I/O error on this server — report whatever we have.
+        try mark_resolved_and_execute_user_callbacks(server_data);
+        server_data.release();
+        return;
     }
 
-    while (true) {
-        switch (state) {
-            .process_header => {
-                if (data_received - offset >= 12) {
-                    const response_id = std.mem.readInt(u16, response[offset .. offset + 2][0..2], .big);
-                    const qdcount = std.mem.readInt(u16, response[offset + 4 .. offset + 6][0..2], .big);
-                    const ancount = std.mem.readInt(u16, response[offset + 6 .. offset + 8][0..2], .big);
+    const bytes = @as(usize, @intCast(io_uring_res));
+    const response = server_data.recv_buf[0..bytes];
 
-                    var id_valid = false;
-                    for (server_data.query_ids) |expected_id| {
-                        if (response_id == expected_id) {
-                            id_valid = true;
-                            break;
-                        }
-                    }
-                    if (!id_valid) {
-                        server_data.release();
-                        return;
-                    }
-
-                    offset += 12;
-
-                    if (ancount == 0) {
-                        hostnames_processed = hostnames_len;
-                    } else {
-                        // Skip all questions
-                        var i: u16 = 0;
-                        while (i < qdcount) : (i += 1) {
-                            offset = skip_name(response[0..data_received], offset) orelse {
-                                return;
-                            };
-
-                            if (offset + 4 > data_received) {
-                                return;
-                            }
-
-                            offset += 4; // Skip QTYPE and QCLASS
-                        }
-
-                        results_to_process = ancount;
-                        state = ResponseProcessingState.process_body;
-                        continue;
-                    }
-                }
-            },
-            .process_body => while (results_to_process > 0) {
-                var result: utils.Address = undefined;
-                var ptr_name: ?[]u8 = null;
-                var ttl: u32 = std.math.maxInt(u32);
-
-                const new_offset = parse_individual_dns_result(
-                    response[0..data_received],
-                    offset,
-                    &result,
-                    &ptr_name,
-                    &ttl,
-                    server_data.control_data.arena.allocator(),
-                ) orelse break;
-
-                offset = new_offset;
-                if (ptr_name) |name| {
-                    try server_data.ptr_results.append(server_data.control_data.arena.allocator(), name);
-                    server_data.min_ttl = @min(server_data.min_ttl, ttl);
-                } else if (result.any.family != 0) {
-                    try server_data.results.append(server_data.control_data.arena.allocator(), result);
-                    server_data.min_ttl = @min(server_data.min_ttl, ttl);
-                }
-
-                results_to_process -= 1;
-            },
+    // Validate the response ID against all pending query IDs.
+    if (bytes >= 2) {
+        const response_id = std.mem.readInt(u16, response[0..2], .big);
+        var id_valid = false;
+        for (server_data.queries) |slot| {
+            if (response_id == slot.id) {
+                id_valid = true;
+                break;
+            }
         }
-        break;
-    }
-    server_data.payload_offset = offset;
-    server_data.hostnames_array.processed = hostnames_processed;
-    server_data.results_to_process = results_to_process;
 
+        if (id_valid and bytes >= 12) {
+            const qdcount = std.mem.readInt(u16, response[4..6], .big);
+            const ancount = std.mem.readInt(u16, response[6..8], .big);
+
+            if (ancount > 0) {
+                // Skip the question section.
+                var offset: usize = 12;
+                var qi: u16 = 0;
+                while (qi < qdcount) : (qi += 1) {
+                    offset = skip_name(response, offset) orelse break;
+                    if (offset + 4 > bytes) break;
+                    offset += 4; // Skip QTYPE and QCLASS
+                }
+
+                // Parse answer records.
+                var answers_left: u16 = ancount;
+                while (answers_left > 0) {
+                    var result: utils.Address = undefined;
+                    var ptr_name: ?[]u8 = null;
+                    var ttl: u32 = std.math.maxInt(u32);
+
+                    const new_offset = parse_individual_dns_result(
+                        response,
+                        offset,
+                        &result,
+                        &ptr_name,
+                        &ttl,
+                        control_data.arena.allocator(),
+                    ) orelse break;
+
+                    offset = new_offset;
+                    if (ptr_name) |name| {
+                        try server_data.ptr_results.append(control_data.arena.allocator(), name);
+                        server_data.min_ttl = @min(server_data.min_ttl, ttl);
+                    } else if (result.any.family != 0) {
+                        try server_data.results.append(control_data.arena.allocator(), result);
+                        server_data.min_ttl = @min(server_data.min_ttl, ttl);
+                    }
+
+                    answers_left -= 1;
+                }
+            }
+        }
+    }
+
+    server_data.responses_received += 1;
+
+    // If we have a positive result, resolve immediately.
     if (server_data.results.items.len > 0 or server_data.ptr_results.items.len > 0) {
         try mark_resolved_and_execute_user_callbacks(server_data);
+        server_data.release();
+        return;
     }
+
+    // Wait for more responses if there are queries outstanding.
+    if (server_data.responses_received < server_data.queries.len and !control_data.resolved) {
+        try queue_next_response_read(server_data);
+        return;
+    }
+
+    // All responses received (or already resolved elsewhere).
+    try mark_resolved_and_execute_user_callbacks(server_data);
+    server_data.release();
 }
 
 fn build_query(id: u16, payload: []u8, question: QuestionType, hostname: []const u8) usize {
@@ -484,45 +468,53 @@ fn build_queries(
     const connect_ret = std.os.linux.connect(socket_fd, @ptrCast(&server_address.any), server_address.getOsSockLen());
     if (utils.getSyscallErrno(connect_ret) != .SUCCESS) return error.SystemResources;
 
-    const payload = try allocator.alloc(u8, (1 + @as(usize, @intFromBool(ipv6_supported))) * 512 * hostnames_array.len);
-    errdefer allocator.free(payload);
+    // Compute number of individual queries: one per (hostname × question_type).
+    const types_per_host: u32 = if (question_type != null) 1 else if (ipv6_supported) 2 else 1;
+    const total_queries: u32 = hostnames_array.len * types_per_host;
 
-    const query_ids = try allocator.alloc(u16, hostnames_array.len);
-    errdefer allocator.free(query_ids);
+    const queries = try allocator.alloc(QuerySlot, total_queries);
+    errdefer allocator.free(queries);
 
-    var offset: usize = 0;
-    for (hostnames_array.array[0..hostnames_array.len], 0..) |hostname_info, idx| {
+    var slot_idx: u32 = 0;
+    for (hostnames_array.array[0..hostnames_array.len]) |hostname_info| {
         const hostname = hostname_info.hostname[0..hostname_info.hostname_len];
+
         var id_buf: [2]u8 = undefined;
         const bytes_read = std.os.linux.getrandom(&id_buf, 2, 0);
         if (bytes_read != 2) return error.SystemResources;
         const query_id = std.mem.readInt(u16, &id_buf, .little);
-        query_ids[idx] = query_id;
+
         if (question_type) |qt| {
-            offset += build_query(query_id, payload[offset..], qt, hostname);
+            queries[slot_idx].id = query_id;
+            queries[slot_idx].len = @intCast(build_query(query_id, &queries[slot_idx].buf, qt, hostname));
+            slot_idx += 1;
         } else {
-            offset += build_query(query_id, payload[offset..], .ipv4, hostname);
+            queries[slot_idx].id = query_id;
+            queries[slot_idx].len = @intCast(build_query(query_id, &queries[slot_idx].buf, .ipv4, hostname));
+            slot_idx += 1;
+
             if (ipv6_supported) {
-                offset += build_query(query_id, payload[offset..], .ipv6, hostname);
+                // Generate a separate random ID for the AAAA query.
+                var id_buf2: [2]u8 = undefined;
+                const bytes_read2 = std.os.linux.getrandom(&id_buf2, 2, 0);
+                if (bytes_read2 != 2) return error.SystemResources;
+                const query_id2 = std.mem.readInt(u16, &id_buf2, .little);
+
+                queries[slot_idx].id = query_id2;
+                queries[slot_idx].len = @intCast(build_query(query_id2, &queries[slot_idx].buf, .ipv6, hostname));
+                slot_idx += 1;
             }
         }
     }
 
     server_data.* = .{
         .loop = loop,
-
-        .payload = payload,
-
         .socket_fd = socket_fd,
-        .payload_len = offset,
-
         .control_data = control_data,
         .hostnames_array = hostnames_array,
-
+        .queries = queries,
         .results = .{ .items = &.{}, .capacity = 0 },
         .ptr_results = .{ .items = &.{}, .capacity = 0 },
-
-        .query_ids = query_ids,
     };
 }
 
@@ -680,13 +672,14 @@ pub fn queue(
     }
 
     for (control_data.queries_data) |*server_data| {
+        const first = &server_data.queries[0];
         _ = try loop.io.queue(.{
             .PerformWrite = .{
                 .zero_copy = true,
                 .fd = server_data.socket_fd,
-                .data = server_data.payload[0..server_data.payload_len],
+                .data = first.buf[0..first.len],
                 .callback = .{
-                    .func = &check_send_operation_result,
+                    .func = &on_query_sent,
                     .cleanup = &cleanup_server_query_data,
                     .data = .{
                         .user_data = server_data,
@@ -854,5 +847,70 @@ test "ControlData.record_evicted is false after struct-literal init (regression:
     try std.testing.expect(!control_data.record_evicted);
     try std.testing.expect(!control_data.resolved);
     try std.testing.expectEqual(@as(usize, 0), control_data.tasks_finished);
+}
+
+test "build_query encodes QDCOUNT=1 for ipv4" {
+    var buf: [512]u8 = undefined;
+    const written = build_query(0x0042, buf[0..], .ipv4, "example.com");
+    // Bytes [4..6] are QDCOUNT in network byte order.
+    const qdcount = std.mem.readInt(u16, buf[4..6], .big);
+    try std.testing.expectEqual(@as(u16, 1), qdcount);
+    // The query type at the end should be 1 (A).
+    const qtype_offset = written - 4;
+    const qtype = std.mem.readInt(u16, buf[qtype_offset .. qtype_offset + 2][0..2], .big);
+    try std.testing.expectEqual(@as(u16, 1), qtype);
+}
+
+test "build_query encodes QDCOUNT=1 for ipv6" {
+    var buf: [512]u8 = undefined;
+    const written = build_query(0x0043, buf[0..], .ipv6, "example.com");
+    const qdcount = std.mem.readInt(u16, buf[4..6], .big);
+    try std.testing.expectEqual(@as(u16, 1), qdcount);
+    // The query type at the end should be 28 (AAAA).
+    const qtype_offset = written - 4;
+    const qtype = std.mem.readInt(u16, buf[qtype_offset .. qtype_offset + 2][0..2], .big);
+    try std.testing.expectEqual(@as(u16, 28), qtype);
+}
+
+test "QuerySlot fields are independent — BUG-08 regression" {
+    // Each QuerySlot must carry its own ID so per-datagram IDs don't alias.
+    var slot_a: QuerySlot = .{};
+    var slot_b: QuerySlot = .{};
+    const id_a: u16 = 0x1111;
+    const id_b: u16 = 0x2222;
+    slot_a.len = @intCast(build_query(id_a, &slot_a.buf, .ipv4, "a.example.com"));
+    slot_a.id = id_a;
+    slot_b.len = @intCast(build_query(id_b, &slot_b.buf, .ipv6, "b.example.com"));
+    slot_b.id = id_b;
+    // The IDs stored in the slots must differ.
+    try std.testing.expect(slot_a.id != slot_b.id);
+    // The IDs encoded in the wire-format buffers must also differ.
+    const wire_id_a = std.mem.readInt(u16, slot_a.buf[0..2], .big);
+    const wire_id_b = std.mem.readInt(u16, slot_b.buf[0..2], .big);
+    try std.testing.expect(wire_id_a != wire_id_b);
+    // Mutating slot_b must not affect slot_a.
+    slot_b.buf[0] = 0xFF;
+    try std.testing.expectEqual(@as(u8, 0x11), slot_a.buf[0]);
+}
+
+test "each QuerySlot is a complete standalone DNS message" {
+    // A valid DNS query must be > 12 bytes (header) and <= 512 (RFC 1035).
+    const hostnames = [_][]const u8{ "foo.example.com", "bar.test.local" };
+    const qtypes = [_]QuestionType{ .ipv4, .ipv6, .ptr };
+    for (hostnames) |hn| {
+        for (qtypes) |qt| {
+            var slot: QuerySlot = .{};
+            const written = build_query(0xBEEF, &slot.buf, qt, hn);
+            slot.len = @intCast(written);
+            slot.id = 0xBEEF;
+            // Must include at least the 12-byte header + question.
+            try std.testing.expect(slot.len > 12);
+            // Must not exceed RFC 1035 maximum UDP payload.
+            try std.testing.expect(slot.len <= 512);
+            // QDCOUNT must be 1 — exactly one question per datagram.
+            const qdcount = std.mem.readInt(u16, slot.buf[4..6], .big);
+            try std.testing.expectEqual(@as(u16, 1), qdcount);
+        }
+    }
 }
 
