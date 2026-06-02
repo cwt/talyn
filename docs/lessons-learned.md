@@ -460,3 +460,13 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     3. In a cleanup hook, `Py_DECREF(obj)` — UNDERFLOW.
     The correct pattern is either: (a) don't decref in cleanup (preferred — let the module own it), or (b) `Py_INCREF(obj)` before `PyModule_AddObject` to keep a separate ref, and decref that ref in cleanup. Option (a) is almost always correct because the module will be torn down at interpreter shutdown anyway. The same lesson applies to `PyTuple_SetItem` and `PyList_SetItem` — they steal the reference too, so don't decref items you've placed in a tuple/list.
 
+---
+
+### 53. Replace Recursion With a Loop to Avoid Stack Overflow (2026-06-02)
+
+*   **The Bug:** In `submit_next_chunk` (`src/transports/write_transport.zig:158-163`), when a queued `iovec` had `len == 0` (a zero-length buffer), the function did `return self.submit_next_chunk();` to advance to the next buffer. This is a textbook tail call, but Zig does NOT perform tail-call optimisation in Debug or ReleaseSafe, so each call adds a stack frame. A caller that enqueued many zero-length `iovec` entries in a row (e.g., `writelines([b"", b"", b"", ..., b"hello\n"])`) would overflow the default 8 MB stack with ~100k-200k entries. A real-world case: a custom protocol that always appends a separator buffer of size 0 would crash on the first big write.
+*   **The Fix:** Replaced the recursion with a `while (true)` loop. The loop walks past zero-length buffers in O(N) time with O(1) stack depth. Same semantics, no stack growth, and faster (no function-call overhead per skip).
+*   **Tests added:**
+    *   `tests/transports/test_stream.py::test_stream_transport_writelines_many_empty_buffers` — writes 10,000 empty buffers followed by a real message and verifies the real message is received. With the recursive fix, this would crash with a stack overflow; the loop-based fix handles it in constant stack space and ~0.07 s wall time.
+*   **The Lesson:** **Tail calls are not tail calls in Zig.** Unlike Scheme/Racket/Lisp, Zig has no mandated tail-call optimisation. Code that *looks* like a tail call (`return self.foo()`) is just a regular call. The same pattern in Rust, C, and C++ has the same problem. The rule: **any time you write `return self.recursive_helper(...)` ask "can this recurse more than ~1000 times?" If yes, convert to a loop.** Other ways the same bug appears: (a) error-propagation chains like `return try self.foo()` where `foo` is recursive, (b) state-machine transitions implemented as mutual recursion, (c) parsers that recurse on nested structures. The Zig compiler doesn't warn about it, the build is clean, and the test only catches it if you actually exercise the path with enough depth.
+

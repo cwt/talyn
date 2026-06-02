@@ -306,6 +306,7 @@ Crash, UAF, data loss, or DoS reachable in normal usage paths.
 - **Description**: If many consecutive zero-length buffers are queued, the recursive call could overflow the stack.
 - **Trigger**: Many empty buffers appended via `writelines()`.
 - **Consequences**: Stack overflow, crash.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-47: `parseIp6` accepts incomplete addresses without `::`
 

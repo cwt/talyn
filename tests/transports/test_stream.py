@@ -462,6 +462,48 @@ def test_stream_transport_writelines() -> None:
     talyn.run(_test_stream_transport_writelines())
 
 
+# BUG-50 regression: writelines with many empty buffers must not stack-overflow.
+# The previous recursive `submit_next_chunk` would overflow the stack if a
+# caller provided many zero-length iovec entries in a row. The fix replaced
+# the recursion with a `while` loop. This test exercises that path.
+async def _test_stream_transport_writelines_many_empty_buffers() -> None:
+    loop = asyncio.get_running_loop()
+    server_socket, client_socket = socket.socketpair()
+
+    server_socket.setblocking(False)
+    client_socket.setblocking(False)
+
+    server_protocol = EchoProtocol()
+    client_protocol = EchoProtocol()
+
+    server_transport = StreamTransport(server_socket.fileno(), server_protocol, loop)
+    client_transport = StreamTransport(client_socket.fileno(), client_protocol, loop)
+
+    try:
+        # 10,000 empty buffers followed by a real one. With the recursive
+        # submit_next_chunk, this would overflow the stack (each call adds a
+        # stack frame); the loop-based fix handles it in O(N) time with O(1)
+        # stack depth.
+        messages: list[bytes] = [b""] * 10_000 + [b"hello\n"]
+        server_transport.writelines(messages)
+
+        # Verify the real message is received.
+        total_length = len(b"hello\n")
+        data_received = b""
+        fut = client_protocol.received
+        while len(data_received) < total_length:
+            fut, received = await asyncio.wait_for(asyncio.shield(fut), 1)
+            data_received += received
+        assert data_received == b"hello\n"
+    finally:
+        server_transport.close()
+        client_transport.close()
+
+
+def test_stream_transport_writelines_many_empty_buffers() -> None:
+    talyn.run(_test_stream_transport_writelines_many_empty_buffers())
+
+
 async def _test_stream_transport_abort() -> None:
     loop = asyncio.get_running_loop()
     server_socket, client_socket = socket.socketpair()

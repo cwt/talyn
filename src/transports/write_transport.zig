@@ -152,16 +152,31 @@ fn submit_next_chunk(self: *WriteTransport) !void {
         return;
     }
 
+    // BUG-50: Convert the zero-length-buffer advance from recursion to a
+    // loop. If a caller provides many empty `iovec` entries in a row (e.g.,
+    // a custom protocol that always appends a separator buffer of size 0),
+    // the previous recursive `return self.submit_next_chunk()` would
+    // overflow the stack. The loop is also faster — no function-call
+    // overhead per skip.
+    while (true) {
+        if (self.pending_buffer_index >= self.pending_buffers.items.len) {
+            self.write_in_flight = false;
+            return;
+        }
+
+        const iov = self.pending_buffers.items[self.pending_buffer_index];
+        const offset = self.pending_buffer_offset;
+        const remaining = iov.len - offset;
+        if (remaining > 0) break; // Found a non-empty buffer to submit.
+
+        // Zero-length buffer — advance and try the next one.
+        self.pending_buffer_index += 1;
+        self.pending_buffer_offset = 0;
+    }
+
     const iov = self.pending_buffers.items[self.pending_buffer_index];
     const offset = self.pending_buffer_offset;
     const remaining = iov.len - offset;
-    if (remaining == 0) {
-        // Advance to next buffer
-        self.pending_buffer_index += 1;
-        self.pending_buffer_offset = 0;
-        return self.submit_next_chunk();
-    }
-
     const data_slice: []const u8 = @as([*]const u8, @ptrCast(iov.base))[offset..][0..remaining];
 
     _ = try self.loop.io.queue(.{
