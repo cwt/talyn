@@ -1125,3 +1125,26 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     4. **JSON serialization**: JSON strings use explicit length, not null terminators.
     The general rule: **for any string conversion between C and length-based APIs, ask yourself: which API am I using, and does the string I'm passing match its expectations?**
 
+---
+
+### 88. Cleanup on Every Error Path (2026-06-02)
+
+*   **The Bug:** In `PyInit_talyn_zig` at `src/lib.zig:156-162`, if `initialize_talyn_types` succeeded but `initialize_python_module` failed, the type-initialization side effects were never cleaned up. The dynamic-type pointer slots were left pointing to initialized types, but the type objects themselves were never finalized. This is a classic partial-init leak.
+*   **The Fix:** Changed the chain of `catch return null` calls to an explicit `if ... else` block. On the error path, call `deinitialize_talyn_types()` to clear the dynamic-type pointer slots. The static types are still not decref'd (per BUG-41), but at least the dynamic-type pointer slots are cleared.
+*   **Tests added:**
+    *   No new tests were added. The fix is a defensive cleanup on the error path. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **The chain `a() catch return null; b() catch return null; c() catch return null;` is a leak waiting to happen.** The pattern is:
+    1. **`a()` succeeds — sets up state X.**
+    2. **`b()` succeeds — sets up state Y.**
+    3. **`c()` fails — both X and Y leak.**
+    The "chain of catches" anti-pattern makes error cleanup hard. The fix is to **either**:
+    1. **Use errdefer for every resource acquisition**: `a() catch return null; errdefer cleanup_a(); b() catch return null; errdefer cleanup_b(); c() catch return null;`
+    2. **Use explicit if-else**: `if (a()) |_| if (b()) |_| c() else { cleanup_b(); cleanup_a(); }`
+    3. **Use RAII/ScopeGuard**: scope-based cleanup that runs on every exit path.
+    The same lesson applies to:
+    1. **Module init**: every successful init step needs cleanup on later failure.
+    2. **Connection setup**: every successful step (resolve, connect, auth) needs cleanup.
+    3. **File parsing**: every successful step (open, read header, read body) needs cleanup.
+    4. **Test setup**: every fixture needs teardown on test failure.
+    The general rule: **for every successful step, ask yourself: if the NEXT step fails, does the cleanup of THIS step run?** If not, add it.
+

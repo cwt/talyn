@@ -622,6 +622,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **File**: `src/lib.zig:151-157`
 - **Description**: If `initialize_talyn_types` succeeds but `initialize_python_module` fails, initialized types are never cleaned up.
 - **Consequences**: Type object references leaked on init failure.
+- **Status**: ✅ Fixed (see commit log)
 
 ### BUG-67: `py_incref`/`py_decref` sentinel check is a fragile heuristic
 
