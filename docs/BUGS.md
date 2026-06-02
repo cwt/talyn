@@ -665,6 +665,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **File**: `src/loop/python/io/client/create_connection.zig:437-448`
 - **Description**: The interleave algorithm reads from the end of each family's section, reversing the order of addresses within each family.
 - **Consequences**: Connection attempts may try addresses in unexpected order.
+- **Status**: ✅ Fixed (see commit log)
 
 ### BUG-73: Missing error checks on `PyLong_AsLong` in socket ops
 

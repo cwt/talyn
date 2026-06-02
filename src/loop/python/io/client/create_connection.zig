@@ -436,14 +436,20 @@ fn interleave_address_list(allocator: std.mem.Allocator, address_list: []utils.A
     }
 
     var interleave_count: usize = interleave;
+    var ipv4_index: usize = 0;
+    var ipv6_index: usize = 0;
     for (address_list) |*v| {
-        if (interleave_count == 0 or ipv6_addresses == 0) {
-            ipv4_addresses -= 1;
-            v.* = tmp_list[ipv4_addresses];
+        if (interleave_count == 0 or ipv6_index >= ipv6_addresses) {
+            // BUG-72: Previously used `ipv4_addresses -= 1` to
+            // pick from the end of the IPv4 section, which
+            // reversed the order within the IPv4 family. Now
+            // use a forward-running index. Same fix for IPv6.
+            v.* = tmp_list[ipv4_index];
+            ipv4_index += 1;
             interleave_count = interleave;
-        }else{
-            ipv6_addresses -= 1;
-            v.* = tmp_list[address_list.len + ipv6_addresses];
+        } else {
+            v.* = tmp_list[address_list.len + ipv6_index];
+            ipv6_index += 1;
             interleave_count -= 1;
         }
     }

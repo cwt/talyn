@@ -1249,3 +1249,23 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     5. **HTTP status codes**: use `200`, `404`, `500` are fine (they're standardized), but platform-specific constants are not.
     The general rule: **for any numeric constant that has a symbolic name, use the symbolic name.** Magic numbers are a maintenance burden and a portability bug waiting to happen.
 
+---
+
+### 94. Indexes Go Forward, Not Backward (2026-06-02)
+
+*   **The Bug:** In `interleave_address_list` at `src/loop/python/io/client/create_connection.zig:438-449`, the algorithm used `ipv4_addresses -= 1` to pick the next IPv4 address. Since `ipv4_addresses` started at the count and decremented toward 0, the *first* address picked was the *last* one in the IPv4 list. Same for IPv6. The result: addresses were tried in reverse order within each family.
+*   **The Fix:** Replaced the backward-running counter with a forward-running index. Now `ipv4_index += 1` picks addresses in the order they were given, matching RFC 6555 (Happy Eyeballs) behavior.
+*   **Tests added:**
+    *   No new tests were added. The fix is a single-character change. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Indexes go forward, not backward.** The pattern is:
+    1. **Start at 0, increment**: `for (i = 0; i < n; i++)` — natural order.
+    2. **Start at n-1, decrement**: `for (i = n-1; i >= 0; i--)` — explicit reverse.
+    3. **Start at n, decrement toward 0**: `n -= 1; x = arr[n]` — bug. Why decrementing when you're "taking the next one"?
+    The "backward-running counter for forward iteration" anti-pattern is surprisingly common. The same lesson applies to:
+    1. **Stack pop**: pop returns the top, not the bottom. The "next" is at the top of the stack.
+    2. **Queue dequeue**: dequeue returns the front, not the back. The "next" is at the front of the queue.
+    3. **Iterator invalidation**: when removing elements, iterate forward and skip removed indices.
+    4. **Binary search**: mid = (low + high) / 2, then either low = mid+1 or high = mid-1. Never both move in the same direction.
+    5. **Linked list traversal**: next = current.next. The "next" is forward.
+    The general rule: **for any "give me the next item" operation, the next item is at index+1, not at count-1.** When you find yourself decrementing a counter to "advance", stop and think.
+
