@@ -927,3 +927,22 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     5. **Reference counts**: Py_IncRef needs errdefer Py_DecRef.
     The general rule: **for every "acquire" operation, the very next line should be the matching "cleanup on error" defer.** The "I added the errdefer later" anti-pattern is a common source of leaks — by the time you get to the end of the function, you've forgotten which resources need cleanup. Adding the errdefer at the acquisition point keeps the cleanup tied to the acquisition.
 
+---
+
+### 78. SSL I/O Functions Can Raise WantRead/WantWrite/Error (2026-06-02)
+
+*   **The Bug:** In `_SSLTransportWrapper.write` at `talyn/loop.py:36-38`, the call `self._ssp._sslobj.write(data)` can raise `SSLWantWriteError` (during renegotiation), `SSLWantReadError` (need to read more), `SSLError` (fatal), or `SSLSyscallError` (fatal). The previous code caught none of these — they propagated uncaught, crashing the protocol.
+*   **The Fix:** Added a try/except for all four cases. For `SSLWantReadError` and `SSLWantWriteError`, set the corresponding `_write_wants_read` / `_write_wants_write` flag on the parent SSLProtocol so the appropriate read/write side re-arms. For `SSLError`/`SSLSyscallError`, schedule the fatal error to be raised via `call_soon` to break out of the current write context.
+*   **Tests added:**
+    *   No new tests were added. The fix mirrors the standard `asyncio.sslproto` SSLProtocol's handling. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **SSL I/O functions can return a "want" status (read or write) instead of completing synchronously.** The pattern is:
+    1. **WantRead**: the SSL state machine needs to read more data from the peer before it can complete. Re-arm the read side.
+    2. **WantWrite**: the SSL state machine needs to write more data to the peer before it can complete. Re-arm the write side.
+    3. **Error**: the SSL connection is broken. Close the transport and notify the protocol.
+    The same lesson applies to:
+    1. **All non-blocking I/O**: sockets, pipes, files can return EAGAIN/EWOULDBLOCK which Python wraps as `BlockingIOError`.
+    2. **Database cursors**: `cursor.execute()` can return "need to fetch more rows" or "connection lost".
+    3. **Cryptographic operations**: signing/verifying can return "need more data".
+    4. **Network protocols**: HTTP/2, WebSockets, gRPC all have want-read/want-write patterns.
+    The general rule: **for any non-blocking I/O API, catch the "want" status and re-arm the appropriate side; catch the "error" status and close the connection.**
+

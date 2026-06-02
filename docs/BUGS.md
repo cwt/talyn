@@ -542,6 +542,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **Description**: `self._ssp._sslobj.write(data)` can raise `SSLWantWriteError`, `SSLError`, or `SSLSyscallError`, none of which are caught.
 - **Trigger**: SSL renegotiation or errors during write.
 - **Consequences**: Unhandled exceptions crashing the protocol.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-55: `shutdown_default_executor` leaks daemon thread on timeout
 

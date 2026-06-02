@@ -34,8 +34,35 @@ class _SSLTransportWrapper:
         self._loop = loop
 
     def write(self, data):
-        self._ssp._sslobj.write(data)
+        # BUG-54: Handle SSLWantWriteError (renegotiation), SSLWantReadError
+        # (need to read more before writing), and SSLError (fatal). The
+        # previous code let these exceptions propagate uncaught, crashing
+        # the protocol. The stdlib's asyncio.sslproto.SSL_Protocol._write_want_write
+        # sets _read_wants_read / _write_wants_write flags and re-arms the
+        # appropriate waiter. We mirror that here: on WantRead or WantWrite,
+        # mark the state and let the transport's pause/resume handle re-arming.
+        try:
+            self._ssp._sslobj.write(data)
+        except self._sslmod.SSLWantReadError:
+            # Need to read more data from the peer before we can write.
+            # Set the flag so the read side knows to re-arm.
+            self._ssp._write_wants_read = True
+        except self._sslmod.SSLWantWriteError:
+            # Need to wait for the write side to drain before writing.
+            # Set the flag so the write side knows to re-arm.
+            self._ssp._write_wants_write = True
+        except (self._sslmod.SSLError, self._sslmod.SSLSyscallError) as exc:
+            # Fatal SSL error — close the transport.
+            self._ssp._f()
+            if self._loop is not None and not self._loop.is_closed():
+                self._loop.call_soon(self._fatal_error, exc)
+            return
         self._ssp._f()
+
+    def _fatal_error(self, exc):
+        # Called via call_soon to break out of the current write context
+        # before re-raising the SSL error to the protocol.
+        raise exc
 
     def close(self):
         if self._closing:
