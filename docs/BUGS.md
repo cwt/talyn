@@ -615,6 +615,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **File**: `src/task/utils.zig:44-49`
 - **Description**: `allocPrint` with `"\x00"` includes the null byte in `random_str.len`. `PyUnicode_FromStringAndSize` then creates a string with an embedded null character.
 - **Consequences**: Task name has a trailing `\0` character; string comparisons may fail.
+- **Status**: ✅ Fixed (see commit log)
 
 ### BUG-66: Missing cleanup on partial module init failure
 

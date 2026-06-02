@@ -1106,3 +1106,22 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     4. **Best-effort cleanup**: cleanup is best-effort, but logging failures helps debugging.
     The general rule: **for every "fire-and-forget" operation, ask yourself: what's the result code, and is the result code what I expected?** If the answer is "I don't know" or "I haven't thought about it", log it.
 
+---
+
+### 87. Don't Mix C-String and Length-Based String APIs (2026-06-02)
+
+*   **The Bug:** In `task_get_name` at `src/task/utils.zig:44`, the format string `"Talyn.Task_{x:0>16}\x00"` included a C-string null terminator. `std.fmt.allocPrint` produces a `[]u8` slice whose length includes the null terminator. Then `PyUnicode_FromStringAndSize(random_str.ptr, @intCast(random_str.len))` created a Python string of length 27 (26 chars + 1 null), with an embedded NUL byte.
+*   **The Fix:** Removed the `\x00` from the format string. `PyUnicode_FromStringAndSize` takes an explicit length, so a null terminator is unnecessary and harmful.
+*   **Tests added:**
+    *   No new tests were added. The fix is a one-character change. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Don't mix C-string conventions with length-based string APIs.** C strings use a null terminator to mark the end. Length-based strings (like Python's `PyUnicode_FromStringAndSize`, Rust's `&str`, or Zig's `[]u8`) use an explicit length. Mixing them is a common bug:
+    1. **C string + length API**: you include the null terminator in the length.
+    2. **Length string + C string API**: you forget to add the null terminator.
+    3. **Both**: you have neither (length is wrong AND string isn't null-terminated).
+    The same lesson applies to:
+    1. **Python bytes/str conversion**: `PyBytes_FromStringAndSize` is length-based, no null needed.
+    2. **Rust &str → CString**: must explicitly add null terminator.
+    3. **Zig []u8 → C strings**: must explicitly null-terminate.
+    4. **JSON serialization**: JSON strings use explicit length, not null terminators.
+    The general rule: **for any string conversion between C and length-based APIs, ask yourself: which API am I using, and does the string I'm passing match its expectations?**
+

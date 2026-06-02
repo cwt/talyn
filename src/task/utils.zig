@@ -41,7 +41,12 @@ pub fn task_get_name(self: ?*Task.PythonTaskObject) callconv(.c) ?PyObject {
     const allocator = loop_data.allocator;
     
     const task_id = @atomicRmw(u64, &loop.task_name_counter, .Add, 1, .monotonic);
-    const random_str = std.fmt.allocPrint(allocator, "Talyn.Task_{x:0>16}\x00", .{task_id}) catch |err| {
+    // BUG-65: Don't include the null terminator in the format string.
+    // The previous `"\x00"` was a C-string convention, but
+    // PyUnicode_FromStringAndSize takes a length parameter so we
+    // don't need a null terminator. Including it created a string
+    // with an embedded NUL byte, breaking string comparisons.
+    const random_str = std.fmt.allocPrint(allocator, "Talyn.Task_{x:0>16}", .{task_id}) catch |err| {
         return utils.handle_zig_function_error(err, null);
     };
     defer allocator.free(random_str);
