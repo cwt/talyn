@@ -146,8 +146,22 @@ pub fn deinit(self: *WriteTransport) void {
 fn submit_next_chunk(self: *WriteTransport) !void {
     if (self.write_in_flight) return;
     if (self.pending_buffer_index >= self.pending_buffers.items.len) {
-        // All buffers consumed — but buffer_size > 0 means partial buffer left.
-        // This shouldn't happen if partial writes are tracked correctly.
+        // BUG-49: If buffer_size > 0, the partial-write tracking is out of
+        // sync with the pending buffer list — we have outstanding bytes to
+        // write but no buffer to write them from. This is a programmer
+        // error, but it can also be triggered by a race condition in the
+        // free-threading build. Previously we silently returned, which
+        // dropped the remaining bytes on the floor and could cause the
+        // upper layer to spin (since it still thinks there's data to
+        // write). Now we surface it as a hard error so it can be detected
+        // and the connection torn down.
+        if (self.buffer_size > 0) {
+            std.log.err(
+                "submit_next_chunk: index overflow with buffer_size={d}, items.len={d}",
+                .{ self.buffer_size, self.pending_buffers.items.len }
+            );
+            return error.WriteBufferIndexOverflow;
+        }
         self.write_in_flight = false;
         return;
     }

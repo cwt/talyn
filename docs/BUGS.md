@@ -290,6 +290,7 @@ Crash, UAF, data loss, or DoS reachable in normal usage paths.
 - **Description**: If `pending_buffer_index` exceeds the array length while `buffer_size > 0`, the function returns without writing the remaining data. Data is silently lost.
 - **Trigger**: Race condition or bug in partial write tracking.
 - **Consequences**: Silent data loss, CPU waste from repeated hook calls.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-41: Double-decref of type objects during module cleanup
 
