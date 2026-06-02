@@ -418,8 +418,16 @@ pub fn execute_ring_buffer(
 
         const start_time = if (debug_state != null) nanoTime() else 0;
 
+        // BUG-42: Consume BEFORE calling the callback. If the callback
+        // frees user_data and triggers GC, the ring buffer slot is
+        // already marked consumed so GC traversal won't access
+        // dangling pointers. This matches the behavior of
+        // `execute_dynamic_ring_buffer` below.
+        ring.consume();
+        callbacks_executed += 1;
+
         callback.func(&callback.data) catch |err| {
-            // Always consume the slot and run cleanup before any branching.
+            // Always run cleanup before any branching.
             // Previously, cleanup+consume were inside a defer registered AFTER
             // the fatal-exception early return, so KeyboardInterrupt/SystemExit
             // would leave the ring buffer slot permanently occupied and leak the
@@ -427,14 +435,13 @@ pub fn execute_ring_buffer(
             if (callback.cleanup) |cleanup| {
                 cleanup(callback.data.user_data);
             }
-            ring.consume();
-            callbacks_executed += 1;
 
             // Now check for fatal exceptions BEFORE calling the handler.
             if (err == error.PythonError) {
                 if (python_c.PyErr_Occurred()) |exc| {
                     if (python_c.PyErr_GivenExceptionMatches(exc, python_c.PyExc_KeyboardInterrupt.?) != 0 or
-                        python_c.PyErr_GivenExceptionMatches(exc, python_c.PyExc_SystemExit.?) != 0) {
+                        python_c.PyErr_GivenExceptionMatches(exc, python_c.PyExc_SystemExit.?) != 0)
+                    {
                         return err;
                     }
                 }
@@ -461,9 +468,6 @@ pub fn execute_ring_buffer(
                 if (cb) |c| python_c.py_decref(c);
             }
         }
-
-        ring.consume();
-        callbacks_executed += 1;
 
         yield_counter += 1;
         if (!builtin.is_test and yield_counter >= yield_threshold) {

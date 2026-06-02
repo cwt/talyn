@@ -622,3 +622,18 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     - **Database results**: validate column types, NULL handling, row count.
     The general rule: **the cost of validation is O(1) per response, the cost of accepting a forged response is unbounded.**
 
+---
+
+### 62. Consume Before Use, Not After (2026-06-02)
+
+*   **The Bug:** In `execute_ring_buffer` at `src/callback_manager.zig:465`, the original code called `ring.consume()` AFTER the callback executed. In `execute_dynamic_ring_buffer` at line 519, the same code called `ring.consume()` BEFORE the callback. The asymmetry was a latent bug in the static ring buffer: if the callback freed `user_data` and triggered GC, the GC would traverse the ring buffer and find a slot with stale `user_data` — the `ring.consume()` hadn't happened yet, so the slot was still "occupied" from the ring buffer's perspective. The GC could then dereference freed memory.
+*   **The Fix:** Moved `ring.consume()` to happen BEFORE the callback, matching the dynamic ring buffer's ordering. The `callbacks_executed += 1` also moved with it. The error path's cleanup+consume was already correctly ordered (BUG-24 fix).
+*   **Tests added:**
+    *   No new tests were added. The bug only manifested under GC + callback-frees-user_data, which is hard to reproduce reliably. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Consume before use, not after.** When you have a container with `next()` + `consume()` semantics (ring buffer, queue, stack, pool), the rule is: **mark the slot as consumed before you act on it.** This is because the action might trigger GC (or another thread, in free-threading mode) that traverses the container. If the slot is still "occupied" from the container's perspective, the traverser will see stale data. The same lesson applies to:
+    1. **Object pools** (e.g., `BlockingTask` pool): consume the slot before calling the callback, not after.
+    2. **Reference-counted objects**: the `release` should happen as early as possible, not deferred.
+    3. **Lock-free queues**: the `dequeue` should be visible to other threads before the consumer acts on the data.
+    4. **Database connection pools**: the `release` should happen after the query completes but before the result is processed (to allow another consumer to acquire the connection).
+    The general pattern: **the lifetime of a resource in a container is "from acquire to consume" — anything outside that window is invisible to other consumers.** So if the action on the resource can trigger traversal of the container (GC, lock-free read, etc.), the consume must happen first.
+

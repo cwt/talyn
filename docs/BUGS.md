@@ -394,6 +394,7 @@ Noticeable bugs, security gaps, or production-affecting leaks.
 - **Description**: `execute_ring_buffer` calls `ring.consume()` after callback execution, while `execute_dynamic_ring_buffer` consumes before. If GC runs during callback execution in the static ring buffer, it may traverse a callback whose user_data is being freed.
 - **Trigger**: GC triggered during callback execution in the static ring buffer.
 - **Consequences**: GC traverses dangling pointers; potential crash or missed references.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-43: Ring buffer traverse race in free-threading mode
 
