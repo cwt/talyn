@@ -166,7 +166,6 @@ pub fn unlink(self: *UnixSignals, sig: std.os.linux.SIG) !void {
     }else{
         return error.KeyNotFound;
     }
-    if (callback_info == null) return error.KeyNotFound;
 
     // BUG-57: For SIGINT, restore the default signal disposition
     // by unblocking the signal, removing it from the signalfd

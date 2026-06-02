@@ -693,6 +693,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **File**: `src/loop/unix_signals.zig:145`
 - **Description**: `if (callback_info == null) return error.KeyNotFound;` is unreachable — the else branch at line 143 already returns.
 - **Consequences**: None (dead code).
+- **Status**: ✅ Fixed (see commit log)
 
 ### BUG-77: `on_child_exit` accesses handler after potential concurrent removal
 

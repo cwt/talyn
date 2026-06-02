@@ -1329,3 +1329,22 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     5. **Library code**: log exceptions before raising wrapped exceptions.
     The general rule: **for any `except Exception: pass` block, add a log call.** The cost of a log line is 1 line of code; the cost of a silent bug is hours of debugging. If you must swallow, log first.
 
+---
+
+### 98. Remove Unreachable Code (2026-06-02)
+
+*   **The Bug:** In `unlink` at `src/loop/unix_signals.zig:169`, the check `if (callback_info == null) return error.KeyNotFound;` was unreachable. The `if (callback_info) |*v| { ... } else { return error.KeyNotFound; }` block at lines 163-168 already returned `error.KeyNotFound` when `callback_info` was null. The second check could never execute.
+*   **The Fix:** Removed the duplicate check. The function now returns `error.KeyNotFound` in the else branch and continues execution in the if branch, as intended.
+*   **Tests added:**
+    *   No new tests were added. The fix is dead code removal. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Remove unreachable code.** The pattern is:
+    1. **Dead code**: `if (x == null) return; ...; if (x == null) return;` — second check is unreachable.
+    2. **Live code**: each check is reachable and serves a purpose.
+    The "defensive duplication" anti-pattern is a sign of either (a) someone didn't understand the control flow, or (b) the code was modified and the redundant check was left behind. The same lesson applies to:
+    1. **Null checks after a non-null return**: `if (x == null) return; use(x); if (x == null) handleError();` — second check is dead.
+    2. **Default in switch after exhaustive case**: `case A: ...; case B: ...; default: ...;` where A and B cover all values.
+    3. **Check-then-act**: `if (x == null) return null; y = x.field;` is fine; `if (x == null) handle(); use(x); if (x == null) handle();` is dead.
+    4. **Multiple unlocks**: `lock(); if (err) { unlock(); return err; } unlock();` — second unlock is dead.
+    5. **Boolean returns after returns**: `if (cond) return true; if (!cond) return false; return false;` — last return is dead.
+    The general rule: **for any code path that can never execute, delete it.** Dead code is a maintenance burden: it confuses readers, gets modified alongside live code, and hides bugs (the live code might be wrong, but the dead code "looks right").
+
