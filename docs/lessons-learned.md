@@ -1230,3 +1230,22 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     5. **Type checking**: validate the type constraints at function boundaries.
     The general rule: **for any parser, after you've parsed all the tokens, validate the overall structure.** A 1-character fix that catches a class of bugs is always worth it.
 
+---
+
+### 93. Never Hardcode Numeric Constants (2026-06-02)
+
+*   **The Bug:** In `create_server.zig:487`, the errno value 99 was hardcoded as the EADDRNOTAVAIL constant. This value is correct on Linux but would be wrong on other platforms (e.g., BSD, macOS, Windows) where errno values are numbered differently.
+*   **The Fix:** Replaced the hardcoded `99` with `@intFromEnum(std.os.linux.E.ADDRNOTAVAIL)`. This is the standard-library-defined constant for the EADDRNOTAVAIL errno on Linux, ensuring the value matches the platform's actual errno numbering.
+*   **Tests added:**
+    *   No new tests were added. The fix is a constant replacement. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Never hardcode numeric constants that have a symbolic name.** The pattern is:
+    1. **Hardcoded number**: `if (errno == 99)` — works on Linux, breaks on BSD/macOS/Windows.
+    2. **Symbolic constant**: `if (errno == EADDRNOTAVAIL)` — works on all platforms.
+    The "magic number" anti-pattern is one of the oldest in computer science. The same lesson applies to:
+    1. **File descriptors**: 0/1/2 are stdin/stdout/stderr, but `STDIN_FILENO` is the symbolic name.
+    2. **Signal numbers**: SIGINT is symbolic, not the literal `2`.
+    3. **System call numbers**: use the libc/syscall wrapper, not the raw syscall number.
+    4. **POSIX error codes**: use `EAGAIN`, `EINTR`, `EINVAL`, not the numeric values.
+    5. **HTTP status codes**: use `200`, `404`, `500` are fine (they're standardized), but platform-specific constants are not.
+    The general rule: **for any numeric constant that has a symbolic name, use the symbolic name.** Magic numbers are a maintenance burden and a portability bug waiting to happen.
+

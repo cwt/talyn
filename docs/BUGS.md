@@ -658,6 +658,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **File**: `src/loop/python/io/server/create_server.zig:481`
 - **Description**: `@as(c_int, 99)` hardcodes errno 99 which is Linux-specific.
 - **Consequences**: Incorrect errno on non-Linux platforms if ever ported.
+- **Status**: ✅ Fixed (see commit log)
 
 ### BUG-72: Address interleave reverses order within families
 

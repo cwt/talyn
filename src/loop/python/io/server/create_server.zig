@@ -484,7 +484,12 @@ fn z_create_server_socket(server_data: *ServerSocketData) !void {
             if (err == error.AddressNotAvailable) {
                 const exception = python_c.PyObject_CallFunction(
                     python_c.PyExc_OSError, "is\x00",
-                    @as(c_int, 99), // EADDRNOTAVAIL
+                    // BUG-71: Use std.os.linux.E.ADDRNOTAVAIL
+                    // instead of the hardcoded value 99. The
+                    // previous hardcoded value was correct for
+                    // Linux but would be wrong on any other
+                    // platform with a different errno numbering.
+                    @as(c_int, @intFromEnum(std.os.linux.E.ADDRNOTAVAIL)),
                     "Cannot assign requested address\x00"
                 ) orelse return error.PythonError;
                 python_c.PyErr_SetRaisedException(exception);
