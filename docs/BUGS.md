@@ -421,6 +421,7 @@ Noticeable bugs, security gaps, or production-affecting leaks.
 - **Description**: When `is_writing` is false (paused by flow control), `sendto()` silently discards the data. Unlike the stream transport which buffers writes, the datagram transport drops them.
 - **Trigger**: Call `sendto()` after buffer exceeds high water mark.
 - **Consequences**: Silent data loss in UDP applications.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-36: Debug print left in production code
 

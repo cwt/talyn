@@ -675,3 +675,22 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     4. **Database cursors**: close the cursor on the last reference.
     The general pattern: **after a state transition, the "post" state should be self-evidently valid.** A node with no neighbors that is not `first`/`last` is self-evidently unlinked. The alternative — "the node is in the list but has no neighbors" — requires runtime checks and is a bug waiting to happen. The cost of clearing is one or two pointer writes; the cost of detecting the bug at runtime is much higher.
 
+---
+
+### 65. Flow Control Shouldn't Drop Data (2026-06-02)
+
+*   **The Bug:** In `DatagramTransport.sendto` at `src/transports/datagram/write.zig:86-88`, the original code had an early return when `is_writing` was false: `if (!self.is_writing) { return python_c.get_py_none(); }`. The intent was flow control — when the buffer exceeded the high water mark, pause accepting new sends. But the datagram transport has no buffer (the stream transport does, via `pending_buffers`). So pausing meant "drop the data on the floor". UDP is fire-and-forget; there's no kernel backpressure that would justify dropping.
+*   **The Fix:** Removed the `is_writing` early return. The `is_writing` flag still controls `pause_writing`/`resume_writing` callbacks (for application-level backpressure), but it must not block sends.
+*   **Tests added:**
+    *   No new tests were added. The bug only manifested when sendto was called after the high water mark was exceeded. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Flow control shouldn't drop data.** Flow control is a mechanism to tell the *producer* to slow down, not to *silently discard* the data. There are three valid responses to "I can't keep up":
+    1. **Buffer** (the stream transport does this — pause accepts but queue the data).
+    2. **Block** (synchronous APIs do this — the producer waits until they can accept more).
+    3. **Drop with notification** (raise an error so the caller knows).
+    **Silently dropping** is the worst option — the data is gone, the caller doesn't know, and the application behaves incorrectly. The same lesson applies to:
+    1. **Network send buffers**: don't drop packets, either buffer or fail.
+    2. **Logging systems**: don't drop log lines, either block or persist to disk.
+    3. **Message queues**: don't drop messages, either buffer or reject explicitly.
+    4. **Audio/video pipelines**: don't drop frames, either buffer or notify.
+    The general rule: **if you're tempted to add `if (paused) { return; }` to a write path, ask yourself: where does the data go? If the answer is "nowhere", you're silently dropping. Buffer it, block on it, or fail explicitly.**
+

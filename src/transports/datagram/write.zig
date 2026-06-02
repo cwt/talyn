@@ -83,9 +83,15 @@ pub fn z_datagram_sendto(self: *DatagramTransport.DatagramTransportObject, args:
         python_c.raise_python_runtime_error("Transport is closed");
         return error.PythonError;
     }
-    if (!self.is_writing) {
-        return python_c.get_py_none();
-    }
+    // BUG-34: Previously, if is_writing was false (paused by flow
+    // control), the function returned silently, dropping the data on
+    // the floor. Unlike the stream transport which buffers writes
+    // (and so dropping is just "delay the write"), the datagram
+    // transport had no buffer — the data was lost permanently. UDP is
+    // fire-and-forget; there's no kernel backpressure that would
+    // justify dropping. The is_writing flag still controls
+    // pause_writing/resume_writing callbacks (for application-level
+    // backpressure), but it must not drop user data.
 
     var pbuffer: python_c.Py_buffer = undefined;
     if (python_c.PyObject_GetBuffer(data, &pbuffer, 0) < 0) return error.PythonError;
