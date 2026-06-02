@@ -569,6 +569,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **Description**: When unlinking SIGINT, a default Python callback is installed but the signal is not removed from the signalfd mask or unblocked.
 - **Trigger**: Unlinking SIGINT handler.
 - **Consequences**: Signal continues to be handled via signalfd rather than being restored to `SIG_DFL`.
+- **Status**: ✅ Fixed (see commit log)
 
 ---
 

@@ -986,3 +986,26 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     5. **Connection migration**: when migrating a connection, drain the old transport.
     The general rule: **for every protocol/connection switch, ask yourself: what data is in flight right now? Where will it go after the switch?** The answer should be "to the new protocol" — not "lost" or "to the old protocol".
 
+---
+
+### 81. Signal Unregistration Must Reverse Signal Registration (2026-06-02)
+
+*   **The Bug:** In `unlink` at `src/loop/unix_signals.zig:161-197`, the SIGINT branch only installed a `default_sigint_signal_callback` but did NOT unblock the signal from the process mask or remove it from the signalfd. So after unlinking SIGINT:
+    1. The signal was still blocked (via `sigprocmask`).
+    2. The signal was still in the signalfd mask.
+    3. The process-level handler was still the dummy handler.
+    The "default callback" installed was unreachable: blocked signals are delivered to signalfd (which no longer had SIGINT in its mask), not to the process-level handler. So the next Ctrl+C would be lost — the process wouldn't terminate.
+*   **The Fix:** For SIGINT, do the same cleanup as the `else` branch: unblock the signal, remove it from signalfd, restore SIG_DFL. The callback is then unreachable anyway, so we early-return from unlink.
+*   **Tests added:**
+    *   No new tests were added. The fix is a defensive cleanup to ensure the signal is properly restored. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Signal unregistration must reverse every step of signal registration.** The pattern is:
+    1. **Register**: block signal, add to signalfd, install handler.
+    2. **Unregister**: unblock signal, remove from signalfd, restore SIG_DFL.
+    The "install a default callback and hope" anti-pattern is a common bug. A callback that's unreachable due to a blocked signal is worse than no callback at all — the user thinks they have signal handling when they don't. The same lesson applies to:
+    1. **All signal handlers**: SIGTERM, SIGUSR1, SIGUSR2 all need full cleanup.
+    2. **File system watchers**: inotify_add_watch needs inotify_rm_watch.
+    3. **Event sources**: epoll_ctl ADD needs epoll_ctl DEL.
+    4. **Thread registrations**: pthread_create needs pthread_join.
+    5. **Memory mappings**: mmap needs munmap.
+    The general rule: **for every "add" operation, the matching "remove" must reverse all the side effects of the add.** If you can't enumerate all the side effects, the add operation is unsafe.
+

@@ -168,6 +168,28 @@ pub fn unlink(self: *UnixSignals, sig: std.os.linux.SIG) !void {
     }
     if (callback_info == null) return error.KeyNotFound;
 
+    // BUG-57: For SIGINT, restore the default signal disposition
+    // by unblocking the signal, removing it from the signalfd
+    // mask, and reinstalling SIG_DFL. The previous code only
+    // installed a default_sigint_signal_callback but left the
+    // signal blocked — the callback was unreachable because
+    // blocked signals are delivered to signalfd (which no
+    // longer had SIGINT), not to the process-level handler.
+    switch (sig) {
+        std.os.linux.SIG.INT => {
+            var mask: std.posix.sigset_t = std.posix.sigemptyset();
+            std.posix.sigaddset(&mask, sig);
+            std.posix.sigprocmask(std.os.linux.SIG.UNBLOCK, &mask, null);
+
+            std.posix.sigdelset(&self.mask, sig);
+            self.fd = try std.posix.signalfd(self.fd, &self.mask, 0);
+            _ = c.signal(@as(c_int, @intCast(@intFromEnum(sig))), c.SIG_DFL);
+            _ = c.siginterrupt(@as(c_int, @intCast(@intFromEnum(sig))), 1);
+            return;
+        },
+        else => {},
+    }
+
     const callback: CallbackManager.Callback = switch (sig) {
         std.os.linux.SIG.INT => CallbackManager.Callback{
             .func = &default_sigint_signal_callback,
