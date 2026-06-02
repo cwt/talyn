@@ -174,6 +174,12 @@ fn datagram_close(self: ?*DatagramTransportObject, _: ?PyObject) callconv(.c) ?P
             _ = std.os.linux.close(instance.fd);
             instance.fd = -1;
         }
+        // BUG-52: cleanup_resources releases the fixed file slot
+        // and the registered buffer (or frees the heap-allocated
+        // buffer if not registered). Without this call, repeatedly
+        // creating and closing datagram transports would exhaust
+        // fixed file slots and the buffer pool.
+        cleanup_resources(instance);
     }
     return python_c.get_py_none();
 }

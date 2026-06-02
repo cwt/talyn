@@ -753,3 +753,18 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     4. **Reference counts** (e.g., `Arc`): if the refcount is incremented but the operation fails, decrement the refcount.
     The general rule: **any time you remove a resource from a pool and the subsequent operation can fail, ensure the resource is returned to the pool on failure.**
 
+---
+
+### 69. Close Paths Must Release All Resources, Not Just the FD (2026-06-02)
+
+*   **The Bug:** In `datagram_close` at `src/transports/datagram/main.zig:157-179`, the original code closed the fd and cancelled pending operations, but didn't call `cleanup_resources()`. The `cleanup_resources` function (defined at line 45) releases the fixed file slot and the registered buffer (or frees the heap-allocated buffer if not registered). Without this call, repeatedly creating and closing datagram transports would exhaust fixed file slots and the buffer pool — the resources would be held until GC deallocated the Python wrapper object.
+*   **The Fix:** Added a call to `cleanup_resources(instance)` at the end of `datagram_close` (after the fd close). The cleanup is idempotent (checks `fixed_file_index != 0` and `fixed_buffer_index != 0xffff` before doing anything), so it's safe to call.
+*   **Tests added:**
+    *   No new tests were added. The bug only manifested under repeated create/close cycles, which is hard to reproduce in a unit test. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Close paths must release all resources, not just the FD.** It's tempting to think of "close" as "close the fd". But in modern systems with resource pools (fixed files, registered buffers, pinned memory, etc.), close must release *all* the resources the object holds. The same lesson applies to:
+    1. **File descriptors**: register with epoll/kqueue/uring? deregister.
+    2. **Memory pools**: pinned buffer? unpin.
+    3. **GPU resources**: texture handle? release.
+    4. **Database connections**: in transaction? rollback.
+    The general pattern: **for each resource acquisition in the constructor, there must be a corresponding release in the destructor.** This is the "RAII" pattern (Resource Acquisition Is Initialization) — resources are acquired in the constructor and released in the destructor, in LIFO order. In Zig, this is achieved via `defer`/`errdefer` in the constructor and explicit calls in the destructor. The bug here was a missing release — the `cleanup_resources` function was defined but never called from `datagram_close`. A code review or a static analysis tool (like a "missing release" detector) would have caught this. The general rule: **a `close` function should call every release function that has a corresponding acquire in the `open`/`init` path.** If you add a new resource to the constructor, add a release to the destructor (and call it).
+

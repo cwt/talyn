@@ -457,6 +457,7 @@ Noticeable bugs, security gaps, or production-affecting leaks.
 - **Description**: `datagram_close` closes the fd but doesn't call `cleanup_resources()`. Fixed file registrations and leased buffer pool slots are held until GC deallocates the object.
 - **Trigger**: Repeatedly create and close datagram transports.
 - **Consequences**: Exhaustion of fixed file slots or buffer pool.
+- **Status**: ✅ Fixed (see commit log)
 
 ### MEDIUM-LOW
 
