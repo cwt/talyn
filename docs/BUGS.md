@@ -332,6 +332,7 @@ Crash, UAF, data loss, or DoS reachable in normal usage paths.
 - **Description**: `self.callbacks.get_value_ptr(...).?` will panic if the callback was removed (via `unlink`) between the signal being delivered and the io_uring read completing.
 - **Trigger**: Rapid signal link/unlink cycles.
 - **Consequences**: Crash (panic) in signal handler.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-31: `Handle.cancel()` TOCTOU race with thread_safe handles
 

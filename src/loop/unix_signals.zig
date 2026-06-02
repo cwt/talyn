@@ -49,10 +49,34 @@ fn signal_handler(data: *const CallbackManager.CallbackData) !void {
 
     const sig = loop.unix_signals.signalfd_info.signo;
 
-    const callback = loop.unix_signals.callbacks.get_value_ptr(@as(u6, @intCast(sig)), null).?;
-    python_c.py_incref(@alignCast(@ptrCast(callback.data.user_data.?)));
+    // BUG-37: If the callback for this signal was removed (via `unlink`)
+    // between the signal being delivered and the io_uring read completing,
+    // `get_value_ptr` returns null. Don't panic — just re-queue the read
+    // (so we keep reading from signalfd) and skip the dispatch.
+    const callback_ptr = loop.unix_signals.callbacks.get_value_ptr(@as(u6, @intCast(sig)), null) orelse {
+        const buffer_to_read: std.os.linux.IoUring.ReadBuffer = .{
+            .buffer = @as([*]u8, @ptrCast(&loop.unix_signals.signalfd_info))[0..@sizeOf(std.os.linux.signalfd_siginfo)],
+        };
 
-    try Loop.Scheduling.Soon.dispatch(loop, callback);
+        loop.unix_signals.blocking_task_id = try loop.io.queue(.{
+            .PerformRead = .{
+                .fd = loop.unix_signals.fd,
+                .data = buffer_to_read,
+                .callback = CallbackManager.Callback{
+                    .func = &signal_handler,
+                    .cleanup = null,
+                    .data = .{
+                        .user_data = loop,
+                    },
+                },
+                .offset = 0,
+            },
+        });
+        return;
+    };
+    python_c.py_incref(@alignCast(@ptrCast(callback_ptr.data.user_data.?)));
+
+    try Loop.Scheduling.Soon.dispatch(loop, callback_ptr);
 
     const buffer_to_read: std.os.linux.IoUring.ReadBuffer = .{
         .buffer = @as([*]u8, @ptrCast(&loop.unix_signals.signalfd_info))[0..@sizeOf(std.os.linux.signalfd_siginfo)],

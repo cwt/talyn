@@ -502,3 +502,17 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     2. **Don't pass the result directly as a function argument** — capture it first, then check, then pass.
     3. **For hot paths where the check might be slow**, the ZLS/compiler doesn't warn about this; the bug only surfaces under memory pressure (rare in tests) or when the function is inlined and the optimizer elides the null check. The rule: capture into a `const`, check `orelse`, *then* use it. This applies to every C-API function in CPython. The pattern is so common in this codebase that introducing a small Zig helper like `fn must_pylong(x: c_long) !*PyObject { return python_c.PyLong_FromLong(x) orelse return error.PythonError; }` would save a lot of repetition.
 
+---
+
+### 55. Always Check `get_value_ptr` Returns — Don't `.?` Force-Unwrap (2026-06-02)
+
+*   **The Bug:** In `signal_handler` at `src/loop/unix_signals.zig:52`, the code did:
+    ```zig
+    const callback = loop.unix_signals.callbacks.get_value_ptr(@as(u6, @intCast(sig)), null).?;
+    ```
+    The `.?` is **unwrap-else-panic** on the `?*T` return from `get_value_ptr`. If the callback for that signal was removed (via `unlink`) between the signal being delivered and the io_uring read completing — a real scenario in tests that rapidly link/unlink signal handlers — `get_value_ptr` returns `null`, the `.?` panics, and the entire event loop crashes. The panic also leaves the io_uring in a bad state (the signalfd isn't re-queued for reading, so subsequent signals on the same fd are silently dropped).
+*   **The Fix:** Replaced the `.?` with an explicit `orelse` that re-queues the signalfd read and returns gracefully. The fix is verbose because we have to re-queue the read inline (we can't just `return` — that would leave signalfd un-readable, dropping future signals). Same pattern would apply to any "best-effort lookup + dispatch" code path where the lookup target can be removed between the trigger event and the dispatch.
+*   **Tests added:**
+    *   No new tests were added. **The bug only triggers under free-threading with a race between `signal.unlink` from one thread and signal delivery on another** — extremely hard to reproduce deterministically in a unit test. The regression coverage comes from the existing 284 tests across all 4 Python versions (3.13, 3.14, 3.13t, 3.14t) in both Debug and ReleaseSafe modes — all pass after the fix. The free-threading tests in particular (3.13t, 3.14t) exercise concurrent operations heavily.
+*   **The Lesson:** Zig's `.?` operator (unwrap-else-panic) is **almost never what you want in event-loop / signal-handler / hot-path code**. It is appropriate for **impossible states** (e.g., `argv[1].?` when you just checked `argc > 1`), but for **concurrent state lookups** it's a crash waiting to happen. The rule: **any time you write `ptr.?` or `value.?` on a `?T` (optional) returned by a lookup function (BTree, HashMap, container), the question to ask is: "can this lookup fail at runtime?" If yes, use `orelse` to handle the failure, never `.?`.** The same rule applies to Python's `.get(key, None)` and `dict[key]` — never use `dict[key]` in concurrent code, use `dict.get(key)` or check membership first. In event loops specifically, the rule is even stricter: a panic in a callback is unrecoverable (the event loop is in a broken state), so always handle the lookup-failure case explicitly.
+
