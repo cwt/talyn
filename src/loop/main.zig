@@ -136,6 +136,20 @@ pub fn release(self: *Loop) void {
         CallbackManager.release_dynamic_ring_buffer(ready_tasks_queue);
     }
 
+    // BUG-29: Drain the FD watchers BEFORE `io.deinit()`. The `FDWatcher`
+    // structs contain `blocking_task_id` referencing io_uring tasks, and
+    // draining them may need to call `io.cancel(...)` to clean up
+    // in-flight operations. If we deinit the ring first, those operations
+    // are leaked and any cleanup logic in the watcher dtor is no longer
+    // able to communicate with the kernel.
+    {
+        var sig: std.posix.fd_t = undefined;
+        while (self.reader_watchers.pop(&sig)) |_| {}
+        while (self.writer_watchers.pop(&sig)) |_| {}
+    }
+    self.reader_watchers.deinit() catch {};
+    self.writer_watchers.deinit() catch {};
+
     self.io.deinit();
 
     // Release callbacks dispatched by cancel_all during io.deinit().
@@ -146,16 +160,6 @@ pub fn release(self: *Loop) void {
         q.deinit();
     }
     self.allocator.destroy(self.ready_tasks_queues);
-
-    // Cancel any remaining watcher I/O before deinit
-    {
-        var sig: std.posix.fd_t = undefined;
-        while (self.reader_watchers.pop(&sig)) |_| {}
-        while (self.writer_watchers.pop(&sig)) |_| {}
-    }
-
-    self.reader_watchers.deinit() catch {};
-    self.writer_watchers.deinit() catch {};
 
     self.prepare_hooks.clear();
     self.check_hooks.clear();

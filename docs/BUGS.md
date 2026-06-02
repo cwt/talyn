@@ -281,6 +281,7 @@ Crash, UAF, data loss, or DoS reachable in normal usage paths.
 - **Description**: `io.deinit()` is called at line 139, destroying the io_uring ring. Then at lines 151-155, `reader_watchers` and `writer_watchers` are drained. The `FDWatcher` structs contain `blocking_task_id` referencing io_uring tasks, but the ring is already gone.
 - **Trigger**: Loop release with active FD watchers that have pending IO operations.
 - **Consequences**: Potential resource leaks. FDWatcher handles not properly cleaned up.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-49: Write transport silent data loss on index overflow
 
