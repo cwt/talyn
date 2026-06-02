@@ -175,6 +175,10 @@ fn stream_init_configuration(
     self.is_closing = false;
     self.closed = false;
     self.fd = fd;
+    // BUG-32: Initialize generation counter explicitly. Default value in struct
+    // definition is only applied by struct literals, not by field-by-field
+    // assignment. Without this, the counter would be uninitialized (0xaa in Debug).
+    self.dispatch_generation = 0;
     
     var family: i32 = undefined;
     var optlen: std.posix.socklen_t = @sizeOf(i32);
@@ -239,6 +243,9 @@ inline fn z_stream_new(@"type": *python_c.PyTypeObject) !*StreamTransportObject 
     instance.fd = -1;
     instance.protocol_type = undefined;
     instance.closed = true;
+    // BUG-32: Initialize generation counter (struct-literal default not applied
+    // to tp_alloc memory).
+    instance.dispatch_generation = 0;
 
     return instance;
 }

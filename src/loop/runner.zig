@@ -115,6 +115,13 @@ fn dispatch_completion_batch(
     for (records) |*record| {
         const transport: *Stream.StreamTransportObject = @alignCast(@ptrCast(record.stream_transport orelse continue));
 
+        // BUG-32: Verify the transport hasn't been closed between push and dispatch.
+        // If `dispatch_generation` was bumped (e.g., `transport_close` or
+        // `transport_force_close` ran via a hook, ready queue, or future code path),
+        // the captured record is stale and must be skipped to prevent use-after-free.
+        const live_generation = @atomicLoad(u64, &transport.dispatch_generation, .acquire);
+        if (live_generation != record.transport_generation) continue;
+
         switch (record.op) {
             .DataReceived => {
                 const ptr: [*]u8 = @ptrCast(record.buffer_ptr orelse continue);
@@ -195,6 +202,7 @@ fn fetch_completed_tasks(
                             .Legacy => @ptrCast(read_transport.buffer_to_read.ptr),
                         },
                         .nbytes = @as(i64, @intCast(bytes_read)),
+                        .transport_generation = @atomicLoad(u64, &stream_transport.dispatch_generation, .acquire),
                     };
 
                     if (self.completion_batch.push(record)) {

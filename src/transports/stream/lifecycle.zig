@@ -137,6 +137,10 @@ pub fn maybe_close_fd(self: *StreamTransportObject) void {
     const write_transport = utils.get_data_ptr2(WriteTransport, "write_transport", self);
 
     if (read_transport.closed and write_transport.closed) {
+        // BUG-32: Bump dispatch_generation BEFORE mutating `closed` so any
+        // in-flight completion records captured before the close see a stale
+        // generation and are skipped at dispatch.
+        @atomicStore(u64, &self.dispatch_generation, self.dispatch_generation + 1, .release);
         self.closed = true;
         const fd = self.fd;
         if (fd >= 0) {
@@ -177,6 +181,9 @@ pub fn transport_force_close(self: ?*StreamTransportObject, exc: ?PyObject) call
     if (instance.closed) {
         return python_c.get_py_none();
     }
+    // BUG-32: Bump dispatch_generation before mutating state. Stale completion
+    // records captured before the force close will see a mismatched generation.
+    @atomicStore(u64, &instance.dispatch_generation, instance.dispatch_generation + 1, .release);
     instance.closed = true;
 
     const read_transport = utils.get_data_ptr2(ReadTransport, "read_transport", instance);

@@ -23,6 +23,7 @@ pub const CompletionRecord = extern struct {
     stream_transport: ?*anyopaque,  // *Stream.StreamTransportObject (Zig ptr, NOT PyObject)
     buffer_ptr: ?*anyopaque,        // raw bytes from read transport buffer
     nbytes: i64,
+    transport_generation: u64,
 };
 
 /// Fixed-size batch buffer shared between Zig and dispatch.
@@ -53,3 +54,36 @@ pub const CompletionBatch = struct {
         self.ready_count = 0;
     }
 };
+
+const testing = std.testing;
+
+test "CompletionRecord.transport_generation field" {
+    // Verifies BUG-32: the generation field can be stored and read back
+    // correctly so dispatch can detect stale records.
+    const record = CompletionRecord{
+        .op = .DataReceived,
+        .stream_transport = @ptrFromInt(0xDEAD_BEEF),
+        .buffer_ptr = @ptrFromInt(0xCAFE_F00D),
+        .nbytes = 42,
+        .transport_generation = 7,
+    };
+    try testing.expectEqual(@as(u64, 7), record.transport_generation);
+    try testing.expectEqual(@as(i64, 42), record.nbytes);
+}
+
+test "CompletionBatch push stores transport_generation" {
+    var batch = CompletionBatch{};
+    const pushed = batch.push(.{
+        .op = .DataReceived,
+        .stream_transport = null,
+        .buffer_ptr = null,
+        .nbytes = 1024,
+        .transport_generation = 99,
+    });
+    try testing.expect(pushed);
+    try testing.expectEqual(@as(usize, 1), batch.ready_count);
+    try testing.expectEqual(@as(u64, 99), batch.records[0].transport_generation);
+
+    batch.reset();
+    try testing.expect(batch.is_empty());
+}

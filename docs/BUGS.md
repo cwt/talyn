@@ -263,6 +263,7 @@ Crash, UAF, data loss, or DoS reachable in normal usage paths.
 - **Description**: `CompletionRecord` stores raw `*anyopaque` pointers. Safety depends entirely on `dispatch_completion_batch` being called before `call_once`. If hooks or any future code path frees a transport before dispatch, the pointers are dangling.
 - **Trigger**: A `check_hook` or `prepare_hook` that closes/frees a stream transport. Or any future refactoring that changes the dispatch ordering.
 - **Consequences**: Use-after-free, segfault.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-33: Accept loop continues on fatal errors
 
