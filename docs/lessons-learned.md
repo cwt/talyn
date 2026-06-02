@@ -839,3 +839,30 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     4. **Timer APIs**: timer_settime, clock_gettime, etc. have transient (EAGAIN, EINTR) and fatal (EINVAL) errors.
     The general rule: **for every "retry on non-zero return" loop, ask yourself: which errors are worth retrying? If you can't answer, treat all errors as fatal.**
 
+---
+
+### 74. Never Return References to Module-Level Mutable State (2026-06-02)
+
+*   **The Bug:** In `resolve_address` at `src/loop/dns/parsers.zig:111`, the function returned a slice into module-level mutable state:
+    1. For "localhost" — a slice into a `const` array (OK, immutable).
+    2. For IPv4/IPv6 — a slice into `var tmp_address: utils.Address = undefined`, a module-level mutable variable.
+    The second case is a thread-safety bug. Two concurrent callers would both receive a slice pointing to the same memory. The first caller's result would be clobbered by the second caller's call to `resolveIp`/`resolveIp6`, which writes to `tmp_address`. If the first caller had stored the slice and was using it later, they'd see the second caller's data.
+*   **The Fix:** Changed the API to take an output buffer parameter:
+    ```zig
+    pub fn resolve_address(hostname: []const u8, allow_ipv6: bool, out: []utils.Address) !usize
+    ```
+    The function writes results to the caller-owned `out` buffer and returns the count. No more global mutable state. The caller in `lookup` allocates a 2-element stack buffer and copies the result with `self.loop.allocator.dupe(...)` before returning.
+*   **Tests added:**
+    *   Zig unit test `resolve_address concurrent callers (BUG-48)` in `src/loop/dns/parsers.zig` that calls `resolve_address` twice in a row with different IP addresses and verifies that each output buffer contains the correct distinct addresses (not both pointing to the same memory).
+    *   Updated all existing `resolve_address` tests to use the new API.
+*   **The Lesson:** **Never return references to module-level mutable state from a function that may be called concurrently.** The pattern is:
+    1. **Module-level `var`** — the worst offender. Two callers get the same memory.
+    2. **Static local variables** — same problem in C/C++.
+    3. **Thread-local storage** — better, but still bug-prone if you have multiple threads.
+    4. **Caller-owned output buffer** — the only safe pattern.
+    The general rule: **for any function that returns a reference to a result, the result must live somewhere that outlives the function call AND is not shared with other concurrent callers.** The fix is to either (1) take an output buffer parameter, (2) heap-allocate and return an owned slice, or (3) require the caller to pass in storage. The same lesson applies to:
+    1. **C `static` variables**: same problem in C.
+    2. **Python module-level mutable defaults**: same problem in Python.
+    3. **Singleton patterns**: state that lives forever in a singleton is shared by all callers.
+    4. **String interning**: if the interned string is mutable, you have the same bug.
+

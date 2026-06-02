@@ -506,6 +506,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **Description**: `tmp_address` is a module-level `var`. The returned slice points to this global. If called from multiple threads, this is a data race.
 - **Trigger**: Concurrent calls to `resolve_address`.
 - **Consequences**: Data race (mitigated by single-threaded event loop).
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-35: fd 0 (stdin) rejected as invalid
 

@@ -15,8 +15,6 @@ const localhost_address_list: []const utils.Address = &[_]utils.Address{
     ),
 };
 
-var tmp_address: utils.Address = undefined;
-
 // TODO: Implement resolv options
 pub const Configuration = struct {
     servers: []utils.Address,
@@ -108,24 +106,41 @@ pub fn parse_name(full_data: []const u8, initial_offset: usize, allocator: std.m
     return try result.toOwnedSlice(allocator);
 }
 
-pub fn resolve_address(hostname: []const u8, allow_ipv6: bool) !?[]const utils.Address {
+/// Resolve a hostname to one or more addresses synchronously.
+/// Writes results to `out` and returns the number of addresses written.
+/// Returns 0 if the hostname needs to be resolved asynchronously (DNS lookup).
+///
+/// BUG-48: The previous implementation returned a slice into module-level
+/// mutable state (`tmp_address`), which was racy: concurrent callers would
+/// all see the same memory, with the latest caller clobbering the others.
+/// Now the caller owns the output buffer.
+pub fn resolve_address(
+    hostname: []const u8,
+    allow_ipv6: bool,
+    out: []utils.Address,
+) !usize {
     // 1. Check for localhost
     if (std.mem.eql(u8, hostname, "localhost")) {
-        return localhost_address_list[0..(1 + @as(usize, @intFromBool(allow_ipv6)))];
+        const n = 1 + @as(usize, @intFromBool(allow_ipv6));
+        if (out.len < n) return error.OutOfMemory;
+        @memcpy(out[0..n], localhost_address_list[0..n]);
+        return n;
     }
 
     // 2. Check for IPv4
     if (utils.Address.resolveIp(hostname, 0)) |res| {
-        tmp_address = res;
-        return @as([*]const utils.Address, @ptrCast(&tmp_address))[0..1];
-    }else |_| {}
+        if (out.len < 1) return error.OutOfMemory;
+        out[0] = res;
+        return 1;
+    } else |_| {}
 
     // 3. Check for IPv6
     if (allow_ipv6) {
         if (utils.Address.resolveIp6(hostname, 0)) |res| {
-            tmp_address = res;
-            return @as([*]const utils.Address, @ptrCast(&tmp_address))[0..1];
-        }else |_| {}
+            if (out.len < 1) return error.OutOfMemory;
+            out[0] = res;
+            return 1;
+        } else |_| {}
     }
 
     // 4. Validate hostname
@@ -133,8 +148,8 @@ pub fn resolve_address(hostname: []const u8, allow_ipv6: bool) !?[]const utils.A
         return error.InvalidHostname;
     }
 
-    // If no match, return null
-    return null;
+    // If no match, return 0
+    return 0;
 }
 
 pub fn parse_resolv_configuration(allocator: std.mem.Allocator, content: []const u8) !Configuration {
@@ -493,39 +508,62 @@ test "validate_hostname edge cases" {
 test "resolve_address localhost" {
     // Test IPv4 localhost
     {
-        const result = try resolve_address("localhost", false);
-        try std.testing.expect(result != null);
-        try std.testing.expectEqual(@as(usize, 1), result.?.len);
-        try std.testing.expectEqual(std.posix.AF.INET, result.?[0].any.family);
+        var out: [2]utils.Address = undefined;
+        const n = try resolve_address("localhost", false, &out);
+        try std.testing.expectEqual(@as(usize, 1), n);
+        try std.testing.expectEqual(std.posix.AF.INET, out[0].any.family);
     }
 
     // Test IPv4 and IPv6 localhost
     {
-        const result = try resolve_address("localhost", true);
-        try std.testing.expect(result != null);
-        try std.testing.expectEqual(@as(usize, 2), result.?.len);
-        try std.testing.expectEqual(std.posix.AF.INET, result.?[0].any.family);
-        try std.testing.expectEqual(std.posix.AF.INET6, result.?[1].any.family);
+        var out: [2]utils.Address = undefined;
+        const n = try resolve_address("localhost", true, &out);
+        try std.testing.expectEqual(@as(usize, 2), n);
+        try std.testing.expectEqual(std.posix.AF.INET, out[0].any.family);
+        try std.testing.expectEqual(std.posix.AF.INET6, out[1].any.family);
     }
 }
 
 test "resolve_address IPv4" {
-    const result = try resolve_address("8.8.8.8", false);
-    try std.testing.expect(result != null);
-    try std.testing.expectEqual(@as(usize, 1), result.?.len);
-    try std.testing.expectEqual(std.posix.AF.INET, result.?[0].any.family);
+    var out: [2]utils.Address = undefined;
+    const n = try resolve_address("8.8.8.8", false, &out);
+    try std.testing.expectEqual(@as(usize, 1), n);
+    try std.testing.expectEqual(std.posix.AF.INET, out[0].any.family);
 }
 
 test "resolve_address IPv6" {
-    const result = try resolve_address("2001:4860:4860::8888", true);
-    try std.testing.expect(result != null);
-    try std.testing.expectEqual(@as(usize, 1), result.?.len);
-    try std.testing.expectEqual(std.posix.AF.INET6, result.?[0].any.family);
+    var out: [2]utils.Address = undefined;
+    const n = try resolve_address("2001:4860:4860::8888", true, &out);
+    try std.testing.expectEqual(@as(usize, 1), n);
+    try std.testing.expectEqual(std.posix.AF.INET6, out[0].any.family);
 }
 
 test "resolve_address invalid hostname" {
-    const result = resolve_address("invalid--domain", false);
+    var out: [2]utils.Address = undefined;
+    const result = resolve_address("invalid--domain", false, &out);
     try std.testing.expectError(error.InvalidHostname, result);
+}
+
+test "resolve_address concurrent callers (BUG-48)" {
+    // The previous implementation returned a slice into module-level
+    // mutable state. Two sequential calls would see each other's
+    // results. Now each call writes to a caller-owned buffer.
+    var out_a: [2]utils.Address = undefined;
+    var out_b: [2]utils.Address = undefined;
+    const n_a = try resolve_address("8.8.8.8", false, &out_a);
+    const n_b = try resolve_address("1.1.1.1", false, &out_b);
+    try std.testing.expectEqual(@as(usize, 1), n_a);
+    try std.testing.expectEqual(@as(usize, 1), n_b);
+    // Both should be IPv4 (8.8.8.8 and 1.1.1.1 respectively),
+    // not both pointing to the same memory (which would happen
+    // with the bug — they'd both end up as 1.1.1.1).
+    try std.testing.expectEqual(std.posix.AF.INET, out_a[0].any.family);
+    try std.testing.expectEqual(std.posix.AF.INET, out_b[0].any.family);
+    // Compare the IPv4 bytes: 8.8.8.8 vs 1.1.1.1 differ in the
+    // first octet, so they should not be bytewise equal.
+    const bytes_a: *const [4]u8 = @ptrCast(&out_a[0].in.sa.addr);
+    const bytes_b: *const [4]u8 = @ptrCast(&out_b[0].in.sa.addr);
+    try std.testing.expect(!std.mem.eql(u8, bytes_a, bytes_b));
 }
 
 test "parse_name simple uncompressed name" {

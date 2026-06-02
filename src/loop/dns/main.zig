@@ -96,9 +96,17 @@ pub fn lookup(
 
         const ipv6_supported: bool = self.ipv6_supported;
 
-        const address_resolved = try Parsers.resolve_address(parsed_hostname, ipv6_supported);
-        if (address_resolved) |v| {
-            return v;
+        // BUG-48: Allocate a 2-element buffer for the synchronous
+        // resolve result. The previous API returned a slice into
+        // module-level mutable state (`tmp_address`), which was
+        // racy: concurrent callers would see each other's results.
+        // Caller copies the result via `allocator.dupe` before
+        // storing it, so we can return an aliased slice here.
+        var resolved_buf: [2]utils.Address = undefined;
+        const n = try Parsers.resolve_address(parsed_hostname, ipv6_supported, &resolved_buf);
+        if (n > 0) {
+            const slice = self.loop.allocator.dupe(utils.Address, resolved_buf[0..n]) catch return null;
+            return slice;
         }
 
         // Use native asynchronous resolver
