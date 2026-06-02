@@ -14,7 +14,8 @@ pub fn LinkedList(comptime T: type) type {
 
         pub const errors = error {
             CannotHasElementsWhenRealasing,
-            LinkedListEmpty
+            LinkedListEmpty,
+            NodeNotInList,
         };
 
         allocator: std.mem.Allocator,
@@ -43,8 +44,20 @@ pub fn LinkedList(comptime T: type) type {
                 return errors.LinkedListEmpty;
             }
 
+            // BUG-39: Detect double-unlink. If the node's prev and next
+            // are both null AND it's not the first or last node, then
+            // it has already been unlinked. Without this check, calling
+            // unlink_node twice on the same node would corrupt the
+            // list: the first unlink correctly removes the node, but
+            // the second unlink would treat stale prev/next pointers
+            // (or null, if cleared) as valid and corrupt the list
+            // structure (e.g., by setting first/last to stale pointers
+            // or decrementing len below 0).
             const prev_node = node.prev;
             const next_node = node.next;
+            if (prev_node == null and next_node == null and self.first != node and self.last != node) {
+                return errors.NodeNotInList;
+            }
 
             if (prev_node) |n| {
                 n.next = next_node;
@@ -57,6 +70,14 @@ pub fn LinkedList(comptime T: type) type {
             }else{
                 self.last = prev_node;
             }
+
+            // Clear the node's pointers to make the "already unlinked"
+            // state detectable for future unlink_node calls. A subsequent
+            // unlink_node on this node will see prev=null, next=null,
+            // and (since first/last no longer point to it) return
+            // NodeNotInList above.
+            node.prev = null;
+            node.next = null;
 
             self.len -= 1;
         }

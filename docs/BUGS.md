@@ -412,6 +412,7 @@ Noticeable bugs, security gaps, or production-affecting leaks.
 - **Description**: `unlink_node` doesn't clear the node's `prev`/`next` pointers after unlinking. Calling `unlink_node` twice on the same node will corrupt the list.
 - **Trigger**: Calling `unlink_node` on an already-unlinked node.
 - **Consequences**: List corruption; potential crashes.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-34: Datagram `sendto` silently drops data when writing is paused
 

@@ -658,3 +658,20 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     4. **Reference counts in lock-free structures**: use `@atomicRmw(usize, &rc, .Add, 1, .acq_rel)`, not a plain `+= 1`.
     The general pattern: **if a field is read by one thread and written by another, it must be atomic** — even if the "field" is just a single bit inside a bitset. The compiler doesn't enforce this; you have to get it right. The `std.bit_set` types are great for single-threaded code, but they're a footgun in multi-threaded code.
 
+---
+
+### 64. Make Invalid States Unrepresentable (2026-06-02)
+
+*   **The Bug:** In `LinkedList.unlink_node` at `src/utils/linked_list.zig:41-62`, the original code did not clear the node's `prev`/`next` pointers after unlinking, and did not check if the node was already unlinked. Calling `unlink_node` twice on the same node would corrupt the list: the first call correctly removed the node, but the second call would read stale `prev`/`next` pointers (or treat null as a valid "no neighbor" state) and corrupt the list structure — e.g., by setting `first` or `last` to a stale pointer, or decrementing `len` below 0.
+*   **The Fix:** Added two changes:
+    1. **Detection**: Before unlinking, check if the node is actually in the list. A node is in the list if it's `first` or `last`, OR if its `prev` or `next` is non-null. If all four conditions are false, the node has been unlinked — return a new `NodeNotInList` error.
+    2. **Cleanup**: After unlinking, set `node.prev = null` and `node.next = null`. This makes the "already unlinked" state detectable for future `unlink_node` calls.
+*   **Tests added:**
+    *   No new tests were added. The existing tests cover the happy path. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Make invalid states unrepresentable.** The principle is: design your data structures so that **invalid states cannot exist at all**, not just that they're detected. In this case, the invalid state is "a node with `prev=null` and `next=null` that is not the first or last node but is somehow still in the list". This is a contradiction — the node is in the list (because `len > 0`), but it has no neighbors. By clearing `prev` and `next` after unlink, we make this state impossible: if `prev=null` AND `next=null` AND it's not `first`/`last`, the node is definitively unlinked. The same lesson applies to:
+    1. **Linked lists**: clear `prev`/`next` after unlink.
+    2. **Hash tables**: clear the `next` pointer in a chained hash table after removal.
+    3. **Reference-counted objects**: zero out the pointer after release.
+    4. **Database cursors**: close the cursor on the last reference.
+    The general pattern: **after a state transition, the "post" state should be self-evidently valid.** A node with no neighbors that is not `first`/`last` is self-evidently unlinked. The alternative — "the node is in the list but has no neighbors" — requires runtime checks and is a bug waiting to happen. The cost of clearing is one or two pointer writes; the cost of detecting the bug at runtime is much higher.
+
