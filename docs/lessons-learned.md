@@ -1348,3 +1348,23 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     5. **Boolean returns after returns**: `if (cond) return true; if (!cond) return false; return false;` — last return is dead.
     The general rule: **for any code path that can never execute, delete it.** Dead code is a maintenance burden: it confuses readers, gets modified alongside live code, and hides bugs (the live code might be wrong, but the dead code "looks right").
 
+---
+
+### 99. Atomic Check-and-Remove for Concurrent State (2026-06-02)
+
+*   **The Bug:** In `on_child_exit` at `src/loop/child_watcher.zig:180-184`, after the Python callback ran, the code unconditionally called `self.handlers.remove(handler.pid)`, `_ = std.os.linux.close(handler.pidfd)`, `python_c.py_decref(handler.callback)`, and `self.loop.allocator.destroy(handler)`. If the Python callback had called `remove_child_handler(handler.pid)` (which is allowed and common), the handler would already have been freed and its pidfd already closed. The unconditional cleanup would be a double-free and double-close.
+*   **The Fix:** Replaced the unconditional cleanup with `fetchRemove`, an atomic check-and-remove operation. If the handler is still in the map, we own its lifecycle and can free it. If it's already been removed (by the Python callback), we don't touch it. Also added a sanity check that the removed entry's pointer matches our handler pointer, to detect any future bugs where the wrong handler is removed.
+*   **Tests added:**
+    *   No new tests were added. The fix is a single-operation change. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Use atomic check-and-remove for state that can be concurrently mutated.** The pattern is:
+    1. **Check-then-remove (TOCTOU)**: `if (map.contains(k)) { map.remove(k); free(value); }` — race condition.
+    2. **Atomic fetch-remove**: `if (map.fetchRemove(k)) |entry| { free(entry.value); }` — no race.
+    3. **Compare-and-swap**: `if (cmpxchg(&state, expected, new)) { ... }` — even more general.
+    The "check-then-act" anti-pattern is one of the most common sources of concurrency bugs. The same lesson applies to:
+    1. **Linked list removal**: `if (node.prev) node.prev.next = node.next;` followed by `if (node.next) node.next.prev = node.prev;` is racy. Use a single atomic operation.
+    2. **Reference counting**: `if (refcount == 0) free(ptr); else refcount--;` is racy. Use `atomic_dec_return_zero` instead.
+    3. **Lock acquisition**: `if (!locked) { locked = true; ... }` is racy. Use `try_lock` or `cmpxchg`.
+    4. **File descriptor close**: `if (fd != -1) { close(fd); fd = -1; }` is racy. Use `dup` to a sentinel and check, or use `dup2` to /dev/null.
+    5. **Python callback execution**: any state mutation in the callback can race with cleanup. Always use atomic operations on shared state.
+    The general rule: **for any state that can be mutated by callbacks, use atomic operations to check and modify.** A check-then-act is always a race; atomic operations are the only safe way.
+

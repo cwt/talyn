@@ -701,6 +701,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **Description**: After the Python callback runs (which could call `remove_child_handler`), the code accesses `handler.pid` and frees `handler`. If the callback removed the handler, this is a double-free.
 - **Trigger**: Python callback calls `remove_child_handler` for the same PID.
 - **Consequences**: Double-free (mitigated by single-threaded event loop).
+- **Status**: ✅ Fixed (see commit log)
 
 ### BUG-78: LRU capacity 0 allows one entry before eviction
 

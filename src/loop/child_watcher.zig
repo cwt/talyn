@@ -177,11 +177,21 @@ fn on_child_exit(data: *const CallbackManager.CallbackData) !void {
     };
     python_c.py_decref(py_res);
 
-    // Cleanup handler
-    _ = self.handlers.remove(handler.pid);
-    _ = std.os.linux.close(handler.pidfd);
-    python_c.py_decref(handler.callback);
-    self.loop.allocator.destroy(handler);
+    // BUG-77: Check if the Python callback removed this handler
+    // from the map (e.g., by calling remove_child_handler). If
+    // so, the handler has already been freed and closed — don't
+    // double-free. Use fetchRemove to atomically check-and-remove
+    // in a single operation.
+    if (self.handlers.fetchRemove(handler.pid)) |entry| {
+        const removed_handler = entry.value;
+        // Sanity: the entry we just removed should be the same
+        // pointer we're about to free.
+        if (removed_handler == handler) {
+            _ = std.os.linux.close(handler.pidfd);
+            python_c.py_decref(handler.callback);
+            self.loop.allocator.destroy(handler);
+        }
+    }
 }
 
 pub fn traverse(self: *const ChildWatcher, visit: python_c.visitproc, arg: ?*anyopaque) c_int {
