@@ -651,6 +651,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **Description**: With `::` present, having 8 explicit groups (which should be invalid) is accepted. The `::` expansion logic produces incorrect byte layouts.
 - **Trigger**: Malformed IPv6 like `1:2:3:4:5:6:7::8`.
 - **Consequences**: Incorrect address parsing.
+- **Status**: ✅ Fixed (see commit log)
 
 ### BUG-71: Hardcoded EADDRNOTAVAIL errno value
 

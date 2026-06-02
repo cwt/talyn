@@ -171,6 +171,18 @@ pub const Address = extern union {
 
         var target_i: usize = 0;
         if (double_colon) {
+            // BUG-70: Reject 8 explicit groups with `::`. The `::`
+            // shorthand must represent at least one zero group.
+            // An address like `1:2:3:4:5:6:7::8` is invalid because
+            // it has 8 explicit groups but also has `::` (which
+            // would represent 0 groups, contradicting its purpose).
+            // Without this check, the code would write 8 groups
+            // and then compute `target_i = 8 - (8 - 8) = 8`, then
+            // attempt to write 8 more bytes at offset 16+,
+            // corrupting the byte layout.
+            if (group_i >= 8) {
+                return error.InvalidIPAddressFormat;
+            }
             const before = group_i;
             for (0..before) |j| {
                 const g = groups[j];

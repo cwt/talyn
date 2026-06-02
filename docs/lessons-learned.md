@@ -1211,3 +1211,22 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     5. **Email parsing**: lenient email parsing leads to phishing attacks.
     The general rule: **for any input format with ambiguity, reject the ambiguous form.** Postel's law was written for the early Internet, when interoperability was more important than security. In modern systems, strict parsing is usually the right choice.
 
+---
+
+### 92. Validate Invariants After Parsing (2026-06-02)
+
+*   **The Bug:** In `parseIp6` at `src/utils/address.zig:172-187`, the `double_colon` branch (which handles the `::` shorthand) didn't validate that the total number of groups was at most 8. An address like `1:2:3:4:5:6:7::8` would be accepted, but the `::` expansion would compute `target_i = 8 - (8 - 8) = 8` and then attempt to write bytes at offset 16+, corrupting the byte layout.
+*   **The Fix:** Added a check at the top of the `double_colon` branch: if `group_i >= 8`, return `error.InvalidIPAddressFormat`. The `::` shorthand must represent at least one zero group.
+*   **Tests added:**
+    *   No new tests were added. The fix is a defensive validation. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Validate invariants after parsing, not just during parsing.** The pattern is:
+    1. **During parsing**: check individual tokens, character classes, length bounds.
+    2. **After parsing**: check the overall structure makes sense.
+    The "individual checks are enough" anti-pattern misses cases where each token is valid but the overall structure is invalid. The same lesson applies to:
+    1. **URL parsing**: each component is valid, but the combination is invalid (e.g., scheme=javascript, host=evil.com).
+    2. **JSON parsing**: each value is valid, but the schema is wrong (e.g., array where object expected).
+    3. **HTML parsing**: each tag is valid, but the nesting is wrong (e.g., `<a>` inside `<pre>`).
+    4. **JSON Schema validation**: validate the document against the schema, not just the syntactic structure.
+    5. **Type checking**: validate the type constraints at function boundaries.
+    The general rule: **for any parser, after you've parsed all the tokens, validate the overall structure.** A 1-character fix that catches a class of bugs is always worth it.
+
