@@ -515,6 +515,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **Description**: `if (fd <= 0)` — file descriptor 0 is valid (stdin). The check should be `fd < 0`.
 - **Trigger**: Pass a socket object whose `fileno()` returns 0.
 - **Consequences**: Valid connection attempt rejected with "Invalid fd" error.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-51: Happy eyeballs delay sentinel comparison bug
 

@@ -188,7 +188,9 @@ inline fn z_loop_create_connection(
         defer python_c.py_decref(py_fd);
 
         const fd = python_c.PyLong_AsLongLong(py_fd);
-        if (fd <= 0) {
+        // BUG-35: Use `< 0` not `<= 0` so fd 0 (stdin) is
+        // accepted. The `<= 0` check rejected stdin as invalid.
+        if (fd < 0) {
             _ = python_c.PyErr_Occurred() orelse {
                 python_c.raise_python_value_error("Invalid fd\x00");
             };

@@ -866,3 +866,26 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     3. **Singleton patterns**: state that lives forever in a singleton is shared by all callers.
     4. **String interning**: if the interned string is mutable, you have the same bug.
 
+---
+
+### 75. File Descriptors Can Be 0 (2026-06-02)
+
+*   **The Bug:** In `create_connection` at `src/loop/python/io/client/create_connection.zig:191`, the fd validation check was `if (fd <= 0) { ... raise ValueError("Invalid fd") }`. This rejected fd 0 (stdin) as invalid. The correct check is `if (fd < 0)` — fd 0 is a perfectly valid file descriptor (it's stdin in the standard fd table: 0=stdin, 1=stdout, 2=stderr). A user calling `asyncio.open_connection(sock=socket.socket(fileno=0))` would get a confusing "Invalid fd" error.
+*   **The Fix:** Changed `<= 0` to `< 0`. Now fd 0 is accepted, matching the standard fd table convention.
+*   **Tests added:**
+    *   No new tests were added. The fix is a one-character change that mirrors the standard `< 0` pattern used in the server constructor (`create_server.zig:139`). All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **File descriptors start at 0, not 1.** The standard fd table is:
+    *   0 = stdin
+    *   1 = stdout
+    *   2 = stderr
+    *   3+ = user-opened files
+    Any check like `fd <= 0` or `fd == 0` will incorrectly reject valid fds. The correct check is:
+    1. `fd < 0` for "is this a valid fd?"
+    2. `fd >= 0` for "is this fd still open?"
+    The same lesson applies to:
+    1. **Unix process IDs**: pid 0 is the swapper/idle process on Linux, not invalid. pid 1 (init) is valid.
+    2. **Unix user IDs**: uid 0 is root, not invalid.
+    3. **Unix group IDs**: gid 0 is root, not invalid.
+    4. **Array indices**: index 0 is valid; check `i < len` not `i <= len`.
+    The general rule: **for any numeric "validity" check, ask yourself: is 0 special? If not, use `< 0` or `>= 0`, not `<= 0` or `== 0`.** The "off-by-one in the wrong direction" bug is one of the most common in C-family code.
+
