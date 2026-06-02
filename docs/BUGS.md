@@ -323,6 +323,7 @@ Crash, UAF, data loss, or DoS reachable in normal usage paths.
 - **Description**: `PyLong_FromLong` can return null on memory allocation failure. A null PyObject is passed to `future_fast_set_result`.
 - **Trigger**: Memory pressure during socket operations.
 - **Consequences**: Null pointer dereference, crash.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-37: Signal handler panics if callback removed concurrently
 

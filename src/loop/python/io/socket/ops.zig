@@ -675,8 +675,12 @@ sd.future, future_data, exc);
     }
 
     const future_data = utils.get_data_ptr(Future, sd.future);
-    try Future.Python.Result.future_fast_set_result(future_data,
- python_c.PyLong_FromLong(@intCast(io_uring_res)));
+    // BUG-58: Check for null return from PyLong_FromLong. If allocation
+    // fails, dereferencing the null would segfault. Propagate as a future
+    // exception instead.
+    const py_res = python_c.PyLong_FromLong(@intCast(io_uring_res)) orelse
+        return set_future_exception(error.PythonError, sd.future);
+    try Future.Python.Result.future_fast_set_result(future_data, py_res);
 }
 
 pub fn loop_sock_sendto(
@@ -799,8 +803,12 @@ rd.future, future_data, exc);
 
     const nread: usize = @intCast(@max(io_uring_res, 0));
     const future_data = utils.get_data_ptr(Future, rd.future);
-    try Future.Python.Result.future_fast_set_result(future_data,
- python_c.PyLong_FromLong(@intCast(nread)));
+    // BUG-58: Check for null return from PyLong_FromLong. If allocation
+    // fails, dereferencing the null would segfault. Propagate as a future
+    // exception instead.
+    const py_nread = python_c.PyLong_FromLong(@intCast(nread)) orelse
+        return set_future_exception(error.PythonError, rd.future);
+    try Future.Python.Result.future_fast_set_result(future_data, py_nread);
 }
 
 pub fn loop_sock_recv_into(
@@ -899,6 +907,10 @@ rd.base.future, future_data, exc);
 
     const nread: usize = @intCast(@max(io_uring_res, 0));
     const future_data = utils.get_data_ptr(Future, rd.base.future);
-    try Future.Python.Result.future_fast_set_result(future_data,
- python_c.PyLong_FromLong(@intCast(nread)));
+    // BUG-58: Check for null return from PyLong_FromLong. If allocation
+    // fails, dereferencing the null would segfault. Propagate as a future
+    // exception instead.
+    const py_nread = python_c.PyLong_FromLong(@intCast(nread)) orelse
+        return set_future_exception(error.PythonError, rd.base.future);
+    try Future.Python.Result.future_fast_set_result(future_data, py_nread);
 }

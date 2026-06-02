@@ -470,3 +470,35 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     *   `tests/transports/test_stream.py::test_stream_transport_writelines_many_empty_buffers` — writes 10,000 empty buffers followed by a real message and verifies the real message is received. With the recursive fix, this would crash with a stack overflow; the loop-based fix handles it in constant stack space and ~0.07 s wall time.
 *   **The Lesson:** **Tail calls are not tail calls in Zig.** Unlike Scheme/Racket/Lisp, Zig has no mandated tail-call optimisation. Code that *looks* like a tail call (`return self.foo()`) is just a regular call. The same pattern in Rust, C, and C++ has the same problem. The rule: **any time you write `return self.recursive_helper(...)` ask "can this recurse more than ~1000 times?" If yes, convert to a loop.** Other ways the same bug appears: (a) error-propagation chains like `return try self.foo()` where `foo` is recursive, (b) state-machine transitions implemented as mutual recursion, (c) parsers that recurse on nested structures. The Zig compiler doesn't warn about it, the build is clean, and the test only catches it if you actually exercise the path with enough depth.
 
+---
+
+### 54. Always Check `?*PyObject` Return Values, Even When "Steering" with `try` (2026-06-02)
+
+*   **The Bug:** Three call sites in `src/loop/python/io/socket/ops.zig` (lines 679, 803, 903) did:
+    ```zig
+    try Future.Python.Result.future_fast_set_result(future_data,
+        python_c.PyLong_FromLong(@intCast(io_uring_res)));
+    ```
+    The `try` only catches errors from `future_fast_set_result`, NOT from `PyLong_FromLong`. The `PyLong_FromLong` returns `?*PyObject` (nullable), and if memory allocation fails, it returns `null`. The `null` is then passed to `future_fast_set_result` as the result PyObject, which dereferences it and segfaults. The Python `try` is "steering" the optional away, but `try` only works on **error union** types, not on `?T` (optional) types. The asymmetry between `?T` and `error{T}` in Zig makes this very easy to get wrong.
+*   **The Fix:** At all three sites, capture the result of `PyLong_FromLong` in a variable, check for null with `orelse`, and if null, propagate as a future exception via the existing `set_future_exception` helper:
+    ```zig
+    const py_res = python_c.PyLong_FromLong(@intCast(io_uring_res)) orelse
+        return set_future_exception(error.PythonError, sd.future);
+    try Future.Python.Result.future_fast_set_result(future_data, py_res);
+    ```
+    This matches the pattern already used in the same file for `PyObject_CallFunction` and `PyObject_Call`.
+*   **Tests added:**
+    *   No new tests were added. **PyLong_FromLong null-return only happens on `PyMem_Malloc` failure**, which is essentially impossible to trigger reliably in a unit test (would need to exhaust memory). The regression coverage comes from the existing 284 tests across all 4 Python versions (3.13, 3.14, 3.13t, 3.14t) in both Debug and ReleaseSafe modes — all pass after the fix. If we want a regression test, the standard approach is to mock `PyLong_FromLong` to return null, which requires injecting a function pointer, which is a much larger change than the fix itself.
+*   **The Lesson:** Zig has **two different ways** of representing "this function can fail": `?T` (optional, no information about why) and `error{T}!T` (error union, with payload). The `try` keyword only works on **error unions**, not on optionals. So:
+    ```zig
+    // WRONG: `try` does nothing for an optional.
+    const x = try someFuncReturningOptional();
+
+    // RIGHT: capture, then `orelse` to handle null.
+    const x = someFuncReturningOptional() orelse return error.Failed;
+    ```
+    The C Python API has ~50+ "may return NULL" functions (`PyLong_FromLong`, `PyBytes_FromStringAndSize`, `PyObject_GetAttrString`, `PyObject_Call`, `PyDict_New`, ...). When you call any of them in Zig:
+    1. **Always check the return** — even if the `try` "feels" like it would catch it.
+    2. **Don't pass the result directly as a function argument** — capture it first, then check, then pass.
+    3. **For hot paths where the check might be slow**, the ZLS/compiler doesn't warn about this; the bug only surfaces under memory pressure (rare in tests) or when the function is inlined and the optimizer elides the null check. The rule: capture into a `const`, check `orelse`, *then* use it. This applies to every C-API function in CPython. The pattern is so common in this codebase that introducing a small Zig helper like `fn must_pylong(x: c_long) !*PyObject { return python_c.PyLong_FromLong(x) orelse return error.PythonError; }` would save a lot of repetition.
+
