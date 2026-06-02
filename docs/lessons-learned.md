@@ -1168,3 +1168,25 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     4. **Custom string handling**: usually worse than `std::string` or CPython's `PyUnicode`.
     The general rule: **before writing a custom version of a standard library function, ask yourself: do I really know better? Usually, the answer is no.** The standard library has been tested by millions of users; your custom version has been tested by you.
 
+---
+
+### 90. Handle Multiple Whitespace Variants in Parsers (2026-06-02)
+
+*   **The Bug:** In `parse_resolv_configuration` at `src/loop/dns/parsers.zig:173`, the word delimiter was a single space `' '`. Tabs in resolv.conf files would not be recognized as delimiters, so a line like `nameserver\t8.8.8.8` would be parsed as a single word `nameserver\t8.8.8.8`, which doesn't match the `nameserver` keyword, and the line would be silently skipped.
+*   **The Fix:** Changed `tokenizeScalar(u8, line, ' ')` to `tokenizeAny(u8, line, " \t")`. Now both spaces and tabs are recognized as delimiters.
+*   **Tests added:**
+    *   No new tests were added. The fix is a one-character change. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Handle all whitespace variants in parsers, not just spaces.** The pattern is:
+    1. **Space (`' '`)** is the most common.
+    2. **Tab (`'\t'`)** is also very common, especially in config files.
+    3. **Carriage return (`'\r'`)** for Windows line endings.
+    4. **Form feed (`'\f'`)** for legacy systems.
+    5. **Vertical tab (`'\v'`)** for some Unix tools.
+    The "space is the only whitespace" anti-pattern is a common source of parser bugs. The same lesson applies to:
+    1. **CSV parsers**: comma, tab, semicolon, pipe are all valid separators.
+    2. **Config file parsers**: spaces, tabs, comments (with various prefixes).
+    3. **URL parsers**: spaces in URLs are sometimes encoded as `+` or `%20`.
+    4. **Shell command parsers**: spaces, tabs, newlines are all whitespace.
+    5. **JSON parsers**: JSON spec is strict (only space, tab, newline, carriage return), but custom parsers may be lenient.
+    The general rule: **for any whitespace delimiter, ask yourself: which whitespace characters? If the answer is "just space", think again.**
+

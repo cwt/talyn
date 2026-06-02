@@ -636,6 +636,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **File**: `src/loop/dns/parsers.zig:157`
 - **Description**: Only space (`' '`) is used as a word delimiter. Tabs in resolv.conf would cause parsing failures.
 - **Consequences**: resolv.conf files with tab-separated fields parsed incorrectly.
+- **Status**: ✅ Fixed (see commit log)
 
 ### BUG-69: `parseIp4` accepts leading zeros in octets
 

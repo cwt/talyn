@@ -170,7 +170,12 @@ pub fn parse_resolv_configuration(allocator: std.mem.Allocator, content: []const
     }
 
     loop: while (lines_iter.next()) |line| {
-        var words_iter = std.mem.tokenizeScalar(u8, line, ' ');
+        // BUG-68: Handle tabs as word delimiters, not just spaces.
+        // resolv.conf files can use either spaces or tabs as
+        // separators. The previous code only handled spaces, so
+        // tab-separated fields would cause parsing failures.
+        // We use tokenizeAny to handle both.
+        var words_iter = std.mem.tokenizeAny(u8, line, " \t");
 
         const first_word = words_iter.next() orelse continue;
 
