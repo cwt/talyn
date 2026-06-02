@@ -889,3 +889,21 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     4. **Array indices**: index 0 is valid; check `i < len` not `i <= len`.
     The general rule: **for any numeric "validity" check, ask yourself: is 0 special? If not, use `< 0` or `>= 0`, not `<= 0` or `== 0`.** The "off-by-one in the wrong direction" bug is one of the most common in C-family code.
 
+---
+
+### 76. Float Approximate Equality Needs Symmetric Comparison (2026-06-02)
+
+*   **The Bug:** In `create_connection` at `src/loop/python/io/client/create_connection.zig:643`, the sentinel check for "is this delay -1.0?" was `if ((delay + 1.0) < eps)`. This is asymmetric: it catches values where `delay + 1.0` is *less than* `eps` (i.e., delay slightly less than -1.0), but does NOT catch values where `delay + 1.0` is *greater than* `eps` (i.e., delay slightly greater than -1.0, like -0.9999). So a Python float of `-0.9999` would pass through the check and be used as the actual delay, instead of being treated as the sentinel.
+*   **The Fix:** Use `@abs(delay + 1.0) < eps` for symmetric comparison. This catches values on both sides of -1.0.
+*   **Tests added:**
+    *   No new tests were added. The fix is a one-line change that mirrors the standard "approximate equality" pattern. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **When checking approximate equality, use `abs(a - b) < eps` — not `a - b < eps`.** The latter is asymmetric:
+    1. `a - b < eps` catches `a` slightly *less than* `b` (by less than eps)
+    2. `a - b < eps` does NOT catch `a` slightly *greater than* `b` (by less than eps)
+    The correct symmetric check is `abs(a - b) < eps`. The same lesson applies to:
+    1. **All float comparisons with tolerance**: distance check, position check, etc.
+    2. **Float sentinel detection**: if -1.0 is the sentinel, use `abs(delay - (-1.0)) < eps`, not `delay - (-1.0) < eps`.
+    3. **Range checks**: `x in [a, b]` should use `x >= a - eps and x <= b + eps` (or `abs(x - (a+b)/2) < (b-a)/2 + eps`).
+    4. **Cyclic comparisons**: if comparing angles or phases, use `abs(diff) < eps` to handle wraparound.
+    The general rule: **for any approximate equality check, ask yourself: am I checking only one side? If so, use `abs` to make it symmetric.** The "asymmetric float comparison" bug is one of the most common in numerical code.
+

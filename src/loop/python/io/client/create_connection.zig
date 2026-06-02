@@ -642,7 +642,12 @@ fn z_create_socket_connection(data: *SocketConnectionData, connection_submitted:
         }
         delay = python_c.PyFloat_AsDouble(py_delay);
         const eps = comptime std.math.floatEps(f64);
-        if ((delay + 1.0) < eps) {
+        // BUG-51: Use `@abs(delay + 1.0) < eps` (symmetric)
+        // instead of `(delay + 1.0) < eps` (asymmetric). The
+        // previous check only caught values where delay+1.0 was
+        // very slightly above 0; values like -0.9999 (delay+1.0
+        // = 0.0001, > eps) would not be caught.
+        if (@abs(delay + 1.0) < eps) {
             if (python_c.PyErr_Occurred() != null) {
                 return error.PythonError;
             }

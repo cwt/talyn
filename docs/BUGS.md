@@ -524,6 +524,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **Description**: `if ((delay + 1.0) < eps)` checks if `delay ~= -1.0` but only catches values where `delay + 1.0 < eps`. Values slightly above -1.0 (like -0.9999) are not caught. Should be `@abs(delay + 1.0) < eps`.
 - **Trigger**: Python passes a float very close to but not exactly -1.0 as `happy_eyeballs_delay`.
 - **Consequences**: Sentinel value not recognized, unexpected delay behavior.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-53: Server socket fd leak when pre-existing socket provided
 
