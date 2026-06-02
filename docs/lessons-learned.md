@@ -1269,3 +1269,24 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     5. **Linked list traversal**: next = current.next. The "next" is forward.
     The general rule: **for any "give me the next item" operation, the next item is at index+1, not at count-1.** When you find yourself decrementing a counter to "advance", stop and think.
 
+---
+
+### 95. Always Check `PyErr_Occurred` After Python C API Calls That Can Fail (2026-06-02)
+
+*   **The Bug:** In `src/loop/python/io/socket/ops.zig:129,133`, the code called `PyLong_AsLong(py_fd)` and `PyLong_AsLong(py_family)` and used the return value directly with `@intCast`. If the Python value was not a long (e.g., a string, a list, an object with `__int__` that raised), `PyLong_AsLong` returns `-1` and sets a Python exception. The code would then cast `-1` to a `fd_t` or `i32` and continue, leaving the Python exception pending.
+*   **The Fix:** After every `PyLong_AsLong` call, check `python_c.PyErr_Occurred()`. If non-null, return `error.PythonError` to let the Python error propagate.
+*   **Tests added:**
+    *   No new tests were added. The fix is a defensive check. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Always check `PyErr_Occurred()` after Python C API calls that can fail.** The pattern is:
+    1. **Get an integer**: `n = PyLong_AsLong(o); if (PyErr_Occurred()) return -1;`
+    2. **Get a string**: `s = PyUnicode_AsUTF8(o); if (s == NULL) return NULL;` (NULL return is the signal).
+    3. **Get an object**: `o = PyObject_GetAttrString(...); if (o == NULL) return NULL;`
+    4. **Call a function**: `r = PyObject_Call(...); if (r == NULL) return NULL;`
+    The "check the return value" anti-pattern is the standard. The same lesson applies to:
+    1. **POSIX syscalls**: always check the return value (e.g., `read()` returns -1 on error).
+    2. **Win32 API**: `GetLastError()` is the error code, not the return value.
+    3. **Go error returns**: `result, err := foo(); if err != nil { return err }`.
+    4. **Rust `Result<T, E>`**: `match foo() { Ok(v) => v, Err(e) => return Err(e) }`.
+    5. **Java checked exceptions**: `try { foo(); } catch (Exception e) { ... }`.
+    The general rule: **for any function that can fail, check the failure signal.** A function that "can fail" is one that returns a sentinel value (NULL, -1, 0) and sets an error indicator (errno, PyErr, GetLastError). Never use the return value without checking the error first.
+

@@ -672,6 +672,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **File**: `src/loop/python/io/socket/ops.zig:129, 133`
 - **Description**: No check for `PyErr_Occurred()` after `PyLong_AsLong`. If the Python value is invalid, execution continues with garbage values.
 - **Consequences**: Confusing downstream errors instead of clear error message.
+- **Status**: ✅ Fixed (see commit log)
 
 ### BUG-74: `_create_ssl_unix_connection` ignores `ssl_shutdown_timeout`
 

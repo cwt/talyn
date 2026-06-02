@@ -126,11 +126,20 @@ fn z_loop_sock_accept(self: *LoopObject, args: []const ?PyObject) !*FutureObject
     defer python_c.py_decref(fileno_attr);
     const py_fd = python_c.PyObject_CallNoArgs(fileno_attr) orelse return error.PythonError;
     defer python_c.py_decref(py_fd);
-    const fd: std.posix.fd_t = @intCast(python_c.PyLong_AsLong(py_fd));
+    const fd_long = python_c.PyLong_AsLong(py_fd);
+    // BUG-73: Check for PyErr_Occurred() after PyLong_AsLong.
+    // If the Python value is not an integer (or doesn't fit
+    // in a C long), PyLong_AsLong returns -1 and sets a
+    // Python exception. Without this check, we'd continue
+    // with a garbage -1 value and a pending exception.
+    if (python_c.PyErr_Occurred() != null) return error.PythonError;
+    const fd: std.posix.fd_t = @intCast(fd_long);
 
     const py_family = python_c.PyObject_GetAttrString(py_sock, "family\x00") orelse return error.PythonError;
     defer python_c.py_decref(py_family);
-    const family: i32 = @intCast(python_c.PyLong_AsLong(py_family));
+    const family_long = python_c.PyLong_AsLong(py_family);
+    if (python_c.PyErr_Occurred() != null) return error.PythonError;
+    const family: i32 = @intCast(family_long);
 
     const loop_data = utils.get_data_ptr(Loop, self);
     const fut = try Future.Python.Constructors.fast_new_future(self);
