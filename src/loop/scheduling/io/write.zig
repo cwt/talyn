@@ -125,10 +125,27 @@ pub fn perform_with_iovecs(ring: *std.os.linux.IoUring, set: *IO.BlockingTasksSe
     const fd_arg: std.os.linux.fd_t = if (data.fixed_file_index) |ffi| ffi else data.fd;
     const ff_flag: u8 = if (data.fixed_file_index != null) @as(u8, std.os.linux.IOSQE_FIXED_FILE) else 0;
 
+    // BUG-30: The caller's iovec array might be stack-allocated, but
+    // the kernel reads it at submit time (which may be deferred via
+    // io_uring's submission queue). Copy the iovecs into a heap-resident
+    // buffer owned by the BlockingTask. The copy is freed in
+    // discard/deinit. This ensures the iovec array outlives the
+    // caller's stack frame regardless of when the kernel actually
+    // reads it.
+    const iov_copy = try set.loop.allocator.alloc(std.posix.iovec, data.data.len);
+    errdefer set.loop.allocator.free(iov_copy);
+    for (data.data, 0..) |src, i| {
+        iov_copy[i] = .{
+            .base = @ptrCast(@constCast(src.base)),
+            .len = src.len,
+        };
+    }
+    data_ptr.write_iovs_copy = iov_copy;
+
     data_ptr.msg_storage.name = null;
     data_ptr.msg_storage.namelen = 0;
-    data_ptr.msg_storage.iov = @as([*]std.posix.iovec, @ptrCast(@constCast(data.data.ptr)));
-    data_ptr.msg_storage.iovlen = @intCast(data.data.len);
+    data_ptr.msg_storage.iov = iov_copy.ptr;
+    data_ptr.msg_storage.iovlen = @intCast(iov_copy.len);
     data_ptr.msg_storage.control = null;
     data_ptr.msg_storage.controllen = 0;
     data_ptr.msg_storage.flags = 0;

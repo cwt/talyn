@@ -572,5 +572,26 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     1. **For "claim and proceed" patterns** (cancel vs callback, producer vs consumer, leader election): use a CAS on a single shared flag.
     2. **For "protect a critical section"** (multiple reads/writes to related state): use a lock.
     3. **For "publish a value to readers"** (one writer, many readers): use a release-store on the writer side and acquire-load on the reader side.
-    The CAS pattern is also great because it's **lock-free**: no kernel transitions, no priority inversion, no deadlock risk. And it composes: you can have multiple CAS flags for different concerns, each protecting a different invariant. The trade-off is that CAS is harder to reason about than locks (you have to think about memory ordering, ABA, etc.), but for simple flag-style races like this one, it's the right tool.
+    The CAS pattern is also great because it's **lock-free**: no kernel transitions, no priority inversion, no deadlock risk. And it composes: you can have multiple CAS flags for different concerns, each protecting a different invariant.     The trade-off is that CAS is harder to reason about than locks (you have to think about memory ordering, ABA, etc.), but for simple flag-style races like this one, it's the right tool.
+
+---
+
+### 60. Deferred Submission Demands Heap-Owned Inputs (2026-06-02)
+
+*   **The Bug:** In `Write.perform_with_iovecs` at `src/loop/scheduling/io/write.zig:130`, the original code stored the caller's iovec pointer directly in `msg_storage.iov`: `data_ptr.msg_storage.iov = @ptrCast(@constCast(data.data.ptr))`. The `msg_storage` itself lives in the heap-allocated `BlockingTask` (safe), but the iovec array it points to is the caller's. With deferred submission (io_uring batches SQEs and submits them in bulk at the end of each loop iteration), the kernel doesn't read the iovec array until submit time — which can be long after the caller's stack frame has returned. If the caller's iovecs were stack-allocated, the kernel would read freed memory: a classic use-after-free.
+*   **The Fix:** Copy the caller's iovec array into a heap-allocated buffer owned by the `BlockingTask` (new `write_iovs_copy: ?[]std.posix.iovec` field). The copy is allocated in `perform_with_iovecs` and freed in `discard`/`deinit` (both code paths). The `msg_storage.iov` now points at the heap copy, so the kernel always reads valid memory regardless of when it actually submits the SQE.
+*   **Tests added:**
+    *   No new tests were added. The bug only manifested under deferred submission with stack-allocated iovecs, which is hard to reproduce reliably in a unit test (the deferred-submission timing is non-deterministic). All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Deferred submission demands heap-owned inputs.** When you batch operations into a submission queue (io_uring, kqueue, epoll, Windows IOCP, etc.), the kernel reads the input buffers at submit time, not at queue time. This means:
+    1. **Stack-allocated inputs are unsafe** — the caller's stack frame may have returned by the time the kernel reads them.
+    2. **Heap-allocated inputs are safe** — the heap outlives the caller's stack frame (assuming the heap pointer is still valid).
+    3. **The fix is to copy** — if the caller might pass stack-allocated inputs, the library should copy them into a heap-resident buffer that it owns. The copy should be freed in both the success and error paths (discard for early errors, deinit for completion).
+    4. **The fix is to document** — if the library can't copy (e.g., for performance reasons), the API contract must explicitly state that the inputs must outlive the operation. But this is error-prone and easy to violate.
+    The general rule: **for any async/batched I/O API, the library should own the input buffers.** Don't trust the caller to keep stack-allocated buffers alive across the async operation. The same lesson applies to:
+    - **io_uring SQEs** (this bug): the kernel reads the iovec/msghdr/buffer at submit time, not at queue time.
+    - **kqueue EVFILT_READ registrations**: the kernel reads the buffer at notification time, not at registration time.
+    - **epoll edge-triggered reads**: the kernel reads the buffer at notification time, not at registration time.
+    - **Windows IOCP**: the kernel reads the buffer at completion time, not at PostQueuedCompletionStatus time.
+    - **Boost.Asio async operations**: the handler reads the buffer at completion time, not at async_* call time.
+    The common thread: **async I/O decouples the queue time from the kernel-read time**, so the library must ensure inputs live as long as the kernel might read them.
 

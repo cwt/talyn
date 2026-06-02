@@ -64,6 +64,13 @@ pub const BlockingTask = struct {
     /// live in task_data_pool.
     write_iov: std.posix.iovec = undefined,
 
+    /// Storage for a multi-iovec copy used by Write.perform_with_iovecs.
+    /// BUG-30: The caller's iovec array might be stack-allocated, but
+    /// the kernel reads it at submit time (which may be deferred). We
+    /// copy the caller's iovecs into this heap-resident buffer and
+    /// point msg_storage.iov at it. The copy is freed in discard/deinit.
+    write_iovs_copy: ?[]std.posix.iovec = null,
+
     inline fn reset(self: *BlockingTask) *BlockingTasksSet {
         const pool_start = @intFromPtr(self) - @as(usize, self.index) * @sizeOf(BlockingTask);
         const set: *BlockingTasksSet = @ptrFromInt(
@@ -77,12 +84,22 @@ pub const BlockingTask = struct {
     }
 
     pub fn discard(self: *BlockingTask) void {
+        // BUG-30: Free the heap-allocated iovec copy if it exists.
         const set = self.reset();
+        if (self.write_iovs_copy) |iovs| {
+            set.loop.allocator.free(iovs);
+            self.write_iovs_copy = null;
+        }
         set.pop();
     }
-    
+
     pub fn deinit(self: *BlockingTask) void {
+        // BUG-30: Free the heap-allocated iovec copy if it exists.
         const set = self.reset();
+        if (self.write_iovs_copy) |iovs| {
+            set.loop.allocator.free(iovs);
+            self.write_iovs_copy = null;
+        }
         set.inc_finished_tasks_counter();
     }
 

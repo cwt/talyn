@@ -353,6 +353,7 @@ Crash, UAF, data loss, or DoS reachable in normal usage paths.
 - **Description**: The iovec pointer is stored in `msg_storage` (heap, safe), but it points to the caller's iovec array. With deferred submission, the kernel reads this pointer at flush time. If the caller's iovecs are stack-allocated, they're invalid by then.
 - **Trigger**: Any caller passing stack-allocated iovecs to `perform_with_iovecs`.
 - **Consequences**: Use-after-free when kernel reads the iovec array at submit time.
+- **Status**: ✅ Fixed (see commit log)
 
 ### MEDIUM-MID
 
