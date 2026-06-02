@@ -1009,3 +1009,22 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     5. **Memory mappings**: mmap needs munmap.
     The general rule: **for every "add" operation, the matching "remove" must reverse all the side effects of the add.** If you can't enumerate all the side effects, the add operation is unsafe.
 
+---
+
+### 82. Never Leave Debug Prints in Hot Paths (2026-06-02)
+
+*   **The Bug:** In the event loop's main blocking wait at `src/loop/runner.zig:244-265`, there were 4 separate `std.debug.print` calls in a tight loop that ran on every iteration of the hot path. Each print was a synchronous write to stderr. For an I/O-bound workload, this is severe performance degradation: every blocking wait iteration (which can be millions per second) was hitting the stderr file descriptor.
+*   **The Fix:** Removed all 4 debug prints. Replaced with a single comment explaining why. The blocking wait logic itself (the `@atomicStore`, `mutex.unlock`, etc.) is unchanged.
+*   **Tests added:**
+    *   No new tests were added. The fix is a deletion of dead code. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Never leave debug prints in hot paths.** Even "temporary" debug prints have a way of making it to production. The pattern is:
+    1. **Hot paths**: any code that runs more than ~1000 times per second.
+    2. **Tight loops**: even one debug print per iteration is too much.
+    3. **Critical sections**: even if the print is rare, it can deadlock if stderr is closed.
+    The same lesson applies to:
+    1. **Allocation tracking**: in debug builds, every `allocator.create` may be wrapped in logging. This is fine for `std.testing.allocator` in unit tests, but a performance disaster in production.
+    2. **Reference counting assertions**: every `Py_DecRef` doing an `assert(refcount > 0)` is fine in tests but adds overhead in production.
+    3. **Stack traces**: inlined stack traces on every function call (e.g., via `__builtin_frame_address`) destroy performance.
+    4. **Mutex contention logging**: logging every lock acquisition is fine for a debug mutex, not for a hot mutex.
+    The general rule: **any code that runs in a loop on a hot path should be O(1) and side-effect-free.** The "I left the debug print in for now" anti-pattern is a common source of performance regressions.
+

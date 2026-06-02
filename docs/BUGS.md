@@ -580,6 +580,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **File**: `src/loop/runner.zig:230-251`
 - **Description**: Extensive `std.debug.print` statements execute every time the loop enters the blocking wait path. This is the hot path for any IO-bound workload.
 - **Consequences**: Severe performance degradation, stderr I/O bottleneck, log spam.
+- **Status**: ✅ Fixed (see commit log)
 
 ### BUG-61: `BlockingTasksSet.pop()` assumes LIFO discard order
 

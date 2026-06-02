@@ -241,28 +241,11 @@ fn poll_blocking_events(
     var nevents: u32 = undefined;
     while (true) {
         if (should_wait and ready_queue.is_empty()) {
-            std.debug.print("DEBUG BLOCKING: slots={}, set_idx={}, set_active={}, busy_sets={}\n", .{
-                self.reserved_slots,
-                self.io.set.index,
-                self.io.set.active_tasks,
-                self.io.busy_sets.len
-            });
-            for (self.io.set.task_data_pool[0..self.io.set.index]) |*task| {
-                if (task.data != .none) {
-                    std.debug.print("  - Active Set Task slot {}: op={}\n", .{task.index, task.operation});
-                }
-            }
-            var busy_node = self.io.busy_sets.first;
-            while (busy_node) |node| {
-                const bset = &node.data;
-                std.debug.print("  Busy Set: idx={}, active={}\n", .{bset.index, bset.active_tasks});
-                for (bset.task_data_pool[0..bset.index]) |*task| {
-                    if (task.data != .none) {
-                        std.debug.print("    - Busy Set Task slot {}: op={}\n", .{task.index, task.operation});
-                    }
-                }
-                busy_node = node.next;
-            }
+            // BUG-60: Removed extensive debug prints that ran on
+            // every blocking wait iteration. This is the hot path
+            // for any I/O-bound workload — every print was a
+            // synchronous write to stderr, which is a serious
+            // bottleneck.
             @atomicStore(u8, &self.io.ring_blocked, 1, .seq_cst);
             mutex.unlock();
             defer {
