@@ -679,6 +679,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **File**: `talyn/loop.py:1218`
 - **Description**: `await asyncio.wait_for(waiter, timeout=60)` uses a hardcoded 60s timeout instead of the `ssl_handshake_timeout` parameter.
 - **Consequences**: Custom handshake timeout ignored for SSL unix connections.
+- **Status**: ✅ Fixed (see commit log)
 
 ### BUG-75: Exception swallowing in SSL protocol callbacks
 

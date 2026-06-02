@@ -1151,6 +1151,7 @@ class Loop(_Loop):
                 path,
                 ssl=ssl,
                 server_hostname=server_hostname,
+                ssl_handshake_timeout=ssl_handshake_timeout,
                 ssl_shutdown_timeout=ssl_shutdown_timeout,
             )
         return await _Loop.create_unix_connection(self, protocol_factory, path, ssl=ssl)
@@ -1162,6 +1163,7 @@ class Loop(_Loop):
         *,
         ssl: Any,
         server_hostname: str | None,
+        ssl_handshake_timeout: float | None = None,
         ssl_shutdown_timeout: float | None = None,
     ) -> tuple[asyncio.Transport, asyncio.BaseProtocol]:
         self_loop = self
@@ -1287,7 +1289,9 @@ class Loop(_Loop):
         )
 
         try:
-            await asyncio.wait_for(waiter, timeout=60)
+            # BUG-74: Use the configurable ssl_handshake_timeout
+            # instead of hardcoded 60s. Default to 60s if None.
+            await asyncio.wait_for(waiter, timeout=ssl_handshake_timeout or 60)
         except BaseException:
             transport.close()
             raise

@@ -1290,3 +1290,22 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     5. **Java checked exceptions**: `try { foo(); } catch (Exception e) { ... }`.
     The general rule: **for any function that can fail, check the failure signal.** A function that "can fail" is one that returns a sentinel value (NULL, -1, 0) and sets an error indicator (errno, PyErr, GetLastError). Never use the return value without checking the error first.
 
+---
+
+### 96. Make Every Timeout Configurable (2026-06-02)
+
+*   **The Bug:** In `_create_ssl_unix_connection` at `talyn/loop.py:1290`, the SSL handshake used a hardcoded 60s timeout. Worse, the function didn't even accept `ssl_handshake_timeout` as a parameter, so callers had no way to override it. The same pattern was used in the public `create_unix_connection` wrapper at line 1144-1156.
+*   **The Fix:** Added `ssl_handshake_timeout: float | None = None` parameter to `_create_ssl_unix_connection`, threaded it through from the public wrapper, and used `ssl_handshake_timeout or 60` in the `wait_for` call. This gives callers full control over the timeout while preserving the 60s default.
+*   **Tests added:**
+    *   No new tests were added. The fix is a parameter addition. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Make every timeout configurable.** The pattern is:
+    1. **Hardcoded timeout**: `await asyncio.wait_for(waiter, timeout=60)` — works for most cases, fails for slow networks.
+    2. **Configurable with default**: `await asyncio.wait_for(waiter, timeout=timeout or 60)` — works for all cases.
+    The "one-size-fits-all timeout" anti-pattern is one of the most common sources of flakiness in async code. The same lesson applies to:
+    1. **HTTP request timeouts**: connect timeout, read timeout, total timeout — all should be configurable.
+    2. **Database query timeouts**: connection acquisition, query execution, row fetch — all should be configurable.
+    3. **File I/O timeouts**: read timeout, write timeout — should be configurable.
+    4. **Lock acquisition timeouts**: semaphore, mutex — should be configurable.
+    5. **Network operation timeouts**: connect, accept, send, recv — all should be configurable.
+    The general rule: **for any timeout in async code, make it a parameter with a sensible default.** A 60s default is fine for most cases, but power users need to override it. The cost of a parameter is 1 line; the cost of a non-configurable timeout is hours of debugging.
+
