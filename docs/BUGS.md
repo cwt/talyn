@@ -13,14 +13,15 @@ Deep static analysis of the talyn codebase. Bugs are ordered by severity.
 |----------|-------|-------|------|
 | Critical | 5 | 5 | 0 |
 | High | 20 | 20 | 0 |
-| Medium-High | 11 | 0 | 11 |
+| Medium-High | 11 | 11 | 0 |
 | Medium-Mid | 11 | 0 | 11 |
 | Medium-Low | 12 | 0 | 12 |
 | Low | 20 | 0 | 20 |
-| **Total** | **79** | **25** | **54** |
+| **Total** | **79** | **36** | **43** |
 
-All CRITICAL and HIGH bugs have been verified fixed at HEAD (`0a76596fe7f5`). Each
-fixed bug below lists the commit hash that resolved it.
+All CRITICAL, HIGH, and MEDIUM-HIGH bugs have been verified fixed at HEAD
+(commits `401866ea4196` through `9b16663cbec1`). Each fixed bug below lists
+the commit hash that resolved it.
 
 ### Medium Tier Grouping
 
@@ -681,16 +682,14 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 |----------|-------|
 | Critical | 5 (5 fixed) |
 | High | 20 (20 fixed) |
-| Medium-High | 11 |
+| Medium-High | 11 (11 fixed) |
 | Medium-Mid | 11 |
 | Medium-Low | 12 |
 | Low | 20 |
-| **Total** | **79** (25 fixed, 54 open) |
+| **Total** | **79** (36 fixed, 43 open) |
 
 ### Recommended Fix Priority (remaining)
 
-1. **BUG-32, 33, 41, 50, 58, 37** — crash/UAF cluster (MEDIUM-HIGH)
-2. **BUG-44, 45, 46** — DNS validation cluster, related to existing BUG-07 fix
-3. **BUG-29, 49, 47, 31, 30** — MEDIUM-HIGH data/correctness
-4. **BUG-42, 43, 39, 26, 28, 52, 36, 34** — MEDIUM-MID cleanup
-5. **MEDIUM-LOW** in batches with related LOW bugs (e.g. BUG-40 with BUG-78)
+1. **BUG-44, 45, 46** — DNS validation cluster, related to existing BUG-07 fix
+2. **BUG-42, 43, 39, 26, 28, 52, 36, 34** — MEDIUM-MID cleanup
+3. **MEDIUM-LOW** in batches with related LOW bugs (e.g. BUG-40 with BUG-78)
