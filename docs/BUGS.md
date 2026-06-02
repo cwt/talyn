@@ -533,6 +533,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **Description**: When `sock=` is provided, the fd is `dup()`'d. If server creation fails after the dup, the dup'd fd may leak (the errdefer only frees `address_list`, not the fd).
 - **Trigger**: Server creation failure after fd dup.
 - **Consequences**: File descriptor leak.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-54: `_SSLTransportWrapper.write` doesn't handle SSL errors
 

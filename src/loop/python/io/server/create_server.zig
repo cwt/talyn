@@ -205,6 +205,10 @@ inline fn z_loop_create_server(
             return error.SystemResources;
         }
         server_data.socket_fd = @intCast(dup_fd);
+        // BUG-53: If the dispatch below fails (or any subsequent
+        // operation before the StreamServer takes ownership), the
+        // dup'd fd leaks. Close it on error to prevent the leak.
+        errdefer _ = std.os.linux.close(server_data.socket_fd);
 
         const callback = CallbackManager.Callback{
             .func = &create_server_socket,

@@ -907,3 +907,23 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     4. **Cyclic comparisons**: if comparing angles or phases, use `abs(diff) < eps` to handle wraparound.
     The general rule: **for any approximate equality check, ask yourself: am I checking only one side? If so, use `abs` to make it symmetric.** The "asymmetric float comparison" bug is one of the most common in numerical code.
 
+---
+
+### 77. errdefer After Every Resource Acquisition (2026-06-02)
+
+*   **The Bug:** In `create_server` at `src/loop/python/io/server/create_server.zig:203-207`, when a pre-existing socket is provided via `sock=`, the fd is duplicated with `std.os.linux.dup()` so the StreamServer owns its own copy. The original `errdefer` only cleaned up `address_list` — it didn't clean up the dup'd fd. If any subsequent operation (e.g., `Loop.Scheduling.Soon.dispatch`, the allocators, etc.) failed after the dup, the dup'd fd would leak.
+*   **The Fix:** Added an `errdefer _ = std.os.linux.close(server_data.socket_fd);` immediately after the dup succeeds. This ensures the fd is closed on any subsequent error before the StreamServer takes ownership.
+*   **Tests added:**
+    *   No new tests were added. The fix follows the standard errdefer pattern for resource cleanup. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Add an errdefer immediately after every resource acquisition.** The pattern is:
+    1. Acquire resource R.
+    2. Add `errdefer cleanup(R);` immediately.
+    3. Continue with code that might fail.
+    The errdefer is "insurance" — it costs nothing on the success path and prevents leaks on the failure path. The same lesson applies to:
+    1. **File descriptors**: dup, open, accept, pipe, socket all need errdefer.
+    2. **Heap allocations**: every `allocator.create` and `allocator.dupe` needs errdefer.
+    3. **Locks**: mutex.lock needs errdefer mutex.unlock.
+    4. **Database transactions**: BEGIN needs errdefer ROLLBACK.
+    5. **Reference counts**: Py_IncRef needs errdefer Py_DecRef.
+    The general rule: **for every "acquire" operation, the very next line should be the matching "cleanup on error" defer.** The "I added the errdefer later" anti-pattern is a common source of leaks — by the time you get to the end of the function, you've forgotten which resources need cleanup. Adding the errdefer at the acquisition point keeps the cleanup tied to the acquisition.
+
