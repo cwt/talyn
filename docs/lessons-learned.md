@@ -1368,3 +1368,24 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     5. **Python callback execution**: any state mutation in the callback can race with cleanup. Always use atomic operations on shared state.
     The general rule: **for any state that can be mutated by callbacks, use atomic operations to check and modify.** A check-then-act is always a race; atomic operations are the only safe way.
 
+---
+
+### 100. Off-By-One Edge Cases at Capacity Boundaries (2026-06-02)
+
+*   **The Bug:** In `LRUCache.put` at `src/utils/lru.zig:68`, the eviction check was `if (self.map.count() >= self.capacity)`. With `capacity=0`, this evaluates to `0 >= 0 = true`, so the code would skip eviction (nothing to evict) and then add the entry. The result: a "capacity 0" cache could hold 1 entry, contradicting the user's intent.
+*   **The Fix:** Added an early return at the top of `put`: `if (self.capacity == 0) return;`. This ensures the cache never holds any entries when capacity is 0. Also added a regression test `LRUCache capacity 0 holds nothing (BUG-78)` that verifies the cache stays empty after multiple puts.
+*   **Tests added:**
+    *   `LRUCache capacity 0 holds nothing (BUG-78)` — verifies that puts into a capacity-0 cache are no-ops and `get` returns null.
+*   **The Lesson:** **Edge cases at capacity boundaries are a common source of off-by-one bugs.** The pattern is:
+    1. **`<` comparison**: `if (count < capacity)` — allows up to `capacity` entries, full at `count == capacity`.
+    2. **`<=` comparison**: `if (count <= capacity)` — allows up to `capacity+1` entries, off-by-one.
+    3. **`>=` comparison**: `if (count >= capacity)` — triggers eviction when full or over.
+    4. **Boundary check**: explicit `if (capacity == 0) return;` — handles the degenerate case.
+    The "off-by-one at capacity" anti-pattern is one of the oldest in computer science. The same lesson applies to:
+    1. **Buffer overflow**: `if (size < MAX)` vs `if (size <= MAX)` — different semantics.
+    2. **Array bounds**: `for (i = 0; i < n; i++)` vs `for (i = 0; i <= n; i++)` — off-by-one in the loop.
+    3. **String termination**: null-terminated strings need `length + 1` for the terminator.
+    4. **Memory allocation**: `n * sizeof(T)` vs `(n + 1) * sizeof(T)` — off-by-one in array size.
+    5. **Capacity=0 degenerate case**: many data structures break when capacity is 0. Always test the boundary.
+    The general rule: **for any code that has a "capacity" or "limit" parameter, add an explicit boundary check.** The 1-line check `if (capacity == 0) return;` is worth more than 1000 lines of test coverage.
+

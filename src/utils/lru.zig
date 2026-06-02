@@ -51,6 +51,15 @@ pub fn LRUCache(comptime K: type, comptime V: type) type {
         }
 
         pub fn put(self: *Self, key: K, value: V) !void {
+            // BUG-78: With capacity=0, the cache should never
+            // hold any entries. Without this check, the count
+            // comparison `0 >= 0` is true, so the first put
+            // would skip eviction (nothing to evict) and then
+            // add the entry, ending up with 1 entry in a
+            // "capacity 0" cache. If the caller passed capacity=0
+            // (e.g., disabled cache), we should respect that.
+            if (self.capacity == 0) return;
+
             if (self.map.get(key)) |node| {
                 // BUG-40: Fire the evict callback for the old value
                 // before overwriting. Without this, callers who
@@ -193,4 +202,21 @@ test "LRUCache put with existing key fires evict callback (BUG-40)" {
     try std.testing.expectEqual(@as(u32, 1), ctx.count);
     try std.testing.expectEqualStrings("first", ctx.last_value);
     try std.testing.expectEqualStrings("second", cache.get(1).?);
+}
+
+test "LRUCache capacity 0 holds nothing (BUG-78)" {
+    const allocator = std.testing.allocator;
+    var cache = LRUCache(u32, u32).init(allocator, 0);
+    defer cache.deinit();
+
+    // Capacity 0 means the cache should hold nothing.
+    try cache.put(1, 100);
+    try std.testing.expectEqual(@as(?u32, null), cache.get(1));
+
+    // A second put should also be a no-op
+    try cache.put(2, 200);
+    try std.testing.expectEqual(@as(?u32, null), cache.get(2));
+
+    // The map should be empty
+    try std.testing.expectEqual(@as(usize, 0), cache.map.count());
 }

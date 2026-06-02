@@ -708,6 +708,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **File**: `src/utils/lru.zig:60`
 - **Description**: With capacity=0, `put` adds the entry first, then the next `put` evicts it. The cache temporarily holds 1 entry despite capacity being 0.
 - **Consequences**: Minor edge case; unlikely to cause issues in practice.
+- **Status**: ✅ Fixed (see commit log)
 
 ### BUG-79: `zero_copy` hardcoded to false in write transport
 
