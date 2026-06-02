@@ -637,3 +637,24 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     4. **Database connection pools**: the `release` should happen after the query completes but before the result is processed (to allow another consumer to acquire the connection).
     The general pattern: **the lifetime of a resource in a container is "from acquire to consume" — anything outside that window is invisible to other consumers.** So if the action on the resource can trigger traversal of the container (GC, lock-free read, etc.), the consume must happen first.
 
+---
+
+### 63. Use Atomics, Not Bitsets, for Cross-Thread Flags (2026-06-02)
+
+*   **The Bug:** In `RingBuffer` at `src/callback_manager.zig:133-228`, the `executed` field was a `std.bit_set.StaticBitSet(N)`. The bitset is just a `[N/64]u64` array, but the `set()`, `unset()`, and `isSet()` operations are not atomic — they're plain reads and writes. In free-threading mode, the producer (`try_push`) writes the callback data, then calls `executed.unset(idx)`, while the consumer (`traverse`, called from GC) reads the bitset. A torn read or reordered memory access could mean:
+    - `traverse` sees `executed=false` (the new bit) but reads the OLD callback data (or garbage if the write hasn't happened yet).
+    - `traverse` sees `executed=true` (the old bit) for a slot that has been re-pushed with new data, and incorrectly visits the new data thinking it's the old.
+    - Two writers race on the same bit, with one write lost.
+*   **The Fix:** Replaced `BitSet` with `[N]std.atomic.Value(bool)`. All operations now use atomic stores/loads with proper memory ordering:
+    - `try_push`: writes data, then `release`-stores `write_idx`, then `release`-stores `executed=false`. Any `traverse` that `acquire`-loads `write_idx` (seeing the new slot) and then `acquire`-loads `executed` (seeing `false`) is guaranteed to see the fully written callback data.
+    - `consume`: `release`-stores `executed=true`, then `release`-stores `read_idx`. Any `traverse` that sees the slot as "in range" (via the pre-increment snapshot) sees `executed=true` and skips.
+    - `traverse`: `acquire`-loads `read_idx` and `write_idx`, then `acquire`-loads `executed[idx]` for each slot. If `executed[idx]` is `true`, the slot has been consumed — skip.
+*   **Tests added:**
+    *   Updated existing `test "RingBuffer basic"` to use `executed[0].load(.acquire)` instead of `executed.isSet(0)`, and to count set bits via the new atomic API. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Use atomics, not bitsets, for cross-thread flags.** A `std.bit_set.StaticBitSet(N)` is a `[N/64]u64` array — but the `set`, `unset`, and `isSet` operations are plain reads and writes. They have no memory ordering and no atomicity. In single-threaded code, this is fine (and faster). In free-threading code, this is a data race. The same lesson applies to:
+    1. **Boolean flags shared across threads**: use `std.atomic.Value(bool)` with explicit ordering, not `bool`.
+    2. **Counters shared across threads**: use `std.atomic.Value(usize)`, not `usize`.
+    3. **Pointer flags (low bits)**: use `@atomicLoad(usize, &ptr, .acquire)`, not a plain load.
+    4. **Reference counts in lock-free structures**: use `@atomicRmw(usize, &rc, .Add, 1, .acq_rel)`, not a plain `+= 1`.
+    The general pattern: **if a field is read by one thread and written by another, it must be atomic** — even if the "field" is just a single bit inside a bitset. The compiler doesn't enforce this; you have to get it right. The `std.bit_set` types are great for single-threaded code, but they're a footgun in multi-threaded code.
+

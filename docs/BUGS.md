@@ -403,6 +403,7 @@ Noticeable bugs, security gaps, or production-affecting leaks.
 - **Description**: `traverse` reads `read_idx`/`write_idx` atomically but iterates without synchronization. Between reading indices and accessing callback data, slots could be consumed and reused.
 - **Trigger**: GC runs concurrently with ring buffer operations in free-threaded builds.
 - **Consequences**: GC may traverse stale or partially-written callback data.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-39: Double-unlink corrupts linked list
 

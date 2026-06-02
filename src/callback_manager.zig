@@ -133,17 +133,25 @@ pub const Callback = struct {
 pub fn RingBuffer(comptime N: usize) type {
     return struct {
         const Self = @This();
-        pub const BitSet = std.bit_set.StaticBitSet(N);
 
         callbacks: [N]Callback,
         read_idx: usize,
         write_idx: usize,
-        executed: BitSet,
+        // BUG-43: `executed` is a per-slot flag that marks whether a
+        // slot has been consumed. In free-threading mode, the producer
+        // (try_push) writes the callback data, then unsets this flag,
+        // while the consumer (traverse, called from GC) reads it. To
+        // avoid torn reads of the bit and to ensure that the callback
+        // data is fully written before the flag is cleared, we use
+        // atomic booleans with release/acquire ordering.
+        executed: [N]std.atomic.Value(bool),
 
         pub fn init(self: *Self) void {
             self.read_idx = 0;
             self.write_idx = 0;
-            self.executed = BitSet.initEmpty();
+            for (&self.executed) |*e| {
+                e.* = std.atomic.Value(bool).init(false);
+            }
         }
 
         pub inline fn is_full(self: *const Self) bool {
@@ -162,12 +170,18 @@ pub fn RingBuffer(comptime N: usize) type {
             const w_idx = @atomicLoad(usize, &self.write_idx, .acquire);
             const r_idx = @atomicLoad(usize, &self.read_idx, .acquire);
             if ((w_idx - r_idx) == N) return false;
-            
+
             const idx = w_idx % N;
+            // Order: write data, then release-store write_idx, then
+            // release-store executed=false. A concurrent traverse that
+            // acquire-loads write_idx (and therefore sees this slot
+            // as "in range") and then acquire-loads executed as
+            // false is guaranteed to see the fully written callback
+            // data.
             self.callbacks[idx] = callback;
-            self.executed.unset(idx);
-            
+
             @atomicStore(usize, &self.write_idx, w_idx + 1, .release);
+            self.executed[idx].store(false, .release);
             return true;
         }
 
@@ -181,7 +195,7 @@ pub fn RingBuffer(comptime N: usize) type {
             const r_idx = @atomicLoad(usize, &self.read_idx, .acquire);
             const w_idx = @atomicLoad(usize, &self.write_idx, .acquire);
             if (r_idx == w_idx) return null;
-            
+
             const idx = r_idx % N;
             return &self.callbacks[idx];
         }
@@ -189,24 +203,34 @@ pub fn RingBuffer(comptime N: usize) type {
         pub inline fn consume(self: *Self) void {
             const r_idx = @atomicLoad(usize, &self.read_idx, .acquire);
             const idx = r_idx % N;
-            self.executed.set(idx);
+            // Mark executed BEFORE advancing read_idx so any concurrent
+            // traverse that observes the new read_idx (and therefore
+            // thinks this slot is "out of range") is fine, and any
+            // traverse that sees the slot as "in range" (via the
+            // pre-increment snapshot) sees executed=true and skips.
+            self.executed[idx].store(true, .release);
             @atomicStore(usize, &self.read_idx, r_idx + 1, .release);
         }
 
         pub fn reset(self: *Self) void {
             @atomicStore(usize, &self.read_idx, 0, .release);
             @atomicStore(usize, &self.write_idx, 0, .release);
-            self.executed = BitSet.initEmpty();
+            for (&self.executed) |*e| {
+                e.* = std.atomic.Value(bool).init(false);
+            }
         }
 
         pub fn traverse(self: *const Self, visit: python_c.visitproc, arg: ?*anyopaque) c_int {
             const r_idx = @atomicLoad(usize, &self.read_idx, .acquire);
             const w_idx = @atomicLoad(usize, &self.write_idx, .acquire);
-            
+
             var i = r_idx;
             while (i < w_idx) : (i += 1) {
                 const idx = i % N;
-                if (self.executed.isSet(idx)) continue;
+                // Acquire-load: if we see executed=false, the data
+                // write is visible. If we see executed=true, the
+                // slot has been consumed; skip it.
+                if (self.executed[idx].load(.acquire)) continue;
 
                 const callback = &self.callbacks[idx];
                 if (callback.data.traverse()) |t| {
@@ -652,7 +676,7 @@ test "RingBuffer push and execute" {
 
     try std.testing.expect(rb.try_push(callback));
     try std.testing.expectEqual(@as(usize, 1), rb.count());
-    try std.testing.expect(!rb.executed.isSet(0));
+    try std.testing.expect(!rb.executed[0].load(.acquire));
 
     try std.testing.expect(rb.try_push(callback));
     try std.testing.expect(rb.try_push(callback));
@@ -669,7 +693,11 @@ test "RingBuffer push and execute" {
     rb.reset();
     try std.testing.expectEqual(@as(usize, 0), rb.read_idx);
     try std.testing.expectEqual(@as(usize, 0), rb.write_idx);
-    try std.testing.expectEqual(@as(usize, 0), rb.executed.count());
+    var set_count: usize = 0;
+    for (rb.executed) |e| {
+        if (e.load(.acquire)) set_count += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 0), set_count);
 }
 
 test "RingBuffer handle exceptions" {
