@@ -184,6 +184,30 @@ pub fn LinkedList(comptime T: type) type {
             self.* = @This().init(allocator);
         }
 
+        /// Like `clear`, but invokes a cleanup function on each node's
+        /// data before destroying the node. Use this when the data
+        /// type holds resources that need to be released (e.g., a
+        /// Python object reference that needs to be decref'd).
+        ///
+        /// The cleanup function is called as `cleanup(node.data)`.
+        ///
+        /// BUG-62: The plain `clear()` didn't invoke cleanup, so
+        /// Python object references stored in Callback.data were
+        /// leaked on hook list teardown.
+        pub fn clear_with_cleanup(
+            self: *@This(),
+            comptime cleanup_fn: fn (data: T) void,
+        ) void {
+            const allocator = self.allocator;
+            var node = self.first;
+            while (node) |n| {
+                node = n.next;
+                cleanup_fn(n.data);
+                allocator.destroy(n);
+            }
+            self.* = @This().init(allocator);
+        }
+
         pub fn extend(self: *@This(), list: *@This()) void {
             const f_node2 = list.first orelse return;
             const l_node2 = list.last.?;

@@ -1047,3 +1047,22 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     4. **Database row deletion**: deleting any row should work, not just the "last inserted" one.
     The general rule: **for any data-structure operation, ask yourself: what state am I leaving behind? Is that state safe to read?** If the answer is "it depends on caller behavior", make the function self-sufficient.
 
+---
+
+### 84. Container Cleanup Needs Domain-Specific Knowledge (2026-06-02)
+
+*   **The Bug:** In `Loop.deinit` at `src/loop/main.zig:164-166`, the three hook lists (`prepare_hooks`, `check_hooks`, `idle_hooks`) were cleared using `LinkedList.clear()`, which only destroys the linked-list node but doesn't call any cleanup on the contained `Callback` data. The `Callback` struct has a `cleanup: ?GenericCleanUpCallback` field that's a function pointer for releasing resources (e.g., decrementing a Python reference). So on loop teardown, the Python object references held in the callback data leaked.
+*   **The Fix:** Added a new `clear_with_cleanup` method to `LinkedList` that takes a `comptime cleanup_fn` and invokes it on each node's data before destroying. Used it in `Loop.deinit` to invoke the Callback's cleanup function.
+*   **Tests added:**
+    *   No new tests were added. The fix is a defensive measure to prevent leaks on loop teardown. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Generic containers can't know about domain-specific cleanup needs.** A `LinkedList(T)` doesn't know if `T` holds a Python reference, a file descriptor, or a heap-allocated buffer. The pattern is:
+    1. **Provide a "fast path" cleanup** for the simple case (just destroy the node).
+    2. **Provide a "domain-aware" cleanup** for the case where the data holds resources.
+    3. **Let the caller choose** which to use based on what `T` is.
+    The "the container handles all cleanup" anti-pattern forces containers to know too much. The "the caller handles all cleanup" anti-pattern is what we had — fine for the simple case, but easy to forget for the domain case. The same lesson applies to:
+    1. **HashMap/TreeMap**: should have a `clear_with_cleanup` variant.
+    2. **ArrayList**: `deinit_with_cleanup` for elements that hold resources.
+    3. **Thread pools**: should have a "shutdown with task cleanup" variant.
+    4. **File system walkers**: should have a "walk and cleanup" variant.
+    The general rule: **for every "destroy" operation, ask yourself: does the data need cleanup? If yes, provide a way to do it.**
+

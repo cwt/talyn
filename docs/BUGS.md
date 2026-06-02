@@ -594,6 +594,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **File**: `src/loop/main.zig:160-162`
 - **Description**: `prepare_hooks.clear()`, `check_hooks.clear()`, `idle_hooks.clear()` free linked list nodes without calling `callback.cleanup` on the contained `Callback` data.
 - **Consequences**: Python object reference leaks on loop release.
+- **Status**: ✅ Fixed (see commit log)
 
 ### BUG-63: `dispatch_completion_batch` ignores most CompletionOp variants
 

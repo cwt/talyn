@@ -161,9 +161,31 @@ pub fn release(self: *Loop) void {
     }
     self.allocator.destroy(self.ready_tasks_queues);
 
-    self.prepare_hooks.clear();
-    self.check_hooks.clear();
-    self.idle_hooks.clear();
+    // BUG-62: Use clear_with_cleanup to invoke each Callback's
+    // cleanup function before destroying the linked-list node.
+    // This prevents Python object reference leaks on loop
+    // release.
+    self.prepare_hooks.clear_with_cleanup(struct {
+        fn cb(data: CallbackManager.Callback) void {
+            if (data.cleanup) |cleanup| {
+                cleanup(data.data.user_data);
+            }
+        }
+    }.cb);
+    self.check_hooks.clear_with_cleanup(struct {
+        fn cb(data: CallbackManager.Callback) void {
+            if (data.cleanup) |cleanup| {
+                cleanup(data.data.user_data);
+            }
+        }
+    }.cb);
+    self.idle_hooks.clear_with_cleanup(struct {
+        fn cb(data: CallbackManager.Callback) void {
+            if (data.cleanup) |cleanup| {
+                cleanup(data.data.user_data);
+            }
+        }
+    }.cb);
 }
 
 pub inline fn reserve_slots(self: *Loop, amount: usize) !void {
