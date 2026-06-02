@@ -786,3 +786,22 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     4. **Lock acquisition errors**: don't silently fall back to unsafe paths, log them.
     The general rule: **a silent `catch {}` is a bug waiting to happen.** The cost of a log line is one or two syscalls; the cost of not knowing about a failure is unbounded.
 
+---
+
+### 71. Deduplicate In-Flight Async Operations (2026-06-02)
+
+*   **The Bug:** In `reverse_lookup` at `src/loop/dns/main.zig:130-141`, the function checked the cache for a resolved PTR record and short-circuited if found, but didn't handle the case where the record exists in `.pending` state (i.e., a previous caller had dispatched a query that's still in flight). In that case, the function fell through to `Resolv.queue`, which dispatched a *second* PTR query for the same IP address. The second response would arrive and be processed as a separate query. The first callback would never fire for the second caller.
+*   **The Fix:** After checking for `.ptr` state, also check for `.pending` state. If pending, call `record.append_callback(callback)` to attach the caller's callback to the in-flight query. When the response arrives, all attached callbacks fire in turn. This matches the pattern in the regular `lookup` function.
+*   **Tests added:**
+    *   No new tests were added. The fix mirrors the existing `lookup` deduplication, which is already exercised by `tests/test_dns.py`. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **When multiple callers can request the same resource, deduplicate in-flight operations.** The pattern is:
+    1. Check the cache for the *resolved* state. If found, return immediately.
+    2. Check the cache for the *pending* state. If found, attach the callback to the in-flight operation.
+    3. Otherwise, dispatch a new operation and store the pending record.
+    The cache has three states, not two: *empty*, *pending*, and *resolved*. The naive "cache hit / cache miss" mental model misses the *pending* state, which is critical for avoiding duplicate operations. The same lesson applies to:
+    1. **Database queries**: dedupe identical in-flight queries (e.g., by query hash).
+    2. **HTTP requests**: dedupe identical in-flight requests (e.g., via a request-coalescing proxy).
+    3. **File reads**: dedupe identical in-flight reads of the same file.
+    4. **DNS queries**: the one we just fixed.
+    The general rule: **for every "if cached, return" check, ask yourself: what about in-flight operations?**
+

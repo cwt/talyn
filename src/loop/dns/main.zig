@@ -136,6 +136,15 @@ pub fn reverse_lookup(
             try Loop.Scheduling.Soon.dispatch(self.loop, callback);
             return;
         }
+
+        // BUG-59: Record exists in pending state — attach the
+        // callback to the in-flight query instead of creating a
+        // duplicate. Previously we fell through to Resolv.queue
+        // which dispatched a new DNS request for every caller.
+        try self.loop.reserve_slots(1);
+        errdefer self.loop.reserved_slots -= 1;
+        try record.append_callback(callback);
+        return;
     }
 
     try Resolv.queue(cache_slot, self.loop, name, callback, self.configuration, false, .ptr);
