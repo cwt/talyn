@@ -1066,3 +1066,24 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     4. **File system walkers**: should have a "walk and cleanup" variant.
     The general rule: **for every "destroy" operation, ask yourself: does the data need cleanup? If yes, provide a way to do it.**
 
+---
+
+### 85. Make `else` Branches Visible (2026-06-02)
+
+*   **The Bug:** In `dispatch_completion_batch` at `src/loop/runner.zig:125-150`, the switch on `record.op` only handled `DataReceived` and `BufferUpdated`. The other 6 variants (`EofReceived`, `ConnectionMade`, `ConnectionLost`, `ResumeWriting`, `DatagramReceived`, `ErrorReceived`) all fell to a bare `else => {}` and were silently dropped. If a future code path pushed a record with one of these ops (e.g., a datagram transport added a new completion type), it would be silently lost with no warning.
+*   **The Fix:** Replaced the bare `else => {}` with explicit cases for the unhandled variants that log a `std.log.warn` message naming the dropped op. The dispatch still doesn't act on these (the transport doesn't have the matching protocol callbacks), but the operator can now see if/when one is dropped.
+*   **Tests added:**
+    *   No new tests were added. The fix is a defensive measure to make silent drops visible. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Bare `else => {}` branches are silent bugs waiting to happen.** The pattern is:
+    1. **The compiler is silent**: `else => {}` compiles cleanly.
+    2. **The runtime is silent**: the op is dropped with no log.
+    3. **The operator is silent**: they don't know the op is being dropped.
+    4. **The bug is silent**: by the time someone notices, it's hard to trace back.
+    The fix is to make the `else` branch **loud**: log the dropped op so it's visible. The same lesson applies to:
+    1. **Switch statements on enums**: every variant should be explicitly handled or explicitly logged.
+    2. **Pattern matches**: missing arms should be logged, not silently dropped.
+    3. **Protocol message handlers**: unknown message types should be logged.
+    4. **Syscall return codes**: unknown return codes should be logged.
+    5. **Network protocol opcodes**: unknown opcodes should be logged.
+    The general rule: **for every "default" branch, ask yourself: is this the right default? If not, log it.** The "silent default" anti-pattern is one of the most common sources of subtle bugs.
+

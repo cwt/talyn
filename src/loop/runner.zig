@@ -146,7 +146,22 @@ fn dispatch_completion_batch(
                     continue;
                 }
             },
-            else => {},
+            // BUG-63: These op variants aren't currently used by
+            // stream transport (the transport struct doesn't have
+            // matching protocol_* callbacks for them). Previously
+            // they were silently dropped via `else => {}`. Now we
+            // log a warning so the operator can see that something
+            // is being dropped. If a future transport type needs
+            // these, add the dispatch here.
+            .EofReceived,
+            .ConnectionMade,
+            .ConnectionLost,
+            .ResumeWriting,
+            .DatagramReceived,
+            .ErrorReceived,
+            => {
+                std.log.warn("dispatch_completion_batch: dropping unhandled op {s}", .{@tagName(record.op)});
+            },
         }
     }
 

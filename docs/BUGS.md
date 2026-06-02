@@ -601,6 +601,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **File**: `src/loop/runner.zig:116-141`
 - **Description**: The `switch` only handles `DataReceived` and `BufferUpdated`. `EofReceived`, `ConnectionMade`, `ConnectionLost`, `ResumeWriting`, `DatagramReceived`, `ErrorReceived` all fall to `else => {}` and are silently dropped.
 - **Consequences**: Silent loss of completion notifications.
+- **Status**: ✅ Fixed (see commit log)
 
 ### BUG-64: Cancel SQEs have no error feedback
 
