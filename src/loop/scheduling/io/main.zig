@@ -536,7 +536,13 @@ pub fn unregister_fixed_file(self: *IO, index: u16) void {
     if (self.ring.fd >= 0) {
         self.ring.register_files_update(index, self.fixed_file_table[index..index + 1]) catch {};
     }
-    self.fixed_file_free.append(self.loop.allocator, index) catch {};
+    // BUG-27: If the append fails (OOM), the slot index is
+    // permanently lost. Previously this was a silent `catch {}`.
+    // Now we log the error so it's visible — the slot leak is
+    // still going to happen, but at least the operator sees it.
+    self.fixed_file_free.append(self.loop.allocator, index) catch |err| {
+        std.log.err("unregister_fixed_file: failed to append slot {d} back to free list: {}", .{ index, err });
+    };
 }
 
 pub fn lease_buffer(self: *IO) ?RegisteredBufferPool.LeaseResult {

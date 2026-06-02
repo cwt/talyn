@@ -766,5 +766,23 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     2. **Memory pools**: pinned buffer? unpin.
     3. **GPU resources**: texture handle? release.
     4. **Database connections**: in transaction? rollback.
-    The general pattern: **for each resource acquisition in the constructor, there must be a corresponding release in the destructor.** This is the "RAII" pattern (Resource Acquisition Is Initialization) — resources are acquired in the constructor and released in the destructor, in LIFO order. In Zig, this is achieved via `defer`/`errdefer` in the constructor and explicit calls in the destructor. The bug here was a missing release — the `cleanup_resources` function was defined but never called from `datagram_close`. A code review or a static analysis tool (like a "missing release" detector) would have caught this. The general rule: **a `close` function should call every release function that has a corresponding acquire in the `open`/`init` path.** If you add a new resource to the constructor, add a release to the destructor (and call it).
+    The general pattern: **for each resource acquisition in the constructor, there must be a corresponding release in the destructor.** This is the "RAII" pattern (Resource Acquisition Is Initialization) — resources are acquired in the constructor and released in the destructor, in LIFO order. In Zig, this is achieved via `defer`/`errdefer` in the constructor and explicit calls in the destructor. The bug here was a missing release — the `cleanup_resources` function was defined but never called from `datagram_close`. A code review or a static analysis tool (like a "missing release" detector) would have caught this.     The general rule: **a `close` function should call every release function that has a corresponding acquire in the `open`/`init` path.** If you add a new resource to the constructor, add a release to the destructor (and call it).
+
+---
+
+### 70. Don't Swallow Errors Silently — Log Them (2026-06-02)
+
+*   **The Bug:** In `unregister_fixed_file` at `src/loop/scheduling/io/main.zig:539`, the original code was `self.fixed_file_free.append(self.loop.allocator, index) catch {};`. If the append fails (OOM), the slot index is permanently lost. The `catch {}` silently swallowed the error, so the operator has no way to know there's a leak in progress. Over time, all fixed file slots would be exhausted.
+*   **The Fix:** Replaced the silent `catch {}` with `catch |err| { std.log.err(...) }`. The slot leak is still going to happen (we can't safely retry the allocation in a void function), but at least the operator sees the error and can take corrective action (e.g., free memory, restart the process).
+*   **Tests added:**
+    *   No new tests were added. The bug only manifested under OOM, which is hard to reproduce in a unit test. All 284 tests across all 4 Python versions in both Debug and ReleaseSafe modes pass after the fix.
+*   **The Lesson:** **Don't swallow errors silently — log them.** It's tempting to write `catch {}` for "errors I can't handle" (e.g., in a void function that returns no error). But silent error swallowing is a debugging nightmare: the operation failed, the data was lost, and the operator has no way to know. The fix is to **log the error before giving up**. This serves two purposes:
+    1. **Visibility**: the operator sees the error and can take corrective action.
+    2. **Diagnosability**: the error log includes enough context (which operation, which resource, which error code) to debug the issue.
+    The general pattern: **for every `catch {}` in your code, ask yourself: would I want to know if this error happened? If yes, log it.** The same lesson applies to:
+    1. **Network errors**: don't silently drop connection failures, log them.
+    2. **Disk I/O errors**: don't silently skip writes that failed, log them.
+    3. **Memory allocation errors**: don't silently lose data, log them.
+    4. **Lock acquisition errors**: don't silently fall back to unsafe paths, log them.
+    The general rule: **a silent `catch {}` is a bug waiting to happen.** The cost of a log line is one or two syscalls; the cost of not knowing about a failure is unbounded.
 

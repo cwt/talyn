@@ -470,6 +470,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **Description**: `self.fixed_file_free.append(self.loop.allocator, index) catch {};` — if `append` fails (OOM), the slot index is lost.
 - **Trigger**: OOM during slot return.
 - **Consequences**: Fixed file slot leak.
+- **Status**: ✅ Fixed (see commit log)
 
 #### BUG-59: DNS `reverse_lookup` doesn't deduplicate pending queries
 
