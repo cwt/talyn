@@ -12,7 +12,7 @@ const CallbackManager = @import("callback_manager");
 
 const DNSCacheEntries = switch (builtin.mode) {
     .Debug => 4,
-    else => 65536,
+    else => 1024,
 };
 
 const CACHE_MASK = DNSCacheEntries - 1;

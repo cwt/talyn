@@ -252,6 +252,20 @@ pub fn RingBuffer(comptime N: usize) type {
     };
 }
 
+fn ceilPowerOfTwo(val: usize) usize {
+    if (val <= 1) return 1;
+    var x = val - 1;
+    x |= x >> 1;
+    x |= x >> 2;
+    x |= x >> 4;
+    x |= x >> 8;
+    x |= x >> 16;
+    if (@sizeOf(usize) == 8) {
+        x |= x >> 32;
+    }
+    return x + 1;
+}
+
 pub const DynamicRingBuffer = struct {
     const Self = @This();
 
@@ -263,11 +277,12 @@ pub const DynamicRingBuffer = struct {
     allocator: std.mem.Allocator,
 
     pub fn init(self: *Self, allocator: std.mem.Allocator, capacity: usize) !void {
-        self.callbacks = try allocator.alloc(Callback, capacity);
+        const actual_capacity = ceilPowerOfTwo(capacity);
+        self.callbacks = try allocator.alloc(Callback, actual_capacity);
         errdefer allocator.free(self.callbacks);
-        self.executed = try allocator.alloc(bool, capacity);
+        self.executed = try allocator.alloc(bool, actual_capacity);
         @memset(self.executed, false);
-        self.capacity = capacity;
+        self.capacity = actual_capacity;
         self.read_idx = 0;
         self.write_idx = 0;
         self.allocator = allocator;
@@ -293,7 +308,7 @@ pub const DynamicRingBuffer = struct {
 
     fn grow(self: *Self) !void {
         const old_cap = self.capacity;
-        const new_cap = @max(old_cap * 2, old_cap + 1);
+        const new_cap = old_cap * 2;
         const n = self.count();
 
         const new_callbacks = try self.allocator.alloc(Callback, new_cap);
@@ -303,11 +318,12 @@ pub const DynamicRingBuffer = struct {
 
         var i: usize = 0;
         var idx = self.read_idx;
+        const mask = old_cap - 1;
         while (i < n) : ({
             i += 1;
             idx += 1;
         }) {
-            const old_idx = idx % old_cap;
+            const old_idx = idx & mask;
             new_callbacks[i] = self.callbacks[old_idx];
             new_executed[i] = false;
         }
@@ -328,7 +344,7 @@ pub const DynamicRingBuffer = struct {
         const r_idx = @atomicLoad(usize, &self.read_idx, .acquire);
         if ((w_idx - r_idx) == self.capacity) return false;
 
-        const idx = w_idx % self.capacity;
+        const idx = w_idx & (self.capacity - 1);
         self.callbacks[idx] = callback;
         self.executed[idx] = false;
 
@@ -356,13 +372,13 @@ pub const DynamicRingBuffer = struct {
         const w_idx = @atomicLoad(usize, &self.write_idx, .acquire);
         if (r_idx == w_idx) return null;
 
-        const idx = r_idx % self.capacity;
+        const idx = r_idx & (self.capacity - 1);
         return &self.callbacks[idx];
     }
 
     pub inline fn consume(self: *Self) void {
         const r_idx = @atomicLoad(usize, &self.read_idx, .acquire);
-        const idx = r_idx % self.capacity;
+        const idx = r_idx & (self.capacity - 1);
         self.executed[idx] = true;
         @atomicStore(usize, &self.read_idx, r_idx + 1, .release);
     }
@@ -377,9 +393,10 @@ pub const DynamicRingBuffer = struct {
         const r_idx = @atomicLoad(usize, &self.read_idx, .acquire);
         const w_idx = @atomicLoad(usize, &self.write_idx, .acquire);
 
+        const mask = self.capacity - 1;
         var i = r_idx;
         while (i < w_idx) : (i += 1) {
-            const idx = i % self.capacity;
+            const idx = i & mask;
             if (self.executed[idx]) continue;
 
             const callback = &self.callbacks[idx];
@@ -420,6 +437,7 @@ pub fn execute_ring_buffer(
     ring: *RingBuffer(N),
     comptime exception_handler: ?ExceptionHandler,
     exception_handler_data: ?*anyopaque,
+    comptime debug: bool,
     warning_handler: ?WarningHandler,
     debug_state: ?*const DebugState
 ) !usize {
@@ -429,18 +447,19 @@ pub fn execute_ring_buffer(
     var yield_counter: usize = 0;
     const yield_threshold = get_adaptive_yield_threshold(ring.count());
 
-    while (ring.next()) |callback| {
+    while (ring.next()) |cb_ptr| {
+        const callback = cb_ptr.*;
         const mod = callback.data.module_ptr();
         const cb = callback.data.callback_ptr();
 
-        if (debug_state != null) {
+        if (debug) {
             if (mod) |m| {
                 python_c.py_incref(m);
                 if (cb) |c| python_c.py_incref(c);
             }
         }
 
-        const start_time = if (debug_state != null) nanoTime() else 0;
+        const start_time = if (debug) nanoTime() else 0;
 
         // BUG-42: Consume BEFORE calling the callback. If the callback
         // frees user_data and triggers GC, the ring buffer slot is
@@ -479,9 +498,10 @@ pub fn execute_ring_buffer(
         };
 
 
-        if (debug_state) |ds| {
+        if (debug) {
             const end_time = nanoTime();
             const duration = @as(f64, @floatFromInt(end_time - start_time)) / 1e9;
+            const ds = debug_state.?;
             if (duration >= ds.slow_callback_duration) {
                 if (warning_handler) |wh| {
                     wh(duration, mod, exception_handler_data);
@@ -519,6 +539,7 @@ pub fn execute_dynamic_ring_buffer(
     ring: *DynamicRingBuffer,
     comptime exception_handler: ?ExceptionHandler,
     exception_handler_data: ?*anyopaque,
+    comptime debug: bool,
     warning_handler: ?WarningHandler,
     debug_state: ?*const DebugState
 ) !usize {
@@ -528,18 +549,19 @@ pub fn execute_dynamic_ring_buffer(
     var yield_counter: usize = 0;
     const yield_threshold = get_adaptive_yield_threshold(ring.count());
 
-    while (ring.next()) |callback| {
+    while (ring.next()) |cb_ptr| {
+        const callback = cb_ptr.*;
         const mod = callback.data.module_ptr();
         const cb = callback.data.callback_ptr();
 
-        if (debug_state != null) {
+        if (debug) {
             if (mod) |m| {
                 python_c.py_incref(m);
                 if (cb) |c| python_c.py_incref(c);
             }
         }
 
-        const start_time = if (debug_state != null) nanoTime() else 0;
+        const start_time = if (debug) nanoTime() else 0;
 
         // Consume BEFORE calling callback: if the callback frees user_data
         // and triggers GC, the ring buffer slot is already marked consumed
@@ -570,9 +592,10 @@ pub fn execute_dynamic_ring_buffer(
             continue;
         };
 
-        if (debug_state) |ds| {
+        if (debug) {
             const end_time = nanoTime();
             const duration = @as(f64, @floatFromInt(end_time - start_time)) / 1e9;
+            const ds = debug_state.?;
             if (duration >= ds.slow_callback_duration) {
                 if (warning_handler) |wh| {
                     wh(duration, mod, exception_handler_data);
@@ -685,7 +708,7 @@ test "RingBuffer push and execute" {
 
     try std.testing.expectEqual(@as(usize, 4), rb.count());
 
-    const executed_count = try execute_ring_buffer(4, &rb, null, null, null, null);
+    const executed_count = try execute_ring_buffer(4, &rb, null, null, false, null, null);
     try std.testing.expectEqual(@as(usize, 4), executed_count);
     try std.testing.expectEqual(@as(usize, 4), executed);
     try std.testing.expect(rb.is_empty());
@@ -723,7 +746,7 @@ test "RingBuffer handle exceptions" {
     rb.push(cb2);
     rb.push(cb1);
 
-    const executed_count = try execute_ring_buffer(4, &rb, test_exception_handler, &exceptions, null, null);
+    const executed_count = try execute_ring_buffer(4, &rb, test_exception_handler, &exceptions, false, null, null);
     try std.testing.expectEqual(@as(usize, 3), executed_count);
     try std.testing.expectEqual(@as(usize, 2), executed);
     try std.testing.expectEqual(@as(usize, 1), exceptions);

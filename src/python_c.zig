@@ -175,7 +175,7 @@ pub const PyImport_ImportModule = _c.PyImport_ImportModule;
 pub const PyModule_Create = _c.PyModule_Create;
 pub const PyModule_AddObject = _c.PyModule_AddObject;
 
-pub const PyUnstable_Module_SetGIL = _c.PyUnstable_Module_SetGIL;
+pub const PyUnstable_Module_SetGIL = if (@hasDecl(_c, "PyUnstable_Module_SetGIL")) _c.PyUnstable_Module_SetGIL else struct {};
 
 pub const PyIter_Next = _c.PyIter_Next;
 pub const PyIter_Send = _c.PyIter_Send;

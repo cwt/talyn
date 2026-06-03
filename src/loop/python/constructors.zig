@@ -12,6 +12,20 @@ const LoopObject = Loop.Python.LoopObject;
 const std = @import("std");
 
 inline fn z_loop_new(@"type": *python_c.PyTypeObject) !*LoopObject {
+    const StreamServer = @import("../../transports/streamserver/main.zig");
+    const SSO = StreamServer.StreamServerObject;
+    std.debug.print("SSO offsets: ob_base={d}, loop={d}, pf={d}, fd={d}, fam={d}, bl={d}, task={d}, closed={d}, paused={d}, ref={d}\n", .{
+        @offsetOf(SSO, "ob_base"),
+        @offsetOf(SSO, "loop"),
+        @offsetOf(SSO, "protocol_factory"),
+        @offsetOf(SSO, "server_fd"),
+        @offsetOf(SSO, "family"),
+        @offsetOf(SSO, "backlog"),
+        @offsetOf(SSO, "blocking_task_id"),
+        @offsetOf(SSO, "closed"),
+        @offsetOf(SSO, "accept_paused"),
+        @offsetOf(SSO, "server_ref"),
+    });
     const instance: *LoopObject = @ptrCast(@"type".tp_alloc.?(@"type", 0) orelse return error.PythonError);
     errdefer @"type".tp_free.?(instance);
 

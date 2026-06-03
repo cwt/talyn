@@ -246,8 +246,11 @@ fn z_try_resolve_server_host(creation_data: *ServerCreationData) !void {
 
     const server_data = try allocator.create(ServerSocketData);
     errdefer allocator.destroy(server_data);
-    server_data.creation_data = creation_data;
-    server_data.address_list = null;
+    server_data.* = .{
+        .creation_data = creation_data,
+        .address_list = null,
+        .socket_fd = -1,
+    };
 
     if (hostname.len == 0) {
         const allow_ipv6 = loop_data.dns.ipv6_supported;
@@ -417,9 +420,12 @@ fn z_create_server_socket(server_data: *ServerSocketData) !void {
             break :blk @intCast(fd_ret);
         };
 
-        if (server_data.socket_fd < 0) {
-            errdefer _ = std.os.linux.close(fd);
+        var success = false;
+        defer if (!success and server_data.socket_fd < 0) {
+            _ = std.os.linux.close(fd);
+        };
 
+        if (server_data.socket_fd < 0) {
             if (reuse_address) {
                 const val: c_int = 1;
                 _ = std.os.linux.setsockopt(fd, std.os.linux.SOL.SOCKET, std.os.linux.SO.REUSEADDR, @as([*]const u8, @ptrCast(std.mem.asBytes(&val))), @sizeOf(c_int));
@@ -477,6 +483,7 @@ fn z_create_server_socket(server_data: *ServerSocketData) !void {
 
         if (python_c.PyList_Append(servers_list, server) != 0) return error.PythonError;
         python_c.py_decref(server);
+        success = true;
     }
 
     if (python_c.PyList_Size(servers_list) == 0) {

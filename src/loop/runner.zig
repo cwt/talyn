@@ -53,7 +53,9 @@ fn exception_handler(err: anyerror, data: ?*anyopaque, module_ptr: ?*python_c.Py
     const context_dict = python_c.PyDict_New() orelse return error.PythonError;
     defer python_c.py_decref(context_dict);
 
-    _ = python_c.PyDict_SetItemString(context_dict, "message\x00", python_c.PyUnicode_FromString("Exception in callback\x00") orelse return error.PythonError);
+    const py_msg = python_c.PyUnicode_FromString("Exception in callback\x00") orelse return error.PythonError;
+    defer python_c.py_decref(py_msg);
+    _ = python_c.PyDict_SetItemString(context_dict, "message\x00", py_msg);
 
     if (module_ptr) |mod| {
         _ = python_c.PyDict_SetItemString(context_dict, "module\x00", mod);
@@ -62,10 +64,22 @@ fn exception_handler(err: anyerror, data: ?*anyopaque, module_ptr: ?*python_c.Py
         _ = python_c.PyDict_SetItemString(context_dict, "callback\x00", cp);
     }
 
-    const py_err_name = @errorName(err);
-    const py_err_obj = python_c.PyUnicode_FromString(py_err_name.ptr) orelse return error.PythonError;
-    defer python_c.py_decref(py_err_obj);
-    _ = python_c.PyDict_SetItemString(context_dict, "exception\x00", py_err_obj);
+    var py_exc: ?PyObject = null;
+    if (python_c.PyErr_Occurred() != null) {
+        py_exc = python_c.PyErr_GetRaisedException();
+    }
+    defer {
+        if (py_exc) |exc| python_c.py_decref(exc);
+    }
+
+    if (py_exc) |exc| {
+        _ = python_c.PyDict_SetItemString(context_dict, "exception\x00", exc);
+    } else {
+        const py_err_name = @errorName(err);
+        const py_err_obj = python_c.PyUnicode_FromString(py_err_name.ptr) orelse return error.PythonError;
+        defer python_c.py_decref(py_err_obj);
+        _ = python_c.PyDict_SetItemString(context_dict, "exception\x00", py_err_obj);
+    }
 
     const ret = python_c.PyObject_CallMethod(@ptrCast(loop_obj), "call_exception_handler\x00", "O\x00", context_dict) orelse {
         if (python_c.PyErr_Occurred()) |exc| {
@@ -86,14 +100,25 @@ pub inline fn call_once(
     loop_obj: *Loop.Python.LoopObject
 ) !usize {
     const debug_state = CallbackManager.DebugState{ .slow_callback_duration = loop_obj.slow_callback_duration };
-
-    const callbacks_executed = try CallbackManager.execute_dynamic_ring_buffer(
-        ready_queue,
-        if (builtin.is_test) null else &exception_handler,
-        loop_obj,
-        if (loop_obj.debug) &slow_callback_warning_handler else null,
-        if (loop_obj.debug) &debug_state else null
-    );
+ 
+    const callbacks_executed = if (loop_obj.debug)
+        try CallbackManager.execute_dynamic_ring_buffer(
+            ready_queue,
+            if (builtin.is_test) null else &exception_handler,
+            loop_obj,
+            true,
+            &slow_callback_warning_handler,
+            &debug_state
+        )
+    else
+        try CallbackManager.execute_dynamic_ring_buffer(
+            ready_queue,
+            if (builtin.is_test) null else &exception_handler,
+            loop_obj,
+            false,
+            null,
+            null
+        );
     if (callbacks_executed == 0) {
         ready_queue.reset();
     }

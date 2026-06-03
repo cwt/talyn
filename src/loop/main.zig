@@ -100,7 +100,6 @@ pub fn init(self: *Loop, allocator: std.mem.Allocator, rtq_capacity: usize) !voi
     self.dns = .{};
     self.running = false;
     self.stopping = false;
-    self.initialized = true;
     self.ready_tasks_queue_max_capacity = rtq_capacity;
 
     try self.fs_watcher.init(self);
@@ -116,6 +115,8 @@ pub fn init(self: *Loop, allocator: std.mem.Allocator, rtq_capacity: usize) !voi
 
     try self.dns.init(self);
     errdefer self.dns.deinit();
+
+    self.initialized = true;
 }
 
 pub fn release(self: *Loop) void {

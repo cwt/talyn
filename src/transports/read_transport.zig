@@ -162,7 +162,6 @@ pub fn read_operation_completed(data: *const CallbackManager.CallbackData) !void
         bytes_read = @intCast(io_uring_res);
     }
 
-    var exception: PyObject = undefined;
     const ret = self.read_completed_callback(self, self.buffer_to_read[0..bytes_read], io_uring_err);
 
     const parent_transport = self.parent_transport;
@@ -178,25 +177,34 @@ pub fn read_operation_completed(data: *const CallbackManager.CallbackData) !void
             return;
         }
 
-        exception = python_c.PyObject_CallFunction(
+        const exception = python_c.PyObject_CallFunction(
             python_c.PyExc_OSError, "Ls\x00", @as(c_long, @intFromEnum(io_uring_err)), "Read operation failed\x00"
         ) orelse return error.PythonError;
-    }else |err| {
-        utils.handle_zig_function_error(err, {});
-        exception = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
-    }
+        defer python_c.py_decref(exception);
 
-    defer {
         self.is_closing = true;
         self.closed = true;
-        python_c.PyErr_SetRaisedException(exception);
-    }
 
-    if (self.connection_lost_callback) |callback| {
-        try callback(parent_transport, exception);
-    }
+        if (self.connection_lost_callback) |callback| {
+            try callback(parent_transport, exception);
+        }
+        return;
+    } else |err| {
+        utils.handle_zig_function_error(err, {});
+        const exception = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
 
-    return error.PythonError;
+        defer {
+            self.is_closing = true;
+            self.closed = true;
+            python_c.PyErr_SetRaisedException(exception);
+        }
+
+        if (self.connection_lost_callback) |callback| {
+            try callback(parent_transport, exception);
+        }
+
+        return error.PythonError;
+    }
 }
 
 pub inline fn perform(self: *ReadTransport, buffer: ?[]u8) !void {

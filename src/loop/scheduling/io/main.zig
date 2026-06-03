@@ -13,11 +13,7 @@ pub const Timer = @import("timer.zig");
 pub const Cancel = @import("cancel.zig");
 pub const Socket = @import("socket.zig");
 
-pub const TotalTasksItems = switch (builtin.mode) {
-    .Debug => 8192,
-    .ReleaseSmall => 1024,
-    else => 8192
-};
+pub const TotalTasksItems = 1024;
 
 pub const BlockingOperation = enum {
     WaitReadable,
@@ -90,7 +86,8 @@ pub const BlockingTask = struct {
             set.loop.allocator.free(iovs);
             self.write_iovs_copy = null;
         }
-        set.pop();
+        set.loop.reserved_slots -= 1;
+        set.pop(self);
     }
 
     pub fn deinit(self: *BlockingTask) void {
@@ -100,7 +97,7 @@ pub const BlockingTask = struct {
             set.loop.allocator.free(iovs);
             self.write_iovs_copy = null;
         }
-        set.inc_finished_tasks_counter();
+        set.pop(self);
     }
 
     pub fn check_result(self: *BlockingTask, result: std.os.linux.E) void {
@@ -185,6 +182,8 @@ const BlockingTasksSetLinkedList = utils.LinkedList(BlockingTasksSet);
 
 pub const BlockingTasksSet = struct {
     task_data_pool: [TotalTasksItems]BlockingTask,
+    free_slots: [TotalTasksItems]u16,
+    free_count: u16,
 
     loop: *Loop,
     index: u16,
@@ -206,6 +205,7 @@ pub const BlockingTasksSet = struct {
 
         self.index = 0;
         self.active_tasks = 0;
+        self.free_count = 0;
         self.disattached = false;
 
         self.loop = loop;
@@ -236,6 +236,7 @@ pub const BlockingTasksSet = struct {
     inline fn reset(self: *BlockingTasksSet) void {
         self.index = 0;
         self.active_tasks = 0;
+        self.free_count = 0;
     }
 
     pub fn push(
@@ -243,42 +244,42 @@ pub const BlockingTasksSet = struct {
         operation: BlockingOperation,
         callback: ?*const CallbackManager.Callback
     ) !*BlockingTask {
-        const index = self.index;
-        if (index == TotalTasksItems) return error.Overflow;
-
         try self.loop.reserve_slots(1);
 
-        const data_slot = &self.task_data_pool[index];
+        var slot_idx: u16 = undefined;
+        if (self.free_count > 0) {
+            self.free_count -= 1;
+            slot_idx = self.free_slots[self.free_count];
+        } else {
+            const index = self.index;
+            if (index == TotalTasksItems) return error.Overflow;
+            slot_idx = index;
+            @atomicStore(u16, &self.index, index + 1, .release);
+        }
+
+        const data_slot = &self.task_data_pool[slot_idx];
         
-        // GC Safety: Initialize data BEFORE incrementing index
+        // GC Safety: Initialize data BEFORE incrementing active_tasks
         data_slot.data = if (callback) |v| .{ .callback = v.* } else .none;
         data_slot.operation = operation;
         
         self.active_tasks += 1;
-        @atomicStore(u16, &self.index, index + 1, .release);
 
         return data_slot;
     }
 
-    pub inline fn pop(self: *BlockingTasksSet) void {
-        // BUG-61: Clear the slot we're about to "release".
-        // The previous code just decremented self.index, leaving
-        // the slot's data and operation fields populated. If any
-        // future code path calls pop() on a non-last task, the
-        // old data would be read incorrectly. By clearing the slot
-        // we make pop() safe regardless of which task it pops.
-        const idx = self.index - 1;
-        const slot = &self.task_data_pool[idx];
-        slot.data = .none;
-        slot.operation = undefined;
-        slot.index = 0;
-        slot.write_iovs_copy = null;
-        self.index -= 1;
-        self.active_tasks -= 1;
-        self.loop.reserved_slots -= 1;
-    }
+    pub inline fn pop(self: *BlockingTasksSet, task: *BlockingTask) void {
+        const slot_idx = task.index;
 
-    pub inline fn inc_finished_tasks_counter(self: *BlockingTasksSet) void {
+        // Clear the slot's data
+        task.data = .none;
+        task.operation = undefined;
+        task.write_iovs_copy = null;
+
+        // Push the index back to free_slots
+        self.free_slots[self.free_count] = slot_idx;
+        self.free_count += 1;
+
         const active_tasks = self.active_tasks - 1;
         if (active_tasks == 0) {
             if (self.disattached) {
@@ -352,7 +353,7 @@ pub const BlockingOperationData = union(BlockingOperation) {
 
 pub const RegisteredBufferPool = struct {
     pub const SlotSize = 65536; // 64KB
-    pub const SlotCount = 64;   // 64 slots -> 4MB (fits under host MEMLOCK limits)
+    pub const SlotCount = 16;   // 16 slots -> 1MB (fits under host MEMLOCK limits)
 
     pub const LeaseResult = struct {
         index: u16,
@@ -641,7 +642,6 @@ pub fn traverse(self: *const IO, visit: python_c.visitproc, arg: ?*anyopaque) c_
 }
 
 pub fn deinit(self: *IO) void {
-
     self.set.cancel_all(self.loop) catch {};
     self.set.deinit();
     var node: ?BlockingTasksSetLinkedList.Node = self.busy_sets.first;

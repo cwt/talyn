@@ -25,6 +25,8 @@ OPTIMIZE_MODE="Debug"
 for arg in "$@"; do
     if [ "$arg" = "--starburst" ]; then
         OPTIMIZE_MODE="ReleaseSafe"
+    elif [ "$arg" = "--releasefast" ]; then
+        OPTIMIZE_MODE="ReleaseFast"
     fi
 done
 

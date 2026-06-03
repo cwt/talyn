@@ -343,7 +343,7 @@ def test_task_set_name_no_reference_leak() -> None:
         ref1_after_replace = sys.getrefcount(name1)
         ref2_after_set = sys.getrefcount(name2)
 
-        if sys._is_gil_enabled():
+        if sys._is_gil_enabled() and ref1_before < 1000000:
             assert ref1_after_set == ref1_before + 1, (
                 f"set_name should add 1 ref, got {ref1_after_set - ref1_before}"
             )

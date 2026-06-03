@@ -58,13 +58,9 @@ fn loop_watchers_callback(data: *const CallbackManager.CallbackData) !void {
         return;
     }
 
-    // Re-arm poll (on success or timeout) — skip if loop is stopping
+    // Re-arm poll (on success or timeout)
     {
         const loop_data = watcher.loop_data;
-        if (loop_data.stopping) {
-            @call(.always_inline, loop_watchers_cleanup_callback, .{watcher});
-            return;
-        }
         const watcher_callback: CallbackManager.Callback = .{
             .func = &loop_watchers_callback,
             .cleanup = null,

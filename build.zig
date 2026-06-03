@@ -64,6 +64,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/python_c.zig"),
         .target = target,
         .optimize = optimize,
+        .single_threaded = !python_is_gil_disabled,
         .link_libc = true,
     });
 
@@ -95,6 +96,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/utils/main.zig"),
         .target = target,
         .optimize = optimize,
+        .single_threaded = !python_is_gil_disabled,
         .link_libc = true,
     });
     utils_module.addImport("python_c", python_c_module);
@@ -103,6 +105,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/callback_manager.zig"),
         .target = target,
         .optimize = optimize,
+        .single_threaded = !python_is_gil_disabled,
     });
     callback_manager_module.addImport("python_c", python_c_module);
     callback_manager_module.addImport("utils", utils_module);
@@ -111,6 +114,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
+        .single_threaded = !python_is_gil_disabled,
     });
     talyn_module.addImport("python_c", python_c_module);
     talyn_module.addImport("utils", utils_module);
