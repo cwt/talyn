@@ -39,11 +39,6 @@ inline fn fast_task_cancel(task: *PythonTaskObject, data: *Future, cancel_msg_py
     }
 
     if (cancel_msg_py_object) |pyobj| {
-        if (!python_c.unicode_check(pyobj)) {
-            python_c.raise_python_type_error("Cancel message must be a string\x00");
-            return error.PythonError;
-        }
-
         python_c.py_xdecref(task.fut.cancel_msg_py_object);
         task.fut.cancel_msg_py_object = python_c.py_newref(pyobj);
     }

@@ -8,6 +8,10 @@ const utils = @import("utils");
 
 
 inline fn raise_cancel_exception(self: *PythonFutureObject) void {
+    if (self.cancelled_exc) |exc| {
+        python_c.PyErr_SetRaisedException(python_c.py_newref(exc));
+        return;
+    }
     if (self.cancel_msg_py_object) |cancel_msg_py_object| {
         python_c.PyErr_SetObject(utils.PythonImports.cancelled_error_exc, cancel_msg_py_object);
     }else{

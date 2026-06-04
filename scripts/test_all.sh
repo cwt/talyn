@@ -22,12 +22,47 @@ PASS=0
 FAIL=0
 
 OPTIMIZE_MODE="Debug"
+SELECTED_PYTHONS="3.13 3.14 3.13t 3.14t"
 for arg in "$@"; do
-    if [ "$arg" = "--starburst" ] || [ "$arg" = "--releasefast" ]; then
-        OPTIMIZE_MODE="ReleaseFast"
-    elif [ "$arg" = "--safe" ]; then
-        OPTIMIZE_MODE="ReleaseSafe"
-    fi
+    case "$arg" in
+        --starburst|--releasefast)
+            OPTIMIZE_MODE="ReleaseFast"
+            ;;
+        --safe)
+            OPTIMIZE_MODE="ReleaseSafe"
+            ;;
+        --python=*)
+            raw="${arg#--python=}"
+            SELECTED_PYTHONS=""
+            IFS=',' read -ra _parts <<< "$raw"
+            for p in "${_parts[@]}"; do
+                case "$p" in
+                    3.13|3.14|3.13t|3.14t)
+                        SELECTED_PYTHONS="${SELECTED_PYTHONS:+${SELECTED_PYTHONS} }$p"
+                        ;;
+                    *)
+                        echo "Unknown Python in --python=: $p" >&2
+                        echo "Valid values: 3.13, 3.14, 3.13t, 3.14t" >&2
+                        exit 2
+                        ;;
+                esac
+            done
+            ;;
+        --help|-h)
+            cat <<'EOF'
+Usage: bash scripts/test_all.sh [options]
+
+Options:
+  --python=3.13,3.14t   Comma-separated list of Python versions to test
+                         (subset of: 3.13, 3.14, 3.13t, 3.14t)
+  --starburst           Build with ReleaseFast
+  --releasefast         Alias for --starburst
+  --safe                Build with ReleaseSafe
+  -h, --help            Show this help
+EOF
+            exit 0
+            ;;
+    esac
 done
 
 # ---- helpers ----
@@ -175,7 +210,8 @@ echo ""
 # Clean once at start — removes all stale build artifacts
 clean
 
-for py in python3.13 python3.14 python3.13t python3.14t; do
+for ver in $SELECTED_PYTHONS; do
+    py="python${ver}"
     if ! command -v "$py" >/dev/null 2>&1; then
         printf "${YELLOW}[%s]${NC} not found — skipping\n" "$py"
         continue

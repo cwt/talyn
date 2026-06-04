@@ -70,6 +70,12 @@ const PythonFutureMethods: []const python_c.PyMethodDef = &[_]python_c.PyMethodD
         .ml_flags = python_c.METH_NOARGS
     },
     python_c.PyMethodDef{
+        .ml_name = "_make_cancelled_error\x00",
+        .ml_meth = @ptrCast(&Cancel.future_make_cancelled_error),
+        .ml_doc = "Create the CancelledError to raise if the Future is cancelled.\x00",
+        .ml_flags = python_c.METH_NOARGS
+    },
+    python_c.PyMethodDef{
         .ml_name = null, .ml_meth = null, .ml_doc = null, .ml_flags = 0
     }
 };
@@ -82,6 +88,7 @@ pub const FutureObject = extern struct {
     exception: ?PyObject,
 
     cancel_msg_py_object: ?PyObject,
+    cancelled_exc: ?PyObject,
     blocking: u64,
     log_destroy_pending: u64
 };

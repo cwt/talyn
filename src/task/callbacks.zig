@@ -62,10 +62,6 @@ inline fn set_result(
             _ = python_c.PySet_Discard(tasks_set, @ptrCast(task));
         }
     }
-    if (task.coro) |c| {
-        python_c.py_decref(c);
-        task.coro = null;
-    }
     if (task.py_context) |ctx| {
         python_c.py_decref(ctx);
         task.py_context = null;
@@ -326,6 +322,8 @@ fn failed_execution(task: *Task.PythonTaskObject) !void {
 
     const cancelled_error = utils.PythonImports.cancelled_error_exc;
     if (exc_match(exception, cancelled_error) > 0) {
+        python_c.py_xdecref(fut.cancelled_exc);
+        fut.cancelled_exc = python_c.py_newref(exception);
         _ = Future.Python.Cancel.future_fast_cancel(fut, future_data, null) catch |err| {
             utils.handle_zig_function_error(err, {});
 
@@ -335,11 +333,6 @@ fn failed_execution(task: *Task.PythonTaskObject) !void {
             return error.PythonError;
         };
         python_c.py_decref(exception);
-        if (task.coro) |c| {
-            python_c.py_decref(c);
-            task.coro = null;
-            future_data.python_payload.callback_ptr = null;
-        }
         if (task.py_context) |ctx| {
             python_c.py_decref(ctx);
             task.py_context = null;
@@ -352,11 +345,6 @@ fn failed_execution(task: *Task.PythonTaskObject) !void {
     }
 
     try Future.Python.Result.future_fast_set_exception(fut, future_data, exception);
-    if (task.coro) |c| {
-        python_c.py_decref(c);
-        task.coro = null;
-        future_data.python_payload.callback_ptr = null;
-    }
     if (task.py_context) |ctx| {
         python_c.py_decref(ctx);
         task.py_context = null;
