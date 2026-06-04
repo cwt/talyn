@@ -101,27 +101,61 @@ run_tests() {
 run_std_tests() {
     local py="$1" label="$2" cmd=""
     printf "${YELLOW}[%s]${NC} Running standard asyncio tests...\n" "$label"
-    
-    # We only run a subset of standard tests that are known to be 100% compatible
-    # to avoid noise from known minor deviations.
-    local std_modules="test_futures test_transports test_protocols test_streams test_runners"
-    
+
+    # All applicable standard asyncio test modules.
+    # Excluded (not applicable to Talyn):
+    #   test_selector_events, test_base_events, test_events  — selector-implementation internals
+    #   test_unix_events                                      — Unix selector-watcher internals
+    #   test_proactor_events                                  — Windows Proactor
+    #   test_windows_events, test_windows_utils               — Windows only
+    #   test_buffered_proto                                   — selector-tied
+    local std_modules="
+        test_futures        test_futures2
+        test_transports     test_protocols
+        test_streams        test_runners
+        test_tasks
+        test_locks
+        test_queues
+        test_timeouts       test_waitfor
+        test_taskgroups
+        test_pep492         test_threads
+        test_staggered      test_graph
+        test_tools          test_context
+        test_eager_task_factory
+        test_free_threading
+        test_subprocess
+        test_server
+        test_ssl            test_sslproto
+        test_sendfile       test_sock_lowlevel
+    "
+
     local failed=0
     for mod in $std_modules; do
         if has_timeout; then
-            cmd="$(get_timeout_cmd) -k 5 60 $py"
+            # 120s per module — large suites (test_tasks: 169 tests) need the headroom.
+            # The OS timeout kills the whole process on hang, so this is safe.
+            cmd="$(get_timeout_cmd) -k 5 120 $py"
         else
             cmd="$py"
         fi
-        
-        if ! PYTHONPATH=. $cmd -c "import talyn; talyn.install(); import unittest; from test.test_asyncio import $mod; unittest.main(module=$mod, exit=False, argv=['-q'])" >/dev/null 2>&1; then
-            printf "  ${RED}%s: FAIL${NC}\n" "$mod"
-            failed=1
-        else
+
+        if PYTHONPATH=. $cmd -c \
+            "import talyn; talyn.install(); import unittest; from test.test_asyncio import $mod; unittest.main(module=$mod, exit=False, argv=['-q'])" \
+            > /dev/null 2>&1; then
             printf "  ${GREEN}%s: PASS${NC}\n" "$mod"
+        else
+            rc=$?
+            if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+                printf "  ${YELLOW}%s: TIMEOUT${NC}\n" "$mod"
+            elif [ "$rc" -eq 139 ]; then
+                printf "  ${YELLOW}%s: SEGFAULT${NC}\n" "$mod"
+            else
+                printf "  ${RED}%s: FAIL${NC}\n" "$mod"
+            fi
+            failed=1
         fi
     done
-    
+
     if [ "$failed" -eq 0 ]; then
         printf "${GREEN}[%s] STD PASS${NC}\n" "$label"
         return 0
