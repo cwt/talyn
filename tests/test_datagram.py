@@ -224,4 +224,3 @@ async def test_datagram_close_with_pending_operations():
 
     assert t2.is_closing()
     assert t1.is_closing()
-

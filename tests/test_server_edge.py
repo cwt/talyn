@@ -1,7 +1,4 @@
 import asyncio
-import resource
-import socket
-import threading
 
 import pytest
 

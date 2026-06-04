@@ -473,7 +473,6 @@ def test_future_cancel_msg_no_reference_leak() -> None:
     try:
         future = Future(loop=loop)
         msg = "cancelled by user"
-        ref_before = sys.getrefcount(msg)
 
         future.cancel(msg=msg)
         ref_after_cancel = sys.getrefcount(msg)
@@ -485,6 +484,7 @@ def test_future_cancel_msg_no_reference_leak() -> None:
         del future
         del future2
         import gc
+
         gc.collect()
         ref_after_del = sys.getrefcount(msg)
 

@@ -132,8 +132,8 @@ pub const ProtocolType = enum(c_int) {
 pub const StreamTransportObject = extern struct {
     ob_base: python_c.PyObject,
 
-    write_transport: [@sizeOf(WriteStream)]u8,
-    read_transport: [@sizeOf(ReadStream)]u8,
+    write_transport: [@sizeOf(WriteStream)]u8 align(@alignOf(WriteStream)),
+    read_transport: [@sizeOf(ReadStream)]u8 align(@alignOf(ReadStream)),
 
     loop: ?PyObject,
 

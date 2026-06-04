@@ -1408,3 +1408,26 @@ When standard CPython's GIL is disabled under free-threading (`python3.13t` / `p
     5. **Log level**: config has `log_level: LogLevel` but the logger always uses INFO.
     The general rule: **for any configuration field on a struct, use it.** If you add a field, it should be read somewhere. A field that's defined but never read is a code smell — either it's dead code, or it's a bug waiting to happen when someone tries to use it.
 
+---
+
+### 102. Aligning Python C-Mappings for LLVM Vectorization (2026-06-04)
+
+*   **The Bug:** Under `ReleaseFast` optimization, the compiler vectorized read/write patterns for Python transport and future structures aggressively. Struct fields mapped to Python objects (e.g., `FutureObject.data`, `StreamTransportObject.write_transport`, etc.) lacked explicit alignment declarations, causing memory access violations when LLVM vectorized instructions attempted aligned vector moves (`movdqa`) on unaligned structures. This caused segfaults only in `ReleaseFast` mode.
+*   **The Fix:** Added explicit alignment declarations utilizing `@alignOf(PyObject)` or matching structures on the fields inside `src/future/python/main.zig`, `src/transports/datagram/main.zig`, and `src/transports/stream/main.zig`.
+*   **The Lesson:** When matching C-structures (like Python's custom objects) within Zig, do not rely on implicit alignment. ReleaseFast optimizations (especially vectorizers) assume standard pointer alignment and compile code with aligned instruction variants. Always explicitly declare alignments matching the target C structures to prevent compiler optimizations from triggering segfaults.
+
+---
+
+### 103. Const Declarations and Type Folding (2026-06-04)
+
+*   **The Bug:** Type specifications/descriptors (such as `loop_spec`, `datagram_spec`, and `stream_spec`) were declared as `const`. Under `ReleaseFast` optimizations, LLVM aggressively folded these type descriptors, resulting in missing or incorrectly optimized type checks at runtime in standard python targets.
+*   **The Fix:** Changed the specifications in the entry points to `var` declarations, preventing the compiler from statically const-folding them.
+*   **The Lesson:** Type descriptors or registry configurations meant to interact with dynamic runtime environments (like Python's C API type registration) should be declared as `var` if the optimizer could aggressively fold or prune them.
+
+---
+
+### 104. Watcher Re-arming Races on Stopping Loop (2026-06-04)
+
+*   **The Bug:** In `ReleaseFast` mode, removing `IOSQE_ASYNC` makes `poll_add` operations register immediately and synchronously in the kernel. Watchers that trigger and re-arm immediately (such as level-triggered file descriptor readers in standard test suites) would immediately push new events into the loop. During shutdown, an modified loop runner that attempted to completely drain both swap queues before exiting would hang indefinitely in a loop with these active, self-re-arming watchers.
+*   **The Fix:** Reverted the loop shutdown runner control logic in `src/loop/runner.zig` back to the standard Python AsyncIO specification: breaking at the end of the current iteration when `stopping` is true, rather than blocking on empty queues.
+*   **The Lesson:** Align runner loop conditions strictly with standard runtime behaviors. Attempting to run a "thorough cleanup drain" on an event loop can lead to infinite loops if active watchers continue to re-arm. Exit the runner immediately and handle remaining watcher cleanup during loop deinitialization instead.

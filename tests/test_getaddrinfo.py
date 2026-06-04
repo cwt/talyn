@@ -79,6 +79,7 @@ def test_getaddrinfo_localhost_hostname() -> None:
     This test resolves "localhost" through getaddrinfo, which follows the full
     async DNS code path (unlike a raw IP which is handled synchronously).
     """
+
     async def main() -> None:
         loop = asyncio.get_running_loop()
         # getaddrinfo("localhost", ...) goes through the async resolver path
@@ -102,12 +103,15 @@ def test_getaddrinfo_repeated_resolution_same_hostname() -> None:
     succeeds (or both fail).  After the fix the cache is written correctly
     and the second call can be served from cache.
     """
+
     async def main() -> None:
         loop = asyncio.get_running_loop()
         r1 = await loop.getaddrinfo("localhost", 80, type=socket.SOCK_STREAM)
         r2 = await loop.getaddrinfo("localhost", 443, type=socket.SOCK_STREAM)
         assert r1, "First getaddrinfo call returned empty — DNS failed"
-        assert r2, "Second getaddrinfo call returned empty — DNS failed (regression e1db5b9)"
+        assert r2, (
+            "Second getaddrinfo call returned empty — DNS failed (regression e1db5b9)"
+        )
         # Both should resolve to a loopback address
         assert r1[0][4][0] in ("127.0.0.1", "::1")
         assert r2[0][4][0] in ("127.0.0.1", "::1")

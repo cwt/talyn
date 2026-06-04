@@ -278,9 +278,10 @@ def test_create_connection_all_errors() -> None:
 
 def test_create_connection_ssl_passes_kwargs() -> None:
     """BUG-19: _create_ssl_connection must forward connection kwargs."""
-    from talyn.loop import Loop as TalynLoop
-    from unittest.mock import patch
     import ssl
+    from unittest.mock import patch
+
+    from talyn.loop import Loop as TalynLoop
 
     captured_kwargs: dict[str, object] = {}
 
@@ -327,6 +328,7 @@ def test_create_connection_ssl_passes_kwargs() -> None:
         assert captured_kwargs.get("all_errors") == False
 
     from talyn import Loop
+
     loop = Loop()
     try:
         loop.run_until_complete(test())

@@ -21,8 +21,8 @@ pub const DatagramTransportObject = extern struct {
     protocol_error_received: ?PyObject,
     protocol_connection_lost: ?PyObject,
 
-    write_buf: [@sizeOf(WriteTransport)]u8,
-    read_buf: [@sizeOf(ReadTransport)]u8,
+    write_buf: [@sizeOf(WriteTransport)]u8 align(@alignOf(WriteTransport)),
+    read_buf: [@sizeOf(ReadTransport)]u8 align(@alignOf(ReadTransport)),
 
     buffer_size: usize,
     writing_high_water_mark: usize,
@@ -244,7 +244,7 @@ const DatagramSlots: []const python_c.PyType_Slot = &[_]python_c.PyType_Slot{
 
 // const PythonDatagramMembers: []const python_c.PyMemberDef = &[_]python_c.PyMemberDef{
 
-const datagram_spec = python_c.PyType_Spec{
+var datagram_spec = python_c.PyType_Spec{
     .name = "talyn.DatagramTransport\x00",
     .basicsize = @sizeOf(DatagramTransportObject),
     .itemsize = 0,

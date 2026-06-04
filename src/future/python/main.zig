@@ -76,7 +76,7 @@ const PythonFutureMethods: []const python_c.PyMethodDef = &[_]python_c.PyMethodD
 
 pub const FutureObject = extern struct {
     ob_base: python_c.PyObject,
-    data: [@sizeOf(Future)]u8,
+    data: [@sizeOf(Future)]u8 align(@alignOf(Future)),
 
     py_loop: ?PyObject,
     exception: ?PyObject,

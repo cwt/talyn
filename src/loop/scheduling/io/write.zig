@@ -37,7 +37,6 @@ pub fn wait_ready(ring: *std.os.linux.IoUring, set: *IO.BlockingTasksSet, data: 
 
     const fd_arg: std.os.linux.fd_t = if (data.fixed_file_index) |ffi| ffi else data.fd;
     const sqe = try ring.poll_add(@intCast(@intFromPtr(data_ptr)), fd_arg, std.c.POLL.OUT);
-    sqe.flags |= std.os.linux.IOSQE_ASYNC;
     sqe.flags |= if (data.fixed_file_index != null) std.os.linux.IOSQE_FIXED_FILE else 0;
 
     if (data.timeout) |*timeout| {

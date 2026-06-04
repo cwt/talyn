@@ -8,6 +8,7 @@ This test forces interpreter shutdown and verifies the process exits cleanly
 without the BUG-41 latent refcount underflow. We detect the underflow by
 tracking the C type's refcount across multiple interpreter lifetimes.
 """
+
 import subprocess
 import sys
 
@@ -24,8 +25,8 @@ _ = talyn.Loop
 # mainly verify the process exits with returncode 0.
 """
     r = subprocess.run(
-        [sys.executable, '-c', code],
-        env={'PYTHONPATH': '.'},
+        [sys.executable, "-c", code],
+        env={"PYTHONPATH": "."},
         capture_output=True,
         text=True,
     )
@@ -48,13 +49,13 @@ def test_bug41_type_refcount_stable() -> None:
     1. The refcount must remain positive (refcount underflow = negative).
     2. The refcount must not change drastically across a gc cycle.
     """
-    import talyn
-    tz = sys.modules['talyn.talyn_zig']
+    tz = sys.modules["talyn.talyn_zig"]
     c_loop_type = tz.Loop
 
     rc1 = sys.getrefcount(c_loop_type)
     # Force a gc cycle (Python does its own cleanup; this just exercises it).
     import gc
+
     gc.collect()
     rc2 = sys.getrefcount(c_loop_type)
     # Invariant 1: refcount must be positive. An underflowed refcount

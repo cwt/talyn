@@ -354,7 +354,7 @@ const loop_slots = [_]python_c.PyType_Slot{
     .{ .slot = 0, .pfunc = null },
 };
 
-const loop_spec = python_c.PyType_Spec{
+var loop_spec = python_c.PyType_Spec{
     .name = "talyn.Loop\x00",
     .basicsize = @sizeOf(LoopObject),
     .itemsize = 0,

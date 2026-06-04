@@ -392,8 +392,12 @@ def test_task_cancel_awaited_future() -> None:
             pass
 
         # The inner future should have been cancelled
-        assert inner_future.cancelled(), "Inner future should be cancelled when task is cancelled"
-        assert "inner" in cancelled_futures, "Inner future's CancelledError should have been caught"
+        assert inner_future.cancelled(), (
+            "Inner future should be cancelled when task is cancelled"
+        )
+        assert "inner" in cancelled_futures, (
+            "Inner future's CancelledError should have been caught"
+        )
         assert task.cancelled(), "Task should be cancelled"
     finally:
         loop.close()
