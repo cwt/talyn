@@ -16,8 +16,8 @@ Deep static analysis of the talyn codebase. Bugs are ordered by severity.
 | Medium-High | 11 | 11 | 0 |
 | Medium-Mid | 11 | 11 | 0 |
 | Medium-Low | 12 | 12 | 0 |
-| Low | 25 | 2 | 23 |
-| **Total** | **84** | **61** | **23** |
+| Low | 25 | 22 | 3 |
+| **Total** | **84** | **81** | **3** |
 
 All CRITICAL, HIGH, MEDIUM-HIGH, MEDIUM-MID, and MEDIUM-LOW bugs have been
 verified fixed at HEAD (commits `401866ea4196` through HEAD). Each fixed bug
