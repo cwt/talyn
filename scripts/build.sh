@@ -49,7 +49,7 @@ for py in "${PYTHONS[@]}"; do
     find . -name '*.pyc' -delete 2>/dev/null || true
 
     printf "${GREEN}[%s]${NC} Compiling and building binary wheel...\n" "$py"
-    if TALYN_OPTIMIZE=ReleaseSafe TALYN_CPU=x86_64 "$py" setup.py bdist_wheel --dist-dir "$DIST_DIR" --plat-name manylinux_2_36_x86_64; then
+    if TALYN_OPTIMIZE=ReleaseFast TALYN_CPU=x86_64 "$py" setup.py bdist_wheel --dist-dir "$DIST_DIR" --plat-name manylinux_2_36_x86_64; then
         printf "${GREEN}[%s] Wheel successfully built!${NC}\n\n" "$py"
         BUILT_COUNT=$((BUILT_COUNT + 1))
     else

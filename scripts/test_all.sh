@@ -23,10 +23,10 @@ FAIL=0
 
 OPTIMIZE_MODE="Debug"
 for arg in "$@"; do
-    if [ "$arg" = "--starburst" ]; then
-        OPTIMIZE_MODE="ReleaseSafe"
-    elif [ "$arg" = "--releasefast" ]; then
+    if [ "$arg" = "--starburst" ] || [ "$arg" = "--releasefast" ]; then
         OPTIMIZE_MODE="ReleaseFast"
+    elif [ "$arg" = "--safe" ]; then
+        OPTIMIZE_MODE="ReleaseSafe"
     fi
 done
 
