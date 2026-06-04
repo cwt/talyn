@@ -139,8 +139,8 @@ run_std_tests() {
             cmd="$py"
         fi
 
-        if PYTHONPATH=. $cmd -c \
-            "import talyn; talyn.install(); import unittest; from test.test_asyncio import $mod; unittest.main(module=$mod, exit=False, argv=['-q'])" \
+        if ( PYTHONPATH=. $cmd -c \
+            "import talyn; talyn.install(); import unittest; from test.test_asyncio import $mod; unittest.main(module=$mod, exit=False, argv=['-q'])"; exit $? ) \
             > /dev/null 2>&1; then
             printf "  ${GREEN}%s: PASS${NC}\n" "$mod"
         else
