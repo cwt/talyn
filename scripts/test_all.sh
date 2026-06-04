@@ -132,9 +132,9 @@ run_std_tests() {
     local failed=0
     for mod in $std_modules; do
         if has_timeout; then
-            # 120s per module — large suites (test_tasks: 169 tests) need the headroom.
-            # The OS timeout kills the whole process on hang, so this is safe.
-            cmd="$(get_timeout_cmd) -k 5 120 $py"
+            # 30s per module — passing modules finish in <5s; a hanging module
+            # gets killed quickly rather than blocking the whole suite.
+            cmd="$(get_timeout_cmd) -k 5 30 $py"
         else
             cmd="$py"
         fi
