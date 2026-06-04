@@ -16,8 +16,8 @@ Deep static analysis of the talyn codebase. Bugs are ordered by severity.
 | Medium-High | 11 | 11 | 0 |
 | Medium-Mid | 11 | 11 | 0 |
 | Medium-Low | 12 | 12 | 0 |
-| Low | 25 | 25 | 0 |
-| **Total** | **84** | **84** | **0** |
+| Low | 26 | 26 | 0 |
+| **Total** | **85** | **85** | **0** |
 
 All CRITICAL, HIGH, MEDIUM-HIGH, MEDIUM-MID, and MEDIUM-LOW bugs have been
 verified fixed at HEAD (commits `401866ea4196` through HEAD). Each fixed bug
@@ -750,4 +750,11 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **File**: `src/task/callbacks.zig:338, 353`
 - **Description**: When a task's coroutine exits with an error, `failed_execution` frees `task.coro` and sets it to `null`. However, `future_data.python_payload.callback_ptr` still points to the old `coro` pointer. When the task's failure is handled, `exception_handler` passes this pointer (as `callback`) to Python's `call_exception_handler`. Python's `default_exception_handler` tries to log the callback by calling `repr()`, which dereferences the deallocated pointer and triggers a SEGFAULT.
 - **Consequences**: Segment faults in `test_tasks` when exception handling is triggered.
+- **Status**: ✅ Fixed (see commit log)
+
+### BUG-85: Use-after-free and memory corruption of context variables in generic python callbacks
+
+- **File**: `src/handle.zig:69-96`, `src/callback_manager.zig:472-593`
+- **Description**: When a generic python callback executed, if it succeeded, it released the handle reference using `python_c.py_decref(handle)` before `PyContext_Exit` ran. This resulted in `contextvars` being deallocated while still active on the context stack, leading to use-after-free heap corruption when context operations were triggered subsequently. Additionally, on callback failure, the handle reference was double-decreffed (by the callback function itself and by the loop runner's exception cleanup), and the callback pointer was accessed by the exception handler after the handle and its callback object were already deallocated.
+- **Consequences**: Segment faults in `test_futures2`, `test_streams`, `test_tasks`, `test_locks`, `test_queues`, `test_timeouts`, and `test_waitfor` standard asyncio test suites.
 - **Status**: ✅ Fixed (see commit log)
