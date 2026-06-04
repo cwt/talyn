@@ -338,6 +338,7 @@ fn failed_execution(task: *Task.PythonTaskObject) !void {
         if (task.coro) |c| {
             python_c.py_decref(c);
             task.coro = null;
+            future_data.python_payload.callback_ptr = null;
         }
         if (task.py_context) |ctx| {
             python_c.py_decref(ctx);
@@ -354,6 +355,7 @@ fn failed_execution(task: *Task.PythonTaskObject) !void {
     if (task.coro) |c| {
         python_c.py_decref(c);
         task.coro = null;
+        future_data.python_payload.callback_ptr = null;
     }
     if (task.py_context) |ctx| {
         python_c.py_decref(ctx);

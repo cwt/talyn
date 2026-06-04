@@ -460,9 +460,16 @@ def test_future_get_result_exception_no_reference_leak() -> None:
             pass
 
         ref_after = sys.getrefcount(exc)
-        assert ref_after == ref_before - 1, (
-            f"Expected refcount {ref_before - 1}, got {ref_after}. "
-            f"get_result should transfer ownership to PyErr_SetRaisedException"
+        assert ref_after == ref_before, (
+            f"Expected refcount {ref_before}, got {ref_after}."
+        )
+
+        del future
+        import gc
+        gc.collect()
+        ref_final = sys.getrefcount(exc)
+        assert ref_final == ref_before - 1, (
+            f"Expected refcount {ref_before - 1} after dealloc, got {ref_final}."
         )
     finally:
         loop.close()
