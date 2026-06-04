@@ -470,13 +470,10 @@ pub fn execute_ring_buffer(
         callbacks_executed += 1;
 
         callback.func(&callback.data) catch |err| {
-            // Always run cleanup before any branching.
-            // Previously, cleanup+consume were inside a defer registered AFTER
-            // the fatal-exception early return, so KeyboardInterrupt/SystemExit
-            // would leave the ring buffer slot permanently occupied and leak the
-            // task/handle reference. (BUG-24)
-            if (callback.cleanup) |cleanup| {
-                cleanup(callback.data.user_data);
+            defer {
+                if (callback.cleanup) |cleanup| {
+                    cleanup(callback.data.user_data);
+                }
             }
 
             // Now check for fatal exceptions BEFORE calling the handler.
@@ -569,6 +566,12 @@ pub fn execute_dynamic_ring_buffer(
         ring.consume();
 
         callback.func(&callback.data) catch |err| {
+            defer {
+                if (callback.cleanup) |cleanup| {
+                    cleanup(callback.data.user_data);
+                }
+            }
+
             if (err == error.PythonError) {
                 if (python_c.PyErr_Occurred()) |exc| {
                     if (python_c.PyErr_GivenExceptionMatches(exc, python_c.PyExc_KeyboardInterrupt.?) != 0 or
@@ -579,9 +582,6 @@ pub fn execute_dynamic_ring_buffer(
             }
 
             defer {
-                if (callback.cleanup) |cleanup| {
-                    cleanup(callback.data.user_data);
-                }
                 callbacks_executed += 1;
             }
 

@@ -67,13 +67,17 @@ pub fn callback_for_python_generic_callbacks(data: *const CallbackManager.Callba
 
     const py_context = handle.contextvars.?;
     if (python_c.PyContext_Enter(py_context) < 0) {
-        python_c.py_decref(@ptrCast(handle));
         return error.PythonError;
     }
-    defer python_c.py_decref(@ptrCast(handle));
+    var success = false;
+    defer {
+        if (success) {
+            python_c.py_decref(@ptrCast(handle));
+        }
+    }
     defer _ = python_c.PyContext_Exit(py_context);
 
-    var result: PyObject = undefined;
+    var result: ?PyObject = null;
     if (handle.py_callback_args) |args_ptr| {
         const args_len = handle.py_callback_len;
         const args_tuple = python_c.PyTuple_New(@intCast(args_len)) orelse return error.PythonError;
@@ -87,13 +91,17 @@ pub fn callback_for_python_generic_callbacks(data: *const CallbackManager.Callba
             }
         }
 
-        result = python_c.PyObject_Call(handle.py_callback.?, args_tuple, null)
-            orelse return error.PythonError;
+        result = python_c.PyObject_Call(handle.py_callback.?, args_tuple, null);
     }else{
-        result = python_c.PyObject_CallNoArgs(handle.py_callback.?)
-            orelse return error.PythonError;
+        result = python_c.PyObject_CallNoArgs(handle.py_callback.?);
     }
-    python_c.py_decref(result);
+
+    if (result) |res| {
+        python_c.py_decref(res);
+        success = true;
+    } else {
+        return error.PythonError;
+    }
 }
 
 pub inline fn fast_new_handle(
