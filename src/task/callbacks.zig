@@ -628,7 +628,6 @@ fn wakeup_task(fut: ?*Future.Python.FutureObject, ptr: ?*anyopaque) !void {
     errdefer python_c.py_decref(@ptrCast(task));
 
     if (talyn_fut.exception) |exception| {
-        talyn_fut.exception = null;
         _execute_task_throw(task, python_c.py_newref(exception)) catch |err| {
             utils.handle_zig_function_error(err, {});
 

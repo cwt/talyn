@@ -7,7 +7,7 @@ Deep static analysis of the talyn codebase. Bugs are ordered by severity.
 
 ---
 
-## Status Summary (as of 2026-06-02)
+## Status Summary (as of 2026-06-04)
 
 | Severity | Total | Fixed | Open |
 |----------|-------|-------|------|
@@ -16,8 +16,8 @@ Deep static analysis of the talyn codebase. Bugs are ordered by severity.
 | Medium-High | 11 | 11 | 0 |
 | Medium-Mid | 11 | 11 | 0 |
 | Medium-Low | 12 | 12 | 0 |
-| Low | 20 | 0 | 20 |
-| **Total** | **79** | **59** | **20** |
+| Low | 24 | 1 | 23 |
+| **Total** | **83** | **60** | **23** |
 
 All CRITICAL, HIGH, MEDIUM-HIGH, MEDIUM-MID, and MEDIUM-LOW bugs have been
 verified fixed at HEAD (commits `401866ea4196` through HEAD). Each fixed bug
@@ -717,6 +717,34 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **Consequences**: Missed performance optimization.
 - **Status**: ✅ Fixed (see commit log)
 
+### BUG-80: `get_result` null pointer panic on exception
+
+- **File**: `src/future/python/result.zig:25-32`, `src/task/callbacks.zig:631`
+- **Description**: When a future finishes with an exception, `future_fast_set_exception` sets the exception field and updates status to `.finished`, leaving `future_data.result` as `null`. Previously, `get_result` cleared `self.exception = null` when retrieving the exception, which meant subsequent calls to `get_result` would see `self.exception = null` and fall through to return `future_data.result.?` (which is null), triggering a panic/segfault. Additionally, `wakeup_task` cleared `talyn_fut.exception = null` when throwing the exception into the coroutine, which also caused subsequent result retrievals on the awaited future to panic.
+- **Consequences**: Segfault/panic (attempt to use null value) in `test_tasks` and `test_graph` standard asyncio test suites.
+- **Status**: ✅ Fixed (see commit log)
+
+### BUG-81: `test_eager_task_factory` timeout/hang
+
+- **File**: TBD
+- **Description**: The standard `test_eager_task_factory` module hangs indefinitely when executed under Talyn.
+- **Consequences**: Test suite hangs.
+- **Status**: ❌ Open
+
+### BUG-82: `test_subprocess` timeout/hang
+
+- **File**: TBD
+- **Description**: The standard `test_subprocess` module hangs indefinitely when executed under Talyn.
+- **Consequences**: Test suite hangs.
+- **Status**: ❌ Open
+
+### BUG-83: `test_ssl` timeout/hang
+
+- **File**: TBD
+- **Description**: The standard `test_ssl` module hangs indefinitely when executed under Talyn.
+- **Consequences**: Test suite hangs.
+- **Status**: ❌ Open
+
 ---
 
 ## Summary
@@ -728,9 +756,10 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 | Medium-High | 11 (11 fixed) |
 | Medium-Mid | 11 (11 fixed) |
 | Medium-Low | 12 (12 fixed) |
-| Low | 20 (20 fixed) |
-| **Total** | **79** (79 fixed, 0 open) |
+| Low | 24 (1 fixed, 23 open) |
+| **Total** | **83** (60 fixed, 23 open) |
 
 ### Recommended Fix Priority (remaining)
 
-🎉 **All bugs fixed!** No remaining items.
+1. BUG-81, BUG-82, BUG-83 (low hanging timeouts in test suite)
+2. Other Open Low bugs
