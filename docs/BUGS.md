@@ -16,8 +16,8 @@ Deep static analysis of the talyn codebase. Bugs are ordered by severity.
 | Medium-High | 11 | 11 | 0 |
 | Medium-Mid | 11 | 11 | 0 |
 | Medium-Low | 12 | 12 | 0 |
-| Low | 25 | 22 | 3 |
-| **Total** | **84** | **81** | **3** |
+| Low | 25 | 25 | 0 |
+| **Total** | **84** | **84** | **0** |
 
 All CRITICAL, HIGH, MEDIUM-HIGH, MEDIUM-MID, and MEDIUM-LOW bugs have been
 verified fixed at HEAD (commits `401866ea4196` through HEAD). Each fixed bug
@@ -729,21 +729,21 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **File**: TBD
 - **Description**: The standard `test_eager_task_factory` module hangs indefinitely when executed under Talyn.
 - **Consequences**: Test suite hangs.
-- **Status**: ❌ Open
+- **Status**: ✅ Fixed (resolved by BUG-80 and BUG-84)
 
 ### BUG-82: `test_subprocess` timeout/hang
 
 - **File**: TBD
 - **Description**: The standard `test_subprocess` module hangs indefinitely when executed under Talyn.
 - **Consequences**: Test suite hangs.
-- **Status**: ❌ Open
+- **Status**: ✅ Fixed (resolved by BUG-80 and BUG-84)
 
 ### BUG-83: `test_ssl` timeout/hang
 
 - **File**: TBD
 - **Description**: The standard `test_ssl` module hangs indefinitely when executed under Talyn.
 - **Consequences**: Test suite hangs.
-- **Status**: ❌ Open
+- **Status**: ✅ Fixed (resolved by BUG-80 and BUG-84)
 
 ### BUG-84: `task.coro` use-after-free in exception handler
 
