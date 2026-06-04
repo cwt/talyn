@@ -38,7 +38,7 @@ This experience led to an important shift in the project’s direction.
 
 ## Performance Journey to v0.5.0
 
-As of changeset 566, our preliminary benchmark results on Python [3.14](benchmarks-566-3.14.txt) and [3.14t](benchmarks-566-3.14t.txt) were promising. But there was a massive catch: those benchmarks were run on a **Debug** build!
+As of changeset 566, our preliminary benchmark results on Python [3.14](benchmarks/core-ultra-7-265/benchmarks-566-3.14.txt) and [3.14t](benchmarks/core-ultra-7-265/benchmarks-566-3.14t.txt) were promising. But there was a massive catch: those benchmarks were run on a **Debug** build!
 
 When I finally compiled a **ReleaseSafe** build (our `--starburst` mode), everything broke. The optimized build exposed severe, hidden concurrency bugs, especially under free-threading. I tried to isolate the bugs by compiling only the `io` module in `Debug` mode while keeping the rest of the modules in `ReleaseSafe`. While this hybrid approach worked well for a while, it still wasn't 100% stable under high stress. 
 
@@ -47,13 +47,34 @@ At that point, I suspected that my main development machine (an Intel Core Ultra
 To flush these bugs out, I switched my development environment to my mini PC powered by a much slower Intel N6000 CPU. The resource-constrained processor immediately exposed the race conditions, deadlocks, and scheduling issues. I spent days debugging and iterating on this mini PC until we resolved every single crash, hang, and deadlock, finally bringing us to a rock-solid, production-grade **v0.5.0**.
 
 Here are the fresh, fully optimized benchmark results in `ReleaseSafe` mode for v0.5.0:
-- Python [3.14](benchmarks-v0.5.0-3.14.txt)
-- Python [3.14t](benchmarks-v0.5.0-3.14t.txt)
+- Python [3.14](benchmarks/n6000/benchmarks-v0.5.0-3.14.txt)
+- Python [3.14t](benchmarks/n6000/benchmarks-v0.5.0-3.14t.txt)
 
 **Key observations:**
 - Talyn performs very close to standard `asyncio` in many real-world-like workloads (Chat, Food Delivery, Subprocess, etc.).
 - It shows great scaling and stability on free-threaded Python (3.14t) even under high concurrency.
 - It is still noticeably behind `uvloop` in raw socket-heavy and task-spawning workloads under standard GIL Python, but is highly competitive and stable under free-threading.
+
+## Performance & Stability: Reaching v0.6.0
+
+With **v0.5.0** fully stable in `ReleaseSafe` mode, we turned our attention to the final barrier: **`ReleaseFast`** optimizations. For a long time, the project suffered from regressions when compiled with `ReleaseFast`—specifically failing standard Python AsyncIO test suites (`test_streams`). 
+
+Through rigorous investigation, we uncovered three core compiler and optimization-related issues that only surfaced under the aggressive code reordering of `ReleaseFast`:
+1. **Strict C-Struct Memory Alignment**: The LLVM optimizer vectorized memory operations aggressively. Structs matching Python C-mappings (such as `FutureObject.data`) lacked explicit alignment declarations, causing memory faults during vectorized operations.
+2. **Aggressive Const-Folding**: Essential type descriptors (like `loop_spec`) were folded away as compile-time constants by the optimizer, losing runtime type check guarantees.
+3. **Shutdown re-arming races**: By removing asynchronous queuing (`IOSQE_ASYNC`) to maximize speed, active event watchers (like test readers) registered synchronously and re-armed themselves instantly, creating an infinite loop during stopping iterations.
+
+By correcting alignments, declaring type specs as mutable `var` instances to prevent folding, and adhering to strict Python AsyncIO stop semantics (exiting at the end of the iteration), we fully resolved all `ReleaseFast` stability bugs. 
+
+Consequently, we updated **Starburst mode (`--starburst`) to point to `ReleaseFast` by default** and added a `--safe` flag for `ReleaseSafe`. The results speak for themselves, delivering massive performance gains—such as doubling throughput on **TCP Echo** and turning a **Socket Ops** deficit into a victory over standard `asyncio`—all while maintaining the exact same 100% stability.
+
+Here are the benchmark results for v0.6.0 across both platforms:
+- **Intel Core Ultra 7 265**:
+  - Python 3.14: [Debug](benchmarks/core-ultra-7-265/benchmarks-v0.6.0-3.14-debug.txt) | [Safe](benchmarks/core-ultra-7-265/benchmarks-v0.6.0-3.14-safe.txt) | [Starburst (ReleaseFast)](benchmarks/core-ultra-7-265/benchmarks-v0.6.0-3.14-starburst.txt)
+  - Python 3.14t: [Debug](benchmarks/core-ultra-7-265/benchmarks-v0.6.0-3.14t-debug.txt) | [Safe](benchmarks/core-ultra-7-265/benchmarks-v0.6.0-3.14t-safe.txt) | [Starburst (ReleaseFast)](benchmarks/core-ultra-7-265/benchmarks-v0.6.0-3.14t-starburst.txt)
+- **Intel N6000**:
+  - Python 3.14: [Debug](benchmarks/n6000/benchmarks-v0.6.0-3.14-debug.txt) | [Safe](benchmarks/n6000/benchmarks-v0.6.0-3.14-safe.txt) | [Starburst (ReleaseFast)](benchmarks/n6000/benchmarks-v0.6.0-3.14-starburst.txt)
+  - Python 3.14t: [Debug](benchmarks/n6000/benchmarks-v0.6.0-3.14t-debug.txt) | [Safe](benchmarks/n6000/benchmarks-v0.6.0-3.14t-safe.txt) | [Starburst (ReleaseFast)](benchmarks/n6000/benchmarks-v0.6.0-3.14t-starburst.txt)
 
 ---
 
