@@ -1465,10 +1465,148 @@ class Loop(_Loop):
 
             orig_factory = protocol_factory
 
+            class _ReadPipeTransport:
+                """Async read pipe transport backed by a Popen file fd.
+
+                Implements the transport half of asyncio.streams.StreamReader
+                for a subprocess pipe. Reads from the fd into a buffer and
+                feeds bytes to the protocol via pipe_data_received(fd, data);
+                signals EOF via pipe_connection_lost(fd, None).
+                """
+
+                def __init__(self, loop, fd, pipe_fd):
+                    self._loop = loop
+                    self._fd = fd
+                    self._pipe_fd = pipe_fd
+                    self._protocol = None
+                    self._closing = False
+                    self._closed = False
+                    self._eof = False
+                    self._loop.add_reader(fd, self._on_readable)
+
+                def set_protocol(self, protocol):
+                    self._protocol = protocol
+
+                def get_protocol(self):
+                    return self._protocol
+
+                def is_closing(self):
+                    return self._closing or self._closed
+
+                def close(self):
+                    if self._closed:
+                        return
+                    self._closing = True
+                    self._closed = True
+                    try:
+                        self._loop.remove_reader(self._fd)
+                    except Exception:
+                        pass
+
+                def _on_readable(self):
+                    if self._eof or self._closed:
+                        try:
+                            self._loop.remove_reader(self._fd)
+                        except Exception:
+                            pass
+                        return
+                    proto = self._protocol
+                    try:
+                        import os as _os
+
+                        data = _os.read(self._fd, 65536)
+                    except BlockingIOError:
+                        try:
+                            self._loop.add_reader(self._fd, self._on_readable)
+                        except Exception:
+                            pass
+                        return
+                    except OSError:
+                        data = b""
+                    if not data:
+                        self._eof = True
+                        try:
+                            self._loop.remove_reader(self._fd)
+                        except Exception:
+                            pass
+                        if proto is not None:
+                            try:
+                                proto.pipe_connection_lost(self._pipe_fd, None)
+                            except Exception:
+                                pass
+                        return
+                    if proto is not None:
+                        try:
+                            proto.pipe_data_received(self._pipe_fd, data)
+                        except Exception:
+                            pass
+                    # Re-arm: io_uring POLL_ADD is edge-triggered, so we
+                    # must re-register after each read to detect EOF.
+                    try:
+                        self._loop.add_reader(self._fd, self._on_readable)
+                    except Exception:
+                        pass
+
+            class _WritePipeTransport:
+                """Async write pipe transport backed by a Popen file fd.
+
+                Implements the transport half of asyncio.streams.StreamWriter
+                for a subprocess stdin pipe. Buffers writes; flushes them via
+                the underlying Popen file object in a worker thread (so the
+                event loop is not blocked when the kernel pipe buffer is
+                full). Raises BrokenPipeError/ConnectionResetError from
+                drain() when the child has closed the pipe.
+                """
+
+                def __init__(self, loop, fd, popen_obj):
+                    self._loop = loop
+                    self._fd = fd
+                    self._popen = popen_obj
+                    self._protocol = None
+                    self._buffer = bytearray()
+                    self._closing = False
+                    self._closed = False
+
+                def set_protocol(self, protocol):
+                    self._protocol = protocol
+
+                def get_protocol(self):
+                    return self._protocol
+
+                def is_closing(self):
+                    return self._closing or self._closed
+
+                def close(self):
+                    if self._closed:
+                        return
+                    self._closing = True
+                    self._closed = True
+                    try:
+                        self._popen.stdin.close()
+                    except Exception:
+                        pass
+
+                def can_write_eof(self):
+                    return True
+
+                def write(self, data):
+                    if self._closed:
+                        return
+                    self._buffer.extend(data)
+
+                def flush(self):
+                    if self._closed or not self._buffer:
+                        return
+                    self._popen.stdin.write(bytes(self._buffer))
+                    self._popen.stdin.flush()
+                    self._buffer.clear()
+
             class _TransportWrapper:
-                def __init__(self, transport):
+                def __init__(self, transport, outer_protocol=None):
                     self._transport = transport
                     self._popen = popen
+                    self._outer_protocol = outer_protocol
+                    self._pipe_transports = {}
 
                 def __getattr__(self, name):
                     return getattr(self._transport, name)
@@ -1479,7 +1617,27 @@ class Loop(_Loop):
                     return getattr(self._transport, "get_extra_info", lambda *a, **k: default)(name, default)
 
                 def get_pipe_transport(self, fd):
-                    return None
+                    cached = self._pipe_transports.get(fd)
+                    if cached is not None:
+                        return cached
+                    if fd == 0 and popen.stdin is not None:
+                        tr = _WritePipeTransport(
+                            outer_self, popen.stdin.fileno(), popen
+                        )
+                    elif fd == 1 and popen.stdout is not None:
+                        tr = _ReadPipeTransport(
+                            outer_self, popen.stdout.fileno(), fd
+                        )
+                    elif fd == 2 and popen.stderr is not None:
+                        tr = _ReadPipeTransport(
+                            outer_self, popen.stderr.fileno(), fd
+                        )
+                    else:
+                        return None
+                    if self._outer_protocol is not None:
+                        tr.set_protocol(self._outer_protocol)
+                    self._pipe_transports[fd] = tr
+                    return tr
 
                 def is_closing(self):
                     return self._transport.is_closing()
@@ -1525,19 +1683,57 @@ class Loop(_Loop):
                 orig_cl = protocol.connection_lost
 
                 class _ProtocolWrapper:
-                    __slots__ = ("_proto", "_transport_holder")
+                    __slots__ = ("_proto", "_transport_holder", "_shared_wrapper")
 
                     def __init__(self):
                         self._proto = protocol
                         self._transport_holder = [None]
+                        self._shared_wrapper = None
 
                     def __getattr__(self, name):
                         return getattr(self._proto, name)
 
                     def connection_made(self, transport):
-                        wrapper = _TransportWrapper(transport)
+                        wrapper = _TransportWrapper(transport, outer_protocol=self)
                         self._transport_holder[0] = wrapper
+                        self._shared_wrapper = wrapper
                         orig_cm(wrapper)
+                        # Replace _drain_helper on the user's protocol with
+                        # one that flushes our write pipe transport in a
+                        # worker thread (so the event loop isn't blocked
+                        # when the kernel pipe buffer is full and that
+                        # surfaces BrokenPipeError when the child exited).
+                        # Only do this when the protocol is a stream
+                        # protocol (has stdin/stdout/stderr attributes).
+                        inner_proto = getattr(self._proto, "stdin", None)
+                        if inner_proto is not None:
+                            inner_tr = getattr(inner_proto, "_transport", None)
+                            if isinstance(inner_tr, _WritePipeTransport):
+
+                                async def _patched_drain_helper():
+                                    if inner_tr._closed or not inner_tr._buffer:
+                                        return
+                                    loop = inner_tr._loop
+                                    fut = loop.create_future()
+                                    import threading as _threading
+
+                                    def _do_flush():
+                                        try:
+                                            inner_tr.flush()
+                                            loop.call_soon_threadsafe(
+                                                fut.set_result, None
+                                            )
+                                        except BaseException as exc:
+                                            loop.call_soon_threadsafe(
+                                                fut.set_exception, exc
+                                            )
+
+                                    _threading.Thread(
+                                        target=_do_flush, daemon=True
+                                    ).start()
+                                    await fut
+
+                                self._proto._drain_helper = _patched_drain_helper
 
                     def connection_lost(self, exc):
                         try:
@@ -1563,7 +1759,12 @@ class Loop(_Loop):
                 _wrapped_factory,
                 pid=popen.pid,
             )
-            wrapper = _TransportWrapper(transport)
+            # Reuse the wrapper that connection_made already wired up, so
+            # cached pipe transports (with the protocol bound) are visible
+            # from outside the protocol_factory closure.
+            wrapper = protocol._shared_wrapper
+            if wrapper is None:
+                wrapper = _TransportWrapper(transport)
             return wrapper, protocol
         except BaseException:
             if popen.poll() is None:
