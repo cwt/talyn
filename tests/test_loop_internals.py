@@ -260,8 +260,11 @@ def test_connect_accepted_socket() -> None:
             pass
 
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        with pytest.raises((ValueError, OSError, RuntimeError)):
-            loop.run_until_complete(loop.connect_accepted_socket(Proto, s))
+        # CPython returns a transport that is immediately closed because
+        # the socket is not connected; it does not raise. The transport
+        # should be marked as closing/closed.
+        tr, _proto = loop.run_until_complete(loop.connect_accepted_socket(Proto, s))
+        assert tr.is_closing() or tr.is_closed()
         s.close()
     finally:
         loop.close()
@@ -322,8 +325,10 @@ def test_create_connection_with_kwargs() -> None:
         class Proto(asyncio.Protocol):
             pass
 
-        with pytest.raises((ValueError, TypeError, OSError, RuntimeError)):
-            loop.run_until_complete(loop.create_connection(Proto, sock=socket.socket()))
+        # CPython returns a transport that is immediately closed because
+        # the socket is not connected; it does not raise.
+        tr, _proto = loop.run_until_complete(loop.create_connection(Proto, sock=socket.socket()))
+        assert tr.is_closing() or tr.is_closed()
     finally:
         loop.close()
 
@@ -790,15 +795,17 @@ def test_create_connection_with_ssl_timeout_kwargs() -> None:
             pass
 
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        with pytest.raises((ValueError, TypeError, OSError, RuntimeError)):
-            loop.run_until_complete(
-                loop.create_connection(
-                    Proto,
-                    sock=s,
-                    ssl_handshake_timeout=10,
-                    ssl_shutdown_timeout=10,
-                )
+        # CPython returns a transport that is immediately closed because
+        # the socket is not connected; it does not raise.
+        tr, _proto = loop.run_until_complete(
+            loop.create_connection(
+                Proto,
+                sock=s,
+                ssl_handshake_timeout=10,
+                ssl_shutdown_timeout=10,
             )
+        )
+        assert tr.is_closing() or tr.is_closed()
         s.close()
     finally:
         loop.close()
