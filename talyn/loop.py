@@ -1104,7 +1104,7 @@ class Loop(_Loop):
                 else:
                     self._hs = True
                     self._f()
-                    app_protocol.connection_made(self._wrapper)
+                    self._ap.connection_made(self._wrapper)
 
             def _r(self):
                 chunks = []
@@ -1126,12 +1126,16 @@ class Loop(_Loop):
                         break
                     chunks.append(d)
                 if chunks:
-                    app_protocol.data_received(b"".join(chunks))
-                if got_eof and hasattr(self, "_wrapper"):
-                    # Trigger SSL transport's eof_received flow which
-                    # calls app_protocol.eof_received and starts the
-                    # close_notify handshake for graceful shutdown.
-                    self._wrapper._start_shutdown()
+                    self._ap.data_received(b"".join(chunks))
+                if got_eof:
+                    try:
+                        self._ap.eof_received()
+                    except Exception:
+                        logger.exception(
+                            "Unhandled exception in app_protocol.eof_received"
+                        )
+                    if hasattr(self, "_wrapper"):
+                        self._wrapper._start_shutdown()
 
             def _f(self):
                 d = self._outgoing.read()

@@ -212,6 +212,8 @@ pub fn new_stream_transport(protocol: PyObject, loop: *LoopObject, fd: std.posix
     );
     errdefer Stream.StreamType.tp_free.?(instance);
 
+    instance.owns_fd = true;
+
     try stream_init_configuration(
         instance, protocol, loop, fd, zero_copying
     );
@@ -249,6 +251,7 @@ inline fn z_stream_new(@"type": *python_c.PyTypeObject) !*StreamTransportObject 
     instance.fd = -1;
     instance.protocol_type = undefined;
     instance.closed = true;
+    instance.owns_fd = true;
     // BUG-32: Initialize generation counter (struct-literal default not applied
     // to tp_alloc memory).
     instance.dispatch_generation = 0;

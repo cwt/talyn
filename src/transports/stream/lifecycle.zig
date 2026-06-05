@@ -224,3 +224,8 @@ pub fn transport_force_close(self: ?*StreamTransportObject, exc: ?PyObject) call
 
     return python_c.get_py_none();
 }
+
+pub fn transport_abort(self: ?*StreamTransportObject) callconv(.c) ?PyObject {
+    return transport_force_close(self, null);
+}
+

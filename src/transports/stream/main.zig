@@ -57,7 +57,7 @@ const PythonStreamMethods: []const python_c.PyMethodDef = &[_]python_c.PyMethodD
     // -------------------------- write --------------------------
     python_c.PyMethodDef{
         .ml_name = "abort\x00",
-        .ml_meth = @ptrCast(&Lifecyle.transport_close),
+        .ml_meth = @ptrCast(&Lifecyle.transport_abort),
         .ml_doc = "Close the transport immediately.\x00",
         .ml_flags = python_c.METH_NOARGS
     },
