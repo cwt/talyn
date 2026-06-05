@@ -135,6 +135,21 @@ fn subprocess_get_pipe_transport(self: ?*SubprocessTransportObject, arg: ?PyObje
     return python_c.get_py_none();
 }
 
+fn subprocess_get_extra_info(self: ?*SubprocessTransportObject, args: ?PyObject, kwargs: ?PyObject) callconv(.c) ?PyObject {
+    const instance = self.?;
+    _ = kwargs;
+    const name_obj = python_c.PyTuple_GetItem(args, 0) orelse return null;
+    const name_c = python_c.PyUnicode_AsUTF8(name_obj) orelse return null;
+    if (std.mem.eql(u8, std.mem.span(name_c), "subprocess")) {
+        if (instance.popen) |p| return python_c.py_newref(p);
+        return python_c.get_py_none();
+    }
+    if (std.mem.eql(u8, std.mem.span(name_c), "pid")) {
+        return python_c.PyLong_FromLong(@intCast(instance.pid));
+    }
+    return python_c.get_py_none();
+}
+
 fn subprocess_close(self: ?*SubprocessTransportObject, _: ?PyObject) callconv(.c) ?PyObject {
     const instance = self.?;
     if (!instance.closed) {
@@ -179,6 +194,7 @@ const SubprocessMethods: []const python_c.PyMethodDef = &[_]python_c.PyMethodDef
     .{ .ml_name = "terminate", .ml_meth = @ptrCast(&subprocess_terminate), .ml_doc = "SIGTERM.", .ml_flags = python_c.METH_NOARGS },
     .{ .ml_name = "send_signal", .ml_meth = @ptrCast(&subprocess_send_signal), .ml_doc = "Send signal.", .ml_flags = python_c.METH_O },
     .{ .ml_name = "get_pipe_transport", .ml_meth = @ptrCast(&subprocess_get_pipe_transport), .ml_doc = "Get pipe transport for fd.", .ml_flags = python_c.METH_O },
+    .{ .ml_name = "get_extra_info", .ml_meth = @ptrCast(&subprocess_get_extra_info), .ml_doc = "Get extra info.", .ml_flags = python_c.METH_VARARGS | python_c.METH_KEYWORDS },
     .{ .ml_name = "close", .ml_meth = @ptrCast(&subprocess_close), .ml_doc = "Close.", .ml_flags = python_c.METH_NOARGS },
     .{ .ml_name = null, .ml_meth = null, .ml_doc = null, .ml_flags = 0 },
 };

@@ -1455,7 +1455,8 @@ class Loop(_Loop):
         )
         _subprocess_popens[popen.pid] = popen
         try:
-            exit_future = self.create_future()
+            exit_waiters: list = []
+            outer_self = self
 
             orig_factory = protocol_factory
 
@@ -1463,10 +1464,14 @@ class Loop(_Loop):
                 def __init__(self, transport):
                     self._transport = transport
                     self._popen = popen
-                    self._exit_future = exit_future
 
                 def __getattr__(self, name):
                     return getattr(self._transport, name)
+
+                def get_extra_info(self, name, default=None):
+                    if name == "subprocess":
+                        return popen
+                    return getattr(self._transport, "get_extra_info", lambda *a, **k: default)(name, default)
 
                 def get_pipe_transport(self, fd):
                     return None
@@ -1505,37 +1510,48 @@ class Loop(_Loop):
                     rc = self.get_returncode()
                     if rc is not None:
                         return rc
-                    self._exit_future = exit_future
-                    return await exit_future
+                    waiter = outer_self.create_future()
+                    exit_waiters.append(waiter)
+                    return await waiter
 
             def _wrapped_factory():
                 protocol = orig_factory()
                 orig_cm = protocol.connection_made
-
-                def _connection_made(transport):
-                    wrapper = _TransportWrapper(transport)
-                    orig_cm(wrapper)
-
-                protocol.connection_made = _connection_made
-
                 orig_cl = protocol.connection_lost
 
-                def _connection_lost(exc):
-                    try:
-                        orig_cl(exc)
-                    finally:
-                        if not exit_future.done():
-                            try:
-                                rc = transport.get_returncode()
-                                if rc is not None:
-                                    exit_future.set_result(rc)
-                                else:
-                                    exit_future.set_result(-1)
-                            except BaseException:
-                                exit_future.set_result(-1)
+                class _ProtocolWrapper:
+                    __slots__ = ("_proto", "_transport_holder")
 
-                protocol.connection_lost = _connection_lost
-                return protocol
+                    def __init__(self):
+                        self._proto = protocol
+                        self._transport_holder = [None]
+
+                    def __getattr__(self, name):
+                        return getattr(self._proto, name)
+
+                    def connection_made(self, transport):
+                        wrapper = _TransportWrapper(transport)
+                        self._transport_holder[0] = wrapper
+                        orig_cm(wrapper)
+
+                    def connection_lost(self, exc):
+                        try:
+                            orig_cl(exc)
+                        finally:
+                            held = self._transport_holder[0]
+                            rc = None
+                            if held is not None:
+                                try:
+                                    rc = held.get_returncode()
+                                except BaseException:
+                                    rc = None
+                            if rc is None:
+                                rc = -1
+                            for waiter in exit_waiters:
+                                if not waiter.done():
+                                    waiter.set_result(rc)
+
+                return _ProtocolWrapper()
 
             transport, protocol = await _Loop.subprocess_exec(
                 self,
