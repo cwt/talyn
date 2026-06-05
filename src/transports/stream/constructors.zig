@@ -219,6 +219,12 @@ pub fn new_stream_transport(protocol: PyObject, loop: *LoopObject, fd: std.posix
     return instance;
 }
 
+pub fn new_stream_transport_with_owns_fd(protocol: PyObject, loop: *LoopObject, fd: std.posix.fd_t, zero_copying: bool, owns_fd: bool) !*StreamTransportObject {
+    const instance = try new_stream_transport(protocol, loop, fd, zero_copying);
+    instance.owns_fd = owns_fd;
+    return instance;
+}
+
 inline fn z_stream_new(@"type": *python_c.PyTypeObject) !*StreamTransportObject {
     const instance: *StreamTransportObject = @ptrCast(@"type".tp_alloc.?(@"type", 0) orelse return error.PythonError);
     errdefer @"type".tp_free.?(instance);
@@ -307,7 +313,9 @@ pub fn stream_clear(self: ?*StreamTransportObject) callconv(.c) c_int {
             }
             py_transport.fixed_file_index = 0;
         }
-        _ = std.os.linux.close(fd);
+        if (py_transport.owns_fd) {
+            _ = std.os.linux.close(fd);
+        }
         py_transport.fd = -1;
     }
 

@@ -168,6 +168,7 @@ pub const StreamTransportObject = extern struct {
     closed: bool,
     fixed_file_index: u16 = 0,
     dispatch_generation: u64 = 0,
+    owns_fd: bool = true,
 };
 
 // const PythonStreamMembers: []const python_c.PyMemberDef = &[_]python_c.PyMemberDef{

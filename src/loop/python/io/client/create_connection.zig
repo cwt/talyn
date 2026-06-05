@@ -71,6 +71,7 @@ const TransportCreationData = struct {
     socket_fd: std.posix.fd_t,
     zero_copying: bool,
     fd_created: bool = true,
+    owns_fd: bool = true,
     python_payload: CallbackManager.PythonPayload = .{},
 
     comptime {
@@ -206,6 +207,8 @@ inline fn z_loop_create_connection(
             .loop = python_c.py_newref(self),
             .socket_fd = @intCast(fd),
             .zero_copying = false,
+            .fd_created = false, // Caller owns the fd (e.g. accept()'d socket).
+            .owns_fd = false,     // Don't close the fd on transport close.
             .python_payload = .{
                 .module_ptr = @ptrCast(self),
                 .callback_ptr = @ptrCast(fut),
@@ -872,8 +875,8 @@ fn z_create_transport_and_set_future_result(data: *const TransportCreationData) 
     const protocol = python_c.PyObject_CallNoArgs(data.protocol_factory) orelse return error.PythonError;
     errdefer python_c.py_decref(protocol);
 
-    const transport = try Stream.Constructors.new_stream_transport(
-        protocol, data.loop, data.socket_fd, data.zero_copying
+    const transport = try Stream.Constructors.new_stream_transport_with_owns_fd(
+        protocol, data.loop, data.socket_fd, data.zero_copying, data.owns_fd
     );
     errdefer python_c.py_decref(@ptrCast(transport));
 

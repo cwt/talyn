@@ -562,8 +562,7 @@ class Loop(_Loop):
         return await _Loop.create_connection(
             self,
             protocol_factory,
-            host,
-            port,
+            *((host, port) if host is not None and port is not None else ()),
             **kwargs,
         )
 
@@ -780,6 +779,12 @@ class Loop(_Loop):
 
         sslcontext = ssl
         sni = server_hostname or host
+
+        if sslcontext is True:
+            sslcontext = ssl_module.create_default_context()
+            if host:
+                sslcontext.check_hostname = True
+                sslcontext.verify_mode = ssl_module.CERT_REQUIRED
 
         incoming = ssl_module.MemoryBIO()
         outgoing = ssl_module.MemoryBIO()

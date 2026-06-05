@@ -113,7 +113,9 @@ pub fn transport_close(self: ?*StreamTransportObject) callconv(.c) ?PyObject {
                 }
                 instance.fixed_file_index = 0;
             }
-            _ = std.os.linux.close(fd);
+            if (instance.owns_fd) {
+                _ = std.os.linux.close(fd);
+            }
             instance.fd = -1;
         }
 
@@ -151,7 +153,9 @@ pub fn maybe_close_fd(self: *StreamTransportObject) void {
                 }
                 self.fixed_file_index = 0;
             }
-            _ = std.os.linux.close(fd);
+            if (self.owns_fd) {
+                _ = std.os.linux.close(fd);
+            }
             self.fd = -1;
         }
     }
@@ -204,7 +208,9 @@ pub fn transport_force_close(self: ?*StreamTransportObject, exc: ?PyObject) call
             }
             instance.fixed_file_index = 0;
         }
-        _ = std.os.linux.close(fd);
+        if (instance.owns_fd) {
+            _ = std.os.linux.close(fd);
+        }
         instance.fd = -1;
     }
 
