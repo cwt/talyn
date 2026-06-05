@@ -91,6 +91,8 @@ pub fn close(self: *ReadTransport) !void {
     if (blocking_task_id == 0) {
         self.closed = true;
         self.is_closing = true;
+        const StreamLifecycle = @import("stream/lifecycle.zig");
+        StreamLifecycle.maybe_close_fd(@ptrCast(self.parent_transport));
         return;
     }
 
@@ -171,6 +173,8 @@ pub fn read_operation_completed(data: *const CallbackManager.CallbackData) !void
         if (io_uring_err == .SUCCESS or io_uring_err == .CANCELED or is_closing) {
             if (is_closing) {
                 self.closed = true;
+                const StreamLifecycle = @import("stream/lifecycle.zig");
+                StreamLifecycle.maybe_close_fd(@ptrCast(parent_transport));
             }
 
             python_c.py_decref(parent_transport);

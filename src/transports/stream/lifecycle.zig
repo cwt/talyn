@@ -89,16 +89,7 @@ pub fn close_transports(
         if (ret) |v| python_c.py_decref(v) else python_c.PyErr_Clear();
     }
 
-    // The Python StreamTransport object is not deallocated yet, so the
-    // socket reference keeps being held. Closing the FD now ensures the
-    // standard library's asyncio GC can properly clean up the socket.
-    const transport_obj = @as(*StreamTransportObject, @ptrCast(transport));
-    if (transport_obj.fd >= 0) {
-        if (transport_obj.owns_fd) {
-            _ = std.os.linux.close(transport_obj.fd);
-        }
-        transport_obj.fd = -1;
-    }
+    maybe_close_fd(transport);
 }
 
 pub fn transport_close(self: ?*StreamTransportObject) callconv(.c) ?PyObject {
