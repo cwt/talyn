@@ -327,7 +327,9 @@ def test_create_connection_with_kwargs() -> None:
 
         # CPython returns a transport that is immediately closed because
         # the socket is not connected; it does not raise.
-        tr, _proto = loop.run_until_complete(loop.create_connection(Proto, sock=socket.socket()))
+        tr, _proto = loop.run_until_complete(
+            loop.create_connection(Proto, sock=socket.socket())
+        )
         assert tr.is_closing() or tr.is_closed()
     finally:
         loop.close()

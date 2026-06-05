@@ -466,6 +466,7 @@ def test_future_get_result_exception_no_reference_leak() -> None:
 
         del future
         import gc
+
         gc.collect()
         ref_final = sys.getrefcount(exc)
         assert ref_final == ref_before - 1, (

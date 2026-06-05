@@ -708,7 +708,6 @@ class Loop(_Loop):
                 if d:
                     self._raw_t.write(d)
 
-
         ssl_protocol = _SP()
 
         from asyncio.streams import StreamReaderProtocol
@@ -1815,7 +1814,9 @@ class Loop(_Loop):
                 def get_extra_info(self, name, default=None):
                     if name == "subprocess":
                         return popen
-                    return getattr(self._transport, "get_extra_info", lambda *a, **k: default)(name, default)
+                    return getattr(
+                        self._transport, "get_extra_info", lambda *a, **k: default
+                    )(name, default)
 
                 def get_pipe_transport(self, fd):
                     if hasattr(self, "_pipes") and fd in self._pipes:
@@ -1828,13 +1829,9 @@ class Loop(_Loop):
                             outer_self, popen.stdin.fileno(), popen
                         )
                     elif fd == 1 and popen.stdout is not None:
-                        tr = _ReadPipeTransport(
-                            outer_self, popen.stdout.fileno(), fd
-                        )
+                        tr = _ReadPipeTransport(outer_self, popen.stdout.fileno(), fd)
                     elif fd == 2 and popen.stderr is not None:
-                        tr = _ReadPipeTransport(
-                            outer_self, popen.stderr.fileno(), fd
-                        )
+                        tr = _ReadPipeTransport(outer_self, popen.stderr.fileno(), fd)
                     else:
                         return None
                     if self._outer_protocol is not None:
@@ -2043,6 +2040,10 @@ with warnings.catch_warnings():
         def new_event_loop(self) -> Loop:
             """Create and return a new Talyn event loop."""
             return Loop()
+
+        def get_default_event_loop_policy(self) -> "EventLoopPolicy":
+            """Return the default event loop policy for unittest compatibility."""
+            return self
 
 
 class PseudoSocket:
