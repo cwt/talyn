@@ -705,8 +705,9 @@ class Loop(_Loop):
 
             def _f(self):
                 d = self._outgoing.read()
-                if d and self._raw_t is not None:
+                if d:
                     self._raw_t.write(d)
+
 
         ssl_protocol = _SP()
 
@@ -838,6 +839,13 @@ class Loop(_Loop):
                     self._ap.connection_lost(e)
                 except Exception:
                     logger.exception("Unhandled exception in event loop callback")
+                # Release references that would keep the SSLContext
+                # alive after the connection is fully closed (so the
+                # caller can drop the only remaining strong reference
+                # without keeping the SSLContext alive).
+                self._sslobj = None
+                self._incoming = None
+                self._outgoing = None
 
             def eof_received(self):
                 try:
@@ -878,18 +886,34 @@ class Loop(_Loop):
 
             def _r(self):
                 chunks = []
+                got_eof = False
                 while True:
                     try:
                         d = self._sslobj.read(65536)
                     except ssl_module.SSLWantReadError:
                         break
+                    except ssl_module.SSLEOFError:
+                        # Peer sent close_notify
+                        got_eof = True
+                        break
                     except (ssl_module.SSLSyscallError, ssl_module.SSLError):
+                        got_eof = True
                         break
                     if not d:
+                        got_eof = True
                         break
                     chunks.append(d)
                 if chunks:
                     app_protocol.data_received(b"".join(chunks))
+                if got_eof:
+                    try:
+                        app_protocol.eof_received()
+                    except Exception:
+                        logger.exception(
+                            "Unhandled exception in app_protocol.eof_received"
+                        )
+                    if hasattr(self, "_wrapper"):
+                        self._wrapper._start_shutdown()
 
             def _f(self):
                 d = self._outgoing.read()
@@ -1080,22 +1104,34 @@ class Loop(_Loop):
                 else:
                     self._hs = True
                     self._f()
-                    self._ap.connection_made(self._wrapper)
+                    app_protocol.connection_made(self._wrapper)
 
             def _r(self):
                 chunks = []
+                got_eof = False
                 while True:
                     try:
                         d = self._sslobj.read(65536)
                     except ssl_module.SSLWantReadError:
                         break
+                    except ssl_module.SSLEOFError:
+                        # Peer sent close_notify
+                        got_eof = True
+                        break
                     except (ssl_module.SSLSyscallError, ssl_module.SSLError):
+                        got_eof = True
                         break
                     if not d:
+                        got_eof = True
                         break
                     chunks.append(d)
                 if chunks:
-                    self._ap.data_received(b"".join(chunks))
+                    app_protocol.data_received(b"".join(chunks))
+                if got_eof and hasattr(self, "_wrapper"):
+                    # Trigger SSL transport's eof_received flow which
+                    # calls app_protocol.eof_received and starts the
+                    # close_notify handshake for graceful shutdown.
+                    self._wrapper._start_shutdown()
 
             def _f(self):
                 d = self._outgoing.read()
@@ -1229,6 +1265,13 @@ class Loop(_Loop):
                     self._ap.connection_lost(e)
                 except Exception:
                     logger.exception("Unhandled exception in event loop callback")
+                # Release references that would keep the SSLContext
+                # alive after the connection is fully closed (so the
+                # caller can drop the only remaining strong reference
+                # without keeping the SSLContext alive).
+                self._sslobj = None
+                self._incoming = None
+                self._outgoing = None
 
             def eof_received(self):
                 try:
@@ -1269,18 +1312,34 @@ class Loop(_Loop):
 
             def _r(self):
                 chunks = []
+                got_eof = False
                 while True:
                     try:
                         d = self._sslobj.read(65536)
                     except ssl_module.SSLWantReadError:
                         break
+                    except ssl_module.SSLEOFError:
+                        # Peer sent close_notify
+                        got_eof = True
+                        break
                     except (ssl_module.SSLSyscallError, ssl_module.SSLError):
+                        got_eof = True
                         break
                     if not d:
+                        got_eof = True
                         break
                     chunks.append(d)
                 if chunks:
                     app_protocol.data_received(b"".join(chunks))
+                if got_eof:
+                    try:
+                        app_protocol.eof_received()
+                    except Exception:
+                        logger.exception(
+                            "Unhandled exception in app_protocol.eof_received"
+                        )
+                    if hasattr(self, "_wrapper"):
+                        self._wrapper._start_shutdown()
 
             def _f(self):
                 d = self._outgoing.read()
