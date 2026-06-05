@@ -1449,11 +1449,43 @@ class Loop(_Loop):
         import subprocess
 
         cmd = (program, *args)
+        # If the user passed a SubprocessProtocol (not SubprocessStreamProtocol)
+        # we need PIPE for stdout/stderr (and stdin) so we can dispatch
+        # pipe_data_received / pipe_connection_lost to the protocol.
+        # SubprocessStreamProtocol cases default to DEVNULL like CPython.
+        # Use a 1-element list as a mutable container so the wrapped
+        # factory below can consume the sample protocol.
+        sample_holder: list = [None]
+        try:
+            sample_holder[0] = protocol_factory()
+            _is_stream_protocol = hasattr(sample_holder[0], "stdin")
+        except Exception:
+            _is_stream_protocol = False
+        if _is_stream_protocol or sample_holder[0] is None:
+            stdin_arg = subprocess.DEVNULL if stdin is None else stdin
+            stdout_arg = subprocess.DEVNULL if stdout is None else stdout
+            stderr_arg = subprocess.DEVNULL if stderr is None else stderr
+        else:
+            # For SubprocessProtocol, default to PIPE so we can dispatch
+            # pipe_data_received / pipe_connection_lost. But if user
+            # explicitly passed DEVNULL/None, honor that.
+            if stdin is None:
+                stdin_arg = subprocess.DEVNULL
+            else:
+                stdin_arg = stdin
+            if stdout is None:
+                stdout_arg = subprocess.PIPE
+            else:
+                stdout_arg = stdout
+            if stderr is None:
+                stderr_arg = subprocess.PIPE
+            else:
+                stderr_arg = stderr
         popen = subprocess.Popen(
             cmd,
-            stdin=subprocess.DEVNULL if stdin is None else stdin,
-            stdout=subprocess.DEVNULL if stdout is None else stdout,
-            stderr=subprocess.DEVNULL if stderr is None else stderr,
+            stdin=stdin_arg,
+            stdout=stdout_arg,
+            stderr=stderr_arg,
             cwd=cwd,
             env=env,
             pass_fds=pass_fds if pass_fds is not None else (),
@@ -1462,6 +1494,98 @@ class Loop(_Loop):
         try:
             exit_waiters: list = []
             outer_self = self
+            # pre_pipes is populated in the SubprocessStreamProtocol case
+            # using the loop's connect_read_pipe/connect_write_pipe (so
+            # user mocks of these methods are applied). For the
+            # SubprocessProtocol case, we create pipe transports in
+            # _ProtocolWrapper.connection_made instead.
+            pre_pipes: dict = {}
+            # bridge_target[0] is set to the user protocol in
+            # _ProtocolWrapper.connection_made; the bridge protocols
+            # use it to dispatch pipe events to the user protocol.
+            bridge_target: list = [None]
+
+            # For the SubprocessStreamProtocol case, pre-create the pipe
+            # transports using the loop's connect_read_pipe/connect_write_pipe.
+            # This is needed for test_pause_reading etc. that mock
+            # connect_read_pipe to inject Mock attributes on the pipe
+            # transport — our get_pipe_transport must return the same
+            # transport instance so the Mock attributes are visible.
+            if sample_holder[0] is not None and _is_stream_protocol:
+                # Lazy target lookup: at the time we create the pipe
+                # transports, the user protocol hasn't been created yet
+                # (it is created by _wrapped_factory inside the C-level
+                # subprocess_exec). The bridge protocol uses this holder
+                # to find the user protocol at data_received time.
+
+                class _ReadBridge:
+                    def __init__(self, fd):
+                        self._fd = fd
+
+                    def data_received(self, data):
+                        target = bridge_target[0]
+                        if target is not None:
+                            target.pipe_data_received(self._fd, data)
+
+                    def eof_received(self):
+                        target = bridge_target[0]
+                        if target is not None:
+                            target.pipe_connection_lost(self._fd, None)
+
+                    def connection_lost(self, exc):
+                        target = bridge_target[0]
+                        if target is not None:
+                            target.pipe_connection_lost(self._fd, exc)
+
+                class _WriteBridge:
+                    def connection_made(self, transport):
+                        pass
+
+                    def connection_lost(self, exc):
+                        target = bridge_target[0]
+                        if target is not None and exc is not None:
+                            # Surface write errors via connection_lost on
+                            # the user protocol so StreamWriter.drain can
+                            # raise BrokenPipeError.
+                            try:
+                                target.pipe_connection_lost(0, exc)
+                            except Exception:
+                                pass
+
+                    def pause_writing(self):
+                        target = bridge_target[0]
+                        if target is not None and hasattr(target, "pause_writing"):
+                            target.pause_writing()
+
+                    def resume_writing(self):
+                        target = bridge_target[0]
+                        if target is not None and hasattr(target, "resume_writing"):
+                            target.resume_writing()
+
+                try:
+                    if popen.stdin is not None:
+                        _, t = await self.connect_write_pipe(
+                            _WriteBridge, popen.stdin
+                        )
+                        pre_pipes[0] = t
+                    if popen.stdout is not None:
+                        _, t = await self.connect_read_pipe(
+                            lambda fd=1: _ReadBridge(fd), popen.stdout
+                        )
+                        pre_pipes[1] = t
+                    if popen.stderr is not None:
+                        _, t = await self.connect_read_pipe(
+                            lambda fd=2: _ReadBridge(fd), popen.stderr
+                        )
+                        pre_pipes[2] = t
+                except NotImplementedError:
+                    # Our C-level loop doesn't implement connect_*_pipe.
+                    # Fall back to creating pipes via _ReadPipeTransport/
+                    # _WritePipeTransport in _ProtocolWrapper.connection_made.
+                    pre_pipes = {}
+                except BaseException:
+                    pre_pipes = {}
+                    raise
 
             orig_factory = protocol_factory
 
@@ -1492,6 +1616,20 @@ class Loop(_Loop):
 
                 def is_closing(self):
                     return self._closing or self._closed
+
+                def pause_reading(self):
+                    try:
+                        self._loop.remove_reader(self._fd)
+                    except Exception:
+                        pass
+
+                def resume_reading(self):
+                    if self._closed or self._eof:
+                        return
+                    try:
+                        self._loop.add_reader(self._fd, self._on_readable)
+                    except Exception:
+                        pass
 
                 def close(self):
                     if self._closed:
@@ -1617,6 +1755,8 @@ class Loop(_Loop):
                     return getattr(self._transport, "get_extra_info", lambda *a, **k: default)(name, default)
 
                 def get_pipe_transport(self, fd):
+                    if hasattr(self, "_pipes") and fd in self._pipes:
+                        return self._pipes[fd]
                     cached = self._pipe_transports.get(fd)
                     if cached is not None:
                         return cached
@@ -1643,6 +1783,11 @@ class Loop(_Loop):
                     return self._transport.is_closing()
 
                 def close(self):
+                    for tr in getattr(self, "_proto_pipe_transports", ()):
+                        try:
+                            tr.close()
+                        except Exception:
+                            pass
                     self._transport.close()
 
                 def get_pid(self):
@@ -1678,7 +1823,14 @@ class Loop(_Loop):
                     return await waiter
 
             def _wrapped_factory():
-                protocol = orig_factory()
+                # Reuse the sample protocol we already created in the
+                # PIPE-vs-DEVNULL detection above, so we don't call the
+                # user's factory twice (e.g. lambdas that close over state).
+                protocol = sample_holder[0]
+                if protocol is None:
+                    protocol = orig_factory()
+                else:
+                    sample_holder[0] = None
                 orig_cm = protocol.connection_made
                 orig_cl = protocol.connection_lost
 
@@ -1695,8 +1847,13 @@ class Loop(_Loop):
 
                     def connection_made(self, transport):
                         wrapper = _TransportWrapper(transport, outer_protocol=self)
+                        wrapper._pipes = pre_pipes
                         self._transport_holder[0] = wrapper
                         self._shared_wrapper = wrapper
+                        # Wire the bridge target for the pre-created pipe
+                        # transports to forward events to the user protocol.
+                        if bridge_target[0] is None:
+                            bridge_target[0] = self._proto
                         orig_cm(wrapper)
                         # Replace _drain_helper on the user's protocol with
                         # one that flushes our write pipe transport in a
@@ -1734,6 +1891,43 @@ class Loop(_Loop):
                                     await fut
 
                                 self._proto._drain_helper = _patched_drain_helper
+                        else:
+                            # The protocol is a plain SubprocessProtocol
+                            # (not a SubprocessStreamProtocol). Set up
+                            # pipe readers/writers ourselves that call
+                            # pipe_data_received and pipe_connection_lost
+                            # directly on the user's protocol.
+                            proto_pipe_transports: list = []
+                            pipe_specs = []
+                            if popen is not None:
+                                # stdout → child fd 1
+                                if getattr(popen, "stdout", None) is not None:
+                                    pipe_specs.append((1, popen.stdout))
+                                # stderr → child fd 2
+                                if getattr(popen, "stderr", None) is not None:
+                                    pipe_specs.append((2, popen.stderr))
+                                # stdin → child fd 0
+                                if getattr(popen, "stdin", None) is not None:
+                                    pipe_specs.append((0, popen.stdin))
+                            for child_fd, file_obj in pipe_specs:
+                                try:
+                                    parent_fd = file_obj.fileno()
+                                except Exception:
+                                    continue
+                                # If the file object is a BufferedReader
+                                # it's a read pipe; BufferedWriter is
+                                # a write pipe.
+                                if hasattr(file_obj, "read"):
+                                    tr = _ReadPipeTransport(
+                                        outer_self, parent_fd, child_fd
+                                    )
+                                else:
+                                    tr = _WritePipeTransport(
+                                        outer_self, parent_fd, popen
+                                    )
+                                tr.set_protocol(self._proto)
+                                proto_pipe_transports.append(tr)
+                            wrapper._proto_pipe_transports = proto_pipe_transports
 
                     def connection_lost(self, exc):
                         try:

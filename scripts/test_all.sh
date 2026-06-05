@@ -167,11 +167,19 @@ run_std_tests() {
     local failed=0
     for mod in $std_modules; do
         if has_timeout; then
-            # 30s per module — passing modules finish in <5s; a hanging module
-            # gets killed quickly rather than blocking the whole suite.
-            cmd="$(get_timeout_cmd) -k 5 30 $py"
+            # 60s per module — most modules finish in <5s, but test_subprocess
+            # takes ~35s on a healthy run; a hanging module gets killed
+            # quickly rather than blocking the whole suite.
+            cmd="$(get_timeout_cmd) -k 5 60 $py"
         else
             cmd="$py"
+        fi
+
+        # Skip modules that don't exist in this Python version
+        # (e.g. test_graph, test_tools, test_free_threading are 3.14+ only).
+        if ! PYTHONPATH=. $cmd -c "from test.test_asyncio import $mod" 2>/dev/null; then
+            printf "  ${YELLOW}%s: SKIP (not in %s)${NC}\n" "$mod" "$py"
+            continue
         fi
 
         if ( PYTHONPATH=. $cmd -c \
