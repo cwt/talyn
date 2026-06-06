@@ -76,6 +76,12 @@ Here are the benchmark results for v0.6.0 across both platforms:
   - Python 3.14: [Debug](benchmarks/n6000/benchmarks-v0.6.0-3.14-debug.txt) | [Safe](benchmarks/n6000/benchmarks-v0.6.0-3.14-safe.txt) | [Starburst (ReleaseFast)](benchmarks/n6000/benchmarks-v0.6.0-3.14-starburst.txt)
   - Python 3.14t: [Debug](benchmarks/n6000/benchmarks-v0.6.0-3.14t-debug.txt) | [Safe](benchmarks/n6000/benchmarks-v0.6.0-3.14t-safe.txt) | [Starburst (ReleaseFast)](benchmarks/n6000/benchmarks-v0.6.0-3.14t-starburst.txt)
 
+## Releasing v0.6.1: Starburst Mode for Binary Packages
+
+With the release of **v0.6.1**, we have decided, based on our benchmark outcomes and comprehensive testing (including passing 100% of the standard `asyncio` test suite across four distinct Python interpreters), that it is safe to publish the official binary packages (wheels) with **Starburst mode** (Zig code built with `ReleaseFast`) enabled by default.
+
+Through meticulous optimization of struct layouts and memory boundaries, we resolved the alignment and race-condition concerns that previously made aggressive compile-time optimizations unstable. We can now deliver maximum throughput safely to all end-users.
+
 ---
 
 This project has been a long, humbling, and incredibly rewarding journey. From an inactive, crash-prone prototype to a stable, fully test-suite-passing event loop built with the help of a swarm of AI agents.
