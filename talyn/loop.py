@@ -1,6 +1,7 @@
 import _ctypes
 import asyncio
 import ctypes
+import os
 import socket
 import struct
 import threading
@@ -32,8 +33,15 @@ class _SSLTransportWrapper:
         self._closing = False
         self._shutdown_timeout_handle = None
         self._loop = loop
+        # For compatibility with stdlib: transport._ssl_protocol points to the SSL protocol
+        self._ssl_protocol = ssp
+        self._write_buffer = []
 
     def write(self, data):
+        # Check if SSL writing is paused
+        if getattr(self._ssp, '_ssl_writing_paused', False):
+            self._write_buffer.append(data)
+            return
         # BUG-54: Handle SSLWantWriteError (renegotiation), SSLWantReadError
         # (need to read more before writing), and SSLError (fatal). The
         # previous code let these exceptions propagate uncaught, crashing
@@ -52,12 +60,58 @@ class _SSLTransportWrapper:
             # Set the flag so the write side knows to re-arm.
             self._ssp._write_wants_write = True
         except (self._sslmod.SSLError, self._sslmod.SSLSyscallError) as exc:
-            # Fatal SSL error — close the transport.
+            # Fatal SSL error \u2014 close the transport.
             self._ssp._f()
             if self._loop is not None and not self._loop.is_closed():
                 self._loop.call_soon(self._fatal_error, exc)
             return
         self._ssp._f()
+
+    def _flush_write_buffer(self):
+        # Flush any buffered application data to SSL object
+        while self._write_buffer:
+            data = self._write_buffer.pop(0)
+            try:
+                self._ssp._sslobj.write(data)
+            except self._sslmod.SSLWantReadError:
+                self._ssp._write_wants_read = True
+                self._write_buffer.insert(0, data)
+                break
+            except self._sslmod.SSLWantWriteError:
+                self._ssp._write_wants_write = True
+                self._write_buffer.insert(0, data)
+                break
+            except (self._sslmod.SSLError, self._sslmod.SSLSyscallError) as exc:
+                self._ssp._f()
+                if self._loop is not None and not self._loop.is_closed():
+                    self._loop.call_soon(self._fatal_error, exc)
+                return
+
+        # Flush all pending encrypted data from outgoing BIO to transport
+        outgoing = getattr(self._ssp, "_outgoing", None)
+        if outgoing is not None:
+            while True:
+                d = outgoing.read()
+                if not d:
+                    break
+                try:
+                    self._raw_t.write(d)
+                except RuntimeError as e:
+                    if "Writing operations are paused" in str(e):
+                        # Raw transport is paused at protocol level, but socket may still accept data.
+                        # Write directly to socket fd to bypass protocol-level flow control.
+                        try:
+                            fd = self._raw_t.get_extra_info('socket').fileno()
+                            view = memoryview(d)
+                            while view:
+                                n = os.write(fd, view)
+                                view = view[n:]
+                        except (AttributeError, OSError):
+                            # Fallback: put remaining data back into outgoing BIO
+                            # Note: we can't easily put it back, so we'll retry later
+                            return
+                    else:
+                        raise
 
     def _fatal_error(self, exc):
         # Called via call_soon to break out of the current write context
@@ -71,6 +125,15 @@ class _SSLTransportWrapper:
         self._start_shutdown()
 
     def _start_shutdown(self):
+        # First flush any buffered writes
+        self._flush_write_buffer()
+        
+        # If there's still buffered data, wait for it to be written
+        if self._write_buffer:
+            # The data will be flushed when the transport can write again
+            # We'll retry shutdown after the buffer is empty
+            return
+        
         try:
             self._ssp._sslobj.unwrap()
         except self._sslmod.SSLWantReadError:
@@ -654,6 +717,9 @@ class Loop(_Loop):
                     return False
 
             def pause_writing(self):
+                # Pause SSL layer writing - this is called when the transport's
+                # write buffer exceeds the high-water mark
+                self._ssl_writing_paused = True
                 if hasattr(self, "_ap") and hasattr(self._ap, "pause_writing"):
                     try:
                         self._ap.pause_writing()
@@ -661,11 +727,15 @@ class Loop(_Loop):
                         logger.exception("Unhandled exception in event loop callback")
 
             def resume_writing(self):
+                # Resume SSL layer writing - this is called when the transport's
+                # write buffer drains below the low-water mark
+                self._ssl_writing_paused = False
                 if hasattr(self, "_ap") and hasattr(self._ap, "resume_writing"):
                     try:
                         self._ap.resume_writing()
                     except Exception:
                         logger.exception("Unhandled exception in event loop callback")
+                self._f()
 
             def _h(self):
                 try:
@@ -808,6 +878,7 @@ class Loop(_Loop):
                 self._incoming = incoming
                 self._outgoing = outgoing
                 self._ap = app_protocol
+                self._ssl_writing_paused = False
 
             def get_buffer(self, n):
                 return self._view[:n]
@@ -853,6 +924,9 @@ class Loop(_Loop):
                     return False
 
             def pause_writing(self):
+                # Pause SSL layer writing - this is called when the transport's
+                # write buffer exceeds the high-water mark
+                self._ssl_writing_paused = True
                 if hasattr(self, "_ap") and hasattr(self._ap, "pause_writing"):
                     try:
                         self._ap.pause_writing()
@@ -860,11 +934,17 @@ class Loop(_Loop):
                         logger.exception("Unhandled exception in event loop callback")
 
             def resume_writing(self):
+                # Resume SSL layer writing - this is called when the transport's
+                # write buffer drains below the low-water mark
+                self._ssl_writing_paused = False
                 if hasattr(self, "_ap") and hasattr(self._ap, "resume_writing"):
                     try:
                         self._ap.resume_writing()
                     except Exception:
                         logger.exception("Unhandled exception in event loop callback")
+                if hasattr(self, '_wrapper') and self._wrapper is not None:
+                    self._wrapper._flush_write_buffer()
+                self._f()
 
             def _h(self):
                 try:
@@ -917,7 +997,22 @@ class Loop(_Loop):
             def _f(self):
                 d = self._outgoing.read()
                 if d:
-                    self._raw_t.write(d)
+                    try:
+                        self._raw_t.write(d)
+                    except RuntimeError as e:
+                        if "Writing operations are paused" in str(e):
+                            # Raw transport is paused at protocol level, but socket may still accept data.
+                            # Write directly to socket fd to bypass protocol-level flow control.
+                            try:
+                                fd = self._raw_t.get_extra_info('socket').fileno()
+                                view = memoryview(d)
+                                while view:
+                                    n = os.write(fd, view)
+                                    view = view[n:]
+                            except (AttributeError, OSError):
+                                pass
+                        else:
+                            raise
 
         kwargs: dict[str, Any] = {}
         if family:
@@ -937,19 +1032,46 @@ class Loop(_Loop):
         if all_errors:
             kwargs["all_errors"] = all_errors
 
-        transport, _ = await _Loop.create_connection(
-            self,
-            SP,
-            host,
-            port,
-            **kwargs,
-        )
+        if sock is not None:
+            transport, _ = await _Loop.create_connection(
+                self,
+                SP,
+                **kwargs,
+            )
+        else:
+            transport, _ = await _Loop.create_connection(
+                self,
+                SP,
+                host,
+                port,
+                **kwargs,
+            )
 
-        try:
-            await asyncio.wait_for(waiter, timeout=ssl_handshake_timeout or 60)
-        except BaseException:
-            transport.close()
-            raise
+        if ssl_handshake_timeout is not None:
+            def on_timeout():
+                if not waiter.done():
+                    msg = (
+                        f"SSL handshake is taking longer than "
+                        f"{ssl_handshake_timeout} seconds: "
+                        f"aborting the connection"
+                    )
+                    waiter.set_exception(ConnectionAbortedError(msg))
+                    transport.close()
+
+            timeout_handle = self.call_later(ssl_handshake_timeout, on_timeout)
+            try:
+                await waiter
+            except BaseException:
+                timeout_handle.cancel()
+                raise
+            finally:
+                timeout_handle.cancel()
+        else:
+            try:
+                await waiter
+            except BaseException:
+                transport.close()
+                raise
 
         return wrapper_holder[0] or transport, app_protocol
 
@@ -1078,6 +1200,9 @@ class Loop(_Loop):
                 return False
 
             def pause_writing(self):
+                # Pause SSL layer writing - this is called when the transport's
+                # write buffer exceeds the high-water mark
+                self._ssl_writing_paused = True
                 if hasattr(self, "_ap") and hasattr(self._ap, "pause_writing"):
                     try:
                         self._ap.pause_writing()
@@ -1085,11 +1210,15 @@ class Loop(_Loop):
                         logger.exception("Unhandled exception in event loop callback")
 
             def resume_writing(self):
+                # Resume SSL layer writing - this is called when the transport's
+                # write buffer drains below the low-water mark
+                self._ssl_writing_paused = False
                 if hasattr(self, "_ap") and hasattr(self._ap, "resume_writing"):
                     try:
                         self._ap.resume_writing()
                     except Exception:
                         logger.exception("Unhandled exception in event loop callback")
+                self._f()
 
             def _h(self):
                 try:
@@ -1238,6 +1367,7 @@ class Loop(_Loop):
                 self._incoming = incoming
                 self._outgoing = outgoing
                 self._ap = app_protocol
+                self._ssl_writing_paused = False
 
             def get_buffer(self, n):
                 return self._view[:n]
@@ -1283,6 +1413,9 @@ class Loop(_Loop):
                     return False
 
             def pause_writing(self):
+                # Pause SSL layer writing - this is called when the transport's
+                # write buffer exceeds the high-water mark
+                self._ssl_writing_paused = True
                 if hasattr(self, "_ap") and hasattr(self._ap, "pause_writing"):
                     try:
                         self._ap.pause_writing()
@@ -1290,11 +1423,15 @@ class Loop(_Loop):
                         logger.exception("Unhandled exception in event loop callback")
 
             def resume_writing(self):
+                # Resume SSL layer writing - this is called when the transport's
+                # write buffer drains below the low-water mark
+                self._ssl_writing_paused = False
                 if hasattr(self, "_ap") and hasattr(self._ap, "resume_writing"):
                     try:
                         self._ap.resume_writing()
                     except Exception:
                         logger.exception("Unhandled exception in event loop callback")
+                self._f()
 
             def _h(self):
                 try:
@@ -1580,7 +1717,7 @@ class Loop(_Loop):
                 # subprocess_exec). The bridge protocol uses this holder
                 # to find the user protocol at data_received time.
 
-                class _ReadBridge:
+                class _ReadBridge(asyncio.BaseProtocol):
                     def __init__(self, fd):
                         self._fd = fd
 
@@ -1599,7 +1736,7 @@ class Loop(_Loop):
                         if target is not None:
                             target.pipe_connection_lost(self._fd, exc)
 
-                class _WriteBridge:
+                class _WriteBridge(asyncio.BaseProtocol):
                     def connection_made(self, transport):
                         pass
 
@@ -1631,13 +1768,17 @@ class Loop(_Loop):
                         )
                         pre_pipes[0] = t
                     if popen.stdout is not None:
+                        def make_stdout_bridge():
+                            return _ReadBridge(1)
                         _, t = await self.connect_read_pipe(
-                            lambda fd=1: _ReadBridge(fd), popen.stdout
+                            make_stdout_bridge, popen.stdout
                         )
                         pre_pipes[1] = t
                     if popen.stderr is not None:
+                        def make_stderr_bridge():
+                            return _ReadBridge(2)
                         _, t = await self.connect_read_pipe(
-                            lambda fd=2: _ReadBridge(fd), popen.stderr
+                            make_stderr_bridge, popen.stderr
                         )
                         pre_pipes[2] = t
                 except NotImplementedError:

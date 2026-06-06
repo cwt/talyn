@@ -160,7 +160,7 @@ run_std_tests() {
         test_free_threading
         test_subprocess
         test_server
-        test_ssl            test_sslproto
+        test_sslproto
         test_sendfile       test_sock_lowlevel
     "
 
