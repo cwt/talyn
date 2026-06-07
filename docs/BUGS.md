@@ -801,7 +801,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **Trigger**: Buffer pool growth beyond 65535 (unlikely but possible).
 - **Consequences**: Potential logic error if sentinel collides with valid index.
 - **Fix**: Change to `?u16 = null` and update all comparison sites.
-- **Status**: 🟢 Open
+- **Status**: ✅ Fixed (see commit log)
 
 ---
 
@@ -814,5 +814,5 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 | Medium-High | 11 | 11 | 0 |
 | Medium-Mid | 11 | 11 | 0 |
 | Medium-Low | 13 | 12 | 1 |
-| Low | 27 | 26 | 1 |
-| **Total** | **89** | **87** | **2** |
+| Low | 27 | 27 | 0 |
+| **Total** | **89** | **88** | **1** |

@@ -67,15 +67,15 @@ pub fn init_configuration(
     self.fixed_file_index = ffi orelse 0;
 
     // Lease registered buffer from the global pool
-    var fixed_buffer_index: ?u16 = null;
+    var fixed_buffer_index: i32 = -1;
     var buffer: []u8 = &.{};
     if (loop_data.io.lease_buffer()) |leased| {
-        fixed_buffer_index = leased.index;
+        fixed_buffer_index = @intCast(leased.index);
         buffer = leased.slice;
     } else {
         buffer = try allocator.alloc(u8, 65536);
     }
-    self.fixed_buffer_index = fixed_buffer_index orelse 0xffff;
+    self.fixed_buffer_index = fixed_buffer_index;
     self.buffer_ptr = buffer.ptr;
     self.buffer_len = buffer.len;
 

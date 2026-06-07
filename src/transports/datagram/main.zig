@@ -31,7 +31,7 @@ pub const DatagramTransportObject = extern struct {
     closed: bool,
     read_task_id: usize = 0,
     fixed_file_index: u16 = 0,
-    fixed_buffer_index: u16 = 0xffff,
+    fixed_buffer_index: i32 = -1,
     buffer_ptr: ?[*]u8 = null,
     buffer_len: usize = 0,
 };
@@ -53,15 +53,15 @@ fn cleanup_resources(instance: *DatagramTransportObject) void {
         }
         instance.fixed_file_index = 0;
     }
-    if (instance.fixed_buffer_index != 0xffff) {
+    if (instance.fixed_buffer_index != -1) {
         if (instance.loop) |loop| {
             const loop_obj: *LoopObject = @alignCast(@ptrCast(loop));
             const loop_data = utils.get_data_ptr(Loop, loop_obj);
             if (loop_data.initialized) {
-                loop_data.io.release_buffer(instance.fixed_buffer_index);
+                loop_data.io.release_buffer(@intCast(instance.fixed_buffer_index));
             }
         }
-        instance.fixed_buffer_index = 0xffff;
+        instance.fixed_buffer_index = -1;
         instance.buffer_ptr = null;
         instance.buffer_len = 0;
     } else if (instance.buffer_len > 0) {
