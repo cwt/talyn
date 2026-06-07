@@ -11,6 +11,7 @@ const LoopObject = Loop.Python.LoopObject;
 const Future = @import("../../../../future/main.zig");
 const FutureObject = Future.Python.FutureObject;
 const Parsers = @import("../../../dns/parsers.zig");
+const Resolv = @import("../../../dns/resolv.zig");
 
 const GetNameInfoData = struct {
     future: *FutureObject,
@@ -104,7 +105,15 @@ inline fn z_loop_getnameinfo(self: *LoopObject, args: []const ?PyObject) !*Futur
         .data = .{ .user_data = gnid },
     };
     
-    try loop_data.dns.reverse_lookup(addr, &callback);
+    const dns_timeout = blk: {
+        const py_timeout = if (args.len > 2) args[2] else null;
+        if (py_timeout) |pt| {
+            const timeout_val = python_c.PyFloat_AsDouble(pt);
+            const result: ?Resolv.DnsTimeout = if (timeout_val == -1.0 and python_c.PyErr_Occurred() != null) null else Resolv.timeout_from_secs(timeout_val);
+            break :blk result;
+        } else break :blk null;
+    };
+    try loop_data.dns.reverse_lookup(addr, &callback, dns_timeout);
 
     return fut;
 }

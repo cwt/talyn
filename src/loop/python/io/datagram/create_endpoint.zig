@@ -8,6 +8,7 @@ const LoopObject = Loop.Python.LoopObject;
 const Future = @import("../../../../future/main.zig");
 const FutureObject = Future.Python.FutureObject;
 const DatagramTransport = @import("../../../../transports/datagram/main.zig");
+const Resolv = @import("../../../dns/resolv.zig");
 
 const DatagramCreationData = struct {
     future: *FutureObject,
@@ -19,6 +20,7 @@ const DatagramCreationData = struct {
     py_reuse_port: ?PyObject = null,
     py_allow_broadcast: ?PyObject = null,
     py_sock: ?PyObject = null,
+    py_dns_timeout: ?PyObject = null,
 
     local_addresses: ?[]utils.Address = null,
     remote_addresses: ?[]utils.Address = null,
@@ -132,12 +134,19 @@ fn resolve_local_addr(data: *const CallbackManager.CallbackData) !void {
             .cleanup = null,
             .data = .{ .user_data = dcd },
         };
-        const addresses = try loop_data.dns.lookup(addr_info.host, &resolver_callback) orelse return;
+        const dns_timeout = blk: {
+            if (dcd.py_dns_timeout) |py_timeout| {
+                const timeout_val = python_c.PyFloat_AsDouble(py_timeout);
+                const result: ?Resolv.DnsTimeout = if (timeout_val == -1.0 and python_c.PyErr_Occurred() != null) null else Resolv.timeout_from_secs(timeout_val);
+                break :blk result;
+            } else break :blk null;
+        };
+        const addresses = try loop_data.dns.lookup(addr_info.host, &resolver_callback, dns_timeout) orelse return;
         dcd.local_addresses = try loop_data.allocator.dupe(utils.Address, addresses);
         // Update ports
         for (dcd.local_addresses.?) |*addr| addr.setPort(addr_info.port);
-    }
-
+}
+    
     const callback = CallbackManager.Callback{
         .func = &resolve_remote_addr,
         .cleanup = null,
@@ -152,7 +161,14 @@ fn local_addr_resolved_callback(data: *const CallbackManager.CallbackData) !void
 
     const loop_data = utils.get_data_ptr(Loop, dcd.loop);
     const addr_info = get_addr_tuple(dcd.py_local_addr.?) catch |err| return set_future_exception(err, dcd.future);
-    const addresses = try loop_data.dns.lookup(addr_info.host, null) orelse return set_future_exception(error.PythonError, dcd.future);
+    const dns_timeout = blk: {
+        if (dcd.py_dns_timeout) |p| {
+            const timeout_val = python_c.PyFloat_AsDouble(p);
+            const result: ?Resolv.DnsTimeout = if (timeout_val == -1.0 and python_c.PyErr_Occurred() != null) null else Resolv.timeout_from_secs(timeout_val);
+            break :blk result;
+        } else break :blk null;
+    };
+    const addresses = try loop_data.dns.lookup(addr_info.host, null, dns_timeout) orelse return set_future_exception(error.PythonError, dcd.future);
     dcd.local_addresses = try loop_data.allocator.dupe(utils.Address, addresses);
     for (dcd.local_addresses.?) |*addr| addr.setPort(addr_info.port);
 
@@ -169,6 +185,13 @@ fn resolve_remote_addr(data: *const CallbackManager.CallbackData) !void {
     if (data.cancelled()) return dcd.deinit();
 
     const loop_data = utils.get_data_ptr(Loop, dcd.loop);
+    const dns_timeout = blk: {
+        if (dcd.py_dns_timeout) |p| {
+            const timeout_val = python_c.PyFloat_AsDouble(p);
+            const result: ?Resolv.DnsTimeout = if (timeout_val == -1.0 and python_c.PyErr_Occurred() != null) null else Resolv.timeout_from_secs(timeout_val);
+            break :blk result;
+        } else break :blk null;
+    };
 
     if (dcd.py_remote_addr) |ra| {
         const addr_info = get_addr_tuple(ra) catch |err| return set_future_exception(err, dcd.future);
@@ -177,7 +200,7 @@ fn resolve_remote_addr(data: *const CallbackManager.CallbackData) !void {
             .cleanup = null,
             .data = .{ .user_data = dcd },
         };
-        const addresses = try loop_data.dns.lookup(addr_info.host, &resolver_callback) orelse return;
+        const addresses = try loop_data.dns.lookup(addr_info.host, &resolver_callback, dns_timeout) orelse return;
         dcd.remote_addresses = try loop_data.allocator.dupe(utils.Address, addresses);
         for (dcd.remote_addresses.?) |*addr| addr.setPort(addr_info.port);
     }
@@ -195,8 +218,16 @@ fn remote_addr_resolved_callback(data: *const CallbackManager.CallbackData) !voi
     if (data.cancelled()) return dcd.deinit();
 
     const loop_data = utils.get_data_ptr(Loop, dcd.loop);
+    const dns_timeout = blk: {
+        if (dcd.py_dns_timeout) |p| {
+            const timeout_val = python_c.PyFloat_AsDouble(p);
+            const result: ?Resolv.DnsTimeout = if (timeout_val == -1.0 and python_c.PyErr_Occurred() != null) null else Resolv.timeout_from_secs(timeout_val);
+            break :blk result;
+        } else break :blk null;
+    };
+
     const addr_info = get_addr_tuple(dcd.py_remote_addr.?) catch |err| return set_future_exception(err, dcd.future);
-    const addresses = try loop_data.dns.lookup(addr_info.host, null) orelse return set_future_exception(error.PythonError, dcd.future);
+    const addresses = try loop_data.dns.lookup(addr_info.host, null, dns_timeout) orelse return set_future_exception(error.PythonError, dcd.future);
     dcd.remote_addresses = try loop_data.allocator.dupe(utils.Address, addresses);
     for (dcd.remote_addresses.?) |*addr| addr.setPort(addr_info.port);
 

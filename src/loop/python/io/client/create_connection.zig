@@ -14,6 +14,7 @@ const Future = @import("../../../../future/main.zig");
 const FutureObject = Future.Python.FutureObject;
 
 const Stream = @import("../../../../transports/stream/main.zig");
+const Resolv = @import("../../../dns/resolv.zig");
 
 const SocketCreationData = struct {
     py_host: ?PyObject = null,
@@ -28,6 +29,8 @@ const SocketCreationData = struct {
     py_happy_eyeballs_delay: ?PyObject = null, // Happy eyeballs? hahaha
     py_interleave: ?PyObject = null,
     py_all_errors: ?PyObject = null,
+    py_dns_timeout: ?PyObject = null,
+    dns_timeout: ?Resolv.DnsTimeout = null,
 
     protocol_factory: ?PyObject = null,
     future: ?*FutureObject = null,
@@ -73,6 +76,7 @@ const TransportCreationData = struct {
     fd_created: bool = true,
     owns_fd: bool = true,
     python_payload: CallbackManager.PythonPayload = .{},
+    dns_timeout: ?Resolv.DnsTimeout = null,
 
     comptime {
         python_c.verify_gc_coverage(@This(), &.{});
@@ -140,7 +144,8 @@ inline fn z_loop_create_connection(
             "ssl_shutdown_timeout\x00",
             "happy_eyeballs_delay\x00",
             "interleave\x00",
-            "all_errors\x00"
+            "all_errors\x00",
+            "dns_timeout\x00"
         },
         &.{
             &creation_data.py_host,
@@ -155,7 +160,8 @@ inline fn z_loop_create_connection(
             &creation_data.py_ssl_shutdown_timeout,
             &creation_data.py_happy_eyeballs_delay,
             &creation_data.py_interleave,
-            &creation_data.py_all_errors
+            &creation_data.py_all_errors,
+            &creation_data.py_dns_timeout
         },
     );
     defer {
@@ -201,14 +207,23 @@ inline fn z_loop_create_connection(
         const transport_creation_data = try allocator.create(TransportCreationData);
         errdefer allocator.destroy(transport_creation_data);
 
+        const dns_timeout_val = blk: {
+            if (creation_data.py_dns_timeout) |py_dns_timeout| {
+                const timeout_val = python_c.PyFloat_AsDouble(py_dns_timeout);
+                const result: ?Resolv.DnsTimeout = if (timeout_val == -1.0 and python_c.PyErr_Occurred() != null) null else Resolv.timeout_from_secs(timeout_val);
+                break :blk result;
+            } else break :blk null;
+        };
+
         transport_creation_data.* = .{
             .protocol_factory = protocol_factory,
             .future = fut,
             .loop = python_c.py_newref(self),
             .socket_fd = @intCast(fd),
-            .zero_copying = false,
+            .zero_copying = false, // Caller owns the fd (e.g. accept()'d socket).
             .fd_created = false, // Caller owns the fd (e.g. accept()'d socket).
             .owns_fd = false,     // Don't close the fd on transport close.
+            .dns_timeout = dns_timeout_val,
             .python_payload = .{
                 .module_ptr = @ptrCast(self),
                 .callback_ptr = @ptrCast(fut),
@@ -272,6 +287,7 @@ const SocketConnectionData = struct {
     local_addr_list: ?[]utils.Address,
     method: SocketConnectionMethod,
     python_payload: CallbackManager.PythonPayload = .{},
+    dns_timeout: ?Resolv.DnsTimeout = null,
 
     comptime {
         python_c.verify_gc_coverage(@This(), &.{ "creation_data", "address_list", "local_addr_list" });
@@ -332,6 +348,7 @@ fn z_try_resolv_host(creation_data: *SocketCreationData) !void {
     connection_data.creation_data = creation_data;
     connection_data.address_list = null;
     connection_data.local_addr_list = null;
+    connection_data.dns_timeout = creation_data.dns_timeout;
     connection_data.python_payload = .{
         .module_ptr = @ptrCast(creation_data.loop.?),
         .callback_ptr = @ptrCast(creation_data.future.?),
@@ -343,7 +360,7 @@ fn z_try_resolv_host(creation_data: *SocketCreationData) !void {
         .cleanup = null,
         .data = CallbackManager.CallbackData.init_python(connection_data, &connection_data.python_payload),
     };
-    const address_list = try loop_data.dns.lookup(hostname, &resolver_callback) orelse return;
+    const address_list = try loop_data.dns.lookup(hostname, &resolver_callback, connection_data.dns_timeout) orelse return;
 
     connection_data.address_list = try allocator.dupe(utils.Address, address_list);
     errdefer allocator.free(connection_data.address_list.?);
@@ -379,7 +396,7 @@ fn z_host_resolved_callback(connection_data: *SocketConnectionData) !void {
     const allocator = loop_data.allocator;
 
     const host = try get_host_slice(creation_data);
-    const address_list = try loop_data.dns.lookup(host, null) orelse {
+    const address_list = try loop_data.dns.lookup(host, null, creation_data.dns_timeout) orelse {
         python_c.raise_python_runtime_error("Failed to resolve host");
         return set_future_exception(error.PythonError, creation_data.future.?);
     };

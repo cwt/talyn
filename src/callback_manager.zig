@@ -24,6 +24,7 @@ pub const PythonPayload = extern struct {
     module_ptr: ?*python_c.PyObject = null,
     callback_ptr: ?PyObject = null,
     traverse: ?*const fn (ptr: ?*anyopaque, visit: ?*anyopaque, arg: ?*anyopaque) c_int = null,
+    dns_timeout: ?*i64 = null,
 };
 
 pub const CallbackData = struct {

@@ -14,6 +14,7 @@ const Future = @import("../../../../future/main.zig");
 const FutureObject = Future.Python.FutureObject;
 
 const StreamServer = @import("../../../../transports/streamserver/main.zig");
+const Resolv = @import("../../../dns/resolv.zig");
 
 const ServerCreationData = struct {
     py_host: ?PyObject = null,
@@ -24,6 +25,7 @@ const ServerCreationData = struct {
     py_backlog: ?PyObject = null,
     py_reuse_address: ?PyObject = null,
     py_reuse_port: ?PyObject = null,
+    py_dns_timeout: ?PyObject = null,
     protocol_factory: ?PyObject = null,
     future: ?*FutureObject = null,
     loop: ?*LoopObject = null,
@@ -41,6 +43,7 @@ const ServerSocketData = struct {
     creation_data: *ServerCreationData,
     address_list: ?[]utils.Address = null,
     socket_fd: std.posix.fd_t = -1,
+    dns_timeout: ?Resolv.DnsTimeout = null,
 
     pub fn deinit(self: *ServerSocketData) void {
         const loop_data = utils.get_data_ptr(Loop, self.creation_data.loop.?);
@@ -102,8 +105,8 @@ inline fn z_loop_create_server(
     // Parse kwargs first to check for sock
     try python_c.parse_vector_call_kwargs(
         knames, args.ptr + args.len,
-        &.{ "family\x00", "flags\x00", "sock\x00", "backlog\x00", "reuse_address\x00", "reuse_port\x00" },
-        &.{ &creation_data.py_family, &creation_data.py_flags, &creation_data.py_sock, &creation_data.py_backlog, &creation_data.py_reuse_address, &creation_data.py_reuse_port },
+        &.{ "family\x00", "flags\x00", "sock\x00", "backlog\x00", "reuse_address\x00", "reuse_port\x00", "dns_timeout\x00" },
+        &.{ &creation_data.py_family, &creation_data.py_flags, &creation_data.py_sock, &creation_data.py_backlog, &creation_data.py_reuse_address, &creation_data.py_reuse_port, &creation_data.py_dns_timeout },
     );
 
     // Only set host/port if sock is not provided
@@ -278,7 +281,15 @@ fn z_try_resolve_server_host(creation_data: *ServerCreationData) !void {
             .user_data = server_data,
         },
     };
-    const address_list = try loop_data.dns.lookup(hostname, &resolver_callback) orelse return;
+    const dns_timeout_val = blk: {
+        if (creation_data.py_dns_timeout) |py_dns_timeout| {
+            const timeout_val = python_c.PyFloat_AsDouble(py_dns_timeout);
+            const result: ?Resolv.DnsTimeout = if (timeout_val == -1.0 and python_c.PyErr_Occurred() != null) null else Resolv.timeout_from_secs(timeout_val);
+            break :blk result;
+        } else break :blk null;
+    };
+    server_data.dns_timeout = dns_timeout_val;
+    const address_list = try loop_data.dns.lookup(hostname, &resolver_callback, server_data.dns_timeout) orelse return;
 
     server_data.address_list = try allocator.dupe(utils.Address, address_list);
     errdefer allocator.free(server_data.address_list.?);
@@ -316,7 +327,7 @@ fn z_server_host_resolved_callback(server_data: *ServerSocketData) !void {
     const allocator = loop_data.allocator;
 
     const host = try get_host_slice(creation_data);
-    const address_list = try loop_data.dns.lookup(host, null) orelse {
+    const address_list = try loop_data.dns.lookup(host, null, server_data.dns_timeout) orelse {
         python_c.raise_python_runtime_error("Failed to resolve host\x00");
         return set_future_exception(error.PythonError, creation_data.future.?);
     };

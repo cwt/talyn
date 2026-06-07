@@ -16,6 +16,29 @@ const DEFAULT_TIMEOUT: std.os.linux.kernel_timespec = .{
     .nsec = 0,
 };
 
+pub const DnsTimeout = struct {
+    sec: u64 = 0,
+    nsec: u32 = 0,
+};
+
+pub fn timeout_from_secs(timeout_secs: f64) DnsTimeout {
+    const sec: i64 = @floor(timeout_secs);
+    const frac = timeout_secs - @as(f64, @floatFromInt(sec));
+    const nsec: i64 = @floor(frac * 1e9);
+    return .{ .sec = @as(u64, @intCast(sec)), .nsec = @as(u32, @intCast(nsec)) };
+}
+
+pub fn timeout_to_secs(timeout: DnsTimeout) f64 {
+    return @as(f64, @floatFromInt(timeout.sec)) + @as(f64, @floatFromInt(timeout.nsec)) / 1e9;
+}
+
+pub fn dns_timeout_to_kernel_timespec(timeout: DnsTimeout) std.os.linux.kernel_timespec {
+    return .{
+        .sec = @as(i64, @intCast(timeout.sec)),
+        .nsec = @as(i64, @intCast(timeout.nsec)),
+    };
+}
+
 const Header = packed struct {
     id: u16,
     flags: u16,
@@ -86,6 +109,7 @@ const ServerQueryData = struct {
 
     min_ttl: u32 = std.math.maxInt(u32),
     finished: bool = false,
+    dns_timeout: ?DnsTimeout = null,
 
     pub inline fn cancel(self: *ServerQueryData) void {
         const socket_fd = self.socket_fd;
@@ -220,10 +244,10 @@ fn queue_next_response_read(server_data: *ServerQueryData) !void {
                 .cleanup = &cleanup_server_query_data,
                 .data = .{ .user_data = server_data },
             },
-            .data = .{ .buffer = &server_data.recv_buf },
+                .data = .{ .buffer = &server_data.recv_buf },
             .fd = server_data.socket_fd,
             .zero_copy = true,
-            .timeout = DEFAULT_TIMEOUT,
+            .timeout = if (server_data.dns_timeout) |t| dns_timeout_to_kernel_timespec(t) else DEFAULT_TIMEOUT,
         },
     });
 }
@@ -232,6 +256,7 @@ fn queue_next_response_read(server_data: *ServerQueryData) !void {
 /// Sends the next query if one is pending; otherwise starts reading responses.
 fn on_query_sent(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
+
     const server_data: *ServerQueryData = @alignCast(@ptrCast(data.user_data.?));
     const control_data = server_data.control_data;
 
@@ -239,6 +264,8 @@ fn on_query_sent(data: *const CallbackManager.CallbackData) !void {
         server_data.release();
         return;
     }
+
+    const timeout_val = if (server_data.dns_timeout) |t| dns_timeout_to_kernel_timespec(t) else DEFAULT_TIMEOUT;
 
     server_data.send_idx += 1;
 
@@ -255,7 +282,7 @@ fn on_query_sent(data: *const CallbackManager.CallbackData) !void {
                 .data = next.buf[0..next.len],
                 .fd = server_data.socket_fd,
                 .zero_copy = true,
-                .timeout = DEFAULT_TIMEOUT,
+                .timeout = timeout_val,
             },
         });
     } else {
@@ -545,7 +572,9 @@ fn build_queries(
     hostnames_array: HostnamesArray,
     server_address: *const utils.Address,
     question_type: ?QuestionType,
+    dns_timeout: ?DnsTimeout,
 ) !void {
+    server_data.dns_timeout = dns_timeout;
     const socket_ret = std.os.linux.socket(
         server_address.any.family,
         std.posix.SOCK.DGRAM | std.posix.SOCK.CLOEXEC,
@@ -658,6 +687,7 @@ fn prepare_data(
     configuration: Parsers.Configuration,
     ipv6_supported: bool,
     question_type: ?QuestionType,
+    dns_timeout: ?DnsTimeout,
 ) !*ControlData {
     const allocator = cache_slot.allocator;
 
@@ -714,6 +744,7 @@ fn prepare_data(
     }
 
     for (configuration.servers, queries_data) |*server_address, *server_data| {
+        server_data.dns_timeout = dns_timeout;
         try build_queries(
             arena_allocator,
             loop,
@@ -723,6 +754,7 @@ fn prepare_data(
             hostnames_array,
             server_address,
             question_type,
+            dns_timeout,
         );
 
         queries_built += 1;
@@ -739,6 +771,7 @@ pub fn queue(
     configuration: Parsers.Configuration,
     ipv6_supported: bool,
     question_type: ?QuestionType,
+    dns_timeout: ?DnsTimeout,
 ) !void {
     const control_data = try prepare_data(
         cache_slot,
@@ -748,6 +781,7 @@ pub fn queue(
         configuration,
         ipv6_supported,
         question_type,
+        dns_timeout,
     );
 
     var queries_sent: usize = 0;
@@ -763,6 +797,7 @@ pub fn queue(
 
     for (control_data.queries_data) |*server_data| {
         const first = &server_data.queries[0];
+        const timeout = if (dns_timeout) |dt| dns_timeout_to_kernel_timespec(dt) else DEFAULT_TIMEOUT;
         _ = try loop.io.queue(.{
             .PerformWrite = .{
                 .zero_copy = true,
@@ -775,7 +810,7 @@ pub fn queue(
                         .user_data = server_data,
                     },
                 },
-                .timeout = DEFAULT_TIMEOUT,
+                .timeout = timeout,
             },
         });
 

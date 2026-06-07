@@ -39,7 +39,7 @@ class _SSLTransportWrapper:
 
     def write(self, data):
         # Check if SSL writing is paused
-        if getattr(self._ssp, '_ssl_writing_paused', False):
+        if getattr(self._ssp, "_ssl_writing_paused", False):
             self._write_buffer.append(data)
             return
         # BUG-54: Handle SSLWantWriteError (renegotiation), SSLWantReadError
@@ -101,7 +101,7 @@ class _SSLTransportWrapper:
                         # Raw transport is paused at protocol level, but socket may still accept data.
                         # Write directly to socket fd to bypass protocol-level flow control.
                         try:
-                            fd = self._raw_t.get_extra_info('socket').fileno()
+                            fd = self._raw_t.get_extra_info("socket").fileno()
                             view = memoryview(d)
                             while view:
                                 n = os.write(fd, view)
@@ -127,13 +127,13 @@ class _SSLTransportWrapper:
     def _start_shutdown(self):
         # First flush any buffered writes
         self._flush_write_buffer()
-        
+
         # If there's still buffered data, wait for it to be written
         if self._write_buffer:
             # The data will be flushed when the transport can write again
             # We'll retry shutdown after the buffer is empty
             return
-        
+
         try:
             self._ssp._sslobj.unwrap()
         except self._sslmod.SSLWantReadError:
@@ -942,7 +942,7 @@ class Loop(_Loop):
                         self._ap.resume_writing()
                     except Exception:
                         logger.exception("Unhandled exception in event loop callback")
-                if hasattr(self, '_wrapper') and self._wrapper is not None:
+                if hasattr(self, "_wrapper") and self._wrapper is not None:
                     self._wrapper._flush_write_buffer()
                 self._f()
 
@@ -1004,7 +1004,7 @@ class Loop(_Loop):
                             # Raw transport is paused at protocol level, but socket may still accept data.
                             # Write directly to socket fd to bypass protocol-level flow control.
                             try:
-                                fd = self._raw_t.get_extra_info('socket').fileno()
+                                fd = self._raw_t.get_extra_info("socket").fileno()
                                 view = memoryview(d)
                                 while view:
                                     n = os.write(fd, view)
@@ -1048,6 +1048,7 @@ class Loop(_Loop):
             )
 
         if ssl_handshake_timeout is not None:
+
             def on_timeout():
                 if not waiter.done():
                     msg = (
@@ -1763,20 +1764,22 @@ class Loop(_Loop):
 
                 try:
                     if popen.stdin is not None:
-                        _, t = await self.connect_write_pipe(
-                            _WriteBridge, popen.stdin
-                        )
+                        _, t = await self.connect_write_pipe(_WriteBridge, popen.stdin)
                         pre_pipes[0] = t
                     if popen.stdout is not None:
+
                         def make_stdout_bridge():
                             return _ReadBridge(1)
+
                         _, t = await self.connect_read_pipe(
                             make_stdout_bridge, popen.stdout
                         )
                         pre_pipes[1] = t
                     if popen.stderr is not None:
+
                         def make_stderr_bridge():
                             return _ReadBridge(2)
+
                         _, t = await self.connect_read_pipe(
                             make_stderr_bridge, popen.stderr
                         )

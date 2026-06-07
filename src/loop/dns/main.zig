@@ -87,6 +87,7 @@ pub fn lookup(
     self: *DNS,
     hostname: []const u8,
     callback: ?*const CallbackManager.Callback,
+    timeout: ?Resolv.DnsTimeout,
 ) !?[]const utils.Address {
     const parsed_hostname = std.ascii.lowerString(&self.parsed_hostname_buf, hostname);
 
@@ -110,7 +111,7 @@ pub fn lookup(
         }
 
         // Use native asynchronous resolver
-        try Resolv.queue(cache_slot, self.loop, parsed_hostname, callback.?, self.configuration, ipv6_supported, null);
+        try Resolv.queue(cache_slot, self.loop, parsed_hostname, callback.?, self.configuration, ipv6_supported, null, timeout);
         return null;
     };
 
@@ -131,6 +132,7 @@ pub fn reverse_lookup(
     self: *DNS,
     address: utils.Address,
     callback: *const CallbackManager.Callback,
+    timeout: ?Resolv.DnsTimeout,
 ) !void {
     var buf: [128]u8 = undefined;
     const name = try Parsers.build_reverse_name(address, &buf);
@@ -155,7 +157,7 @@ pub fn reverse_lookup(
         return;
     }
 
-    try Resolv.queue(cache_slot, self.loop, name, callback, self.configuration, false, .ptr);
+    try Resolv.queue(cache_slot, self.loop, name, callback, self.configuration, false, .ptr, timeout);
 }
 
 pub fn deinit(self: *DNS) void {

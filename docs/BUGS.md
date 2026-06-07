@@ -1,37 +1,11 @@
 # Talyn Bug Report
 
 Generated: 2026-05-31
-Last updated: 2026-06-02
+Last updated: 2026-06-08
 
 Deep static analysis of the talyn codebase. Bugs are ordered by severity.
 
----
 
-## Status Summary (as of 2026-06-04)
-
-| Severity | Total | Fixed | Open |
-|----------|-------|-------|------|
-| Critical | 5 | 5 | 0 |
-| High | 20 | 20 | 0 |
-| Medium-High | 11 | 11 | 0 |
-| Medium-Mid | 11 | 11 | 0 |
-| Medium-Low | 12 | 12 | 0 |
-| Low | 26 | 26 | 0 |
-| **Total** | **85** | **85** | **0** |
-
-All CRITICAL, HIGH, MEDIUM-HIGH, MEDIUM-MID, and MEDIUM-LOW bugs have been
-verified fixed at HEAD (commits `401866ea4196` through HEAD). Each fixed bug
-below lists the commit hash that resolved it.
-
-### Medium Tier Grouping
-
-The 34 MEDIUM bugs are split into three sub-tiers by impact and likelihood:
-
-- **Medium-High** — crash, UAF, data loss, or DoS in normal usage paths
-- **Medium-Mid** — noticeable bugs, security gaps, or production-affecting leaks
-- **Medium-Low** — edge cases, mitigated issues, or rare-trigger conditions
-
----
 
 ## CRITICAL
 
@@ -791,7 +765,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **Trigger**: Slow DNS environments or applications needing custom timeouts.
 - **Consequences**: Fixed timeout behavior; cannot adapt to network conditions.
 - **Fix**: Add `timeout` parameter to `queue` function and thread through from Python API (`create_connection`, `create_server`, `getaddrinfo`).
-- **Status**: 🟠 Open
+- **Status**: ✅ Fixed
 
 ### BUG-89: `fixed_buffer_index: u16 = 0xffff` sentinel should be `?u16`
 
@@ -813,6 +787,6 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 | High | 21 | 21 | 0 |
 | Medium-High | 11 | 11 | 0 |
 | Medium-Mid | 11 | 11 | 0 |
-| Medium-Low | 13 | 12 | 1 |
+| Medium-Low | 13 | 13 | 0 |
 | Low | 27 | 27 | 0 |
-| **Total** | **89** | **88** | **1** |
+| **Total** | **89** | **89** | **0** |

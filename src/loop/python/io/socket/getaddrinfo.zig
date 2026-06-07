@@ -10,6 +10,7 @@ const Loop = @import("../../../main.zig");
 const LoopObject = Loop.Python.LoopObject;
 const Future = @import("../../../../future/main.zig");
 const FutureObject = Future.Python.FutureObject;
+const Resolv = @import("../../../dns/resolv.zig");
 
 const GetAddrInfoData = struct {
     future: *FutureObject,
@@ -20,6 +21,7 @@ const GetAddrInfoData = struct {
     socket_type: i32,
     proto: i32,
     allocator: std.mem.Allocator,
+    dns_timeout: ?Resolv.DnsTimeout = null,
 
     comptime {
         python_c.verify_gc_coverage(@This(), &.{ "allocator", "host" });
@@ -40,7 +42,7 @@ fn getaddrinfo_callback(data: *const CallbackManager.CallbackData) !void {
         return;
     }
 
-    const address_list = try loop_data.dns.lookup(gaid.host, null) orelse {
+    const address_list = try loop_data.dns.lookup(gaid.host, null, gaid.dns_timeout) orelse {
         // This shouldn't happen if we are called back after Resolv.queue
         const exc = python_c.PyObject_CallFunction(python_c.PyExc_RuntimeError, "s\x00", "Failed to resolve host\x00") orelse return error.PythonError;
         defer python_c.py_decref(exc);
@@ -114,10 +116,11 @@ inline fn z_loop_getaddrinfo(self: *LoopObject, args: []const ?PyObject, knames:
     var py_type: ?PyObject = null;
     var py_proto: ?PyObject = null;
     var py_flags: ?PyObject = null;
+    var py_dns_timeout: ?PyObject = null;
     try python_c.parse_vector_call_kwargs(
         knames, @constCast(args.ptr + args.len),
-        &.{ "family", "type", "proto", "flags" },
-        &.{ &py_family, &py_type, &py_proto, &py_flags },
+        &.{ "family", "type", "proto", "flags", "dns_timeout" },
+        &.{ &py_family, &py_type, &py_proto, &py_flags, &py_dns_timeout },
     );
 
     const port: u16 = blk: {
@@ -155,6 +158,13 @@ inline fn z_loop_getaddrinfo(self: *LoopObject, args: []const ?PyObject, knames:
         .socket_type = socket_type,
         .proto = proto,
         .allocator = alloc,
+        .dns_timeout = blk: {
+            if (py_dns_timeout) |py_timeout| {
+                const timeout_val = python_c.PyFloat_AsDouble(py_timeout);
+                const result: ?Resolv.DnsTimeout = if (timeout_val == -1.0 and python_c.PyErr_Occurred() != null) null else Resolv.timeout_from_secs(timeout_val);
+                break :blk result;
+            } else break :blk null;
+        },
     };
 
     const callback = CallbackManager.Callback{
@@ -163,7 +173,7 @@ inline fn z_loop_getaddrinfo(self: *LoopObject, args: []const ?PyObject, knames:
         .data = .{ .user_data = gaid },
     };
     
-    const address_list = try loop_data.dns.lookup(host_str, &callback);
+    const address_list = try loop_data.dns.lookup(host_str, &callback, gaid.dns_timeout);
     if (address_list) |al| {
         // Result was in cache
         const py_res = try build_result_tuple(al, port, family, socket_type, proto);
