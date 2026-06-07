@@ -771,7 +771,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **Trigger**: Building with `TALYN_OPTIMIZE=ReleaseFast` (Starburst mode).
 - **Consequences**: Silent type registration corruption; types may not work correctly; crashes in free-threaded builds.
 - **Fix**: Change all `const TypeSpec` declarations to `var TypeSpec` to prevent const-folding.
-- **Status**: 🔴 Open
+- **Status**: ✅ Fixed (see commit log)
 
 ### BUG-87: `allocator.create` + field-by-field initialization leaves new fields uninitialized
 
@@ -819,10 +819,10 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 
 | Severity | Total | Fixed | Open |
 |----------|-------|-------|------|
-| Critical | 6 | 5 | 1 |
+| Critical | 6 | 6 | 0 |
 | High | 22 | 20 | 2 |
 | Medium-High | 11 | 11 | 0 |
 | Medium-Mid | 11 | 11 | 0 |
 | Medium-Low | 13 | 12 | 1 |
 | Low | 27 | 26 | 1 |
-| **Total** | **90** | **85** | **5** |
+| **Total** | **90** | **86** | **4** |

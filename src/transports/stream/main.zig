@@ -190,7 +190,7 @@ const stream_slots = [_]python_c.PyType_Slot{
 
 // const PythonStreamMembers: []const python_c.PyMemberDef = &[_]python_c.PyMemberDef{
 
-const stream_spec = python_c.PyType_Spec{
+var stream_spec = python_c.PyType_Spec{
     .name = "talyn.StreamTransport\x00",
     .basicsize = @sizeOf(StreamTransportObject),
     .itemsize = 0,
