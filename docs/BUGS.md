@@ -781,7 +781,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **Trigger**: Adding new fields to these structs, or running with uninitialized memory patterns.
 - **Consequences**: Silent memory corruption; unpredictable behavior; potential crashes.
 - **Fix**: Use struct literal initialization: `queues.* = .{ [0] = .{}, [1] = .{} }` and `create_new_node(.{ .data = .none, .operation = undefined, ... })`.
-- **Status**: 🔴 Open
+- **Status**: ✅ Fixed (see commit log)
 
 ### BUG-88: SSL transport is a stub — no TLS support implemented
 
@@ -820,9 +820,9 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 | Severity | Total | Fixed | Open |
 |----------|-------|-------|------|
 | Critical | 6 | 6 | 0 |
-| High | 22 | 20 | 2 |
+| High | 22 | 21 | 1 |
 | Medium-High | 11 | 11 | 0 |
 | Medium-Mid | 11 | 11 | 0 |
 | Medium-Low | 13 | 12 | 1 |
 | Low | 27 | 26 | 1 |
-| **Total** | **90** | **86** | **4** |
+| **Total** | **90** | **87** | **3** |

@@ -181,18 +181,18 @@ fn eventfd_callback(data: *const CallbackManager.CallbackData) !void {
 const BlockingTasksSetLinkedList = utils.LinkedList(BlockingTasksSet);
 
 pub const BlockingTasksSet = struct {
-    task_data_pool: [TotalTasksItems]BlockingTask,
-    free_slots: [TotalTasksItems]u16,
-    free_count: u16,
+    task_data_pool: [TotalTasksItems]BlockingTask = undefined,
+    free_slots: [TotalTasksItems]u16 = undefined,
+    free_count: u16 = 0,
 
-    loop: *Loop,
-    index: u16,
-    active_tasks: u16,
+    loop: *Loop = undefined,
+    index: u16 = 0,
+    active_tasks: u16 = 0,
 
-    disattached: bool,
+    disattached: bool = false,
 
-    list: *BlockingTasksSetLinkedList,
-    node: BlockingTasksSetLinkedList.Node,
+    list: *BlockingTasksSetLinkedList = undefined,
+    node: BlockingTasksSetLinkedList.Node = undefined,
 
     pub fn init(self: *BlockingTasksSet, node: BlockingTasksSetLinkedList.Node, list: *BlockingTasksSetLinkedList, loop: *Loop) void {
         for (&self.task_data_pool, 0..) |*task, index| {
@@ -437,7 +437,7 @@ buffer_pool: RegisteredBufferPool = .{},
 pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
     self.busy_sets = BlockingTasksSetLinkedList.init(allocator);
 
-    self.set_node = try self.busy_sets.create_new_node(undefined);
+    self.set_node = try self.busy_sets.create_new_node(.{});
     self.set = &self.set_node.data;
     self.set.init(self.set_node, &self.busy_sets, loop);
     errdefer self.set.deinit();
@@ -685,7 +685,7 @@ pub fn get_blocking_tasks_set(self: *IO) !*BlockingTasksSet {
     // not be rolled back.
     errdefer set.disattached = false;
 
-    const new_node = try self.busy_sets.create_new_node(undefined);
+    const new_node = try self.busy_sets.create_new_node(.{});
     errdefer self.busy_sets.release_node(new_node);
 
     const new_set = &new_node.data;

@@ -269,12 +269,12 @@ fn ceilPowerOfTwo(val: usize) usize {
 pub const DynamicRingBuffer = struct {
     const Self = @This();
 
-    callbacks: []Callback,
-    executed: []bool,
-    capacity: usize,
-    read_idx: usize,
-    write_idx: usize,
-    allocator: std.mem.Allocator,
+    callbacks: []Callback = &.{},
+    executed: []bool = &.{},
+    capacity: usize = 0,
+    read_idx: usize = 0,
+    write_idx: usize = 0,
+    allocator: std.mem.Allocator = undefined,
 
     pub fn init(self: *Self, allocator: std.mem.Allocator, capacity: usize) !void {
         const actual_capacity = ceilPowerOfTwo(capacity);

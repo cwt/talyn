@@ -79,6 +79,7 @@ pub fn init(self: *Loop, allocator: std.mem.Allocator, rtq_capacity: usize) !voi
 
     const queues = try allocator.create([2]CallbackManager.DynamicRingBuffer);
     errdefer allocator.destroy(queues);
+    queues.* = .{ .{}, .{} };
     try queues[0].init(allocator, rtq_capacity);
     errdefer queues[0].deinit();
     try queues[1].init(allocator, rtq_capacity);
