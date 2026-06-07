@@ -783,17 +783,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **Fix**: Use struct literal initialization: `queues.* = .{ [0] = .{}, [1] = .{} }` and `create_new_node(.{ .data = .none, .operation = undefined, ... })`.
 - **Status**: ✅ Fixed (see commit log)
 
-### BUG-88: SSL transport is a stub — no TLS support implemented
-
-- **Severity tier**: HIGH
-- **File**: `src/transports/ssl/main.zig`
-- **Description**: The entire SSL transport subsystem is a stub with no protocol-layer implementation. Missing: `create_connection` kwargs forwarding, WantRead/WantWrite handling, buffer draining on `start_tls`, MemoryBIO integration, and all TLS handshake logic.
-- **Trigger**: Any attempt to use SSL/TLS connections or servers.
-- **Consequences**: SSL connections fail or hang; `start_tls` doesn't work; no TLS support in Talyn.
-- **Fix**: Implement full SSL transport per Lesson 16 (protocol-layer with MemoryBIO, proper handshake state machine, buffer management).
-- **Status**: 🔴 Open
-
-### BUG-89: Hardcoded 5s DNS timeout — not configurable from Python API
+### BUG-88: Hardcoded 5s DNS timeout — not configurable from Python API
 
 - **Severity tier**: MEDIUM-LOW
 - **File**: `src/loop/dns/resolv.zig:14-17`
@@ -803,7 +793,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **Fix**: Add `timeout` parameter to `queue` function and thread through from Python API (`create_connection`, `create_server`, `getaddrinfo`).
 - **Status**: 🟠 Open
 
-### BUG-90: `fixed_buffer_index: u16 = 0xffff` sentinel should be `?u16`
+### BUG-89: `fixed_buffer_index: u16 = 0xffff` sentinel should be `?u16`
 
 - **Severity tier**: LOW
 - **File**: `src/transports/datagram/main.zig:34`
@@ -820,9 +810,9 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 | Severity | Total | Fixed | Open |
 |----------|-------|-------|------|
 | Critical | 6 | 6 | 0 |
-| High | 22 | 21 | 1 |
+| High | 21 | 21 | 0 |
 | Medium-High | 11 | 11 | 0 |
 | Medium-Mid | 11 | 11 | 0 |
 | Medium-Low | 13 | 12 | 1 |
 | Low | 27 | 26 | 1 |
-| **Total** | **90** | **87** | **3** |
+| **Total** | **89** | **87** | **2** |
