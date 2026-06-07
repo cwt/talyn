@@ -758,3 +758,71 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **Description**: When a generic python callback executed, if it succeeded, it released the handle reference using `python_c.py_decref(handle)` before `PyContext_Exit` ran. This resulted in `contextvars` being deallocated while still active on the context stack, leading to use-after-free heap corruption when context operations were triggered subsequently. Additionally, on callback failure, the handle reference was double-decreffed (by the callback function itself and by the loop runner's exception cleanup), and the callback pointer was accessed by the exception handler after the handle and its callback object were already deallocated.
 - **Consequences**: Segment faults in `test_futures2`, `test_streams`, `test_tasks`, `test_locks`, `test_queues`, `test_timeouts`, and `test_waitfor` standard asyncio test suites.
 - **Status**: ✅ Fixed (see commit log)
+
+---
+
+## NEW BUGS (from 2026-06-07 audit)
+
+### BUG-86: `const` type specs cause LLVM const-folding in ReleaseFast
+
+- **Severity tier**: CRITICAL
+- **File**: `src/loop/python/main.zig:357`, `src/transports/stream/main.zig:193`
+- **Description**: `const stream_spec` and other type spec objects are declared as `const`. In ReleaseFast builds, LLVM's constant folding may inline and deduplicate these, causing multiple `PyType_FromSpec` calls to receive the same memory address. This breaks type registration — types become aliases of each other or registration fails silently.
+- **Trigger**: Building with `TALYN_OPTIMIZE=ReleaseFast` (Starburst mode).
+- **Consequences**: Silent type registration corruption; types may not work correctly; crashes in free-threaded builds.
+- **Fix**: Change all `const TypeSpec` declarations to `var TypeSpec` to prevent const-folding.
+- **Status**: 🔴 Open
+
+### BUG-87: `allocator.create` + field-by-field initialization leaves new fields uninitialized
+
+- **Severity tier**: HIGH
+- **File**: `src/loop/main.zig:80`, `src/loop/scheduling/io/main.zig:440`
+- **Description**: Several structs are initialized with `allocator.create(T)` followed by field-by-field assignment instead of struct literals. When new fields are added to the struct, they remain uninitialized (no field defaults applied by `allocator.create`). Specifically: `DynamicRingBuffer[2]` queues at line 80, and `BlockingTasksSet` node with `undefined` data field at line 440.
+- **Trigger**: Adding new fields to these structs, or running with uninitialized memory patterns.
+- **Consequences**: Silent memory corruption; unpredictable behavior; potential crashes.
+- **Fix**: Use struct literal initialization: `queues.* = .{ [0] = .{}, [1] = .{} }` and `create_new_node(.{ .data = .none, .operation = undefined, ... })`.
+- **Status**: 🔴 Open
+
+### BUG-88: SSL transport is a stub — no TLS support implemented
+
+- **Severity tier**: HIGH
+- **File**: `src/transports/ssl/main.zig`
+- **Description**: The entire SSL transport subsystem is a stub with no protocol-layer implementation. Missing: `create_connection` kwargs forwarding, WantRead/WantWrite handling, buffer draining on `start_tls`, MemoryBIO integration, and all TLS handshake logic.
+- **Trigger**: Any attempt to use SSL/TLS connections or servers.
+- **Consequences**: SSL connections fail or hang; `start_tls` doesn't work; no TLS support in Talyn.
+- **Fix**: Implement full SSL transport per Lesson 16 (protocol-layer with MemoryBIO, proper handshake state machine, buffer management).
+- **Status**: 🔴 Open
+
+### BUG-89: Hardcoded 5s DNS timeout — not configurable from Python API
+
+- **Severity tier**: MEDIUM-LOW
+- **File**: `src/loop/dns/resolv.zig:14-17`
+- **Description**: `DEFAULT_TIMEOUT` is hardcoded to 5 seconds with no way to override from the Python `create_connection`/`create_server` APIs. Users cannot configure DNS resolution timeouts.
+- **Trigger**: Slow DNS environments or applications needing custom timeouts.
+- **Consequences**: Fixed timeout behavior; cannot adapt to network conditions.
+- **Fix**: Add `timeout` parameter to `queue` function and thread through from Python API (`create_connection`, `create_server`, `getaddrinfo`).
+- **Status**: 🟠 Open
+
+### BUG-90: `fixed_buffer_index: u16 = 0xffff` sentinel should be `?u16`
+
+- **Severity tier**: LOW
+- **File**: `src/transports/datagram/main.zig:34`
+- **Description**: `fixed_buffer_index` uses `0xffff` as a sentinel for "no buffer leased". If the buffer pool ever grows beyond 65535 slots, this becomes a valid index. Using `?u16 = null` is cleaner and safer.
+- **Trigger**: Buffer pool growth beyond 65535 (unlikely but possible).
+- **Consequences**: Potential logic error if sentinel collides with valid index.
+- **Fix**: Change to `?u16 = null` and update all comparison sites.
+- **Status**: 🟢 Open
+
+---
+
+## Status Summary (as of 2026-06-07)
+
+| Severity | Total | Fixed | Open |
+|----------|-------|-------|------|
+| Critical | 6 | 5 | 1 |
+| High | 22 | 20 | 2 |
+| Medium-High | 11 | 11 | 0 |
+| Medium-Mid | 11 | 11 | 0 |
+| Medium-Low | 13 | 12 | 1 |
+| Low | 27 | 26 | 1 |
+| **Total** | **90** | **85** | **5** |
