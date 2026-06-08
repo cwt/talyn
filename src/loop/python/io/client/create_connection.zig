@@ -345,14 +345,17 @@ fn z_try_resolv_host(creation_data: *SocketCreationData) !void {
 
     const connection_data = try allocator.create(SocketConnectionData);
     errdefer allocator.destroy(connection_data);
-    connection_data.creation_data = creation_data;
-    connection_data.address_list = null;
-    connection_data.local_addr_list = null;
-    connection_data.dns_timeout = creation_data.dns_timeout;
-    connection_data.python_payload = .{
-        .module_ptr = @ptrCast(creation_data.loop.?),
-        .callback_ptr = @ptrCast(creation_data.future.?),
-        .traverse = &SocketConnectionData.traverse,
+    connection_data.* = .{
+        .creation_data = creation_data,
+        .address_list = null,
+        .local_addr_list = null,
+        .method = undefined,
+        .python_payload = .{
+            .module_ptr = @ptrCast(creation_data.loop.?),
+            .callback_ptr = @ptrCast(creation_data.future.?),
+            .traverse = &SocketConnectionData.traverse,
+        },
+        .dns_timeout = creation_data.dns_timeout,
     };
 
     const resolver_callback = CallbackManager.Callback{

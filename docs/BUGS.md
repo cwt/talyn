@@ -833,8 +833,8 @@ Bugs discovered by cross-referencing source code against the 104 documented less
 
 #### BUG-94: `allocator.create` + field-by-field leaves `SocketConnectionData.method` (tagged union) uninitialized
 
-- **Status**: 🟠 Open
-- **File**: `src/loop/python/io/client/create_connection.zig:346-352`
+- **Status**: ✅ Fixed (this commit)
+- **File**: `src/loop/python/io/client/create_connection.zig:346-356`
 - **Lesson**: [L49 — Zig-Specific, Struct Initialization](docs/lessons/08-zig-specific-patterns.md)
 - **Description**: `SocketConnectionData` is created with `allocator.create` then populated field-by-field at lines 348-354. The `method` field is a `union(enum)` with no default value — its tag byte is garbage. Though `method` is currently never read (dead field), this is a latent memory corruption bug that will trigger UB the moment any code path reads it.
 - **Trigger**: Any future code that reads `connection_data.method`.
@@ -976,11 +976,11 @@ Bugs discovered by cross-referencing source code against the 104 documented less
 | Medium-Low | 13 | 13 | 0 |
 | Low | 27 | 27 | 0 |
 | **Existing total** | **90** | **90** | **0** |
-| **New (2026-06-08)** | **—** | **3** | **7 new bugs** |
-| **Grand total** | **100** | **93** | **7 open** |
+| **New (2026-06-08)** | **—** | **4** | **6 new bugs** |
+| **Grand total** | **100** | **94** | **6 open** |
 
-**New bug breakdown (10 new, 3 fixed):**
+**New bug breakdown (10 new, 4 fixed):**
 - 🔴 Critical: 3 (BUG-91 ✅, BUG-92 ✅, BUG-93 ✅)
-- 🟠 High: 3 (BUG-94, BUG-95, BUG-96)
+- 🟠 High: 3 (BUG-94 ✅, BUG-95, BUG-96)
 - 🟡 Medium: 3 (BUG-98, BUG-99, BUG-100)
 - 🟢 Low: 1 (BUG-101)
