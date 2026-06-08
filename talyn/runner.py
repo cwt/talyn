@@ -1,7 +1,10 @@
 import asyncio
+from logging import getLogger
 from typing import Any, Coroutine
 
 from .loop import Loop
+
+logger = getLogger(__package__)
 
 
 class Runner:
@@ -33,7 +36,7 @@ class Runner:
         try:
             self._loop.run_until_complete(self._loop.shutdown_default_executor())
         except RuntimeError:
-            pass
+            logger.exception("Runner.close: shutdown_default_executor failed")
         self._loop.close()
 
 

@@ -884,24 +884,7 @@ Bugs discovered by cross-referencing source code against the 104 documented less
 
 #### BUG-98: `args[n].?` unwrap without length guards in vectorcall methods
 
-- **Status**: 🟡 Open
-- **Lesson**: [L55 — Zig-Specific, Optional vs Error Union](docs/lessons/08-zig-specific-patterns.md)
-- **Description**: Multiple vectorcall methods access `args[n].?` without first verifying `args.len > n`. Though CPython typically passes the correct number of positional args, a bug or protocol mismatch causes a panic instead of a clean Python error.
-
-| File | Lines | Unguarded Access |
-|------|-------|-----------------|
-| `src/loop/python/io/socket/ops.zig` | 231-232, 341-342, 477-478, 600-601, 719-721, 851-852 | `args[0].?`, `args[1].?` (some guarded by `args.len < N` check, some not) |
-| `src/transports/datagram/write.zig` | 205 | `args[0].?` (has `args.len < 1` check, but no check for additional args) |
-| `src/transports/stream/write.zig` | 98, 102 | `args[0].?`, `args[1].?` |
-| `src/transports/stream/extra_info.zig` | 38 | `args[0].?` |
-| `src/loop/python/io/subprocess/exec.zig` | 20 | `args[0].?` |
-| `src/loop/python/io/socket/getaddrinfo.zig` | 111 | `args[0].?` |
-| `src/loop/python/io/socket/getnameinfo.zig` | 82 | `args[0].?` |
-| `src/loop/python/utils/task.zig` | 56 | `args[0].?` |
-
-- **Trigger**: Calling the Python method with fewer positional arguments than expected.
-- **Consequences**: Zig panic ("optional is null") instead of `TypeError`.
-- **Fix**: Add explicit `if (args.len < N) { raise_python_type_error(...); return error.PythonError; }` guards at method entry.
+- **Status**: ⚪ False positive — all sites already have `args.len` guards before `args[n].?` access
 
 #### BUG-99: 14 `except Exception: pass` silent exception swallows in production Python code
 

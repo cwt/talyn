@@ -1010,7 +1010,7 @@ class Loop(_Loop):
                                     n = os.write(fd, view)
                                     view = view[n:]
                             except (AttributeError, OSError):
-                                pass
+                                logger.exception("direct socket write fallback failed")
                         else:
                             raise
 
@@ -1750,9 +1750,7 @@ class Loop(_Loop):
                             try:
                                 target.pipe_connection_lost(0, exc)
                             except Exception:
-                                pass
-
-                    def pause_writing(self):
+                                logger.exception("WriteBridge connection_lost failed")
                         target = bridge_target[0]
                         if target is not None and hasattr(target, "pause_writing"):
                             target.pause_writing()
@@ -1827,7 +1825,7 @@ class Loop(_Loop):
                     try:
                         self._loop.remove_reader(self._fd)
                     except Exception:
-                        pass
+                        logger.exception("ReadPipeTransport.pause_reading failed")
 
                 def resume_reading(self):
                     if self._closed or self._eof:
@@ -1835,7 +1833,7 @@ class Loop(_Loop):
                     try:
                         self._loop.add_reader(self._fd, self._on_readable)
                     except Exception:
-                        pass
+                        logger.exception("ReadPipeTransport.resume_reading failed")
 
                 def close(self):
                     if self._closed:
@@ -1845,14 +1843,14 @@ class Loop(_Loop):
                     try:
                         self._loop.remove_reader(self._fd)
                     except Exception:
-                        pass
+                        logger.exception("ReadPipeTransport.close failed")
 
                 def _on_readable(self):
                     if self._eof or self._closed:
                         try:
                             self._loop.remove_reader(self._fd)
                         except Exception:
-                            pass
+                            logger.exception("ReadPipeTransport._on_readable: remove_reader failed at EOF")
                         return
                     proto = self._protocol
                     try:
@@ -1863,7 +1861,7 @@ class Loop(_Loop):
                         try:
                             self._loop.add_reader(self._fd, self._on_readable)
                         except Exception:
-                            pass
+                            logger.exception("ReadPipeTransport._on_readable: re-arm after BlockingIOError failed")
                         return
                     except OSError:
                         data = b""
@@ -1872,24 +1870,24 @@ class Loop(_Loop):
                         try:
                             self._loop.remove_reader(self._fd)
                         except Exception:
-                            pass
+                            logger.exception("ReadPipeTransport._on_readable: remove_reader on EOF failed")
                         if proto is not None:
                             try:
                                 proto.pipe_connection_lost(self._pipe_fd, None)
                             except Exception:
-                                pass
+                                logger.exception("ReadPipeTransport._on_readable: pipe_connection_lost failed")
                         return
                     if proto is not None:
                         try:
                             proto.pipe_data_received(self._pipe_fd, data)
                         except Exception:
-                            pass
+                            logger.exception("ReadPipeTransport._on_readable: pipe_data_received failed")
                     # Re-arm: io_uring POLL_ADD is edge-triggered, so we
                     # must re-register after each read to detect EOF.
                     try:
                         self._loop.add_reader(self._fd, self._on_readable)
                     except Exception:
-                        pass
+                        logger.exception("ReadPipeTransport._on_readable: re-arm after read failed")
 
             class _WritePipeTransport:
                 """Async write pipe transport backed by a Popen file fd.
@@ -1928,7 +1926,7 @@ class Loop(_Loop):
                     try:
                         self._popen.stdin.close()
                     except Exception:
-                        pass
+                        logger.exception("WritePipeTransport.close: stdin close failed")
 
                 def can_write_eof(self):
                     return True
@@ -1991,7 +1989,7 @@ class Loop(_Loop):
                         try:
                             tr.close()
                         except Exception:
-                            pass
+                            logger.exception("TransportWrapper.close: child transport close failed")
                     self._transport.close()
 
                 def get_pid(self):
