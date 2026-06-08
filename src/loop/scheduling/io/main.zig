@@ -525,7 +525,7 @@ pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
     self.ring.register_buffers(self.buffer_pool.iovecs) catch |err| {
         // Graceful fallback if buffer registration fails
         self.buffer_pool.deinit(allocator);
-        std.debug.print("io_uring buffer registration failed: {}\n", .{err});
+        std.log.err("io_uring buffer registration failed: {}", .{err});
     };
 }
 

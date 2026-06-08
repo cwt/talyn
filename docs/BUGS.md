@@ -915,7 +915,7 @@ Bugs discovered by cross-referencing source code against the 104 documented less
 
 #### BUG-100: `.?` on optional protocol callbacks and fields that could be null
 
-- **Status**: 🟡 Open
+- **Status**: ✅ Fixed (`rev 724`)
 - **Lesson**: [L55 — Zig-Specific, Optional](docs/lessons/08-zig-specific-patterns.md)
 - **Description**: Several `.?` unwraps on optional fields that may legitimately be null at runtime depending on protocol implementation or lifecycle state:
 
@@ -958,11 +958,11 @@ Bugs discovered by cross-referencing source code against the 104 documented less
 | Medium-Low | 13 | 13 | 0 |
 | Low | 27 | 27 | 0 |
 | **Existing total** | **90** | **90** | **0** |
-| **New (2026-06-08)** | **—** | **7** | **3 open** |
-| **Grand total** | **100** | **97** | **3 open** |
+| **New (2026-06-08)** | **—** | **8** | **2 open** |
+| **Grand total** | **100** | **98** | **2 open** |
 
-**New bug breakdown (10 new, 7 fixed):**
+**New bug breakdown (10 new, 8 fixed):**
 - 🔴 Critical: 3 (BUG-91 ✅, BUG-92 ✅, BUG-93 ✅)
 - 🟠 High: 3 (BUG-94 ✅, BUG-95 ✅, BUG-96 ✅)
-- 🟡 Medium: 3 (BUG-98 ⚪ FP, BUG-99 ✅, BUG-100)
+- 🟡 Medium: 3 (BUG-98 ⚪ FP, BUG-99 ✅, BUG-100 ✅)
 - 🟢 Low: 1 (BUG-101)
