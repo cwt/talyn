@@ -106,7 +106,8 @@ fn run_python_future_set_callbacks(data: *const CallbackManager.CallbackData) !v
 
                     const exc = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
                     exceptions_array.append(future.loop.allocator, exc) catch |err2| {
-                        std.debug.panic("Unexpected error while adding exception to queue: {s}", .{@errorName(err2)});
+                        std.log.err("Failed to queue exception from Python callback: {s}", .{@errorName(err2)});
+                        python_c.py_decref(exc);
                     };
                 };
             },
@@ -116,7 +117,8 @@ fn run_python_future_set_callbacks(data: *const CallbackManager.CallbackData) !v
 
                     const exc = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
                     exceptions_array.append(future.loop.allocator, exc) catch |err2| {
-                        std.debug.panic("Unexpected error while adding exception to queue: {s}", .{@errorName(err2)});
+                        std.log.err("Failed to queue exception from Zig callback: {s}", .{@errorName(err2)});
+                        python_c.py_decref(exc);
                     };
                 };
             }
@@ -188,7 +190,7 @@ pub fn release_callbacks_queue(queue: *CallbacksSetData) void {
             },
             .ZigGeneric => |data| {
                 data.callback(null, data.ptr) catch |err| {
-                    std.debug.panic("Unexpected error while releasing future callback: {s}", .{@errorName(err)});
+                    std.log.err("Error while releasing future callback: {s}", .{@errorName(err)});
                 };
             }
         }
