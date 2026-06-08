@@ -809,8 +809,8 @@ Bugs discovered by cross-referencing source code against the 104 documented less
 
 #### BUG-92: `allocator.create` + field-by-field in `create_new_node` — `prev`/`next` uninitialized
 
-- **Status**: 🔴 Open
-- **File**: `src/utils/linked_list.zig:33-35`
+- **Status**: ✅ Fixed (this commit)
+- **File**: `src/utils/linked_list.zig:32-35`
 - **Lesson**: [L49 — Zig-Specific, Struct Initialization](docs/lessons/08-zig-specific-patterns.md)
 - **Description**: `create_new_node` calls `allocator.create(_linked_list_node)` then assigns only `data`. The `prev` and `next` pointer fields are left as garbage bytes. They are overwritten by `append_node`/`appendleft_node` before the node is linked, but if any code path reads the node before linking (e.g., through iterator or debug print), the garbage pointers cause UB.
 - **Trigger**: Any read of `prev`/`next` on a newly-created but not-yet-linked node.
@@ -976,11 +976,11 @@ Bugs discovered by cross-referencing source code against the 104 documented less
 | Medium-Low | 13 | 13 | 0 |
 | Low | 27 | 27 | 0 |
 | **Existing total** | **90** | **90** | **0** |
-| **New (2026-06-08)** | **—** | **1** | **9 new bugs** |
-| **Grand total** | **100** | **91** | **9 open** |
+| **New (2026-06-08)** | **—** | **2** | **8 new bugs** |
+| **Grand total** | **100** | **92** | **8 open** |
 
-**New bug breakdown (10 new, 1 fixed):**
-- 🔴 Critical: 3 (BUG-91 ✅, BUG-92 🔴, BUG-93 🔴)
+**New bug breakdown (10 new, 2 fixed):**
+- 🔴 Critical: 3 (BUG-91 ✅, BUG-92 ✅, BUG-93 🔴)
 - 🟠 High: 3 (BUG-94, BUG-95, BUG-96)
 - 🟡 Medium: 3 (BUG-98, BUG-99, BUG-100)
 - 🟢 Low: 1 (BUG-101)

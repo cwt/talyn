@@ -31,7 +31,7 @@ pub fn LinkedList(comptime T: type) type {
 
         pub fn create_new_node(self: *const @This(), data: T) !Node {
             const new_node = try self.allocator.create(_linked_list_node);
-            new_node.data = data;
+            new_node.* = .{ .data = data, .prev = null, .next = null };
             return new_node;
         }
 
