@@ -33,10 +33,11 @@ class Runner:
         if self._closed:
             return
         self._closed = True
-        try:
-            self._loop.run_until_complete(self._loop.shutdown_default_executor())
-        except RuntimeError:
-            logger.exception("Runner.close: shutdown_default_executor failed")
+        if not self._loop.is_closed():
+            try:
+                self._loop.run_until_complete(self._loop.shutdown_default_executor())
+            except RuntimeError:
+                logger.exception("Runner.close: shutdown_default_executor failed")
         self._loop.close()
 
 
