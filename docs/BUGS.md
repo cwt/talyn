@@ -843,12 +843,10 @@ Bugs discovered by cross-referencing source code against the 104 documented less
 
 #### BUG-95: Silent `return null` in `z_datagram_get_extra_info` swallows allocation failures
 
-- **Status**: 🟠 Open
+- **Status**: ✅ Fixed (this commit)
 - **File**: `src/transports/datagram/extra_info.zig:19-27`
 - **Lesson**: [L57 — Defensive, Error Handling](docs/lessons/10-defensive-programming-and-code-quality.md)
 - **Description**: Five Python C API calls (`PyObject_GetAttrString`, `PyLong_FromLong` × 3, `PyTuple_Pack`) use `orelse return null` from a `!?PyObject` function. The caller interprets `null` as "no extra info exists" instead of "allocation failed". The stream equivalent at `src/transports/stream/extra_info.zig:102` correctly uses `orelse return error.PythonError`.
-- **Trigger**: Memory pressure during `get_extra_info("socket")` on datagram transports.
-- **Consequences**: Silent data loss — caller thinks socket info doesn't exist.
 - **Fix**: Change `orelse return null` to `orelse return error.PythonError`.
 
 #### BUG-96: 17 bare `else => {}` branches silently discard unhandled switch variants
@@ -976,11 +974,11 @@ Bugs discovered by cross-referencing source code against the 104 documented less
 | Medium-Low | 13 | 13 | 0 |
 | Low | 27 | 27 | 0 |
 | **Existing total** | **90** | **90** | **0** |
-| **New (2026-06-08)** | **—** | **4** | **6 new bugs** |
-| **Grand total** | **100** | **94** | **6 open** |
+| **New (2026-06-08)** | **—** | **5** | **5 new bugs** |
+| **Grand total** | **100** | **95** | **5 open** |
 
-**New bug breakdown (10 new, 4 fixed):**
+**New bug breakdown (10 new, 5 fixed):**
 - 🔴 Critical: 3 (BUG-91 ✅, BUG-92 ✅, BUG-93 ✅)
-- 🟠 High: 3 (BUG-94 ✅, BUG-95, BUG-96)
+- 🟠 High: 3 (BUG-94 ✅, BUG-95 ✅, BUG-96)
 - 🟡 Medium: 3 (BUG-98, BUG-99, BUG-100)
 - 🟢 Low: 1 (BUG-101)

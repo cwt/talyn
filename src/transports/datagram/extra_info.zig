@@ -16,15 +16,15 @@ pub fn z_datagram_get_extra_info(self: *DatagramTransport.DatagramTransportObjec
     if (std.mem.eql(u8, name, "socket")) {
         if (self.fd < 0) return python_c.get_py_none();
         const socket_module = utils.PythonImports.socket_module;
-        const fromfd = python_c.PyObject_GetAttrString(socket_module, "fromfd") orelse return null;
+        const fromfd = python_c.PyObject_GetAttrString(socket_module, "fromfd") orelse return error.PythonError;
         defer python_c.py_decref(fromfd);
-        const py_fd = python_c.PyLong_FromLong(@intCast(self.fd)) orelse return null;
+        const py_fd = python_c.PyLong_FromLong(@intCast(self.fd)) orelse return error.PythonError;
         defer python_c.py_decref(py_fd);
-        const fam = python_c.PyLong_FromLong(2) orelse return null;
+        const fam = python_c.PyLong_FromLong(2) orelse return error.PythonError;
         defer python_c.py_decref(fam);
-        const typ = python_c.PyLong_FromLong(2) orelse return null;
+        const typ = python_c.PyLong_FromLong(2) orelse return error.PythonError;
         defer python_c.py_decref(typ);
-        const args = python_c.PyTuple_Pack(3, py_fd, fam, typ) orelse return null;
+        const args = python_c.PyTuple_Pack(3, py_fd, fam, typ) orelse return error.PythonError;
         defer python_c.py_decref(args);
         return python_c.PyObject_CallObject(fromfd, args);
     }
