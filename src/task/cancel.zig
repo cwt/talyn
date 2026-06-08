@@ -35,7 +35,7 @@ fn cancel_future_waiter(future: PyObject, cancel_msg_py_object: ?PyObject) anyer
 inline fn fast_task_cancel(task: *PythonTaskObject, data: *Future, cancel_msg_py_object: ?PyObject) !bool {
     switch (data.status) {
         .finished, .canceled => return false,
-        else => {}
+        .pending => {},
     }
 
     if (cancel_msg_py_object) |pyobj| {
@@ -60,7 +60,7 @@ pub fn task_cancel(self: ?*PythonTaskObject, args: ?PyObject, kwargs: ?PyObject)
 
     switch (future_data.status) {
         .finished,.canceled => return python_c.get_py_false(),
-        else => {}
+        .pending => {},
     }
 
     var kwlist: [2][*c]u8 = undefined;

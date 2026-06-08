@@ -87,7 +87,7 @@ inline fn z_future_set_exception(self: *PythonFutureObject, exception: PyObject)
             python_c.PyErr_SetString(utils.PythonImports.invalid_state_exc, "Exception already setted\x00");
             return error.PythonError;
         },
-        else => {}
+        .pending => {},
     }
 
     try future_fast_set_exception(self, future_data, exception);
@@ -111,7 +111,7 @@ inline fn z_future_set_result(self: *PythonFutureObject, result: PyObject) !PyOb
             python_c.PyErr_SetString(utils.PythonImports.invalid_state_exc, "Result already setted\x00");
             return error.PythonError;
         },
-        else => {}
+        .pending => {},
     }
 
     try future_fast_set_result(future_data, result);

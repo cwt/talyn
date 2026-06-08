@@ -341,7 +341,9 @@ fn parse_individual_dns_result(full_data: []const u8, initial_offset: usize, res
                 ptr_name.* = Parsers.parse_name(full_data, offset, allocator) catch null;
                 ttl.* = r_ttl;
             },
-            else => {},
+            else => {
+                std.log.warn("parse_rr: unknown DNS RR type {}", .{r_type});
+            },
         }
     }
 

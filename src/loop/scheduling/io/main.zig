@@ -107,7 +107,7 @@ pub const BlockingTask = struct {
                     .TIME => {},
                     .CANCELED => {},
                     .SUCCESS => {},
-                    else => {}
+                    else => std.log.warn("WaitTimer: unexpected io_uring result {s}", .{@tagName(result)}),
                 }
             },
             // BUG-64: Cancel operations are fire-and-forget by
@@ -129,7 +129,7 @@ pub const BlockingTask = struct {
                     .PIPE, .NOBUFS, .NXIO, .ACCES, .NETDOWN, .NETUNREACH,
                     .SPIPE => {},
                     .AGAIN => {},
-                    else => {}
+                    else => std.log.warn("PerformWriteV/Write/SendMsg: unexpected io_uring result {s}", .{@tagName(result)}),
                 }
             },
             .PerformRead, .PerformRecvMsg => {
@@ -139,7 +139,7 @@ pub const BlockingTask = struct {
                     .OVERFLOW, .SPIPE, .CONNRESET, .NOTCONN, .TIMEDOUT,
                     .NOBUFS, .NOMEM, .NXIO => {},
                     .AGAIN => {},
-                    else => {}
+                    else => std.log.warn("PerformRead/RecvMsg: unexpected io_uring result {s}", .{@tagName(result)}),
                 }
             },
             .SocketShutdown => {
@@ -147,7 +147,7 @@ pub const BlockingTask = struct {
                     .SUCCESS => {},
                     .CANCELED, .INVAL, .NOTCONN, .NOTSOCK, .BADF, .NOBUFS => {},
                     .AGAIN => {},
-                    else => {}
+                    else => std.log.warn("SocketShutdown: unexpected io_uring result {s}", .{@tagName(result)}),
                 }
             },
             .SocketConnect, .SocketAccept => {
@@ -157,14 +157,14 @@ pub const BlockingTask = struct {
                     .BADF, .CONNREFUSED, .FAULT, .INPROGRESS, .INTR, .ISCONN,
                     .NETUNREACH, .NOTSOCK, .PROTOTYPE, .TIMEDOUT => {},
                     .AGAIN => {},
-                    else => {}
+                    else => std.log.warn("SocketConnect/Accept: unexpected io_uring result {s}", .{@tagName(result)}),
                 }
             },
             else => {
                 switch (result) {
                     .SUCCESS => {},
                     .CANCELED, .BADF, .INTR => {},
-                    else => {}
+                    else => std.log.warn("Generic: unexpected io_uring result {s}", .{@tagName(result)}),
                 }
             }
         }

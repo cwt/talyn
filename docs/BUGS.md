@@ -851,7 +851,7 @@ Bugs discovered by cross-referencing source code against the 104 documented less
 
 #### BUG-96: 17 bare `else => {}` branches silently discard unhandled switch variants
 
-- **Status**: 🟠 Open
+- **Status**: ✅ Fixed (this commit)
 - **Lesson**: [L85 — Event Loop, Callback Semantics](docs/lessons/03-event-loop-lifecycle.md)
 - **Table of instances**:
 
@@ -974,11 +974,11 @@ Bugs discovered by cross-referencing source code against the 104 documented less
 | Medium-Low | 13 | 13 | 0 |
 | Low | 27 | 27 | 0 |
 | **Existing total** | **90** | **90** | **0** |
-| **New (2026-06-08)** | **—** | **5** | **5 new bugs** |
-| **Grand total** | **100** | **95** | **5 open** |
+| **New (2026-06-08)** | **—** | **6** | **4 new bugs** |
+| **Grand total** | **100** | **96** | **4 open** |
 
-**New bug breakdown (10 new, 5 fixed):**
+**New bug breakdown (10 new, 6 fixed):**
 - 🔴 Critical: 3 (BUG-91 ✅, BUG-92 ✅, BUG-93 ✅)
-- 🟠 High: 3 (BUG-94 ✅, BUG-95 ✅, BUG-96)
+- 🟠 High: 3 (BUG-94 ✅, BUG-95 ✅, BUG-96 ✅)
 - 🟡 Medium: 3 (BUG-98, BUG-99, BUG-100)
 - 🟢 Low: 1 (BUG-101)

@@ -186,7 +186,9 @@ pub fn unlink(self: *UnixSignals, sig: std.os.linux.SIG) !void {
             _ = c.siginterrupt(@as(c_int, @intCast(@intFromEnum(sig))), 1);
             return;
         },
-        else => {},
+        else => {
+            std.log.warn("remove_signal_handler: unexpected signal {}", .{@intFromEnum(sig)});
+        },
     }
 
     const callback: CallbackManager.Callback = switch (sig) {

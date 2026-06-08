@@ -69,7 +69,9 @@ pub const Address = extern union {
             std.posix.AF.INET6 => {
                 self.in6.sa.port = std.mem.nativeToBig(u16, port);
             },
-            else => {},
+            else => {
+                std.log.warn("setPort: unexpected address family {}", .{self.any.family});
+            },
         }
     }
 

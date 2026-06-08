@@ -488,7 +488,9 @@ pub fn verify_gc_coverage(comptime T: type, comptime excluded: []const []const u
                     @compileError("Field '" ++ field_name ++ "' in " ++ @typeName(T) ++ " is an optional pointer but not identified as PyObject-compatible. Add to excluded list if it doesn't hold Python references.");
                 }
             },
-            else => {}
+            else => {
+                // not a PyObject-compatible type, nothing to check
+            },
         }
     }
 }
@@ -598,7 +600,9 @@ pub fn deinitialize_object_fields(
                             py_decref_and_set_null(&@field(object, field_name));
                         }
                     },
-                    else => {}
+                    else => {
+                        // non-pointer optional child type, nothing to deinitialize
+                    },
                 }
             },
             .pointer => |data| {
@@ -616,7 +620,9 @@ pub fn deinitialize_object_fields(
             .@"struct" => {
                 deinitialize_object_fields(&@field(object, field_name), exclude_fields);
             },
-            else => {}
+            else => {
+                // non-pointer/non-struct field type, nothing to deinitialize
+            },
         }
     }
 }
