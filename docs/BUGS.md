@@ -819,8 +819,8 @@ Bugs discovered by cross-referencing source code against the 104 documented less
 
 #### BUG-93: `allocator.create` + field-by-field in BTree `create_node` — `keys`/`values` arrays uninitialized
 
-- **Status**: 🔴 Open
-- **File**: `src/utils/btree.zig:43-48`
+- **Status**: ✅ Fixed (this commit)
+- **File**: `src/utils/btree.zig:42-49`
 - **Lesson**: [L49 — Zig-Specific, Struct Initialization](docs/lessons/08-zig-specific-patterns.md)
 - **Description**: `create_node` calls `allocator.create(Node)` then assigns `parent`, does `@memset(childs, null)`, and sets `nkeys = 0`. The `keys` and `values` arrays are never zero-initialized. Though `nkeys = 0` means they aren't read before being written, any future field added to `Node` without updating `create_node` silently produces garbage. Same pattern as the previously-fixed BUG-87.
 - **Trigger**: Adding new fields to the `Node` struct.
@@ -976,11 +976,11 @@ Bugs discovered by cross-referencing source code against the 104 documented less
 | Medium-Low | 13 | 13 | 0 |
 | Low | 27 | 27 | 0 |
 | **Existing total** | **90** | **90** | **0** |
-| **New (2026-06-08)** | **—** | **2** | **8 new bugs** |
-| **Grand total** | **100** | **92** | **8 open** |
+| **New (2026-06-08)** | **—** | **3** | **7 new bugs** |
+| **Grand total** | **100** | **93** | **7 open** |
 
-**New bug breakdown (10 new, 2 fixed):**
-- 🔴 Critical: 3 (BUG-91 ✅, BUG-92 ✅, BUG-93 🔴)
+**New bug breakdown (10 new, 3 fixed):**
+- 🔴 Critical: 3 (BUG-91 ✅, BUG-92 ✅, BUG-93 ✅)
 - 🟠 High: 3 (BUG-94, BUG-95, BUG-96)
 - 🟡 Medium: 3 (BUG-98, BUG-99, BUG-100)
 - 🟢 Low: 1 (BUG-101)

@@ -41,10 +41,13 @@ pub fn BTree(
 
         fn create_node(allocator: std.mem.Allocator) !*Node {
             const new_node = try allocator.create(Node);
-            new_node.parent = null;
-            @memset(&new_node.childs, null);
-            new_node.nkeys = 0;
-
+            new_node.* = .{
+                .parent = null,
+                .keys = undefined,
+                .values = undefined,
+                .childs = .{null} ** (Degree + 1),
+                .nkeys = 0,
+            };
             return new_node;
         }
 
