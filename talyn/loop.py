@@ -107,8 +107,9 @@ class _SSLTransportWrapper:
                                 n = os.write(fd, view)
                                 view = view[n:]
                         except (AttributeError, OSError):
-                            # Fallback: put remaining data back into outgoing BIO
-                            # Note: we can't easily put it back, so we'll retry later
+                            logger.exception(
+                                "Failed to write directly to socket in _flush_write_buffer"
+                            )
                             return
                     else:
                         raise
@@ -686,6 +687,9 @@ class Loop(_Loop):
                     else:
                         self._r()
                 except Exception:
+                    logger.exception(
+                        "Unhandled exception in SSL pipe buffer_updated"
+                    )
                     self._running = False
                     self._raw_t.close()
 
@@ -714,6 +718,9 @@ class Loop(_Loop):
                 try:
                     return self._ap.eof_received()
                 except Exception:
+                    logger.exception(
+                        "Unhandled exception in SSL pipe eof_received"
+                    )
                     return False
 
             def pause_writing(self):
@@ -1229,6 +1236,9 @@ class Loop(_Loop):
                 except ssl_module.SSLWantWriteError:
                     self._f()
                 except Exception:
+                    logger.exception(
+                        "Unhandled exception during SSL handshake in SSLProtocolSource"
+                    )
                     self._raw_t.close()
                 else:
                     self._hs = True
@@ -1599,6 +1609,9 @@ class Loop(_Loop):
                 except ssl_module.SSLWantWriteError:
                     self._f()
                 except Exception:
+                    logger.exception(
+                        "Unhandled exception during SSL handshake in SSLProtocolTransport"
+                    )
                     self._raw_t.close()
                 else:
                     self._hs = True
