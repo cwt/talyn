@@ -13,7 +13,7 @@ pub fn asyncgen_firstiter_hook(
 ) callconv(.c) ?PyObject {
     const instance = self.?;
 
-    const ret: ?PyObject = python_c.PyObject_CallOneArg(instance.asyncgens_set_add.?, agen.?);
+    const ret: ?PyObject = python_c.PyObject_CallOneArg(instance.asyncgens_set_add orelse unreachable, agen.?);
     return ret;
 }
 
@@ -46,7 +46,7 @@ pub fn asyncgen_finalizer_hook(
     const instance = self.?;
     const _agen = agen.?;
 
-    const discard_ret: PyObject = python_c.PyObject_CallOneArg(instance.asyncgens_set_discard.?, _agen)
+    const discard_ret: PyObject = python_c.PyObject_CallOneArg(instance.asyncgens_set_discard orelse unreachable, _agen)
         orelse return null;
     python_c.py_decref(discard_ret);
 
@@ -94,7 +94,8 @@ pub fn setup_asyncgen_hooks(self: *LoopObject) !void {
 }
 
 pub fn cleanup_asyncgen_hooks(self: *LoopObject) void {
-    const ret: PyObject = python_c.PyObject_CallObject(utils.PythonImports.set_asyncgen_hooks, self.old_asyncgen_hooks.?)
+    const hooks = self.old_asyncgen_hooks orelse return;
+    const ret: PyObject = python_c.PyObject_CallObject(utils.PythonImports.set_asyncgen_hooks, hooks)
         orelse return;
     python_c.py_decref(ret);
     python_c.py_decref_and_set_null(&self.old_asyncgen_hooks);

@@ -24,7 +24,8 @@ pub inline fn queue_read_operation(
     switch (protocol_type) {
         .Buffered => {
             const new_buffer = python_c.PyObject_CallOneArg(
-                transport.protocol_get_buffer.?, transport.protocol_max_read_constant.?
+                transport.protocol_get_buffer orelse unreachable,
+                transport.protocol_max_read_constant orelse unreachable,
             ) orelse return error.PythonError;
             defer python_c.py_decref(new_buffer);
 

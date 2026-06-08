@@ -888,7 +888,8 @@ Bugs discovered by cross-referencing source code against the 104 documented less
 
 #### BUG-99: 14 `except Exception: pass` silent exception swallows in production Python code
 
-- **Status**: 🟡 Open
+- **Status**: ✅ Fixed (`rev 722`)
+
 - **Files**: `talyn/loop.py`, `talyn/runner.py`
 - **Lesson**: [L97 — Python C API, Exception Swallowing](docs/lessons/05-python-c-api-correctness.md)
 - **Description**: 14 instances of `except Exception: pass` (or `except (..., ...): pass`) in production code silently discard exceptions. Every one should at minimum call `logger.exception(...)` before swallowing.
@@ -957,11 +958,11 @@ Bugs discovered by cross-referencing source code against the 104 documented less
 | Medium-Low | 13 | 13 | 0 |
 | Low | 27 | 27 | 0 |
 | **Existing total** | **90** | **90** | **0** |
-| **New (2026-06-08)** | **—** | **6** | **4 new bugs** |
-| **Grand total** | **100** | **96** | **4 open** |
+| **New (2026-06-08)** | **—** | **7** | **3 open** |
+| **Grand total** | **100** | **97** | **3 open** |
 
-**New bug breakdown (10 new, 6 fixed):**
+**New bug breakdown (10 new, 7 fixed):**
 - 🔴 Critical: 3 (BUG-91 ✅, BUG-92 ✅, BUG-93 ✅)
 - 🟠 High: 3 (BUG-94 ✅, BUG-95 ✅, BUG-96 ✅)
-- 🟡 Medium: 3 (BUG-98, BUG-99, BUG-100)
+- 🟡 Medium: 3 (BUG-98 ⚪ FP, BUG-99 ✅, BUG-100)
 - 🟢 Low: 1 (BUG-101)

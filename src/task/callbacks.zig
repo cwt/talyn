@@ -406,7 +406,7 @@ fn _execute_task_throw(task: *Task.PythonTaskObject, task_exception: ?PyObject) 
             }
         }
     }
-    defer python_c.py_decref(exception_value.?);
+    defer if (exception_value) |ev| python_c.py_decref(ev);
 
     const py_fut = &task.fut;
     const py_loop: *Loop.Python.LoopObject = @ptrCast(py_fut.py_loop.?);

@@ -59,7 +59,8 @@ fn get_func_return_type(func: anytype) type {
         @compileError("func argument must be a function");
     }
 
-    const return_type = @typeInfo(func_type_info.@"fn".return_type.?);
+    const return_type_info = func_type_info.@"fn".return_type orelse @compileError("func must have a return type");
+    const return_type = @typeInfo(return_type_info);
     if (return_type != .error_union) {
         @compileError("return type must be an error union");
     }

@@ -34,9 +34,11 @@ pub fn write_operation_completed(
         if (remaining_data <= instance.writing_low_water_mark) {
             instance.is_writing = true;
 
-            const ret = python_c.PyObject_CallNoArgs(instance.protocol_resume_writing.?)
-                orelse return error.PythonError;
-            python_c.py_decref(ret);
+            if (instance.protocol_resume_writing) |cb| {
+                const ret = python_c.PyObject_CallNoArgs(cb)
+                    orelse return error.PythonError;
+                python_c.py_decref(ret);
+            }
         }
     }
 }
@@ -165,9 +167,11 @@ pub fn transport_write(self: ?*StreamTransportObject, py_buffer: ?PyObject) call
     if (new_buffer_size >= instance.writing_high_water_mark) {
         instance.is_writing = false;
 
-        const ret = python_c.PyObject_CallNoArgs(instance.protocol_pause_writing.?)
-            orelse return null;
-        python_c.py_decref(ret);
+        if (instance.protocol_pause_writing) |cb| {
+            const ret = python_c.PyObject_CallNoArgs(cb)
+                orelse return null;
+            python_c.py_decref(ret);
+        }
     }
 
     return python_c.get_py_none();
@@ -202,9 +206,11 @@ pub fn transport_write_lines(self: ?*StreamTransportObject, py_buffers: ?PyObjec
     if (new_buffer_size >= instance.writing_high_water_mark) {
         instance.is_writing = false;
 
-        const ret = python_c.PyObject_CallNoArgs(instance.protocol_pause_writing.?)
-            orelse return null;
-        python_c.py_decref(ret);
+        if (instance.protocol_pause_writing) |cb| {
+            const ret = python_c.PyObject_CallNoArgs(cb)
+                orelse return null;
+            python_c.py_decref(ret);
+        }
     }
 
     return python_c.get_py_none();

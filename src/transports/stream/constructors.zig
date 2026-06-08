@@ -142,7 +142,7 @@ fn stream_init_configuration(
     const write_transport_data = utils.get_data_ptr2(WriteTransport, "write_transport", self);
     try write_transport_data.init(
         loop_data, fd, &Write.write_operation_completed, @ptrCast(self),
-        loop.exception_handler.?, &Lifecyle.connection_lost_callback,
+        loop.exception_handler orelse unreachable, &Lifecyle.connection_lost_callback,
         zero_copying
     );
     errdefer write_transport_data.deinit();
@@ -150,7 +150,7 @@ fn stream_init_configuration(
     const read_transport_data = utils.get_data_ptr2(ReadTransport, "read_transport", self);
     try read_transport_data.init(
         loop_data, fd, &Read.read_operation_completed, @ptrCast(self),
-        loop.exception_handler.?, &Lifecyle.connection_lost_callback,
+        loop.exception_handler orelse unreachable, &Lifecyle.connection_lost_callback,
         zero_copying
     );
     errdefer read_transport_data.deinit();
