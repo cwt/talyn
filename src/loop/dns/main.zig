@@ -293,27 +293,8 @@ test "DNS deinit cleanup" {
     const loop = try allocator.create(Loop);
     defer allocator.destroy(loop);
 
-    loop.allocator = allocator;
-    loop.mutex = @import("../../utils/lock.zig").init();
-    
-    const queues = try allocator.create([2]CallbackManager.DynamicRingBuffer);
-    errdefer allocator.destroy(queues);
-    try queues[0].init(allocator, 1024);
-    try queues[1].init(allocator, 1024);
-    loop.ready_tasks_queues = queues;
-
-    loop.ready_tasks_queue_index = 0;
-    loop.reserved_slots = 0;
-
-    loop.dns.pending_queries = DNS.PendingList.init(allocator);
-    loop.dns.arena = std.heap.ArenaAllocator.init(allocator);
-    loop.dns.loop = loop;
-    
-    loop.dns.deinit();
-    for (loop.ready_tasks_queues) |*q| {
-        q.deinit();
-    }
-    allocator.destroy(loop.ready_tasks_queues);
+    try loop.init(allocator, 1024);
+    defer loop.release();
 }
 
 test {
