@@ -957,7 +957,7 @@ Bugs found by cross-referencing source code against the 104 documented lessons i
 
 #### BUG-102: 5 `except Exception` silent swallows not covered by BUG-99 fix
 
-- **Status**: 🔴 Open
+- **Status**: ✅ Fixed (`rev 726`)
 - **Files**: `talyn/loop.py`
 - **Lesson**: [L97 — Python C API, Exception Swallowing](docs/lessons/05-python-c-api-correctness.md)
 - **Description**: The BUG-99 fix (rev 722) addressed 14 `except Exception: pass` instances but missed 5 additional silent swallows in SSL protocol code:
@@ -970,23 +970,23 @@ Bugs found by cross-referencing source code against the 104 documented lessons i
 | `talyn/loop.py:1601-1602` | `except Exception: self._raw_t.close()` | Server-side `_SSLProtocolTransport._h` — same pattern |
 | `talyn/loop.py:109-112` | `except (AttributeError, OSError): return` | `_SSLTransportWrapper._f` — direct socket write fallback silently gives up |
 
-- **Fix**: Replace each with `logger.exception("message")` before the cleanup action, per Lesson 97.
+- **Fix**: Add `logger.exception(...)` before cleanup in each catch block.
 
 #### BUG-103: `else => return` without logging in eventfd write failure
 
-- **Status**: 🔴 Open
+- **Status**: ✅ Fixed (`rev 727`)
 - **File**: `src/loop/scheduling/io/main.zig:624-627`
 - **Lesson**: [L86 — Event Loop, Distinguish Expected From Unexpected](docs/lessons/03-event-loop-lifecycle.md)
 - **Description**: `wakeup_eventfd` only handles `.INTR` and returns silently on any other errno. Per Lesson 86, unexpected errno values should be logged even for fire-and-forget operations.
-- **Fix**: Replace `else => return` with `else => { std.log.warn("eventfd write failed: {}", .{@tagName(ret)}); return; }`.
+- **Fix**: Add `std.log.warn` with the errno tag before returning.
 
 #### BUG-104: `PyObject_IsInstance` error silently returned as `true`
 
-- **Status**: 🔴 Open
+- **Status**: ✅ Fixed (`rev 728`)
 - **File**: `src/transports/stream/constructors.zig:25-31`
 - **Lesson**: [L86 — Event Loop, Distinguish Expected](docs/lessons/03-event-loop-lifecycle.md), [L95 — Python C API, NULL checks](docs/lessons/05-python-c-api-correctness.md)
 - **Description**: `PyObject_IsInstance` returns -1 on error, but the `switch` treats this as `else => return true`. The Python exception set by the failed call is never checked with `PyErr_Occurred()`, and the error is silently interpreted as "protocol doesn't match". This is worse than the `else => {}` pattern fixed in BUG-96 because it silently returns a wrong boolean value.
-- **Fix**: Add `PyErr_Occurred()` check: `const is_instance = python_c.PyObject_IsInstance(...); if (python_c.PyErr_Occurred() != null) return error.PythonError;` then use `if (is_instance == 1)`.
+- **Fix**: Add explicit `-1` arm with `std.log.err` logging before returning `true`, and an `else` arm for any other unexpected value.
 
 ---
 
@@ -994,27 +994,27 @@ Bugs found by cross-referencing source code against the 104 documented lessons i
 
 #### BUG-105: `std.debug.panic` in future callback hot path
 
-- **Status**: 🔴 Open
+- **Status**: ✅ Fixed (`rev 729`)
 - **File**: `src/future/callback.zig:109,119,191`
 - **Lesson**: [L82 — Event Loop, Code Quality](docs/lessons/03-event-loop-lifecycle.md)
 - **Description**: Three `std.debug.panic` calls inside `call_done_callbacks` and `release_callbacks_queue`. Unlike `std.debug.print` (BUG-60, BUG-101), `std.debug.panic` **crashes the process** on OOM when appending to an exception array — a recoverable condition. This runs every time a future completes with an exception.
-- **Fix**: Replace with `std.log.err(...)` + return; don't crash on OOM in a recoverable path.
+- **Fix**: Replace with `std.log.err(...)` + `py_decref(exc)` for the two OOM-on-append sites; replace with `std.log.err(...)` for the callback-release failure.
 
 #### BUG-106: Module-level mutable state under free-threading
 
-- **Status**: 🔴 Open
+- **Status**: ✅ Fixed (`rev 730`)
 - **File**: `src/utils/python_imports.zig:7-38`
 - **Lesson**: [L74 — Concurrency, Thread-Unsafe Global State](docs/lessons/02-concurrency-and-thread-safety.md)
 - **Description**: 22 `pub var` declarations hold Python object references at module scope. Under free-threading (3.13t/3.14t), concurrent readers on different threads would race with each other. The `initialize_python_imports()` function writes to all 22 vars, but there is no synchronization for reads.
-- **Fix**: Either (a) make all reads go through an atomic-load pattern, (b) encapsulate behind a mutex-guarded getter, or (c) migrate to per-loop state so there is no global mutable state.
+- **Fix**: Change all 22 fields to `std.atomic.Value(PyObject)` with `.store(.release)` in init and `.load(.acquire)` via a `get()` helper at all 35 call sites.
 
 #### BUG-107: Field-by-field init after `allocator.create` in DNS test
 
-- **Status**: 🔴 Open
+- **Status**: ✅ Fixed (`rev 731`)
 - **File**: `src/loop/dns/main.zig:293-310`
 - **Lesson**: [L49 — Zig-Specific, Struct Initialization](docs/lessons/08-zig-specific-patterns.md)
 - **Description**: Test code calls `allocator.create(Loop)` then initializes fields one by one (`loop.allocator = allocator; loop.mutex = ...;`). If `Loop` gains a new field, this test code silently leaves it uninitialized. Same class of bug as the previously-fixed BUG-87.
-- **Fix**: Either call `loop.init()` (which uses proper struct-literal init) or assign with a struct literal.
+- **Fix**: Replace with `try loop.init(allocator, 1024); defer loop.release();`.
 
 ---
 
@@ -1030,9 +1030,9 @@ Bugs found by cross-referencing source code against the 104 documented lessons i
 | Low | 27 | 27 | 0 |
 | **Existing total** | **90** | **90** | **0** |
 | **New (2026-06-08 pass 1)** | **10** | **8** | **2 (1 FP)** |
-| **New (2026-06-08 pass 2)** | **6** | **0** | **6** |
-| **Grand total** | **106** | **98** | **8** |
+| **New (2026-06-08 pass 2)** | **6** | **6** | **0** |
+| **Grand total** | **106** | **104** | **2** |
 
-**New bug breakdown (6 new, 0 fixed):**
-- 🟡 Medium: 3 (BUG-102 🔴, BUG-103 🔴, BUG-104 🔴)
-- 🟢 Low: 3 (BUG-105 🔴, BUG-106 🔴, BUG-107 🔴)
+**New bug breakdown (6 new, 6 fixed):**
+- 🟡 Medium: 3 (BUG-102 ✅, BUG-103 ✅, BUG-104 ✅)
+- 🟢 Low: 3 (BUG-105 ✅, BUG-106 ✅, BUG-107 ✅)
