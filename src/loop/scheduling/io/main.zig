@@ -623,7 +623,10 @@ pub fn wakeup_eventfd(self: *IO) !void {
         if (ret >= 0) return;
         switch (std.os.errno(ret)) {
             .INTR => continue,
-            else => return,
+            else => {
+                std.log.warn("eventfd write failed: {}", .{@tagName(std.os.errno(ret))});
+                return;
+            },
         }
     }
 }
