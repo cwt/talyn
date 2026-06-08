@@ -22,7 +22,7 @@ inline fn z_loop_new(@"type": *python_c.PyTypeObject) !*LoopObject {
         }
     );
 
-    const weakref_set_class = python_c.PyObject_GetAttrString(PythonImports.weakref_module, "WeakSet\x00")
+    const weakref_set_class = python_c.PyObject_GetAttrString(PythonImports.get("weakref_module"), "WeakSet\x00")
         orelse return error.PythonError;
     defer python_c.py_decref(weakref_set_class);
 

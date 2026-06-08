@@ -89,7 +89,7 @@ pub fn init_configuration(
 pub fn set_protocol(
     self: *DatagramTransport.DatagramTransportObject, protocol: PyObject
 ) !void {
-    if (python_c.PyObject_IsInstance(protocol, utils.PythonImports.asyncio_datagram_protocol) != 1) {
+    if (python_c.PyObject_IsInstance(protocol, utils.PythonImports.get("asyncio_datagram_protocol")) != 1) {
         python_c.raise_python_type_error("Invalid protocol\x00");
         return error.PythonError;
     }

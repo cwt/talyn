@@ -85,7 +85,7 @@ pub fn task_get_stack(self: ?*Task.PythonTaskObject, args: ?PyObject, kwargs: ?P
         return null;
     }
 
-    const asyncio_module = utils.PythonImports.asyncio_module;
+    const asyncio_module = utils.PythonImports.get("asyncio_module");
     
     const base_tasks_module: PyObject = python_c.PyObject_GetAttrString(asyncio_module, "base_tasks\x00")
         orelse return null;
@@ -116,7 +116,7 @@ pub fn task_print_stack(self: ?*Task.PythonTaskObject, args: ?PyObject, kwargs: 
         return null;
     }
 
-    const asyncio_module = utils.PythonImports.asyncio_module;
+    const asyncio_module = utils.PythonImports.get("asyncio_module");
     
     const base_tasks_module: PyObject = python_c.PyObject_GetAttrString(asyncio_module, "base_tasks\x00")
         orelse return null;

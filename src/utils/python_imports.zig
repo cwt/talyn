@@ -3,100 +3,109 @@ const PyObject = *python_c.PyObject;
 const PyTypeObject = *python_c.PyTypeObject;
 
 const std = @import("std");
+const Atomic = std.atomic.Value;
 
-pub var asyncio_module: PyObject = undefined;
-pub var sys_module: PyObject = undefined;
-pub var weakref_module: PyObject = undefined;
-pub var socket_module: PyObject = undefined;
+pub var asyncio_module: Atomic(PyObject) = Atomic(PyObject).init(undefined);
+pub var sys_module: Atomic(PyObject) = Atomic(PyObject).init(undefined);
+pub var weakref_module: Atomic(PyObject) = Atomic(PyObject).init(undefined);
+pub var socket_module: Atomic(PyObject) = Atomic(PyObject).init(undefined);
 
-pub var socket_class: PyObject = undefined;
-pub var base_event_loop: PyObject = undefined;
+pub var socket_class: Atomic(PyObject) = Atomic(PyObject).init(undefined);
+pub var base_event_loop: Atomic(PyObject) = Atomic(PyObject).init(undefined);
 
-pub var asyncio_protocol: PyObject = undefined;
-pub var asyncio_buffered_protocol: PyObject = undefined;
-pub var asyncio_datagram_protocol: PyObject = undefined;
-pub var asyncio_subprocess_protocol: PyObject = undefined;
+pub var asyncio_protocol: Atomic(PyObject) = Atomic(PyObject).init(undefined);
+pub var asyncio_buffered_protocol: Atomic(PyObject) = Atomic(PyObject).init(undefined);
+pub var asyncio_datagram_protocol: Atomic(PyObject) = Atomic(PyObject).init(undefined);
+pub var asyncio_subprocess_protocol: Atomic(PyObject) = Atomic(PyObject).init(undefined);
 
-pub var asyncio_transport: PyObject = undefined;
-pub var asyncio_datagram_transport: PyObject = undefined;
+pub var asyncio_transport: Atomic(PyObject) = Atomic(PyObject).init(undefined);
+pub var asyncio_datagram_transport: Atomic(PyObject) = Atomic(PyObject).init(undefined);
 
-pub var invalid_state_exc: PyObject = undefined;
-pub var cancelled_error_exc: PyObject = undefined;
+pub var invalid_state_exc: Atomic(PyObject) = Atomic(PyObject).init(undefined);
+pub var cancelled_error_exc: Atomic(PyObject) = Atomic(PyObject).init(undefined);
 
-pub var set_running_loop: PyObject = undefined;
-pub var enter_task_func: PyObject = undefined;
-pub var leave_task_func: PyObject = undefined;
-pub var register_task_func: PyObject = undefined;
+pub var set_running_loop: Atomic(PyObject) = Atomic(PyObject).init(undefined);
+pub var enter_task_func: Atomic(PyObject) = Atomic(PyObject).init(undefined);
+pub var leave_task_func: Atomic(PyObject) = Atomic(PyObject).init(undefined);
+pub var register_task_func: Atomic(PyObject) = Atomic(PyObject).init(undefined);
 
-pub var get_asyncgen_hooks: PyObject = undefined;
-pub var set_asyncgen_hooks: PyObject = undefined;
+pub var get_asyncgen_hooks: Atomic(PyObject) = Atomic(PyObject).init(undefined);
+pub var set_asyncgen_hooks: Atomic(PyObject) = Atomic(PyObject).init(undefined);
 
-pub var py_af_inet: PyObject = undefined;
-pub var py_af_inet6: PyObject = undefined;
-pub var py_af_unix: PyObject = undefined;
-pub var py_sock_stream: PyObject = undefined;
-pub var py_sock_dgram: PyObject = undefined;
+pub var py_af_inet: Atomic(PyObject) = Atomic(PyObject).init(undefined);
+pub var py_af_inet6: Atomic(PyObject) = Atomic(PyObject).init(undefined);
+pub var py_af_unix: Atomic(PyObject) = Atomic(PyObject).init(undefined);
+pub var py_sock_stream: Atomic(PyObject) = Atomic(PyObject).init(undefined);
+pub var py_sock_dgram: Atomic(PyObject) = Atomic(PyObject).init(undefined);
+
+pub fn get(comptime name: []const u8) PyObject {
+    return @field(@This(), name).load(.acquire);
+}
 
 pub fn initialize_python_imports() !void {
-    asyncio_module = python_c.PyImport_ImportModule("asyncio\x00") orelse return error.PythonError;
-    sys_module = python_c.PyImport_ImportModule("sys\x00") orelse return error.PythonError;
-    weakref_module = python_c.PyImport_ImportModule("weakref\x00") orelse return error.PythonError;
-    socket_module = python_c.PyImport_ImportModule("socket\x00") orelse return error.PythonError;
+    const a_mod = python_c.PyImport_ImportModule("asyncio\x00") orelse return error.PythonError;
+    asyncio_module.store(a_mod, .release);
+    const s_mod = python_c.PyImport_ImportModule("sys\x00") orelse return error.PythonError;
+    sys_module.store(s_mod, .release);
+    weakref_module.store(python_c.PyImport_ImportModule("weakref\x00") orelse return error.PythonError, .release);
+    socket_module.store(python_c.PyImport_ImportModule("socket\x00") orelse return error.PythonError, .release);
 
-    base_event_loop = python_c.PyObject_GetAttrString(asyncio_module, "AbstractEventLoop\x00")
-        orelse return error.PythonError;
+    base_event_loop.store(python_c.PyObject_GetAttrString(a_mod, "AbstractEventLoop\x00")
+        orelse return error.PythonError, .release);
 
-    socket_class = python_c.PyObject_GetAttrString(socket_module, "socket\x00")
-        orelse return error.PythonError;
+    socket_class.store(python_c.PyObject_GetAttrString(socket_module.load(.acquire), "socket\x00")
+        orelse return error.PythonError, .release);
 
-    invalid_state_exc = python_c.PyObject_GetAttrString(asyncio_module, "InvalidStateError\x00")
-        orelse return error.PythonError;
-    cancelled_error_exc = python_c.PyObject_GetAttrString(asyncio_module, "CancelledError\x00")
-        orelse return error.PythonError;
+    invalid_state_exc.store(python_c.PyObject_GetAttrString(a_mod, "InvalidStateError\x00")
+        orelse return error.PythonError, .release);
+    cancelled_error_exc.store(python_c.PyObject_GetAttrString(a_mod, "CancelledError\x00")
+        orelse return error.PythonError, .release);
 
-    asyncio_protocol = python_c.PyObject_GetAttrString(asyncio_module, "Protocol\x00")
-        orelse return error.PythonError;
-    asyncio_buffered_protocol = python_c.PyObject_GetAttrString(asyncio_module, "BufferedProtocol\x00")
-        orelse return error.PythonError;
-    asyncio_datagram_protocol = python_c.PyObject_GetAttrString(asyncio_module, "DatagramProtocol\x00")
-        orelse return error.PythonError;
-    asyncio_subprocess_protocol = python_c.PyObject_GetAttrString(asyncio_module, "SubprocessProtocol\x00")
-        orelse return error.PythonError;
-    
-    asyncio_transport = python_c.PyObject_GetAttrString(asyncio_module, "Transport\x00")
-        orelse return error.PythonError;
-    asyncio_datagram_transport = python_c.PyObject_GetAttrString(asyncio_module, "DatagramTransport\x00")
-        orelse return error.PythonError;
+    asyncio_protocol.store(python_c.PyObject_GetAttrString(a_mod, "Protocol\x00")
+        orelse return error.PythonError, .release);
+    asyncio_buffered_protocol.store(python_c.PyObject_GetAttrString(a_mod, "BufferedProtocol\x00")
+        orelse return error.PythonError, .release);
+    asyncio_datagram_protocol.store(python_c.PyObject_GetAttrString(a_mod, "DatagramProtocol\x00")
+        orelse return error.PythonError, .release);
+    asyncio_subprocess_protocol.store(python_c.PyObject_GetAttrString(a_mod, "SubprocessProtocol\x00")
+        orelse return error.PythonError, .release);
 
-    set_running_loop = python_c.PyObject_GetAttrString(asyncio_module, "_set_running_loop\x00")
-        orelse return error.PythonError;
-    enter_task_func = python_c.PyObject_GetAttrString(asyncio_module, "_enter_task\x00")
-        orelse return error.PythonError;
-    leave_task_func = python_c.PyObject_GetAttrString(asyncio_module, "_leave_task\x00")
-        orelse return error.PythonError;
-    register_task_func = python_c.PyObject_GetAttrString(asyncio_module, "_register_task\x00")
-        orelse return error.PythonError;
+    asyncio_transport.store(python_c.PyObject_GetAttrString(a_mod, "Transport\x00")
+        orelse return error.PythonError, .release);
+    asyncio_datagram_transport.store(python_c.PyObject_GetAttrString(a_mod, "DatagramTransport\x00")
+        orelse return error.PythonError, .release);
 
-    get_asyncgen_hooks = python_c.PyObject_GetAttrString(sys_module, "get_asyncgen_hooks\x00")
-        orelse return error.PythonError;
-    set_asyncgen_hooks = python_c.PyObject_GetAttrString(sys_module, "set_asyncgen_hooks\x00")
-        orelse return error.PythonError;
+    set_running_loop.store(python_c.PyObject_GetAttrString(a_mod, "_set_running_loop\x00")
+        orelse return error.PythonError, .release);
+    enter_task_func.store(python_c.PyObject_GetAttrString(a_mod, "_enter_task\x00")
+        orelse return error.PythonError, .release);
+    leave_task_func.store(python_c.PyObject_GetAttrString(a_mod, "_leave_task\x00")
+        orelse return error.PythonError, .release);
+    register_task_func.store(python_c.PyObject_GetAttrString(a_mod, "_register_task\x00")
+        orelse return error.PythonError, .release);
 
-    py_af_inet = python_c.PyLong_FromLong(std.posix.AF.INET) orelse return error.PythonError;
-    py_af_inet6 = python_c.PyLong_FromLong(std.posix.AF.INET6) orelse return error.PythonError;
-    py_af_unix = python_c.PyLong_FromLong(std.posix.AF.UNIX) orelse return error.PythonError;
-    py_sock_stream = python_c.PyLong_FromLong(std.posix.SOCK.STREAM) orelse return error.PythonError;
-    py_sock_dgram = python_c.PyLong_FromLong(std.posix.SOCK.DGRAM) orelse return error.PythonError;
+    get_asyncgen_hooks.store(python_c.PyObject_GetAttrString(s_mod, "get_asyncgen_hooks\x00")
+        orelse return error.PythonError, .release);
+    set_asyncgen_hooks.store(python_c.PyObject_GetAttrString(s_mod, "set_asyncgen_hooks\x00")
+        orelse return error.PythonError, .release);
+
+    py_af_inet.store(python_c.PyLong_FromLong(std.posix.AF.INET) orelse return error.PythonError, .release);
+    py_af_inet6.store(python_c.PyLong_FromLong(std.posix.AF.INET6) orelse return error.PythonError, .release);
+    py_af_unix.store(python_c.PyLong_FromLong(std.posix.AF.UNIX) orelse return error.PythonError, .release);
+    py_sock_stream.store(python_c.PyLong_FromLong(std.posix.SOCK.STREAM) orelse return error.PythonError, .release);
+    py_sock_dgram.store(python_c.PyLong_FromLong(std.posix.SOCK.DGRAM) orelse return error.PythonError, .release);
 }
 
 pub fn release_python_imports() void {
     const decls = comptime std.meta.declarations(@This());
     inline for (decls) |decl| {
-        const decl_value_ptr = @field(@This(), decl.name);
-        const decl_type_info = @typeInfo(@TypeOf(decl_value_ptr));
-        if (decl_type_info != .pointer) continue;
-        if (decl_type_info.pointer.child != python_c.PyObject) continue;
-
-        python_c.py_decref(decl_value_ptr);
+        const T = @TypeOf(@field(@This(), decl.name));
+        if (T != Atomic(PyObject)) continue;
+        const field = &@field(@This(), decl.name);
+        const val = field.load(.acquire);
+        if (@intFromPtr(val) != 0) {
+            python_c.py_decref(val);
+        }
+        field.store(undefined, .release);
     }
 }

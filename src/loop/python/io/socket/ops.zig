@@ -71,12 +71,12 @@ ad.future, future_data, exc);
     const py_client_fd = python_c.PyLong_FromLong(client_fd) orelse return error.PythonError;
     defer python_c.py_decref(py_client_fd);
     
-    const socket_class = utils.PythonImports.socket_class;
+    const socket_class = utils.PythonImports.get("socket_class");
     
     const py_family = switch (ad.family) {
-        std.posix.AF.INET => utils.PythonImports.py_af_inet,
-        std.posix.AF.INET6 => utils.PythonImports.py_af_inet6,
-        std.posix.AF.UNIX => utils.PythonImports.py_af_unix,
+        std.posix.AF.INET => utils.PythonImports.get("py_af_inet"),
+        std.posix.AF.INET6 => utils.PythonImports.get("py_af_inet6"),
+        std.posix.AF.UNIX => utils.PythonImports.get("py_af_unix"),
         else => blk: {
             const py_val = python_c.PyLong_FromLong(ad.family) orelse return error.PythonError;
             break :blk py_val;
@@ -86,7 +86,7 @@ ad.future, future_data, exc);
         python_c.py_decref(py_family);
     };
     
-    const py_type = utils.PythonImports.py_sock_stream;
+    const py_type = utils.PythonImports.get("py_sock_stream");
     
     // Create Python socket object
     // socket.socket(family, type, proto, fileno=fd)

@@ -16,7 +16,7 @@ inline fn z_loop_run_forever(self: *LoopObject) !PyObject {
 
     try Hooks.setup_asyncgen_hooks(self);
 
-    const set_running_loop = utils.PythonImports.set_running_loop;
+    const set_running_loop = utils.PythonImports.get("set_running_loop");
     if (python_c.PyObject_CallOneArg(set_running_loop, @ptrCast(self))) |v| {
         python_c.py_decref(v);
     }else{

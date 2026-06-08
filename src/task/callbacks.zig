@@ -320,7 +320,7 @@ fn failed_execution(task: *Task.PythonTaskObject) !void {
         return;
     }
 
-    const cancelled_error = utils.PythonImports.cancelled_error_exc;
+    const cancelled_error = utils.PythonImports.get("cancelled_error_exc");
     if (exc_match(exception, cancelled_error) > 0) {
         python_c.py_xdecref(fut.cancelled_exc);
         fut.cancelled_exc = python_c.py_newref(exception);
@@ -393,15 +393,15 @@ fn _execute_task_throw(task: *Task.PythonTaskObject, task_exception: ?PyObject) 
     if (task.must_cancel) {
         if (
             exception_value == null or
-            python_c.PyErr_GivenExceptionMatches(exception_value, utils.PythonImports.cancelled_error_exc) <= 0
+            python_c.PyErr_GivenExceptionMatches(exception_value, utils.PythonImports.get("cancelled_error_exc")) <= 0
         ) {
             python_c.py_xdecref(exception_value);
             if (task.fut.cancel_msg_py_object) |value| {
                 exception_value = python_c.PyObject_CallOneArg(
-                    utils.PythonImports.cancelled_error_exc, value
+                    utils.PythonImports.get("cancelled_error_exc"), value
                 ) orelse return error.PythonError;
             }else{
-                exception_value = python_c.PyObject_CallNoArgs(utils.PythonImports.cancelled_error_exc)
+                exception_value = python_c.PyObject_CallNoArgs(utils.PythonImports.get("cancelled_error_exc"))
                     orelse return error.PythonError;
             }
         }
@@ -426,7 +426,7 @@ fn _execute_task_throw(task: *Task.PythonTaskObject, task_exception: ?PyObject) 
     };
 
     const enter_ret: PyObject = python_c.PyObject_Vectorcall(
-        utils.PythonImports.enter_task_func, &enter_task_args, enter_task_args.len, null
+        utils.PythonImports.get("enter_task_func"), &enter_task_args, enter_task_args.len, null
     ) orelse return error.PythonError;
     python_c.py_decref(enter_ret);
 
@@ -468,7 +468,7 @@ fn _execute_task_throw(task: *Task.PythonTaskObject, task_exception: ?PyObject) 
     };
 
     const leave_ret = python_c.PyObject_Vectorcall(
-        utils.PythonImports.leave_task_func, &enter_task_args, enter_task_args.len, null
+        utils.PythonImports.get("leave_task_func"), &enter_task_args, enter_task_args.len, null
     ) orelse {
         // leave_task_func failed. If check_gen_ret had already captured an
         // exception into `exception`, re-raise it (it is the more meaningful
@@ -542,8 +542,8 @@ fn _execute_task_send(task: *Task.PythonTaskObject) !void {
     defer python_c.py_xdecref(coro_ret);
 
     const trampoline_ret = talyn_task_step_trampoline(
-        utils.PythonImports.enter_task_func,
-        utils.PythonImports.leave_task_func,
+        utils.PythonImports.get("enter_task_func"),
+        utils.PythonImports.get("leave_task_func"),
         @ptrCast(py_loop),
         @ptrCast(task),
         task.coro.?,

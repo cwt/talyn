@@ -73,7 +73,7 @@ pub fn setup_asyncgen_hooks(self: *LoopObject) !void {
         return error.PythonError;
     }
 
-    self.old_asyncgen_hooks = python_c.PyObject_CallNoArgs(utils.PythonImports.get_asyncgen_hooks)
+    self.old_asyncgen_hooks = python_c.PyObject_CallNoArgs(utils.PythonImports.get("get_asyncgen_hooks"))
         orelse return error.PythonError;
 
     var args: [2]PyObject = undefined;
@@ -88,14 +88,14 @@ pub fn setup_asyncgen_hooks(self: *LoopObject) !void {
     defer python_c.py_decref(args[1]);
 
     const ret: PyObject = python_c.PyObject_Vectorcall(
-        utils.PythonImports.set_asyncgen_hooks, &args, args.len, null
+        utils.PythonImports.get("set_asyncgen_hooks"), &args, args.len, null
     ) orelse return error.PythonError;
     python_c.py_decref(ret);
 }
 
 pub fn cleanup_asyncgen_hooks(self: *LoopObject) void {
     const hooks = self.old_asyncgen_hooks orelse return;
-    const ret: PyObject = python_c.PyObject_CallObject(utils.PythonImports.set_asyncgen_hooks, hooks)
+    const ret: PyObject = python_c.PyObject_CallObject(utils.PythonImports.get("set_asyncgen_hooks"), hooks)
         orelse return;
     python_c.py_decref(ret);
     python_c.py_decref_and_set_null(&self.old_asyncgen_hooks);

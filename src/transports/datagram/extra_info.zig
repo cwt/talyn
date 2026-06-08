@@ -15,7 +15,7 @@ pub fn z_datagram_get_extra_info(self: *DatagramTransport.DatagramTransportObjec
 
     if (std.mem.eql(u8, name, "socket")) {
         if (self.fd < 0) return python_c.get_py_none();
-        const socket_module = utils.PythonImports.socket_module;
+        const socket_module = utils.PythonImports.get("socket_module");
         const fromfd = python_c.PyObject_GetAttrString(socket_module, "fromfd") orelse return error.PythonError;
         defer python_c.py_decref(fromfd);
         const py_fd = python_c.PyLong_FromLong(@intCast(self.fd)) orelse return error.PythonError;

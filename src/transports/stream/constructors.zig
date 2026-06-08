@@ -22,7 +22,7 @@ inline fn check_protocol_compatibility(protocol: PyObject, protocol_type: *Strea
     const compatible_protocols = .{"asyncio_protocol", "asyncio_buffered_protocol"};
     const protocol_types = .{Stream.ProtocolType.Legacy, Stream.ProtocolType.Buffered};
     inline for (compatible_protocols, protocol_types) |name, @"type"| {
-        switch (python_c.PyObject_IsInstance(protocol, @field(utils.PythonImports, name))) {
+        switch (python_c.PyObject_IsInstance(protocol, utils.PythonImports.get(name))) {
             1 => {
                 protocol_type.* = @"type";
                 return false;

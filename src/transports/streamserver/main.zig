@@ -305,7 +305,7 @@ fn streamserver_get_socket(self: ?*StreamServerObject, _: ?PyObject) callconv(.c
         return null;
     }
 
-    const socket_module = utils.PythonImports.socket_module;
+    const socket_module = utils.PythonImports.get("socket_module");
     const fromfd = python_c.PyObject_GetAttrString(socket_module, "fromfd\x00") orelse return null;
     defer python_c.py_decref(fromfd);
 

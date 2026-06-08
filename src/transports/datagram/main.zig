@@ -257,6 +257,6 @@ pub var DatagramTransportType: ?*python_c.PyTypeObject = null;
 pub fn create_type() !void {
     if (DatagramTransportType != null) return;
     DatagramTransportType = @ptrCast(python_c.PyType_FromSpecWithBases(
-        @constCast(&datagram_spec), utils.PythonImports.asyncio_datagram_transport
+        @constCast(&datagram_spec), utils.PythonImports.get("asyncio_datagram_transport")
     ) orelse return error.PythonError);
 }

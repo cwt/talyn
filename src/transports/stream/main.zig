@@ -202,7 +202,7 @@ pub var StreamType: *python_c.PyTypeObject = undefined;
 
 pub fn create_type() !void {
     const type_stream_transport = python_c.PyType_FromSpecWithBases(
-        @constCast(&stream_spec), utils.PythonImports.asyncio_transport
+        @constCast(&stream_spec), utils.PythonImports.get("asyncio_transport")
     ) orelse return error.PythonError;
     StreamType = @ptrCast(type_stream_transport);
 

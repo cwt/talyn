@@ -69,7 +69,7 @@ pub fn future_make_cancelled_error(self: ?*PythonFutureObject, _: ?PyObject) cal
     if (instance.cancelled_exc) |exc| {
         return python_c.py_newref(exc);
     }
-    const exc_class = utils.PythonImports.cancelled_error_exc;
+    const exc_class = utils.PythonImports.get("cancelled_error_exc");
     if (instance.cancel_msg_py_object) |m| {
         return python_c.PyObject_CallFunctionObjArgs(exc_class, m, @as(?*python_c.PyObject, null));
     }
