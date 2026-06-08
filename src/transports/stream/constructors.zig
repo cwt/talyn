@@ -28,7 +28,14 @@ inline fn check_protocol_compatibility(protocol: PyObject, protocol_type: *Strea
                 return false;
             },
             0 => {},
-            else => return true
+            -1 => {
+                std.log.err("PyObject_IsInstance failed for protocol {s}", .{name});
+                return true;
+            },
+            else => {
+                std.log.err("PyObject_IsInstance returned unexpected value for protocol {s}", .{name});
+                return true;
+            },
         }
     }
 
