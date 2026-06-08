@@ -66,13 +66,9 @@ fn execute_python_callback(context: PyObject, callback: PyObject, future: PyObje
     if (python_c.PyContext_Enter(context) < 0) {
         return error.PythonError;
     }
+    defer _ = python_c.PyContext_Exit(context);
 
     const result: ?PyObject = python_c.PyObject_CallOneArg(callback, future);
-
-    if (python_c.PyContext_Exit(context) < 0) {
-        python_c.py_xdecref(result);
-        return error.PythonError;
-    }
 
     if (result) |v| {
         python_c.py_decref(v);

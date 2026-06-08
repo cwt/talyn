@@ -799,7 +799,7 @@ Bugs discovered by cross-referencing source code against the 104 documented less
 
 #### BUG-91: Context leak in `execute_python_callback` when callback returns null
 
-- **Status**: 🔴 Open
+- **Status**: ✅ Fixed (this commit)
 - **File**: `src/future/callback.zig:66-81`
 - **Lesson**: [L28 — Python C API, Context Management](docs/lessons/05-python-c-api-correctness.md)
 - **Description**: `PyContext_Enter` is called at line 66 but there is **no** `defer` guaranteeing `PyContext_Exit`. When `PyObject_CallOneArg` returns `null` at line 70, the `else` branch at line 79 returns `error.PythonError` without calling `PyContext_Exit`. This corrupts the contextvar context stack. The same class of bug as the previously-fixed BUG-05 and BUG-14.
@@ -976,11 +976,11 @@ Bugs discovered by cross-referencing source code against the 104 documented less
 | Medium-Low | 13 | 13 | 0 |
 | Low | 27 | 27 | 0 |
 | **Existing total** | **90** | **90** | **0** |
-| **New (2026-06-08)** | **—** | **0** | **10 new bugs** |
-| **Grand total** | **100** | **90** | **10 open** |
+| **New (2026-06-08)** | **—** | **1** | **9 new bugs** |
+| **Grand total** | **100** | **91** | **9 open** |
 
-**New bug breakdown (10 new):**
-- 🔴 Critical: 3 (BUG-91, BUG-92, BUG-93)
+**New bug breakdown (10 new, 1 fixed):**
+- 🔴 Critical: 3 (BUG-91 ✅, BUG-92 🔴, BUG-93 🔴)
 - 🟠 High: 3 (BUG-94, BUG-95, BUG-96)
 - 🟡 Medium: 3 (BUG-98, BUG-99, BUG-100)
 - 🟢 Low: 1 (BUG-101)
