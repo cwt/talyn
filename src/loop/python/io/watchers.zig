@@ -118,7 +118,9 @@ inline fn z_loop_add_watcher(
         return error.PythonError;
     }
 
-    const fd: std.posix.fd_t = @intCast(python_c.PyLong_AsLong(py_fd));
+    const fd_val = python_c.PyLong_AsLong(py_fd);
+    if (python_c.PyErr_Occurred() != null) return error.PythonError;
+    const fd: std.posix.fd_t = @intCast(fd_val);
     if (fd < 0) {
         python_c.raise_python_value_error("Invalid file descriptor\x00");
         return error.PythonError;
@@ -286,7 +288,9 @@ inline fn z_loop_remove_watcher(
         return error.PythonError;
     }
 
-    const fd: std.posix.fd_t = @intCast(python_c.PyLong_AsLong(py_fd));
+    const fd_val = python_c.PyLong_AsLong(py_fd);
+    if (python_c.PyErr_Occurred() != null) return error.PythonError;
+    const fd: std.posix.fd_t = @intCast(fd_val);
     if (fd < 0) {
         python_c.raise_python_value_error("Invalid file descriptor\x00");
         return error.PythonError;

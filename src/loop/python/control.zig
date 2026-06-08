@@ -181,7 +181,9 @@ pub fn loop_add_hook(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: pytho
 
 fn z_loop_add_hook(self: *LoopObject, args: []const ?PyObject) !PyObject {
     if (args.len < 2) return error.PythonError;
-    const hook_type_int: c_int = @intCast(python_c.PyLong_AsLong(args[0].?));
+    const hook_type_val = python_c.PyLong_AsLong(args[0].?);
+    if (python_c.PyErr_Occurred() != null) return error.PythonError;
+    const hook_type_int: c_int = @intCast(hook_type_val);
     const py_callback = args[1].?;
 
     const hook_type: Loop.HookType = switch (hook_type_int) {
@@ -258,7 +260,9 @@ fn z_loop_add_path_watcher(self: *LoopObject, args: []const ?PyObject) !PyObject
     const py_mask = args[1].?;
     const py_callback = args[2].?;
 
-    const mask: u32 = @intCast(python_c.PyLong_AsUnsignedLong(py_mask));
+    const mask_val = python_c.PyLong_AsUnsignedLong(py_mask);
+    if (python_c.PyErr_Occurred() != null) return error.PythonError;
+    const mask: u32 = @intCast(mask_val);
     
     var path_buf: [4096]u8 = undefined;
     const path_len = python_c.PyUnicode_AsUTF8AndSize(py_path, null);
@@ -285,7 +289,9 @@ pub fn loop_add_child_handler(self: ?*LoopObject, args: ?[*]const ?PyObject, nar
 
 fn z_loop_add_child_handler(self: *LoopObject, args: []const ?PyObject) !PyObject {
     if (args.len < 2) return error.PythonError;
-    const pid: i32 = @intCast(python_c.PyLong_AsLong(args[0].?));
+    const pid_val = python_c.PyLong_AsLong(args[0].?);
+    if (python_c.PyErr_Occurred() != null) return error.PythonError;
+    const pid: i32 = @intCast(pid_val);
     const py_callback = args[1].?;
 
     const loop_data = utils.get_data_ptr(Loop, self);
@@ -300,7 +306,9 @@ pub fn loop_remove_child_handler(self: ?*LoopObject, args: ?[*]const ?PyObject, 
 
 fn z_loop_remove_child_handler(self: *LoopObject, args: []const ?PyObject) !PyObject {
     if (args.len < 1) return error.PythonError;
-    const pid: i32 = @intCast(python_c.PyLong_AsLong(args[0].?));
+    const pid_val = python_c.PyLong_AsLong(args[0].?);
+    if (python_c.PyErr_Occurred() != null) return error.PythonError;
+    const pid: i32 = @intCast(pid_val);
 
     const loop_data = utils.get_data_ptr(Loop, self);
     const removed = loop_data.child_watcher.remove_child_handler(pid);

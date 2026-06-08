@@ -115,9 +115,11 @@ fn get_addr_tuple(addr: PyObject) !struct { host: []const u8, port: u16 } {
 
     var c_size: python_c.Py_ssize_t = 0;
     const host_ptr = python_c.PyUnicode_AsUTF8AndSize(py_host, &c_size) orelse return error.PythonError;
+    const port_val = python_c.PyLong_AsInt(py_port);
+    if (port_val == -1 and python_c.PyErr_Occurred() != null) return error.PythonError;
     return .{
         .host = host_ptr[0..@intCast(c_size)],
-        .port = @intCast(python_c.PyLong_AsInt(py_port)),
+        .port = @intCast(port_val),
     };
 }
 
@@ -247,7 +249,9 @@ fn create_endpoint(data: *const CallbackManager.CallbackData) !void {
     // Pick family
     var family: u32 = std.posix.AF.INET;
     if (dcd.py_family) |f| {
-        family = @intCast(python_c.PyLong_AsLong(f));
+        const f_val = python_c.PyLong_AsLong(f);
+        if (python_c.PyErr_Occurred() != null) return;
+        family = @intCast(f_val);
     } else if (dcd.remote_addresses) |addrs| {
         family = addrs[0].any.family;
     } else if (dcd.local_addresses) |addrs| {

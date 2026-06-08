@@ -112,15 +112,11 @@ inline fn z_transport_set_write_buffer_limits(
         python_c.py_xdecref(py_low_water_mark);
     }
 
-    const py_long_error = comptime std.math.maxInt(c_ulonglong);
-
     var high_water_mark: usize = 64 * 1024;
     var low_water_mark: usize = 32 * 1024;
     if (py_high_water_mark) |obj| {
         const value = python_c.PyLong_AsUnsignedLongLong(obj);
-        if (value == py_long_error) {
-            return error.PythonError;
-        }
+        if (python_c.PyErr_Occurred() != null) return error.PythonError;
 
         high_water_mark = @intCast(value);
         if (high_water_mark < low_water_mark) {
@@ -130,9 +126,7 @@ inline fn z_transport_set_write_buffer_limits(
 
     if (py_low_water_mark) |obj| {
         const value = python_c.PyLong_AsUnsignedLongLong(obj);
-        if (value == py_long_error) {
-            return error.PythonError;
-        }
+        if (python_c.PyErr_Occurred() != null) return error.PythonError;
 
         low_water_mark = @min(high_water_mark, @as(usize, @intCast(value)));
     }

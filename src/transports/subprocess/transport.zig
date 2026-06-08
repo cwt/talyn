@@ -122,7 +122,9 @@ fn subprocess_terminate(self: ?*SubprocessTransportObject, _: ?PyObject) callcon
 
 fn subprocess_send_signal(self: ?*SubprocessTransportObject, arg: ?PyObject) callconv(.c) ?PyObject {
     const instance = self.?;
-    const sig = python_c.PyLong_AsInt(arg.?) ;
+    const sig_val = python_c.PyLong_AsInt(arg.?);
+    if (sig_val == -1 and python_c.PyErr_Occurred() != null) return null;
+    const sig = sig_val;
     std.posix.kill(instance.pid, @as(std.os.linux.SIG, @enumFromInt(sig))) catch |err| {
         return utils.handle_zig_function_error(err, null);
     };

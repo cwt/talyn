@@ -105,15 +105,22 @@ fn z_streamserver_init(
     }
 
     const fd = python_c.PyLong_AsLongLong(py_server_fd.?);
+    if (python_c.PyErr_Occurred() != null) return error.PythonError;
     if (fd < 0) {
         python_c.raise_python_value_error("Invalid fd\x00");
         return error.PythonError;
     }
 
-    const family = if (py_family) |f| @as(c_int, @intCast(python_c.PyLong_AsLong(f))) else std.posix.AF.INET;
+    const family = if (py_family) |f| blk: {
+        const f_val = python_c.PyLong_AsLong(f);
+        if (python_c.PyErr_Occurred() != null) return error.PythonError;
+        break :blk @as(c_int, @intCast(f_val));
+    } else std.posix.AF.INET;
 
     const backlog: c_int = if (py_backlog) |b| blk: {
-        break :blk @intCast(python_c.PyLong_AsInt(b));
+        const b_val = python_c.PyLong_AsInt(b);
+        if (b_val == -1 and python_c.PyErr_Occurred() != null) return error.PythonError;
+        break :blk @intCast(b_val);
     } else 100;
 
     self.loop = python_c.py_newref(py_loop.?);

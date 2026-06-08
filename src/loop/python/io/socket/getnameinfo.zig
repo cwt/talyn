@@ -80,7 +80,11 @@ inline fn z_loop_getnameinfo(self: *LoopObject, args: []const ?PyObject) !*Futur
         return error.PythonError;
     }
     const py_addr = args[0].?;
-    const flags: i32 = if (args.len > 1) @intCast(python_c.PyLong_AsLong(args[1].?)) else 0;
+    const flags: i32 = if (args.len > 1) blk: {
+        const v = python_c.PyLong_AsLong(args[1].?);
+        if (python_c.PyErr_Occurred() != null) return error.PythonError;
+        break :blk @intCast(v);
+    } else 0;
 
     const addr = try utils.Address.fromPyAddr(py_addr, null);
 

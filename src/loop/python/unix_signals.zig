@@ -27,6 +27,7 @@ inline fn z_loop_add_signal_handler(
     }
 
     const sig = python_c.PyLong_AsLong(py_sig);
+    if (python_c.PyErr_Occurred() != null) return error.PythonError;
     if (sig < 0) {
         python_c.raise_python_value_error("Invalid signal\x00");
         return error.PythonError;
@@ -98,6 +99,7 @@ pub fn loop_remove_signal_handler(
     }
 
     const sig = python_c.PyLong_AsUnsignedLong(py_sig.?);
+    if (python_c.PyErr_Occurred() != null) return null;
 
     const loop_data = utils.get_data_ptr(Loop, self.?);
     const mutex = &loop_data.mutex;

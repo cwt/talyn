@@ -205,8 +205,14 @@ pub fn z_datagram_set_write_buffer_limits(self: *DatagramTransport.DatagramTrans
     const py_high = args[0].?;
     const py_low: ?PyObject = if (args.len > 1 and args[1] != null and !python_c.is_none(args[1].?)) args[1].? else null;
 
-    const high = @as(usize, @intCast(python_c.PyLong_AsUnsignedLongLong(py_high)));
-    const low: usize = if (py_low) |l| @as(usize, @intCast(python_c.PyLong_AsUnsignedLongLong(l))) else high / 4;
+    const high_val = python_c.PyLong_AsUnsignedLongLong(py_high);
+    if (python_c.PyErr_Occurred() != null) return error.PythonError;
+    const high = @as(usize, @intCast(high_val));
+    const low: usize = if (py_low) |l| blk: {
+        const l_val = python_c.PyLong_AsUnsignedLongLong(l);
+        if (python_c.PyErr_Occurred() != null) return error.PythonError;
+        break :blk @as(usize, @intCast(l_val));
+    } else high / 4;
     self.writing_high_water_mark = high;
     self.writing_low_water_mark = @min(low, high);
     return python_c.get_py_none();

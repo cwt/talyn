@@ -391,7 +391,9 @@ fn z_create_server_socket(server_data: *ServerSocketData) !void {
 
     const backlog: c_int = blk: {
         if (creation_data.py_backlog) |b| {
-            break :blk @intCast(python_c.PyLong_AsInt(b));
+            const b_val = python_c.PyLong_AsInt(b);
+            if (b_val == -1 and python_c.PyErr_Occurred() != null) return error.PythonError;
+            break :blk @intCast(b_val);
         }
         break :blk 100;
     };

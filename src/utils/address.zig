@@ -332,7 +332,9 @@ pub const Address = extern union {
         var host_size: python_c.Py_ssize_t = 0;
         const host_ptr = python_c.PyUnicode_AsUTF8AndSize(py_host, &host_size) orelse return error.PythonError;
         const host = host_ptr[0..@intCast(host_size)];
-        const port: u16 = @intCast(python_c.PyLong_AsInt(py_port));
+        const port_val = python_c.PyLong_AsInt(py_port);
+        if (port_val == -1 and python_c.PyErr_Occurred() != null) return error.PythonError;
+        const port: u16 = @intCast(port_val);
 
         if (py_size == 2) {
             if (family == std.posix.AF.INET6 or std.mem.indexOfScalar(u8, host, ':') != null) {
@@ -344,8 +346,12 @@ pub const Address = extern union {
             const py_flow = python_c.PyTuple_GetItem(py_addr, 2) orelse return error.PythonError;
             const py_scope = python_c.PyTuple_GetItem(py_addr, 3) orelse return error.PythonError;
 
-            const flowinfo: u32 = @intCast(python_c.PyLong_AsUnsignedLong(py_flow));
-            const scope_id: u32 = @intCast(python_c.PyLong_AsUnsignedLong(py_scope));
+            const flowinfo_val = python_c.PyLong_AsUnsignedLong(py_flow);
+            if (python_c.PyErr_Occurred() != null) return error.PythonError;
+            const flowinfo: u32 = @intCast(flowinfo_val);
+            const scope_id_val = python_c.PyLong_AsUnsignedLong(py_scope);
+            if (python_c.PyErr_Occurred() != null) return error.PythonError;
+            const scope_id: u32 = @intCast(scope_id_val);
 
             var addr = try Address.parseIp6(host, port);
             addr.in6.sa.flowinfo = flowinfo;

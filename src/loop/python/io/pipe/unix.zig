@@ -201,7 +201,11 @@ inline fn z_loop_create_unix_server(
     }
 const fut = try Future.Python.Constructors.fast_new_future(self);
 
-const backlog: c_int = if (py_backlog) |b| @intCast(python_c.PyLong_AsInt(b)) else 100;
+const backlog: c_int = if (py_backlog) |b| blk: {
+    const b_val = python_c.PyLong_AsInt(b);
+    if (b_val == -1 and python_c.PyErr_Occurred() != null) return error.PythonError;
+    break :blk @intCast(b_val);
+} else 100;
 
 const fd_ret = std.os.linux.socket(std.posix.AF.UNIX, std.posix.SOCK.STREAM | std.posix.SOCK.CLOEXEC, 0);
 if (utils.getSyscallErrno(fd_ret) != .SUCCESS) return error.SystemResources;

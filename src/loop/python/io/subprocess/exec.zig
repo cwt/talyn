@@ -36,7 +36,9 @@ inline fn z_loop_subprocess_exec(
     }
 
     const fut = try Future.Python.Constructors.fast_new_future(self);
-    const pid: std.posix.pid_t = @intCast(python_c.PyLong_AsLongLong(py_pid.?));
+    const pid_val = python_c.PyLong_AsLongLong(py_pid.?);
+    if (python_c.PyErr_Occurred() != null) return error.PythonError;
+    const pid: std.posix.pid_t = @intCast(pid_val);
 
     const protocol = python_c.PyObject_CallNoArgs(protocol_factory) orelse return error.PythonError;
     const transport = try SubprocessTransport.new_with_pid(protocol, self, pid);

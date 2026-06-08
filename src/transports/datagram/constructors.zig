@@ -39,7 +39,11 @@ pub fn z_datagram_init(
         return error.PythonError;
     }
 
-    const fd: std.posix.fd_t = if (py_fd) |f| @intCast(python_c.PyLong_AsLongLong(f)) else -1;
+    const fd: std.posix.fd_t = if (py_fd) |f| blk: {
+        const f_val = python_c.PyLong_AsLongLong(f);
+        if (python_c.PyErr_Occurred() != null) return error.PythonError;
+        break :blk @intCast(f_val);
+    } else -1;
 
     try init_configuration(self, py_protocol.?, @ptrCast(py_loop.?), fd);
     return 0;

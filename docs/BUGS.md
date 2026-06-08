@@ -777,16 +777,210 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 - **Fix**: Change to `?u16 = null` and update all comparison sites.
 - **Status**: ✅ Fixed (see commit log)
 
+### BUG-90: Missing `PyErr_Occurred` checks after `PyLong_As*` across 21 files (all variants)
+
+- **Severity tier**: MEDIUM-HIGH
+- **File**: 37 call sites across `src/loop/python/io/socket/ops.zig`, `src/loop/python/control.zig`, `src/loop/python/io/watchers.zig`, `src/loop/python/io/socket/getaddrinfo.zig`, `src/loop/python/io/socket/getnameinfo.zig`, `src/loop/python/unix_signals.zig`, `src/loop/python/io/subprocess/exec.zig`, `src/loop/python/io/datagram/create_endpoint.zig`, `src/transports/datagram/constructors.zig`, `src/transports/streamserver/main.zig`, `src/utils/address.zig`, `src/transports/datagram/write.zig`, `src/transports/stream/write.zig`, `src/transports/subprocess/transport.zig`, `src/loop/python/io/pipe/unix.zig`, `src/loop/python/io/server/create_server.zig`
+- **Description**: All `PyLong_As*` variants (`PyLong_AsLong`, `PyLong_AsLongLong`, `PyLong_AsInt`, `PyLong_AsSsize_t`, `PyLong_AsUnsignedLong`, `PyLong_AsUnsignedLongLong`) return sentinel values on failure and set a Python exception. 37 call sites across 21 files (10 originally, plus 11 more found in audit) used the return value without calling `PyErr_Occurred()` first. If the Python value is not an integer or doesn't fit, execution continues with the sentinel while a Python exception is pending. The interpreter eventually raises `SystemError` ("error return without exception set") or uses the wrong value.
+- **Trigger**: Passing non-integer, negative, or overflow values to Python socket API functions, subprocess PID, signal numbers, buffer sizes, watcher FDs, port/flow/scope, backlog, or watermarks.
+- **Consequences**: Wrong file descriptors, socket addresses, signal numbers, buffer sizes, or watermarks used; `SystemError` crashes; silent data corruption.
+- **Fix**: Split each `PyLong_As*` call from its consuming expression, insert `if (python_c.PyErr_Occurred() != null) return error.PythonError` between them. For `PyLong_AsUnsignedLongLong` sentinel comparisons, replace with `PyErr_Occurred` check. For `callconv(.c)` functions, return `null` instead.
+- **Status**: ✅ Fixed (this commit)
+
 ---
 
-## Status Summary (as of 2026-06-07)
+## NEW BUGS (from 2026-06-08 lessons-learned audit)
+
+Bugs discovered by cross-referencing source code against the 104 documented lessons in `docs/lessons-learned.md`.
+
+---
+
+### CRITICAL
+
+#### BUG-91: Context leak in `execute_python_callback` when callback returns null
+
+- **Status**: 🔴 Open
+- **File**: `src/future/callback.zig:66-81`
+- **Lesson**: [L28 — Python C API, Context Management](docs/lessons/05-python-c-api-correctness.md)
+- **Description**: `PyContext_Enter` is called at line 66 but there is **no** `defer` guaranteeing `PyContext_Exit`. When `PyObject_CallOneArg` returns `null` at line 70, the `else` branch at line 79 returns `error.PythonError` without calling `PyContext_Exit`. This corrupts the contextvar context stack. The same class of bug as the previously-fixed BUG-05 and BUG-14.
+- **Trigger**: A Python future callback that raises an exception (causing `CallOneArg` to return null).
+- **Consequences**: Context stack corruption; subsequent context-dependent operations behave incorrectly.
+- **Fix**: Change to `defer _ = python_c.PyContext_Exit(py_context);` immediately after `PyContext_Enter` (matching the pattern in `src/handle.zig:72`).
+
+#### BUG-92: `allocator.create` + field-by-field in `create_new_node` — `prev`/`next` uninitialized
+
+- **Status**: 🔴 Open
+- **File**: `src/utils/linked_list.zig:33-35`
+- **Lesson**: [L49 — Zig-Specific, Struct Initialization](docs/lessons/08-zig-specific-patterns.md)
+- **Description**: `create_new_node` calls `allocator.create(_linked_list_node)` then assigns only `data`. The `prev` and `next` pointer fields are left as garbage bytes. They are overwritten by `append_node`/`appendleft_node` before the node is linked, but if any code path reads the node before linking (e.g., through iterator or debug print), the garbage pointers cause UB.
+- **Trigger**: Any read of `prev`/`next` on a newly-created but not-yet-linked node.
+- **Consequences**: Undefined behavior (garbage pointer dereference) in debug or error paths.
+- **Fix**: Use struct literal: `allocator.create(_linked_list_node){ .data = data }`.
+
+#### BUG-93: `allocator.create` + field-by-field in BTree `create_node` — `keys`/`values` arrays uninitialized
+
+- **Status**: 🔴 Open
+- **File**: `src/utils/btree.zig:43-48`
+- **Lesson**: [L49 — Zig-Specific, Struct Initialization](docs/lessons/08-zig-specific-patterns.md)
+- **Description**: `create_node` calls `allocator.create(Node)` then assigns `parent`, does `@memset(childs, null)`, and sets `nkeys = 0`. The `keys` and `values` arrays are never zero-initialized. Though `nkeys = 0` means they aren't read before being written, any future field added to `Node` without updating `create_node` silently produces garbage. Same pattern as the previously-fixed BUG-87.
+- **Trigger**: Adding new fields to the `Node` struct.
+- **Consequences**: Silent memory corruption if new fields aren't explicitly assigned.
+- **Fix**: Use struct literal `allocator.create(Node){ .parent = null, .childs = .{null} ** Degree, .nkeys = 0, .keys = undefined, .values = undefined }` — or better, initialize arrays to zero.
+
+---
+
+### HIGH
+
+#### BUG-94: `allocator.create` + field-by-field leaves `SocketConnectionData.method` (tagged union) uninitialized
+
+- **Status**: 🟠 Open
+- **File**: `src/loop/python/io/client/create_connection.zig:346-352`
+- **Lesson**: [L49 — Zig-Specific, Struct Initialization](docs/lessons/08-zig-specific-patterns.md)
+- **Description**: `SocketConnectionData` is created with `allocator.create` then populated field-by-field at lines 348-354. The `method` field is a `union(enum)` with no default value — its tag byte is garbage. Though `method` is currently never read (dead field), this is a latent memory corruption bug that will trigger UB the moment any code path reads it.
+- **Trigger**: Any future code that reads `connection_data.method`.
+- **Consequences**: Tagged union with garbage tag → wrong branch taken → memory corruption.
+- **Fix**: Use struct literal: `allocator.create(SocketConnectionData){ .creation_data = creation_data, .address_list = null, ... }`.
+
+#### BUG-95: Silent `return null` in `z_datagram_get_extra_info` swallows allocation failures
+
+- **Status**: 🟠 Open
+- **File**: `src/transports/datagram/extra_info.zig:19-27`
+- **Lesson**: [L57 — Defensive, Error Handling](docs/lessons/10-defensive-programming-and-code-quality.md)
+- **Description**: Five Python C API calls (`PyObject_GetAttrString`, `PyLong_FromLong` × 3, `PyTuple_Pack`) use `orelse return null` from a `!?PyObject` function. The caller interprets `null` as "no extra info exists" instead of "allocation failed". The stream equivalent at `src/transports/stream/extra_info.zig:102` correctly uses `orelse return error.PythonError`.
+- **Trigger**: Memory pressure during `get_extra_info("socket")` on datagram transports.
+- **Consequences**: Silent data loss — caller thinks socket info doesn't exist.
+- **Fix**: Change `orelse return null` to `orelse return error.PythonError`.
+
+#### BUG-96: 17 bare `else => {}` branches silently discard unhandled switch variants
+
+- **Status**: 🟠 Open
+- **Lesson**: [L85 — Event Loop, Callback Semantics](docs/lessons/03-event-loop-lifecycle.md)
+- **Table of instances**:
+
+| # | File | Line | Switch Context |
+|---|------|------|----------------|
+| 1 | `src/python_c.zig` | 491 | `compile_error_if_missing_ob_base` — unhandled field type |
+| 2 | `src/python_c.zig` | 601 | `deinitialize_object_fields` — unhandled optional child type |
+| 3 | `src/python_c.zig` | 619 | `deinitialize_object_fields` — unhandled field type |
+| 4 | `src/utils/address.zig` | 72 | `setPort` — unexpected address family |
+| 5 | `src/task/cancel.zig` | 38 | `fast_task_cancel` — status not finished/canceled |
+| 6 | `src/task/cancel.zig` | 63 | `z_fast_cancel` — status not finished/canceled |
+| 7 | `src/loop/unix_signals.zig` | 189 | `remove_signal_handler` — unexpected signal |
+| 8 | `src/loop/scheduling/io/main.zig` | 110 | `WaitTimer` — unexpected io_uring result |
+| 9 | `src/loop/scheduling/io/main.zig` | 132 | PerformWriteV/Write/SendMsg — unexpected result |
+| 10 | `src/loop/scheduling/io/main.zig` | 142 | PerformRead/RecvMsg — unexpected result |
+| 11 | `src/loop/scheduling/io/main.zig` | 150 | `SocketShutdown` — unexpected result |
+| 12 | `src/loop/scheduling/io/main.zig` | 160 | SocketConnect/Accept — unexpected result |
+| 13 | `src/loop/scheduling/io/main.zig` | 167 | Generic fallback — unexpected result |
+| 14 | `src/future/python/result.zig` | 90 | `z_future_set_exception` — not finished/canceled |
+| 15 | `src/future/python/result.zig` | 114 | `z_future_set_result` — not finished/canceled |
+| 16 | `src/future/python/cancel.zig` | 12 | `future_fast_cancel` — not finished/canceled |
+| 17 | `src/loop/dns/resolv.zig` | 344 | `parse_rr` — unknown DNS RR type |
+
+- **Most critical**: The 6 instances in `src/loop/scheduling/io/main.zig:110-168` silently swallow unexpected io_uring completion result codes. If a future kernel version produces a new result code, it's silently ignored.
+- **Fix**: Replace `else => {}` with `else => std.log.warn("unexpected result: {s}", .{@tagName(result)})` (or equivalent logging).
+
+
+
+### MEDIUM
+
+#### BUG-98: `args[n].?` unwrap without length guards in vectorcall methods
+
+- **Status**: 🟡 Open
+- **Lesson**: [L55 — Zig-Specific, Optional vs Error Union](docs/lessons/08-zig-specific-patterns.md)
+- **Description**: Multiple vectorcall methods access `args[n].?` without first verifying `args.len > n`. Though CPython typically passes the correct number of positional args, a bug or protocol mismatch causes a panic instead of a clean Python error.
+
+| File | Lines | Unguarded Access |
+|------|-------|-----------------|
+| `src/loop/python/io/socket/ops.zig` | 231-232, 341-342, 477-478, 600-601, 719-721, 851-852 | `args[0].?`, `args[1].?` (some guarded by `args.len < N` check, some not) |
+| `src/transports/datagram/write.zig` | 205 | `args[0].?` (has `args.len < 1` check, but no check for additional args) |
+| `src/transports/stream/write.zig` | 98, 102 | `args[0].?`, `args[1].?` |
+| `src/transports/stream/extra_info.zig` | 38 | `args[0].?` |
+| `src/loop/python/io/subprocess/exec.zig` | 20 | `args[0].?` |
+| `src/loop/python/io/socket/getaddrinfo.zig` | 111 | `args[0].?` |
+| `src/loop/python/io/socket/getnameinfo.zig` | 82 | `args[0].?` |
+| `src/loop/python/utils/task.zig` | 56 | `args[0].?` |
+
+- **Trigger**: Calling the Python method with fewer positional arguments than expected.
+- **Consequences**: Zig panic ("optional is null") instead of `TypeError`.
+- **Fix**: Add explicit `if (args.len < N) { raise_python_type_error(...); return error.PythonError; }` guards at method entry.
+
+#### BUG-99: 14 `except Exception: pass` silent exception swallows in production Python code
+
+- **Status**: 🟡 Open
+- **Files**: `talyn/loop.py`, `talyn/runner.py`
+- **Lesson**: [L97 — Python C API, Exception Swallowing](docs/lessons/05-python-c-api-correctness.md)
+- **Description**: 14 instances of `except Exception: pass` (or `except (..., ...): pass`) in production code silently discard exceptions. Every one should at minimum call `logger.exception(...)` before swallowing.
+
+| File | Line | Context |
+|------|------|---------|
+| `talyn/loop.py` | 1012 | `except (AttributeError, OSError): pass` — direct socket write fallback |
+| `talyn/loop.py` | 1752 | `_WriteBridge.connection_lost` — `except Exception: pass` |
+| `talyn/loop.py` | 1829 | `_ReadPipeTransport.pause_reading` |
+| `talyn/loop.py` | 1837 | `_ReadPipeTransport.resume_reading` |
+| `talyn/loop.py` | 1847 | `_ReadPipeTransport.close` |
+| `talyn/loop.py` | 1854 | `_ReadPipeTransport._on_readable` (eof guard) |
+| `talyn/loop.py` | 1865 | `_ReadPipeTransport._on_readable` (BlockingIOError re-arm) |
+| `talyn/loop.py` | 1874 | `_ReadPipeTransport._on_readable` (EOF cleanup) |
+| `talyn/loop.py` | 1879 | `_ReadPipeTransport._on_readable` (connection_lost) |
+| `talyn/loop.py` | 1885 | `_ReadPipeTransport._on_readable` (data_received) |
+| `talyn/loop.py` | 1891 | `_ReadPipeTransport._on_readable` (re-arm reader) |
+| `talyn/loop.py` | 1930 | `_WritePipeTransport.close` |
+| `talyn/loop.py` | 1993 | `_TransportWrapper.close` |
+| `talyn/runner.py` | 35 | `Runner.close` — `except RuntimeError: pass` |
+
+- **Fix**: Replace `pass` with `logger.exception("...")` or at minimum `pass  # expected: ...` with a documented reason.
+
+#### BUG-100: `.?` on optional protocol callbacks and fields that could be null
+
+- **Status**: 🟡 Open
+- **Lesson**: [L55 — Zig-Specific, Optional](docs/lessons/08-zig-specific-patterns.md)
+- **Description**: Several `.?` unwraps on optional fields that may legitimately be null at runtime depending on protocol implementation or lifecycle state:
+
+| File | Line | Field | Risk |
+|------|------|-------|------|
+| `src/transports/stream/read.zig` | 27 | `protocol_get_buffer.?` | Null if protocol doesn't support buffer protocol |
+| `src/transports/stream/write.zig` | 37, 174, 211 | `protocol_resume_writing.?` / `protocol_pause_writing.?` | Optional protocol methods; null if protocol doesn't define them |
+| `src/transports/stream/constructors.zig` | 145, 153 | `loop.exception_handler.?` | Null if no exception handler configured |
+| `src/loop/python/hooks.zig` | 16, 49 | `asyncgens_set_add.?` / `asyncgens_set_discard.?` | Null if asyncgen hooks not set up |
+| `src/loop/python/hooks.zig` | 97 | `self.old_asyncgen_hooks.?` | Null if `cleanup_asyncgen_hooks` called before `setup_asyncgen_hooks` |
+| `src/loop/dns/resolv.zig` | 452 | `matched_slot.?` | Concurrent cache eviction can make slot null |
+| `src/task/callbacks.zig` | 409 | `exception_value.?` (in defer) | Null if execution path didn't set it |
+| `src/utils/btree.zig` | 340, 344, 360 | `node.*.?`, `parent.?` | Tree corruption causes panic |
+| `src/utils/main.zig` | 62 | `return_type.?` | Panics if function has void return type |
+
+- **Fix**: Replace `.?` with `orelse` + appropriate error handling. For protocol callbacks, check null and skip. For loop fields, check null and fall back to default behavior.
+
+---
+
+### LOW
+
+#### BUG-101: Debug print in io_uring error path
+
+- **Status**: 🟢 Open
+- **File**: `src/loop/scheduling/io/main.zig:528`
+- **Lesson**: [L82 — Event Loop, Code Quality](docs/lessons/03-event-loop-lifecycle.md)
+- **Description**: `std.debug.print("io_uring buffer registration failed: {}\n", .{err})` prints to stderr on every buffer registration failure during production use. Though not in the main hot path, production errors should use structured logging.
+- **Fix**: Replace with `std.log.err("io_uring buffer registration failed: {}", .{err})`.
+
+---
+
+## Summary
 
 | Severity | Total | Fixed | Open |
 |----------|-------|-------|------|
 | Critical | 6 | 6 | 0 |
 | High | 21 | 21 | 0 |
-| Medium-High | 11 | 11 | 0 |
+| Medium-High | 12 | 12 | 0 |
 | Medium-Mid | 11 | 11 | 0 |
 | Medium-Low | 13 | 13 | 0 |
 | Low | 27 | 27 | 0 |
-| **Total** | **89** | **89** | **0** |
+| **Existing total** | **90** | **90** | **0** |
+| **New (2026-06-08)** | **—** | **0** | **10 new bugs** |
+| **Grand total** | **100** | **90** | **10 open** |
+
+**New bug breakdown (10 new):**
+- 🔴 Critical: 3 (BUG-91, BUG-92, BUG-93)
+- 🟠 High: 3 (BUG-94, BUG-95, BUG-96)
+- 🟡 Medium: 3 (BUG-98, BUG-99, BUG-100)
+- 🟢 Low: 1 (BUG-101)

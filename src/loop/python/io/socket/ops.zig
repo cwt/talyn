@@ -235,11 +235,15 @@ fn z_loop_sock_connect(self: *LoopObject, args: []const ?PyObject) !*FutureObjec
     defer python_c.py_decref(fileno_attr);
     const py_fd = python_c.PyObject_CallNoArgs(fileno_attr) orelse return error.PythonError;
     defer python_c.py_decref(py_fd);
-    const fd: std.posix.fd_t = @intCast(python_c.PyLong_AsLong(py_fd));
+    const fd_long = python_c.PyLong_AsLong(py_fd);
+    if (python_c.PyErr_Occurred() != null) return error.PythonError;
+    const fd: std.posix.fd_t = @intCast(fd_long);
 
     const py_family = python_c.PyObject_GetAttrString(py_sock, "family\x00") orelse return error.PythonError;
     defer python_c.py_decref(py_family);
-    const family: i32 = @intCast(python_c.PyLong_AsLong(py_family));
+    const family_long = python_c.PyLong_AsLong(py_family);
+    if (python_c.PyErr_Occurred() != null) return error.PythonError;
+    const family: i32 = @intCast(family_long);
 
     const addr = try AddressUtils.fromPyAddr(py_addr, family);
 
@@ -336,13 +340,17 @@ fn z_loop_sock_recv(self: *LoopObject, args: []const ?PyObject) !*FutureObject {
 
     const py_sock = args[0].?;
     const py_nbytes = args[1].?;
-    const nbytes: usize = @intCast(python_c.PyLong_AsSsize_t(py_nbytes));
+    const nbytes_sz = python_c.PyLong_AsSsize_t(py_nbytes);
+    if (python_c.PyErr_Occurred() != null) return error.PythonError;
+    const nbytes: usize = @intCast(nbytes_sz);
 
     const fileno_attr = python_c.PyObject_GetAttrString(py_sock, "fileno\x00") orelse return error.PythonError;
     defer python_c.py_decref(fileno_attr);
     const py_fd = python_c.PyObject_CallNoArgs(fileno_attr) orelse return error.PythonError;
     defer python_c.py_decref(py_fd);
-    const fd: std.posix.fd_t = @intCast(python_c.PyLong_AsLong(py_fd));
+    const fd_long = python_c.PyLong_AsLong(py_fd);
+    if (python_c.PyErr_Occurred() != null) return error.PythonError;
+    const fd: std.posix.fd_t = @intCast(fd_long);
 
     const loop_data = utils.get_data_ptr(Loop, self);
     const fut = try Future.Python.Constructors.fast_new_future(self);
@@ -475,7 +483,9 @@ fn z_loop_sock_sendall(self: *LoopObject, args: []const ?PyObject) !*FutureObjec
     defer python_c.py_decref(fileno_attr);
     const py_fd = python_c.PyObject_CallNoArgs(fileno_attr) orelse return error.PythonError;
     defer python_c.py_decref(py_fd);
-    const fd: std.posix.fd_t = @intCast(python_c.PyLong_AsLong(py_fd));
+    const fd_long = python_c.PyLong_AsLong(py_fd);
+    if (python_c.PyErr_Occurred() != null) return error.PythonError;
+    const fd: std.posix.fd_t = @intCast(fd_long);
 
     var pbuf: python_c.Py_buffer = undefined;
     if (python_c.PyObject_GetBuffer(py_data, &pbuf, python_c.PyBUF_SIMPLE) < 0) {
@@ -591,13 +601,17 @@ fn z_loop_sock_recvfrom(self: *LoopObject, args: []const ?PyObject) !*FutureObje
 
     const py_sock = args[0].?;
     const py_nbytes = args[1].?;
-    const nbytes: usize = @intCast(python_c.PyLong_AsSsize_t(py_nbytes));
+    const nbytes_sz = python_c.PyLong_AsSsize_t(py_nbytes);
+    if (python_c.PyErr_Occurred() != null) return error.PythonError;
+    const nbytes: usize = @intCast(nbytes_sz);
 
     const fileno_attr = python_c.PyObject_GetAttrString(py_sock, "fileno\x00") orelse return error.PythonError;
     defer python_c.py_decref(fileno_attr);
     const py_fd = python_c.PyObject_CallNoArgs(fileno_attr) orelse return error.PythonError;
     defer python_c.py_decref(py_fd);
-    const fd: std.posix.fd_t = @intCast(python_c.PyLong_AsLong(py_fd));
+    const fd_long = python_c.PyLong_AsLong(py_fd);
+    if (python_c.PyErr_Occurred() != null) return error.PythonError;
+    const fd: std.posix.fd_t = @intCast(fd_long);
 
     const loop_data = utils.get_data_ptr(Loop, self);
     const fut = try Future.Python.Constructors.fast_new_future(self);
@@ -714,11 +728,15 @@ fn z_loop_sock_sendto(self: *LoopObject, args: []const ?PyObject) !*FutureObject
     defer python_c.py_decref(fileno_attr);
     const py_fd = python_c.PyObject_CallNoArgs(fileno_attr) orelse return error.PythonError;
     defer python_c.py_decref(py_fd);
-    const fd: std.posix.fd_t = @intCast(python_c.PyLong_AsLong(py_fd));
+    const fd_long = python_c.PyLong_AsLong(py_fd);
+    if (python_c.PyErr_Occurred() != null) return error.PythonError;
+    const fd: std.posix.fd_t = @intCast(fd_long);
 
     const py_family = python_c.PyObject_GetAttrString(py_sock, "family\x00") orelse return error.PythonError;
     defer python_c.py_decref(py_family);
-    const family: i32 = @intCast(python_c.PyLong_AsLong(py_family));
+    const family_long = python_c.PyLong_AsLong(py_family);
+    if (python_c.PyErr_Occurred() != null) return error.PythonError;
+    const family: i32 = @intCast(family_long);
 
     const addr = try AddressUtils.fromPyAddr(py_addr, family);
 
@@ -841,7 +859,9 @@ fn z_loop_sock_recv_into(self: *LoopObject, args: []const ?PyObject) !*FutureObj
     defer python_c.py_decref(fileno_attr);
     const py_fd = python_c.PyObject_CallNoArgs(fileno_attr) orelse return error.PythonError;
     defer python_c.py_decref(py_fd);
-    const fd: std.posix.fd_t = @intCast(python_c.PyLong_AsLong(py_fd));
+    const fd_long = python_c.PyLong_AsLong(py_fd);
+    if (python_c.PyErr_Occurred() != null) return error.PythonError;
+    const fd: std.posix.fd_t = @intCast(fd_long);
 
     var pbuf: python_c.Py_buffer = undefined;
     if (python_c.PyObject_GetBuffer(py_buf, &pbuf, python_c.PyBUF_WRITABLE) < 0) {

@@ -133,9 +133,21 @@ inline fn z_loop_getaddrinfo(self: *LoopObject, args: []const ?PyObject, knames:
         break :blk 0;
     };
 
-    const family: i32 = if (py_family) |f| @intCast(python_c.PyLong_AsLong(f)) else 0;
-    const socket_type: i32 = if (py_type) |t| @intCast(python_c.PyLong_AsLong(t)) else 0;
-    const proto: i32 = if (py_proto) |pr| @intCast(python_c.PyLong_AsLong(pr)) else 0;
+    const family: i32 = if (py_family) |f| blk: {
+        const v = python_c.PyLong_AsLong(f);
+        if (python_c.PyErr_Occurred() != null) return error.PythonError;
+        break :blk @intCast(v);
+    } else 0;
+    const socket_type: i32 = if (py_type) |t| blk: {
+        const v = python_c.PyLong_AsLong(t);
+        if (python_c.PyErr_Occurred() != null) return error.PythonError;
+        break :blk @intCast(v);
+    } else 0;
+    const proto: i32 = if (py_proto) |pr| blk: {
+        const v = python_c.PyLong_AsLong(pr);
+        if (python_c.PyErr_Occurred() != null) return error.PythonError;
+        break :blk @intCast(v);
+    } else 0;
 
     const loop_data = utils.get_data_ptr(Loop, self);
     const alloc = loop_data.allocator;
