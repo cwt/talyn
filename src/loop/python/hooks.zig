@@ -1,3 +1,5 @@
+const std = @import("std");
+
 const python_c = @import("python_c");
 const PyObject = *python_c.PyObject;
 
@@ -11,9 +13,21 @@ const LoopObject = Loop.Python.LoopObject;
 pub fn asyncgen_firstiter_hook(
     self: ?*LoopObject, agen: ?PyObject
 ) callconv(.c) ?PyObject {
-    const instance = self.?;
+    const instance = self orelse {
+        std.log.err("asyncgen_firstiter_hook called with null self", .{});
+        return null;
+    };
+    const _agen = agen orelse {
+        std.log.err("asyncgen_firstiter_hook called with null agen", .{});
+        return null;
+    };
 
-    const ret: ?PyObject = python_c.PyObject_CallOneArg(instance.asyncgens_set_add orelse unreachable, agen.?);
+    const asyncgens_set_add = instance.asyncgens_set_add orelse {
+        std.log.err("asyncgens_set_add is unexpectedly null in asyncgen_firstiter_hook", .{});
+        return null;
+    };
+
+    const ret: ?PyObject = python_c.PyObject_CallOneArg(asyncgens_set_add, _agen);
     return ret;
 }
 
@@ -43,10 +57,21 @@ inline fn append_new_task(
 pub fn asyncgen_finalizer_hook(
     self: ?*LoopObject, agen: ?PyObject
 ) callconv(.c) ?PyObject {
-    const instance = self.?;
-    const _agen = agen.?;
+    const instance = self orelse {
+        std.log.err("asyncgen_finalizer_hook called with null self", .{});
+        return null;
+    };
+    const _agen = agen orelse {
+        std.log.err("asyncgen_finalizer_hook called with null agen", .{});
+        return null;
+    };
 
-    const discard_ret: PyObject = python_c.PyObject_CallOneArg(instance.asyncgens_set_discard orelse unreachable, _agen)
+    const asyncgens_set_discard = instance.asyncgens_set_discard orelse {
+        std.log.err("asyncgens_set_discard is unexpectedly null in asyncgen_finalizer_hook", .{});
+        return null;
+    };
+
+    const discard_ret: PyObject = python_c.PyObject_CallOneArg(asyncgens_set_discard, _agen)
         orelse return null;
     python_c.py_decref(discard_ret);
 

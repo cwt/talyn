@@ -23,6 +23,7 @@ FAIL=0
 
 OPTIMIZE_MODE="Debug"
 SELECTED_PYTHONS="3.13 3.14 3.13t 3.14t"
+VERBOSE=false
 for arg in "$@"; do
     case "$arg" in
         --starburst|--releasefast)
@@ -30,6 +31,10 @@ for arg in "$@"; do
             ;;
         --safe)
             OPTIMIZE_MODE="ReleaseSafe"
+            ;;
+        --verbose)
+            VERBOSE=true
+            STDERR_TARGET="/dev/stderr"
             ;;
         --python=*)
             raw="${arg#--python=}"
@@ -54,10 +59,11 @@ Usage: bash scripts/test_all.sh [options]
 
 Options:
   --python=3.13,3.14t   Comma-separated list of Python versions to test
-                         (subset of: 3.13, 3.14, 3.13t, 3.14t)
+                        (subset of: 3.13, 3.14, 3.13t, 3.14t)
   --starburst           Build with ReleaseFast
   --releasefast         Alias for --starburst
   --safe                Build with ReleaseSafe
+  --verbose             Show Zig compiler output on build/test failures
   -h, --help            Show this help
 EOF
             exit 0
@@ -249,11 +255,20 @@ for ver in $SELECTED_PYTHONS; do
         gilflag="-Dpython-gil-disabled=true"
     fi
 
-    if ! zig build install -Doptimize=$OPTIMIZE_MODE \
-        -Dpython-include-dir="$inc" \
-        -Dpython-lib-dir="$(dirname "$lib")" \
-        -Dpython-lib="$lib" \
-        $gilflag 2>/dev/null; then
+    if $VERBOSE; then
+        zig build install -Doptimize=$OPTIMIZE_MODE \
+            -Dpython-include-dir="$inc" \
+            -Dpython-lib-dir="$(dirname "$lib")" \
+            -Dpython-lib="$lib" \
+            $gilflag
+    else
+        zig build install -Doptimize=$OPTIMIZE_MODE \
+            -Dpython-include-dir="$inc" \
+            -Dpython-lib-dir="$(dirname "$lib")" \
+            -Dpython-lib="$lib" \
+            $gilflag >/dev/null 2>&1
+    fi
+    if [ $? -ne 0 ]; then
         printf "${RED}[%s]${NC} BUILD FAILED\n" "$py"
         FAIL=$((FAIL + 1))
         continue
@@ -273,7 +288,12 @@ REF_LIB="$(get_python_lib python3.13)"
 ZIG_OPTS="-Doptimize=$OPTIMIZE_MODE -Dpython-include-dir=$REF_INC -Dpython-lib-dir=$(dirname "$REF_LIB") -Dpython-lib=$REF_LIB"
 
 printf "${YELLOW}[zig]${NC} Running zig unit tests...\n"
-if zig build test $ZIG_OPTS 2>/dev/null; then
+if $VERBOSE; then
+    zig build test $ZIG_OPTS
+else
+    zig build test $ZIG_OPTS >/dev/null 2>&1
+fi
+if [ $? -eq 0 ]; then
     printf "${GREEN}[zig] PASS${NC}\n"
 else
     printf "${RED}[zig] FAIL${NC}\n"

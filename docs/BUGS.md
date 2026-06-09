@@ -915,7 +915,7 @@ Bugs discovered by cross-referencing source code against the 104 documented less
 
 #### BUG-100: `.?` on optional protocol callbacks and fields that could be null
 
-- **Status**: ✅ Fixed (`rev 724`)
+- **Status**: ✅ Fixed (`rev 734`)
 - **Lesson**: [L55 — Zig-Specific, Optional](docs/lessons/08-zig-specific-patterns.md)
 - **Description**: Several `.?` unwraps on optional fields that may legitimately be null at runtime depending on protocol implementation or lifecycle state:
 
@@ -931,7 +931,7 @@ Bugs discovered by cross-referencing source code against the 104 documented less
 | `src/utils/btree.zig` | 340, 344, 360 | `node.*.?`, `parent.?` | Tree corruption causes panic |
 | `src/utils/main.zig` | 62 | `return_type.?` | Panics if function has void return type |
 
-- **Fix**: Replace `.?` with `orelse` + appropriate error handling. For protocol callbacks, check null and skip. For loop fields, check null and fall back to default behavior.
+- **Fix**: Replace `.?` / `orelse unreachable` with `orelse` + `std.log.err` + graceful error return across 7 sites: `stream/read.zig` L27–28 (`protocol_get_buffer`, `protocol_max_read_constant`), L131 (`self` in `transport_is_reading`); `constructors.zig` L152/160 (`exception_handler`); `hooks.zig` L16/49 (`asyncgens_set_add`, `asyncgens_set_discard`). All now log the error and return a recoverable error instead of crashing.
 
 ---
 
@@ -1029,10 +1029,16 @@ Bugs found by cross-referencing source code against the 104 documented lessons i
 | Medium-Low | 13 | 13 | 0 |
 | Low | 27 | 27 | 0 |
 | **Existing total** | **90** | **90** | **0** |
-| **New (2026-06-08 pass 1)** | **10** | **8** | **2 (1 FP)** |
+| **New (2026-06-08 pass 1)** | **10** | **9** | **1 (1 FP)** |
 | **New (2026-06-08 pass 2)** | **6** | **6** | **0** |
-| **Grand total** | **106** | **104** | **2** |
+| **Grand total** | **106** | **105** | **1** |
 
-**New bug breakdown (6 new, 6 fixed):**
+**Pass 1 bug breakdown (10 new, 9 fixed):**
+- 🔴 Critical: 3 (BUG-91 ✅, BUG-92 ✅, BUG-93 ✅)
+- 🟠 High: 3 (BUG-94 ✅, BUG-95 ✅, BUG-96 ✅)
+- 🟡 Medium: 3 (BUG-98 ⚪ FP, BUG-99 ✅, BUG-100 ✅)
+- 🟢 Low: 1 (BUG-101 ✅)
+
+**Pass 2 bug breakdown (6 new, 6 fixed):**
 - 🟡 Medium: 3 (BUG-102 ✅, BUG-103 ✅, BUG-104 ✅)
 - 🟢 Low: 3 (BUG-105 ✅, BUG-106 ✅, BUG-107 ✅)

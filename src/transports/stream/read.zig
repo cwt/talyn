@@ -23,9 +23,17 @@ pub inline fn queue_read_operation(
 
     switch (protocol_type) {
         .Buffered => {
+            const protocol_get_buffer = transport.protocol_get_buffer orelse {
+                std.log.err("protocol_get_buffer is unexpectedly null in queue_read_operation (Buffered path)", .{});
+                return error.PythonError;
+            };
+            const protocol_max_read_constant = transport.protocol_max_read_constant orelse {
+                std.log.err("protocol_max_read_constant is unexpectedly null in queue_read_operation (Buffered path)", .{});
+                return error.PythonError;
+            };
             const new_buffer = python_c.PyObject_CallOneArg(
-                transport.protocol_get_buffer orelse unreachable,
-                transport.protocol_max_read_constant orelse unreachable,
+                protocol_get_buffer,
+                protocol_max_read_constant,
             ) orelse return error.PythonError;
             defer python_c.py_decref(new_buffer);
 
@@ -128,7 +136,11 @@ pub fn read_operation_completed(read_transport: *ReadTransport, data: []const u8
 }
 
 pub fn transport_is_reading(self: ?*StreamTransportObject) callconv(.c) ?PyObject {
-    return python_c.PyBool_FromLong(@intCast(@intFromBool(self.?.is_reading)));
+    const instance = self orelse {
+        std.log.err("transport_is_reading called with null self", .{});
+        return null;
+    };
+    return python_c.PyBool_FromLong(@intCast(@intFromBool(instance.is_reading)));
 }
 
 pub fn transport_pause_reading(self: ?*StreamTransportObject) callconv(.c) ?PyObject {

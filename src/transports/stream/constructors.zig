@@ -146,10 +146,15 @@ fn stream_init_configuration(
 
     const loop_data = utils.get_data_ptr(Loop, loop);
 
+    const exception_handler = loop.exception_handler orelse {
+        std.log.err("loop.exception_handler is unexpectedly null in stream_init_configuration", .{});
+        return error.PythonError;
+    };
+
     const write_transport_data = utils.get_data_ptr2(WriteTransport, "write_transport", self);
     try write_transport_data.init(
         loop_data, fd, &Write.write_operation_completed, @ptrCast(self),
-        loop.exception_handler orelse unreachable, &Lifecyle.connection_lost_callback,
+        exception_handler, &Lifecyle.connection_lost_callback,
         zero_copying
     );
     errdefer write_transport_data.deinit();
@@ -157,7 +162,7 @@ fn stream_init_configuration(
     const read_transport_data = utils.get_data_ptr2(ReadTransport, "read_transport", self);
     try read_transport_data.init(
         loop_data, fd, &Read.read_operation_completed, @ptrCast(self),
-        loop.exception_handler orelse unreachable, &Lifecyle.connection_lost_callback,
+        exception_handler, &Lifecyle.connection_lost_callback,
         zero_copying
     );
     errdefer read_transport_data.deinit();
