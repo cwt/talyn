@@ -327,7 +327,7 @@ fn pidfd_exit_callback(data: *const CallbackManager.CallbackData) !void {
                 .fd = transport.pidfd,
                 .callback = .{
                     .func = &pidfd_exit_callback,
-                    .cleanup = &cleanup_pidfd,
+                    .cleanup = null,
                     .data = .{
                         .user_data = transport,
                     },
@@ -382,7 +382,7 @@ pub fn start_exit_watcher(transport: *SubprocessTransportObject, loop: *LoopObje
             .fd = pidfd,
             .callback = .{
                 .func = &pidfd_exit_callback,
-                .cleanup = &cleanup_pidfd,
+                .cleanup = null,
                 .data = .{
                     .user_data = transport,
                 },

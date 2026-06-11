@@ -224,3 +224,46 @@ async def test_datagram_close_with_pending_operations():
 
     assert t2.is_closing()
     assert t1.is_closing()
+
+
+class FuzzDatagramProtocol(asyncio.DatagramProtocol):
+    def __init__(self):
+        self.exception_received = asyncio.Future()
+
+    def connection_made(self, transport):
+        self.transport = transport
+
+    def datagram_received(self, data, addr):
+        raise ValueError("Simulated error inside datagram_received")
+
+
+@pytest.mark.asyncio
+async def test_datagram_received_exception_no_double_free():
+    loop = asyncio.get_running_loop()
+    errors = []
+    def custom_exception_handler(l, context):
+        errors.append(context)
+
+    loop.set_exception_handler(custom_exception_handler)
+
+    try:
+        t1, p1 = await loop.create_datagram_endpoint(
+            FuzzDatagramProtocol, local_addr=("127.0.0.1", 0)
+        )
+        addr = t1.get_extra_info("sockname")
+
+        t2, p2 = await loop.create_datagram_endpoint(
+            DatagramProtocol, local_addr=("127.0.0.1", 0)
+        )
+
+        t2.sendto(b"ping", addr)
+        await asyncio.sleep(0.1)
+
+        t1.close()
+        t2.close()
+
+        assert len(errors) > 0
+        assert any(isinstance(e.get("exception"), ValueError) for e in errors)
+    finally:
+        loop.set_exception_handler(None)
+
