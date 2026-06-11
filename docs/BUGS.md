@@ -1,7 +1,7 @@
 # Talyn Bug Report
 
 Generated: 2026-05-31
-Last updated: 2026-06-08
+Last updated: 2026-06-11
 
 Deep static analysis of the talyn codebase. Bugs are ordered by severity.
 
@@ -1018,20 +1018,82 @@ Bugs found by cross-referencing source code against the 104 documented lessons i
 
 ---
 
+## NEW BUGS (from 2026-06-11 deep audit)
+
+Bugs discovered during the deep audit of the Talyn codebase. All are currently open.
+
+---
+
+### CRITICAL
+
+#### BUG-108: Double-Free / Double-Decref in Callback Handlers
+
+- **Status**: ❌ Open
+- **Files**:
+  - `src/transports/datagram/write.zig`: `sendto_completed` (Double free of `SendToData`)
+  - `src/transports/datagram/read.zig`: `read_completed` (Double free of `ReadData`)
+  - `src/transports/subprocess/transport.zig`: `pidfd_exit_callback` (Double decref of `SubprocessTransportObject`)
+- **Lesson**: [Memory §Lesson 26 (Double-Free in Error Path)](docs/lessons/01-memory-and-reference-counting.md)
+- **Description**: Multiple transport callbacks use `defer cleanup_function(...)` while also returning errors (e.g., `error.PythonError`) to the `CallbackManager`. The `CallbackManager`'s execution loop catches these errors and calls the same `cleanup` function again, leading to double-frees or refcount underflows.
+
+#### BUG-109: Refcount Underflow in `WriteTransport`
+
+- **Status**: ❌ Open
+- **File**: `src/transports/write_transport.zig`
+- **Description**: `submit_next_chunk` queues `io_uring` operations but does not `py_incref` the `parent_transport`. However, the completion handler (`write_operation_completed` on cancel) and the cleanup handler (`cleanup_resources_callback`) both call `py_decref` on it. Causes premature deallocation of transport objects and subsequent use-after-free/segfaults.
+
+#### BUG-110: Ghost Reference Cycle in `StreamTransportObject`
+
+- **Status**: ❌ Open
+- **File**: `src/transports/stream/main.zig`
+- **Lesson**: [Memory §Lesson 3 (Ghost Reference Cycle)](docs/lessons/01-memory-and-reference-counting.md)
+- **Description**: `StreamTransportObject` holds its `WriteTransport` as an inlined byte array. The generic `py_visit` utility cannot "see" inside this array to visit the `PyObject*` references held within (e.g., `parent_transport`, buffers in `pending_py_buffers`). This creates a reference cycle invisible to the Python GC.
+
+---
+
+### HIGH
+
+#### BUG-111: Broken `parseIp6` Logic
+
+- **Status**: ❌ Open
+- **File**: `src/utils/address.zig`
+- **Description**: The IPv6 parser correctly identifies the `::` shorthand but fails to record its position. It assumes all groups found after the shorthand should be zero-padded at the end, effectively parsing `1::2` as `1:2::`. Causes misrouting of network traffic when using standard IPv6 shorthand notation.
+
+#### BUG-112: Missing io_uring Cancellation in `StreamTransport`
+
+- **Status**: ❌ Open
+- **File**: `src/transports/stream/lifecycle.zig`
+- **Lesson**: [io_uring §Lesson 48 (io_uring cancellation on close)](docs/lessons/04-io-uring-and-kernel.md)
+- **Description**: `StreamTransport` closes its file descriptor without cancelling pending `io_uring` operations. If the fd is reused by the kernel before these operations complete, the operations will run against the new (potentially unrelated) socket.
+
+---
+
+### MEDIUM
+
+#### BUG-113: Pointer Alignment Risk in `tp_traverse`
+
+- **Status**: ❌ Open
+- **File**: `src/loop/python/io/client/create_connection.zig`
+- **Lesson**: [Memory §Lesson 7 (Precision in Typed Traversal)](docs/lessons/01-memory-and-reference-counting.md)
+- **Description**: `MultiConnectState.traverse_raw` uses `@alignCast(@ptrCast(ptr))` on a `?*anyopaque`. This is known to cause non-deterministic panics in Zig, especially under memory pressure or during GC execution.
+
+---
+
 ## Summary
 
 | Severity | Total | Fixed | Open |
 |----------|-------|-------|------|
-| Critical | 6 | 6 | 0 |
-| High | 21 | 21 | 0 |
-| Medium-High | 12 | 12 | 0 |
+| Critical | 9 | 6 | 3 |
+| High | 23 | 21 | 2 |
+| Medium-High | 13 | 12 | 1 |
 | Medium-Mid | 11 | 11 | 0 |
 | Medium-Low | 13 | 13 | 0 |
 | Low | 27 | 27 | 0 |
 | **Existing total** | **90** | **90** | **0** |
 | **New (2026-06-08 pass 1)** | **10** | **9** | **1 (1 FP)** |
 | **New (2026-06-08 pass 2)** | **6** | **6** | **0** |
-| **Grand total** | **106** | **105** | **1** |
+| **New (2026-06-11 deep audit)** | **6** | **0** | **6** |
+| **Grand total** | **112** | **105** | **7** |
 
 **Pass 1 bug breakdown (10 new, 9 fixed):**
 - 🔴 Critical: 3 (BUG-91 ✅, BUG-92 ✅, BUG-93 ✅)
@@ -1042,3 +1104,8 @@ Bugs found by cross-referencing source code against the 104 documented lessons i
 **Pass 2 bug breakdown (6 new, 6 fixed):**
 - 🟡 Medium: 3 (BUG-102 ✅, BUG-103 ✅, BUG-104 ✅)
 - 🟢 Low: 3 (BUG-105 ✅, BUG-106 ✅, BUG-107 ✅)
+
+**2026-06-11 deep audit bug breakdown (6 new, 0 fixed):**
+- 🔴 Critical: 3 (BUG-108 ❌, BUG-109 ❌, BUG-110 ❌)
+- 🟠 High: 2 (BUG-111 ❌, BUG-112 ❌)
+- 🟡 Medium: 1 (BUG-113 ❌)
