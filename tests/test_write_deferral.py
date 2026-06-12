@@ -132,3 +132,41 @@ def test_write_abort_refcount_underflow():
         gc.collect()
 
     talyn.run(main())
+
+
+def test_stream_transport_gc():
+    transport_id = None
+
+    async def main():
+        nonlocal transport_id
+        loop = asyncio.get_running_loop()
+
+        server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_sock.bind(("127.0.0.1", 0))
+        server_sock.listen(1)
+        addr = server_sock.getsockname()
+
+        def run_server():
+            client, _ = server_sock.accept()
+            client.close()
+
+        server_task = loop.run_in_executor(None, run_server)
+
+        reader, writer = await asyncio.open_connection(*addr)
+        transport = writer.transport
+        transport_id = id(transport)
+
+        writer.close()
+        await writer.wait_closed()
+        await server_task
+        server_sock.close()
+
+    talyn.run(main())
+
+    import gc
+    gc.collect()
+
+    assert not any(id(obj) == transport_id for obj in gc.get_objects())
+
+
+

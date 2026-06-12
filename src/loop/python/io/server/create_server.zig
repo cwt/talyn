@@ -223,7 +223,7 @@ inline fn z_loop_create_server(
         try Loop.Scheduling.Soon.dispatch(loop_data, &callback);
 
         python_c.deinitialize_object_fields(creation_data_ptr, &.{"future", "protocol_factory"});
-        return python_c.py_newref(fut);
+        return fut;
     }
 
     const callback = CallbackManager.Callback{
@@ -235,7 +235,7 @@ inline fn z_loop_create_server(
     };
     try Loop.Scheduling.Soon.dispatch(loop_data, &callback);
 
-    return python_c.py_newref(fut);
+    return fut;
 }
 
 // -----------------------------------------------------------------

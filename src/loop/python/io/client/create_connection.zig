@@ -217,7 +217,7 @@ inline fn z_loop_create_connection(
 
         transport_creation_data.* = .{
             .protocol_factory = protocol_factory,
-            .future = fut,
+            .future = python_c.py_newref(fut),
             .loop = python_c.py_newref(self),
             .socket_fd = @intCast(fd),
             .zero_copying = false, // Caller owns the fd (e.g. accept()'d socket).
@@ -240,7 +240,7 @@ inline fn z_loop_create_connection(
         try Loop.Scheduling.Soon.dispatch(loop_data, &callback);
 
         python_c.deinitialize_object_fields(&creation_data, &.{"future", "protocol_factory"});
-        return python_c.py_newref(fut);
+        return fut;
     }
 
     creation_data.loop = python_c.py_newref(self);
@@ -260,7 +260,7 @@ inline fn z_loop_create_connection(
     };
     try Loop.Scheduling.Soon.dispatch(loop_data, &callback);
 
-    return python_c.py_newref(fut);
+    return fut;
 }
 
 pub fn loop_create_connection(
@@ -882,9 +882,11 @@ fn socket_connected_callback(data: *const CallbackManager.CallbackData) !void {
     }
 
     z_create_transport_and_set_future_result(&transport_creation_data) catch |err| {
+        if (mcs.pending == 0) mcs.deinit();
         return set_future_exception(err, creation_data.future.?);
     };
     transport_creation_data.fd_created = false;
+    if (mcs.pending == 0) mcs.deinit();
     return;
 }
 

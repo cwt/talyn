@@ -293,6 +293,28 @@ pub fn stream_traverse(self: ?*StreamTransportObject, visit: python_c.visitproc,
         if (vret_dict != 0) return vret_dict;
     }
 
+    const write_transport_data = utils.get_data_ptr2(WriteTransport, "write_transport", instance);
+    if (write_transport_data.initialized) {
+        const vret_p = visit.?(@ptrCast(write_transport_data.parent_transport), arg);
+        if (vret_p != 0) return vret_p;
+        const vret_e = visit.?(@ptrCast(write_transport_data.exception_handler), arg);
+        if (vret_e != 0) return vret_e;
+        for (write_transport_data.pending_py_buffers.items) |pb| {
+            if (pb.obj) |obj| {
+                const vret_pb = visit.?(@ptrCast(obj), arg);
+                if (vret_pb != 0) return vret_pb;
+            }
+        }
+    }
+
+    const read_transport_data = utils.get_data_ptr2(ReadTransport, "read_transport", instance);
+    if (read_transport_data.initialized) {
+        const vret_p = visit.?(@ptrCast(read_transport_data.parent_transport), arg);
+        if (vret_p != 0) return vret_p;
+        const vret_e = visit.?(@ptrCast(read_transport_data.exception_handler), arg);
+        if (vret_e != 0) return vret_e;
+    }
+
     return python_c.py_visit(instance, visit, arg);
 }
 
