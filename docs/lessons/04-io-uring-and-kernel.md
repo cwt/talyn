@@ -40,7 +40,13 @@ When `link_timeout` failed (SQ full), `errdefer data_ptr.discard()` recycled the
 - **Fix:** Track `read_task_id`. In `datagram_close`, cancel the pending read by task_id and all pending operations for the fd via `IORING_ASYNC_CANCEL_FD`. Flush pending SQEs before closing.
 - **Lesson:** When an io_uring-based transport closes its fd, it **must** first cancel any pending operations referencing that fd. Use `IORING_OP_ASYNC_CANCEL` with `IORING_ASYNC_CANCEL_FD` to cancel all operations for a given fd in one shot. Always flush pending SQEs before closing.
 
+**Lesson 105 — Defensive `CancelByFd` Overhead on Socket Teardown**
+Unconditionally queuing `CancelByFd` and flushing the submission queue on every socket close/teardown introduces severe performance overhead. While canceling pending operations on close is necessary to prevent use-after-free or fd-reuse issues (Lesson 48), doing so unconditionally (even when no operations are pending) triggers expensive `CancelByFd` calls and submission queue flushes.
+- **Fix:** Check if the transport has active pending read or write tasks (`blocking_task_id > 0`) before queuing `CancelByFd`.
+- **Lesson:** Defensive safety measures (like cancellation on teardown) must be conditioned on actual resource state. Unconditional operations (especially those involving syscalls or queue flushes) can degrade performance by orders of magnitude under high throughput.
+
 ---
+
 
 ### Registration & Fixed Files
 

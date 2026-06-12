@@ -5,7 +5,7 @@
 This is the master index for all lessons learned during Leviathan/Talyn development.
 Lessons have been grouped by topic for maximum readability. Each section links to a dedicated file.
 
-> **104 lessons** documented across **10 topic areas**.
+> **107 lessons** documented across **10 topic areas**.
 
 ---
 
@@ -33,6 +33,7 @@ These lessons have the highest ROI — apply them on every new feature:
 ### 🔴 Critical (Silent Bugs, Memory Corruption)
 
 - **GC Traversal**: Every native structure holding a `PyObject*` must appear in `tp_traverse`. Skipping even one arm causes OOM. → [Memory §Ghost References](lessons/01-memory-and-reference-counting.md)
+- **In-Flight Lifecycles**: Keep Python owner objects alive via incref when queuing async tasks to prevent UAF on GC. → [Memory §Use-After-Free & Double-Free](lessons/01-memory-and-reference-counting.md)
 - **Struct Init**: `allocator.create(T)` returns uninitialized memory. Field defaults are only applied by struct literals. → [Zig §Struct Initialization](lessons/08-zig-specific-patterns.md)
 - **Deferred I/O Buffers**: io_uring reads input buffers at *submit time*, not queue time. Stack-allocated inputs are use-after-free. → [io_uring §Deferred Submission](lessons/04-io-uring-and-kernel.md)
 - **`errdefer` Immediately**: Add `errdefer cleanup(R)` immediately after every resource acquisition. → [Zig §errdefer](lessons/08-zig-specific-patterns.md)
@@ -43,6 +44,7 @@ These lessons have the highest ROI — apply them on every new feature:
 - **Recursive Mutex**: Deinitializers and teardown code must assume the loop mutex is already held. → [Concurrency §Recursive Mutex](lessons/02-concurrency-and-thread-safety.md)
 - **Teardown Order**: Drain live resources before destroying the resource they observe. → [Event Loop §Teardown Order](lessons/03-event-loop-lifecycle.md)
 - **Feature Gate Completeness**: Every kernel-dependent feature gate must have a COMPLETE fallback at all call sites. → [io_uring §Kernel Feature Gating](lessons/04-io-uring-and-kernel.md)
+- **Defensive Cancellation**: Condition teardown cancellation on active resource state to avoid massive syscall overhead. → [io_uring §Kernel Feature Gating](lessons/04-io-uring-and-kernel.md)
 
 ### 🟡 Medium (Correctness, Security)
 
@@ -50,6 +52,7 @@ These lessons have the highest ROI — apply them on every new feature:
 - **DNS Security**: Use `getrandom` for DNS transaction IDs; validate responses against stored query IDs. → [Security §DNS](lessons/09-security-and-input-validation.md)
 - **Parser Strictness**: Reject malformed input rather than zero-padding or silently accepting ambiguous formats. → [Security §Parser Strictness](lessons/09-security-and-input-validation.md)
 - **Reference Ownership**: When a callee internally `py_newref`s, pass the raw borrowed reference — do not pre-incref. → [Memory §Reference Count Discipline](lessons/01-memory-and-reference-counting.md)
+- **Balanced Refcounts**: Deferred decrements ensure references are balanced exactly once across all async outcomes. → [Memory §Reference Count Discipline](lessons/01-memory-and-reference-counting.md)
 
 ### 🟢 Quality (Maintainability, Observability)
 
@@ -66,10 +69,10 @@ For historical references to lesson numbers in commit messages or bug reports:
 
 | Lessons | Topic File |
 |---------|-----------|
-| 3, 4, 7, 11, 14, 18, 25, 26, 30, 36–39, 46, 49, 50, 52, 89 | [Memory & Reference Counting](lessons/01-memory-and-reference-counting.md) |
+| 3, 4, 7, 11, 14, 18, 25, 26, 30, 36–39, 46, 49, 50, 52, 89, 106, 107 | [Memory & Reference Counting](lessons/01-memory-and-reference-counting.md) |
 | 1, 17, 21, 22, 59, 73, 74, 99 | [Concurrency & Thread Safety](lessons/02-concurrency-and-thread-safety.md) |
 | 2, 5, 8, 10, 12, 19, 20, 47, 56, 57, 82, 84, 85, 86, 104 | [Event Loop Lifecycle](lessons/03-event-loop-lifecycle.md) |
-| 9, 13, 24, 48, 60 | [io_uring & Kernel Interaction](lessons/04-io-uring-and-kernel.md) |
+| 9, 13, 24, 48, 60, 105 | [io_uring & Kernel Interaction](lessons/04-io-uring-and-kernel.md) |
 | 27, 28, 32, 35, 54, 55, 95, 97 | [Python C API Correctness](lessons/05-python-c-api-correctness.md) |
 | 16, 31, 40, 41, 42, 43, 44, 45, 51, 78, 80, 81 | [Network Protocols & I/O](lessons/06-network-protocols-and-io.md) |
 | 23, 53, 72, 83, 94, 100 | [Data Structures & Algorithms](lessons/07-data-structures-and-algorithms.md) |

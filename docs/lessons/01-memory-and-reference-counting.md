@@ -71,6 +71,12 @@ Cancelled callbacks in `callbacks_queue` were skipped during execution but never
 - **Fix:** Accept `*CallbacksSetData`, check `if (callback.executed) continue`, mark `executed = true` immediately after freeing. Always call `release_callbacks_queue` in `Future.release` regardless of status.
 - **Lesson:** Callback release logic must be completely **idempotent** and track execution state to allow multiple passes. Unexecuted callback references must always be released during resource deallocation.
 
+**Lesson 107 — Balancing Reference Increments in Asynchronous Completion Callbacks**
+When keeping a Python object alive during an async operation by incrementing its reference count, it is critical to balance the decrement across all possible paths (cancellation, error, or success).
+- **Bug:** `WriteTransport` incremented the parent transport reference on write submission but only decremented it on cancellation, causing a memory and reference leak on success or non-cancelled failures.
+- **Fix:** Use a deferred decrement (e.g. `defer if (success) python_c.py_decref(...)`) in the completion callback to guarantee the reference is balanced exactly once on every execution outcome.
+- **Lesson:** Every increment done to shield an in-flight async operation must have a guaranteed, single matching decrement in the completion/cleanup path. Trace all exits (success, failure, cancellation, abort) to verify that no path bypasses or doubles the cleanup.
+
 ---
 
 ### Use-After-Free & Double-Free
@@ -97,6 +103,11 @@ Double-release caused `free_count` to exceed array bounds, corrupting heap.
 **Lesson 89 — Don't Reinvent the Wheel — Use the Standard Library**
 A heuristic check `@intFromPtr(op) <= 0xFFFF` in `py_incref`/`py_decref` skipped refcount operations for what was assumed to be singletons. CPython's singletons are at high addresses, not low.
 - **Lesson:** `Py_IncRef`/`Py_DecRef` are safe to call on all valid objects including `None/True/False`. Don't write custom optimization heuristics around standard library APIs without verifying all platform assumptions.
+
+**Lesson 106 — Keep Async Owner Objects Alive During In-Flight Loop Operations**
+When an asynchronous operation (like `WaitReadable` for a socket `accept` or `connect`) is queued to `io_uring`, the transport object itself (or the Python object owning it, like `StreamServerObject`) must be kept alive by incrementing its reference count, and decremented when the callback fires (or when cancelled/cleaned up). Without this, if the Python object is garbage-collected, the native callback will run with a dangling pointer, leading to a crash / use-after-free.
+- **Fix:** Increment the reference count (`py_incref`) of the owner object when queuing the task, and decrement it (`py_decref`) on all callback completion paths (success, error, cancellation).
+- **Lesson:** Never allow the lifetime of a native task queued on an async engine to exceed the lifetime of its Python owner. Hold an explicit reference on the owner for the duration of the in-flight operation.
 
 ---
 
