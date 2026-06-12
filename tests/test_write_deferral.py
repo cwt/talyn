@@ -95,3 +95,40 @@ def test_write_deferral_with_drain():
         server_sock.close()
 
     talyn.run(main())
+
+
+def test_write_abort_refcount_underflow():
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        async def handle_client(reader, writer):
+            writer.close()
+            await writer.wait_closed()
+
+        server = await asyncio.start_server(handle_client, "127.0.0.1", 0)
+        addr = server.sockets[0].getsockname()
+
+        reader, writer = await asyncio.open_connection(*addr)
+        transport = writer.transport
+
+        # Queue a write
+        writer.write(b"a" * 100)
+
+        # Immediately abort (this cancels pending writes and triggers decref)
+        transport.abort()
+
+        # Wait for close
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
+
+        server.close()
+        await server.wait_closed()
+
+        # Trigger GC to verify no segfault/double-free occurs
+        import gc
+        gc.collect()
+
+    talyn.run(main())

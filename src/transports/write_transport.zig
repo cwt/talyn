@@ -213,6 +213,7 @@ fn submit_next_chunk(self: *WriteTransport) !void {
             .zero_copy = self.zero_copying,
         },
     });
+    python_c.py_incref(self.parent_transport);
     _ = try self.loop.io.flush_pending_sqes();
 
     self.writev_count += 1;
