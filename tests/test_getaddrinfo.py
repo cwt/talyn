@@ -117,3 +117,29 @@ def test_getaddrinfo_repeated_resolution_same_hostname() -> None:
         assert r2[0][4][0] in ("127.0.0.1", "::1")
 
     talyn.run(main())
+
+
+def test_getaddrinfo_shorthand_ipv6() -> None:
+    async def main() -> None:
+        loop = asyncio.get_running_loop()
+        # Test standard IPv6 shorthand notation "1::2"
+        # Since it's a numeric IP, getaddrinfo will parse it synchronously.
+        result = await loop.getaddrinfo("1::2", 80)
+        assert len(result) > 0
+        fam, typ, proto, canon, sockaddr = result[0]
+        assert fam == socket.AF_INET6
+        assert sockaddr[0] == "1::2"
+        assert sockaddr[1] == 80
+
+        # Test "::1"
+        result = await loop.getaddrinfo("::1", 80)
+        assert len(result) > 0
+        assert result[0][4][0] == "::1"
+
+        # Test "2001:db8::ff00:42:8329"
+        result = await loop.getaddrinfo("2001:db8::ff00:42:8329", 80)
+        assert len(result) > 0
+        assert result[0][4][0] == "2001:db8::ff00:42:8329"
+
+    talyn.run(main())
+

@@ -136,10 +136,12 @@ pub const Address = extern union {
         var groups: [8]u16 = .{0} ** 8;
         var group_i: usize = 0;
         var double_colon: bool = false;
+        var double_colon_idx: usize = 0;
         var i: usize = 0;
 
         if (host.len >= 2 and host[0] == ':' and host[1] == ':') {
             double_colon = true;
+            double_colon_idx = 0;
             i = 2;
         } else if (host.len > 0 and host[0] == ':') {
             return error.InvalidCharacter;
@@ -162,10 +164,11 @@ pub const Address = extern union {
             groups[group_i] = val;
             group_i += 1;
             if (i < host.len) {
-                if (double_colon) return error.InvalidCharacter;
                 i += 1;
                 if (i < host.len and host[i] == ':') {
+                    if (double_colon) return error.InvalidCharacter;
                     double_colon = true;
+                    double_colon_idx = group_i;
                     i += 1;
                 }
             }
@@ -175,17 +178,10 @@ pub const Address = extern union {
         if (double_colon) {
             // BUG-70: Reject 8 explicit groups with `::`. The `::`
             // shorthand must represent at least one zero group.
-            // An address like `1:2:3:4:5:6:7::8` is invalid because
-            // it has 8 explicit groups but also has `::` (which
-            // would represent 0 groups, contradicting its purpose).
-            // Without this check, the code would write 8 groups
-            // and then compute `target_i = 8 - (8 - 8) = 8`, then
-            // attempt to write 8 more bytes at offset 16+,
-            // corrupting the byte layout.
             if (group_i >= 8) {
                 return error.InvalidIPAddressFormat;
             }
-            const before = group_i;
+            const before = double_colon_idx;
             for (0..before) |j| {
                 const g = groups[j];
                 bytes[target_i * 2] = @as(u8, @intCast(g >> 8));
@@ -201,14 +197,7 @@ pub const Address = extern union {
             }
         } else {
             // BUG-47: Without a `::` shorthand, the address must contain
-            // exactly 8 groups. The original code would silently accept
-            // incomplete addresses like `1:2:3:4:5:6:7` by writing only 7
-            // groups to the 16-byte buffer and leaving the remaining 2
-            // bytes as zero — effectively zero-padding the 8th group.
-            // That's ambiguous (the user might have meant to write 8
-            // groups) and silently transforms an invalid address into a
-            // valid one, which can lead to connection attempts to
-            // unexpected hosts. Now we reject the address explicitly.
+            // exactly 8 groups.
             if (group_i != 8) {
                 return error.IncompleteAddress;
             }
