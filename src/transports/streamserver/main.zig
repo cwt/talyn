@@ -169,6 +169,9 @@ fn streamserver_init(
 
 fn accept_callback(data: *const CallbackManager.CallbackData) !void {
     const server: *StreamServerObject = @alignCast(@ptrCast(data.user_data.?));
+
+    defer python_c.py_decref(@ptrCast(server));
+
     if (data.cancelled() or server.closed) return;
 
     // BUG-33: Track whether we should re-enqueue locally. The defer block must
@@ -262,6 +265,7 @@ fn enqueue_accept(server: *StreamServerObject) !void {
             },
         },
     });
+    python_c.py_incref(@ptrCast(server));
 }
 
 fn z_close_server(self: *StreamServerObject) !void {
