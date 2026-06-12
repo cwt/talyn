@@ -106,20 +106,7 @@ pub fn transport_close(self: ?*StreamTransportObject) callconv(.c) ?PyObject {
     if (read_transport.closed and write_transport.closed) {
         instance.closed = true;
 
-        const fd = instance.fd;
-        if (fd >= 0) {
-            if (instance.fixed_file_index != 0) {
-                if (instance.loop) |loop_obj| {
-                    const loop_data = utils.get_data_ptr(Loop, @as(*LoopObject, @ptrCast(loop_obj)));
-                    loop_data.io.unregister_fixed_file(instance.fixed_file_index);
-                }
-                instance.fixed_file_index = 0;
-            }
-            if (instance.owns_fd) {
-                _ = std.os.linux.close(fd);
-            }
-            instance.fd = -1;
-        }
+        cancel_and_close_fd(instance);
 
         return python_c.get_py_none();
     }
@@ -140,20 +127,7 @@ pub fn maybe_close_fd(self: *StreamTransportObject) void {
         // generation and are skipped at dispatch.
         @atomicStore(u64, &self.dispatch_generation, self.dispatch_generation + 1, .release);
         self.closed = true;
-        const fd = self.fd;
-        if (fd >= 0) {
-            if (self.fixed_file_index != 0) {
-                if (self.loop) |loop_obj| {
-                    const loop_data = utils.get_data_ptr(Loop, @as(*LoopObject, @ptrCast(loop_obj)));
-                    loop_data.io.unregister_fixed_file(self.fixed_file_index);
-                }
-                self.fixed_file_index = 0;
-            }
-            if (self.owns_fd) {
-                _ = std.os.linux.close(fd);
-            }
-            self.fd = -1;
-        }
+        cancel_and_close_fd(self);
     }
 }
 
@@ -195,20 +169,7 @@ pub fn transport_force_close(self: ?*StreamTransportObject, exc: ?PyObject) call
     instance.is_reading = false;
     instance.is_writing = false;
 
-    const fd = instance.fd;
-    if (fd >= 0) {
-        if (instance.fixed_file_index != 0) {
-            if (instance.loop) |loop_obj| {
-                const loop_data = utils.get_data_ptr(Loop, @as(*LoopObject, @ptrCast(loop_obj)));
-                loop_data.io.unregister_fixed_file(instance.fixed_file_index);
-            }
-            instance.fixed_file_index = 0;
-        }
-        if (instance.owns_fd) {
-            _ = std.os.linux.close(fd);
-        }
-        instance.fd = -1;
-    }
+    cancel_and_close_fd(instance);
 
     const exc_arg = if (exc) |e| python_c.py_newref(e) else python_c.get_py_none();
     defer python_c.py_decref(exc_arg);
@@ -223,5 +184,26 @@ pub fn transport_force_close(self: ?*StreamTransportObject, exc: ?PyObject) call
 
 pub fn transport_abort(self: ?*StreamTransportObject) callconv(.c) ?PyObject {
     return transport_force_close(self, null);
+}
+
+pub fn cancel_and_close_fd(self: *StreamTransportObject) void {
+    const fd = self.fd;
+    if (fd >= 0) {
+        if (self.loop) |loop_obj| {
+            const loop_data = utils.get_data_ptr(Loop, @as(*LoopObject, @ptrCast(loop_obj)));
+            if (loop_data.initialized) {
+                _ = loop_data.io.queue(.{ .CancelByFd = @intCast(fd) }) catch {};
+                _ = loop_data.io.flush_pending_sqes() catch {};
+            }
+            if (self.fixed_file_index != 0) {
+                loop_data.io.unregister_fixed_file(self.fixed_file_index);
+                self.fixed_file_index = 0;
+            }
+        }
+        if (self.owns_fd) {
+            _ = std.os.linux.close(fd);
+        }
+        self.fd = -1;
+    }
 }
 

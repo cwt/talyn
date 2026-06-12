@@ -44,6 +44,7 @@ is_closing: bool = false,
 closed: bool = false,
 initialized: bool = false,
 fixed_file_index: ?u16 = null,
+blocking_task_id: usize = 0,
 
 
 pub fn init(
@@ -78,6 +79,7 @@ pub fn init(
         .fd = fd,
         .zero_copying = zero_copying,
         .initialized = true,
+        .blocking_task_id = 0,
     };
 
     self.prepare_hook_node = try loop.add_hook(.prepare, .{
@@ -101,6 +103,10 @@ pub fn close(self: *WriteTransport) !void {
     self.is_closing = true;
     self.connection_lost_callback = null;
 
+    if (self.blocking_task_id > 0) {
+        _ = try self.loop.io.queue(.{ .Cancel = self.blocking_task_id });
+    }
+
     if (!self.write_in_flight and self.buffer_size == 0) {
         self.closed = true;
         const StreamLifecycle = @import("stream/lifecycle.zig");
@@ -113,6 +119,11 @@ pub fn force_close(self: *WriteTransport) !void {
     self.closed = true;
     self.is_closing = true;
     self.connection_lost_callback = null;
+
+    if (self.blocking_task_id > 0) {
+        _ = try self.loop.io.queue(.{ .Cancel = self.blocking_task_id });
+        self.blocking_task_id = 0;
+    }
 
     const StreamLifecycle = @import("stream/lifecycle.zig");
     StreamLifecycle.maybe_close_fd(@ptrCast(self.parent_transport));
@@ -193,7 +204,7 @@ fn submit_next_chunk(self: *WriteTransport) !void {
     const remaining = iov.len - offset;
     const data_slice: []const u8 = @as([*]const u8, @ptrCast(iov.base))[offset..][0..remaining];
 
-    _ = try self.loop.io.queue(.{
+    self.blocking_task_id = try self.loop.io.queue(.{
         .PerformWrite = .{
             .callback = .{
                 .func = &write_operation_completed,
@@ -227,6 +238,7 @@ fn cleanup_resources_callback(ptr: ?*anyopaque) void {
 
 fn write_operation_completed(data: *const CallbackManager.CallbackData) !void {
     const self: *WriteTransport = @alignCast(@ptrCast(data.user_data.?));
+    self.blocking_task_id = 0;
     if (data.cancelled()) {
         python_c.py_decref(self.parent_transport);
         return;
