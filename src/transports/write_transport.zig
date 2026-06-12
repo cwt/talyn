@@ -239,8 +239,12 @@ fn cleanup_resources_callback(ptr: ?*anyopaque) void {
 fn write_operation_completed(data: *const CallbackManager.CallbackData) !void {
     const self: *WriteTransport = @alignCast(@ptrCast(data.user_data.?));
     self.blocking_task_id = 0;
+
+    var success = false;
+    defer if (success) python_c.py_decref(self.parent_transport);
+
     if (data.cancelled()) {
-        python_c.py_decref(self.parent_transport);
+        success = true;
         return;
     }
 
@@ -290,14 +294,17 @@ fn write_operation_completed(data: *const CallbackManager.CallbackData) !void {
             if (self.connection_lost_callback) |callback| {
                 try callback(self.parent_transport, exception);
             }
+            success = true;
             return;
         }
+        success = true;
         return;
     }
 
     // Check if more data needs to be written
     if (self.buffer_size > 0) {
         try self.submit_next_chunk();
+        success = true;
     } else {
         // All data written — clean up consumed buffers
         // Release any remaining Py_buffers (at the current index and beyond)
@@ -335,6 +342,7 @@ fn write_operation_completed(data: *const CallbackManager.CallbackData) !void {
             }
             return error.PythonError;
         };
+        success = true;
     }
 }
 
