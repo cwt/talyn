@@ -192,8 +192,13 @@ pub fn cancel_and_close_fd(self: *StreamTransportObject) void {
         if (self.loop) |loop_obj| {
             const loop_data = utils.get_data_ptr(Loop, @as(*LoopObject, @ptrCast(loop_obj)));
             if (loop_data.initialized) {
-                _ = loop_data.io.queue(.{ .CancelByFd = @intCast(fd) }) catch {};
-                _ = loop_data.io.flush_pending_sqes() catch {};
+                const read_transport = utils.get_data_ptr2(ReadTransport, "read_transport", self);
+                const write_transport = utils.get_data_ptr2(WriteTransport, "write_transport", self);
+                const has_pending = (read_transport.initialized and read_transport.blocking_task_id > 0) or
+                                    (write_transport.initialized and write_transport.blocking_task_id > 0);
+                if (has_pending) {
+                    _ = loop_data.io.queue(.{ .CancelByFd = @intCast(fd) }) catch {};
+                }
             }
             if (self.fixed_file_index != 0) {
                 loop_data.io.unregister_fixed_file(self.fixed_file_index);

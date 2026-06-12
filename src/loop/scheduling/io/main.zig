@@ -713,10 +713,6 @@ pub fn queue_unlocked(self: *IO, event: BlockingOperationData) !usize {
 
     const set = try self.get_blocking_tasks_set();
 
-    if (event == .Cancel or event == .CancelByFd) {
-        _ = try self.flush_pending_sqes();
-    }
-
     const data_ptr = try switch (event) {
         .WaitReadable => |data| Read.wait_ready(&self.ring, set, data),
         .WaitWritable => |data| Write.wait_ready(&self.ring, set, data),
