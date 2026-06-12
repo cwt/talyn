@@ -59,9 +59,9 @@ const SocketCreationData = struct {
 
     pub fn traverse(ptr: ?*anyopaque, visit_ptr: ?*anyopaque, arg: ?*anyopaque) c_int {
         const visit: python_c.visitproc = @ptrCast(visit_ptr);
-        const self: ?*SocketCreationData = @alignCast(@ptrCast(ptr));
-        if (self) |s| {
-            return python_c.py_visit(s, visit, arg);
+        if (ptr) |p| {
+            const self: *SocketCreationData = @alignCast(@ptrCast(p));
+            return python_c.py_visit(self, visit, arg);
         }
         return 0;
     }
@@ -84,13 +84,13 @@ const TransportCreationData = struct {
 
     pub fn traverse(ptr: ?*anyopaque, visit_ptr: ?*anyopaque, arg: ?*anyopaque) c_int {
         const visit: python_c.visitproc = @ptrCast(visit_ptr);
-        const self: ?*TransportCreationData = @alignCast(@ptrCast(ptr));
-        if (self) |s| {
-            var vret = visit.?(@ptrCast(s.protocol_factory), arg);
+        if (ptr) |p| {
+            const self: *TransportCreationData = @alignCast(@ptrCast(p));
+            var vret = visit.?(@ptrCast(self.protocol_factory), arg);
             if (vret != 0) return vret;
-            vret = visit.?(@ptrCast(s.future), arg);
+            vret = visit.?(@ptrCast(self.future), arg);
             if (vret != 0) return vret;
-            vret = visit.?(@ptrCast(s.loop), arg);
+            vret = visit.?(@ptrCast(self.loop), arg);
             if (vret != 0) return vret;
         }
         return 0;
@@ -310,9 +310,9 @@ const SocketConnectionData = struct {
     }
 
     pub fn traverse(ptr: ?*anyopaque, visit_ptr: ?*anyopaque, arg: ?*anyopaque) c_int {
-        const self: ?*SocketConnectionData = @alignCast(@ptrCast(ptr));
-        if (self) |s| {
-            return SocketCreationData.traverse(s.creation_data, visit_ptr, arg);
+        if (ptr) |p| {
+            const self: *SocketConnectionData = @alignCast(@ptrCast(p));
+            return SocketCreationData.traverse(self.creation_data, visit_ptr, arg);
         }
         return 0;
     }
@@ -533,14 +533,14 @@ const MultiConnectState = struct {
 
     pub fn traverse_raw(ptr: ?*anyopaque, visit_ptr: ?*anyopaque, arg: ?*anyopaque) c_int {
         const visit: python_c.visitproc = @ptrCast(visit_ptr);
-        const self: ?*MultiConnectState = @alignCast(@ptrCast(ptr));
-        if (self) |s| {
-            if (s.exceptions) |e| {
+        if (ptr) |p| {
+            const self: *MultiConnectState = @alignCast(@ptrCast(p));
+            if (self.exceptions) |e| {
                 const vret = visit.?(@ptrCast(e), arg);
                 if (vret != 0) return vret;
             }
 
-            const creation_data = s.connection_data.creation_data;
+            const creation_data = self.connection_data.creation_data;
             if (creation_data.future) |f| {
                 const vret = visit.?(@ptrCast(f), arg);
                 if (vret != 0) return vret;
@@ -769,9 +769,9 @@ const SocketData = struct {
     }
 
     pub fn traverse(ptr: ?*anyopaque, visit_ptr: ?*anyopaque, arg: ?*anyopaque) c_int {
-        const self: ?*SocketData = @alignCast(@ptrCast(ptr));
-        if (self) |s| {
-            return MultiConnectState.traverse_raw(s.multi_state, visit_ptr, arg);
+        if (ptr) |p| {
+            const self: *SocketData = @alignCast(@ptrCast(p));
+            return MultiConnectState.traverse_raw(self.multi_state, visit_ptr, arg);
         }
         return 0;
     }
