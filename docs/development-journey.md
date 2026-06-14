@@ -82,6 +82,23 @@ With the release of **v0.6.1**, we have decided, based on our benchmark outcomes
 
 Through meticulous optimization of struct layouts and memory boundaries, we resolved the alignment and race-condition concerns that previously made aggressive compile-time optimizations unstable. We can now deliver maximum throughput safely to all end-users.
 
+## Releasing v0.6.4: Deep Audit, Model Swarms & The Socket Ops Leap
+
+After the release of **v0.6.3**, we took a step back and instructed our coding agents to conduct a deep, comprehensive audit of the entire codebase. The goal was to identify and fix any patterns that violated our accumulated [lessons-learned.md](lessons-learned.md). 
+
+During this phase, we established a highly effective multi-model workflow. Because different AI models exhibit different strengths, weaknesses, and blindspots, we leveraged a split-model approach:
+1. **Bug Hunting**: We deployed expensive, high-reasoning models (with large thinking quotas) to scrutinize the code, identify subtle bugs, and document their findings in meticulous detail in [BUGS.md](BUGS.md).
+2. **Bug Fixing**: We then passed these detailed specifications from [BUGS.md](BUGS.md) to cheaper, faster models to execute the fixes quickly and precisely.
+
+This audit successfully resolved several critical reference-counting issues, double-frees, ghost reference cycles, and potential use-after-free bugs (including BUG-108 through BUG-115).
+
+However, this rigorous application of defensive programming introduced a severe regression on the **Socket Ops** benchmark. To find the root cause, we analyzed the performance path again. We traced the slowdown to a defensive cancellation mechanism (BUG-116)—unconditional `CancelByFd` calls and queue flushes executing on every socket close. By optimizing the teardown sequence to bypass `CancelByFd` when no reads or writes are pending, we removed the system call overhead entirely. 
+
+The result was a stunning breakthrough: Socket Ops performance didn't just recover—it leaped to its highest benchmark scores yet, proving that correctness and extreme performance can go hand-in-hand.
+
+You can view the detailed benchmark results here:
+- **Intel Core Ultra 7 265**: Python 3.14 [Starburst (ReleaseFast)](benchmarks/core-ultra-7-265/benchmarks-v0.6.4-3.14-starburst.txt)
+
 ---
 
 This project has been a long, humbling, and incredibly rewarding journey. From an inactive, crash-prone prototype to a stable, fully test-suite-passing event loop built with the help of a swarm of AI agents.
