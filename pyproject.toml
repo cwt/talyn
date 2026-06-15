@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "talyn"
-version = "0.6.4"
+version = "0.7.0"
 description = "Talyn: A robust, stable, and realistically fast Zig-powered event loop for Python's asyncio."
 readme = "README.md"
 requires-python = ">=3.13"

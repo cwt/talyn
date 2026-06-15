@@ -17,8 +17,7 @@ echo "=== Talyn Multi-Python Wheel Builder ==="
 echo "Targeting Python environments: python3.13, python3.14, python3.13t, python3.14t"
 echo ""
 
-# Start with a fresh dist directory
-rm -rf "$DIST_DIR"
+# Ensure the dist directory exists
 mkdir -p "$DIST_DIR"
 
 # Clean stale .so files left in the source tree by `pip install -e .` or `setup.py develop`
@@ -27,6 +26,23 @@ find talyn/ -name '*.so' -delete 2>/dev/null || true
 
 PYTHONS=("python3.13" "python3.14" "python3.13t" "python3.14t")
 BUILT_COUNT=0
+
+# Detect architecture and set CPU and platform parameters
+ARCH="$(uname -m)"
+if [ "$ARCH" = "x86_64" ]; then
+    PLAT_NAME="manylinux_2_36_x86_64"
+    TALYN_CPU="x86_64"
+elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+    PLAT_NAME="manylinux_2_36_aarch64"
+    TALYN_CPU="generic"
+else
+    printf "${RED}Unsupported build architecture: %s${NC}\n" "$ARCH"
+    exit 1
+fi
+
+# Clean old wheels for the current platform target to avoid blowing away
+# other architecture wheels in multi-arch builds.
+rm -f "$DIST_DIR"/*"$PLAT_NAME"*.whl 2>/dev/null || true
 
 for py in "${PYTHONS[@]}"; do
     if ! command -v "$py" >/dev/null 2>&1; then
@@ -48,8 +64,8 @@ for py in "${PYTHONS[@]}"; do
     find . -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
     find . -name '*.pyc' -delete 2>/dev/null || true
 
-    printf "${GREEN}[%s]${NC} Compiling and building binary wheel...\n" "$py"
-    if TALYN_OPTIMIZE=ReleaseFast TALYN_CPU=x86_64 "$py" setup.py bdist_wheel --dist-dir "$DIST_DIR" --plat-name manylinux_2_36_x86_64; then
+    printf "${GREEN}[%s]${NC} Compiling and building binary wheel for %s...\n" "$py" "$PLAT_NAME"
+    if TALYN_OPTIMIZE=ReleaseFast TALYN_CPU="$TALYN_CPU" "$py" setup.py bdist_wheel --dist-dir "$DIST_DIR" --plat-name "$PLAT_NAME"; then
         printf "${GREEN}[%s] Wheel successfully built!${NC}\n\n" "$py"
         BUILT_COUNT=$((BUILT_COUNT + 1))
     else

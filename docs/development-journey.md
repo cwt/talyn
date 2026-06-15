@@ -99,6 +99,19 @@ The result was a stunning breakthrough: Socket Ops performance didn't just recov
 You can view the detailed benchmark results here:
 - **Intel Core Ultra 7 265**: Python 3.14 [Starburst (ReleaseFast)](benchmarks/core-ultra-7-265/benchmarks-v0.6.4-3.14-starburst.txt)
 
+## Releasing v0.7.0: macOS Apple Silicon Dev Suite, AARCH64 Alignment & Link-Time Optimization (LTO)
+
+With the release of **v0.7.0**, we focused on broadening developer access, making the codebase cross-platform compile-friendly, and adopting advanced link-time optimizations.
+
+1. **macOS Apple Silicon & Podman Dev Suite**:
+   To support developers on Apple Silicon, we reorganized and grouped all platform-specific tooling into [scripts/macos/](../scripts/macos/). This includes a dedicated `Containerfile` and containerized test/benchmark wrappers (`run_tests.sh`, `benchmark.sh`).
+2. **Multi-Architecture Wheel Compilation**:
+   We added a wrapper script, `build_all_wheels.sh`, which compiles both native `aarch64` and emulated `x86_64` wheels in a single command on Apple Silicon using Podman. The script is designed to safely isolate builds so that building for one architecture doesn't overwrite wheels of the other in the final `./dist/` folder.
+3. **Strict AARCH64 Alignment & Compiler Fixes**:
+   Compiling for `aarch64` Linux exposed strict memory alignment constraints that do not exist on `x86_64`. We resolved compiler faults by introducing `@alignCast` to pointer casts across all core Zig modules. Additionally, we pinned `aarch64` targets to a `generic` CPU configuration to guarantee standard, portable wheels across ARM machines.
+4. **Link-Time Optimization (ThinLTO)**:
+   To squeeze out extra performance and enable inter-procedural optimization across Zig modules and auxiliary C files (like atomic stubs and execution trampolines), we configured ThinLTO (`lib.lto = .thin`) and section garbage collection (`lib.link_gc_sections = true`) for all release builds. This ensures leaner, faster binaries without significantly bloating compile times.
+
 ---
 
 This project has been a long, humbling, and incredibly rewarding journey. From an inactive, crash-prone prototype to a stable, fully test-suite-passing event loop built with the help of a swarm of AI agents.

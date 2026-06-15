@@ -448,7 +448,7 @@ pub fn py_visit(object: anytype, visit: Python.visitproc, arg: ?*anyopaque) c_in
 pub fn traverse_pyobject_callback(ptr: ?*anyopaque, visit_ptr: ?*anyopaque, arg: ?*anyopaque) c_int {
     if (ptr) |p| {
         const obj: *PyObject = @ptrCast(@alignCast(p));
-        const visit: visitproc = @ptrCast(visit_ptr.?);
+        const visit: visitproc = @ptrCast(@alignCast(visit_ptr.?));
         return visit.?(obj, arg);
     }
     return 0;

@@ -53,7 +53,7 @@ fn release_python_future_data(data: ?*anyopaque) void {
 fn traverse_python_future_data(ptr: ?*anyopaque, visit_ptr: ?*anyopaque, arg: ?*anyopaque) c_int {
     const future: *Future = @alignCast(@ptrCast(ptr.?));
     const py_future = utils.get_parent_ptr(Future.Python.FutureObject, future);
-    const visit: python_c.visitproc = @ptrCast(visit_ptr.?);
+    const visit: python_c.visitproc = @ptrCast(@alignCast(visit_ptr.?));
     return visit.?(@ptrCast(py_future), arg);
 }
 

@@ -34,13 +34,73 @@ Talyn prioritizes **correctness, complete system safety, and high usability** ov
 
 ---
 
-## 🔧 Installation
+## 🔧 Installation & Testing
 
-To compile and install Talyn locally, run:
+To compile and install Talyn locally on a native Linux machine, run:
 
 ```bash
 pip install -e .
 ```
+
+### 🍎 macOS Development & Testing via Podman (Apple Silicon)
+
+Since Talyn is a Linux-only project leveraging `io_uring`, development and testing on macOS require running inside a Linux environment. 
+
+We provide a frictionless, automated setup using **Podman** and a **Fedora 44 (AARCH64)** container:
+
+1. **Install Podman**:
+   ```bash
+   brew install podman
+   ```
+2. **Initialize the Podman VM** (only needed once):
+   ```bash
+   podman machine init
+   ```
+3. **Run the test suite** (the script automatically starts the VM if it's stopped, builds the image, runs the tests with proper permissions, and stops the VM at the end if it started it):
+   ```bash
+   ./scripts/macos/run_tests.sh
+   ```
+
+You can pass any options supported by `test_all.sh` (e.g., `--verbose` or `--python=3.13`):
+```bash
+./scripts/macos/run_tests.sh --verbose --python=3.13
+```
+
+To force a rebuild of the Fedora testing image:
+```bash
+./scripts/macos/run_tests.sh --rebuild-image
+```
+
+### 📊 Benchmarking
+
+We also provide a wrapper to run the benchmark suite inside the Fedora container using the optimized `ReleaseFast` target:
+```bash
+./scripts/macos/benchmark.sh --python=python3.13
+```
+
+You can target a specific benchmark using `--bench` (note that benchmark names with spaces must be quoted):
+```bash
+./scripts/macos/benchmark.sh --python=python3.13 --bench="task spawn"
+```
+The generated comparison plots will be automatically saved to `benchmarks/output/`.
+
+### 📦 Building & Publishing Multi-Architecture Wheels
+
+If you are developing on macOS (Apple Silicon) and need to build and publish wheels for **both `aarch64` and `x86_64`** architectures to PyPI, you can do so in a single command using Podman's emulation:
+
+1. **Build all wheels**:
+   This script builds a native `aarch64` container image and an emulated `x86_64` container image, runs `scripts/build.sh` inside both, and collects all 8 wheels (4 Python versions × 2 architectures) in the `./dist/` directory:
+   ```bash
+   ./scripts/macos/build_all_wheels.sh
+   ```
+
+2. **Publish to PyPI**:
+   Upload the built distributions in `./dist/` using twine (pre-configured in your repository):
+   ```bash
+   ./scripts/publish.sh
+   ```
+
+
 
 ### ⚡ Optimization & Target Compilation (For Developers & Power Users)
 

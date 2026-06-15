@@ -29,6 +29,12 @@ fn create_build_step(
         .root_module = root_module,
     });
 
+    // Enable Link-Time Optimization and section garbage collection for release builds
+    if (optimize != .Debug) {
+        lib.lto = .thin;
+        lib.link_gc_sections = true;
+    }
+
     if (emit_bin) {
         const compile_python_lib = b.addInstallArtifact(lib, .{});
         step.dependOn(&compile_python_lib.step);
@@ -186,6 +192,10 @@ pub fn build(b: *std.Build) void {
         talyn_module_unit_tests.root_module.addObjectFile(.{ .cwd_relative = lib });
         callback_manager_unit_tests.root_module.addObjectFile(.{ .cwd_relative = lib });
         utils_unit_tests.root_module.addObjectFile(.{ .cwd_relative = lib });
+
+        talyn_module_unit_tests.linker_allow_shlib_undefined = true;
+        callback_manager_unit_tests.linker_allow_shlib_undefined = true;
+        utils_unit_tests.linker_allow_shlib_undefined = true;
     }
 
     const test_step = b.step("test", "Run unit tests");

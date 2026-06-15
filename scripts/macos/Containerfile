@@ -1,0 +1,40 @@
+# Standard official Fedora 44 image for AARCH64 (when run on Apple Silicon)
+FROM registry.fedoraproject.org/fedora:44
+
+# Install build tools, compilers, Zig 0.16.0, Python interpreters, development headers, test suites, and OpenSSL
+RUN dnf -y update && dnf -y install \
+    zig \
+    gcc \
+    gcc-c++ \
+    freetype-devel \
+    libpng-devel \
+    python3.13 \
+    python3.13-devel \
+    python3.13-freethreading \
+    python3.13-test \
+    python3.14 \
+    python3.14-devel \
+    python3.14-freethreading \
+    python3.14-freethreading-devel \
+    python3-test \
+    python3.14-freethreading-test \
+    openssl \
+    git \
+    findutils \
+    && dnf clean all
+
+# Bootstrap pip for all Python versions
+RUN python3.13 -m ensurepip --upgrade && \
+    python3.13t -m ensurepip --upgrade && \
+    python3.14 -m ensurepip --upgrade && \
+    python3.14t -m ensurepip --upgrade
+
+# Pre-install pytest, pytest-asyncio, and benchmark dependencies for all Python versions to speed up runs.
+# --break-system-packages is required as we are installing globally inside the container.
+RUN python3.13 -m pip install --no-cache-dir --break-system-packages pytest pytest-asyncio prettytable matplotlib pillow uvloop && \
+    python3.13t -m pip install --no-cache-dir --break-system-packages pytest pytest-asyncio prettytable matplotlib pillow || true && \
+    python3.14 -m pip install --no-cache-dir --break-system-packages pytest pytest-asyncio prettytable matplotlib pillow uvloop && \
+    python3.14t -m pip install --no-cache-dir --break-system-packages pytest pytest-asyncio prettytable matplotlib pillow || true
+
+# Create and set the workspace directory
+WORKDIR /workspace

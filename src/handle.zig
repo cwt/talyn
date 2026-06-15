@@ -136,7 +136,7 @@ pub inline fn fast_new_handle(
 
 pub fn traverse_python_generic_callback(ptr: ?*anyopaque, visit_ptr: ?*anyopaque, arg: ?*anyopaque) c_int {
     const handle: *PythonHandleObject = @alignCast(@ptrCast(ptr.?));
-    const visit: python_c.visitproc = @ptrCast(visit_ptr.?);
+    const visit: python_c.visitproc = @ptrCast(@alignCast(visit_ptr.?));
     return visit.?(@ptrCast(handle), arg);
 }
 
