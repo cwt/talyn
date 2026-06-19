@@ -104,13 +104,23 @@ You can view the detailed benchmark results here:
 With the release of **v0.7.0**, we focused on broadening developer access, making the codebase cross-platform compile-friendly, and adopting advanced link-time optimizations.
 
 1. **macOS Apple Silicon & Podman Dev Suite**:
-   To support developers on Apple Silicon, we reorganized and grouped all platform-specific tooling into [scripts/macos/](../scripts/macos/). This includes a dedicated `Containerfile` and containerized test/benchmark wrappers (`run_tests.sh`, `benchmark.sh`).
+   Because Talyn relies on Linux-specific `io_uring` kernel primitives, it cannot run directly on the macOS/XNU kernel or BSD-based stack. To support developers on Apple Silicon, we reorganized and grouped containerized tooling into [scripts/macos/](../scripts/macos/). This suite leverages Podman/Podman-machine and Apple's Hypervisor.framework to run a full Linux kernel (Fedora 44) virtualized on macOS, hosting the test and benchmark wrappers (`run_tests.sh`, `benchmark.sh`) inside the container.
 2. **Multi-Architecture Wheel Compilation**:
    We added a wrapper script, `build_all_wheels.sh`, which compiles both native `aarch64` and emulated `x86_64` wheels in a single command on Apple Silicon using Podman. The script is designed to safely isolate builds so that building for one architecture doesn't overwrite wheels of the other in the final `./dist/` folder.
 3. **Strict AARCH64 Alignment & Compiler Fixes**:
    Compiling for `aarch64` Linux exposed strict memory alignment constraints that do not exist on `x86_64`. We resolved compiler faults by introducing `@alignCast` to pointer casts across all core Zig modules. Additionally, we pinned `aarch64` targets to a `generic` CPU configuration to guarantee standard, portable wheels across ARM machines.
 4. **Link-Time Optimization (ThinLTO)**:
    To squeeze out extra performance and enable inter-procedural optimization across Zig modules and auxiliary C files (like atomic stubs and execution trampolines), we configured ThinLTO (`lib.lto = .thin`) and section garbage collection (`lib.link_gc_sections = true`) for all release builds. This ensures leaner, faster binaries without significantly bloating compile times.
+
+These compiler and build improvements yielded impressive outcomes in our comprehensive benchmark sweep. We verified Talyn v0.7.0's performance across all three targeted hardware profiles:
+* **Intel Core Ultra 7 265**: Socket Ops reached a peak speedup of **3.47x** over standard `asyncio`, outpacing `uvloop` (**3.05x**). Free-threaded (Python 3.14t) task spawning also saw a clean **2.10x** improvement.
+* **Macbook Neo (ARM64)**: Apple Silicon validation was performed under Fedora 44 virtualized via Podman on macOS. Socket Ops ran **2.57x** faster than asyncio under the GIL, and **2.66x** faster in free-threaded mode (serving as a key high-performance loop since `uvloop` was unsupported on free-threaded containerized environments).
+* **Intel Celeron N6000**: Edge scaling remained solid, delivering a **2.62x** Socket Ops speedup and dropping coroutine execution times by up to 55%.
+
+For a complete breakdown of the results, see [BENCHMARKS-v0.7.0.md](benchmarks/BENCHMARKS-v0.7.0.md). The raw execution logs are also available:
+- **Intel Core Ultra 7 265**: [Python 3.14](benchmarks/core-ultra-7-265/benchmarks-v0.7.0-3.14-starburst.txt) | [Python 3.14t](benchmarks/core-ultra-7-265/benchmarks-v0.7.0-3.14t-starburst.txt)
+- **Macbook Neo (ARM64)**: [Python 3.14](benchmarks/macbook-neo/benchmarks-v0.7.0-3.14-starburst.txt) | [Python 3.14t](benchmarks/macbook-neo/benchmarks-v0.7.0-3.14t-starburst.txt)
+- **Intel N6000**: [Python 3.14](benchmarks/n6000/benchmarks-v0.7.0-3.14-starburst.txt) | [Python 3.14t](benchmarks/n6000/benchmarks-v0.7.0-3.14t-starburst.txt)
 
 ---
 
