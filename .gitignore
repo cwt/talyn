@@ -29,3 +29,6 @@ tmp*.py
 
 .antigravitycli/
 scratch/
+
+# QEMU VM images and firmware
+scripts/qemu-*/.vm/
