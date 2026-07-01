@@ -255,6 +255,7 @@ def plot_results(
     plt.grid(True, which="both", linestyle="--", linewidth=0.5)
     plt.tight_layout()
     safe_name = name.replace(" ", "_").replace("-", "_").lower()
+    os.makedirs("benchmarks/output", exist_ok=True)
     fname = f"benchmarks/output/benchmark_{safe_name}.png"
     plt.savefig(fname)
     print(f"Plot saved to {fname}")
