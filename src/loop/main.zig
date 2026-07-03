@@ -24,7 +24,8 @@ pub const FDWatcher = struct {
     loop_data: *Loop,
     blocking_task_id: usize = 0,
     event_type: u32,
-    fd: std.posix.fd_t
+    fd: std.posix.fd_t,
+    python_payload: CallbackManager.PythonPayload = .{},
 };
 
 pub const HooksList = utils.LinkedList(CallbackManager.Callback);

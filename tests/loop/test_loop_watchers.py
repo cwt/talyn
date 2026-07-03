@@ -301,3 +301,54 @@ def test_add_reader_remove_writer() -> None:
         loop.close()
         os.close(w)
         os.close(r)
+
+
+def test_level_triggered_only_once_per_tick() -> None:
+    loop = Loop()
+    r, w = os.pipe2(os.O_NONBLOCK)
+    try:
+        calls = []
+
+        def reader_callback() -> None:
+            calls.append(loop.time())
+            # Read only 1 byte, leaving the rest
+            os.read(r, 1)
+            if len(calls) == 2:
+                loop.stop()
+
+        loop.add_reader(r, reader_callback)
+        os.write(w, b"ab")  # Write 2 bytes
+
+        loop.call_later(0.5, loop.stop)  # Timeout safety
+        loop.run_forever()
+
+        assert len(calls) == 2, f"Expected 2 calls, got {len(calls)}"
+    finally:
+        loop.close()
+        os.close(w)
+        os.close(r)
+
+
+def test_remove_reader_while_callback_pending() -> None:
+    loop = Loop()
+    r, w = os.pipe2(os.O_NONBLOCK)
+    try:
+        callback_called = False
+
+        def reader_callback() -> None:
+            nonlocal callback_called
+            callback_called = True
+            # Try removing the reader from inside the callback where blocking_task_id is 0
+            assert loop.remove_reader(r) is True, "Failed to remove reader from callback"
+            loop.stop()
+
+        loop.add_reader(r, reader_callback)
+        os.write(w, b"a")
+
+        loop.call_later(0.5, loop.stop)  # Timeout safety
+        loop.run_forever()
+        assert callback_called, "Reader callback was not called"
+    finally:
+        loop.close()
+        os.close(w)
+        os.close(r)

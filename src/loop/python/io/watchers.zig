@@ -32,6 +32,81 @@ fn loop_watchers_cleanup_callback(ptr: ?*anyopaque) void {
     allocator.destroy(watcher);
 }
 
+fn loop_watcher_python_wrapper_traverse(ptr: ?*anyopaque, visit_ptr: ?*anyopaque, arg: ?*anyopaque) c_int {
+    const watcher: *Loop.FDWatcher = @alignCast(@ptrCast(ptr.?));
+    const visit: python_c.visitproc = @ptrCast(@alignCast(visit_ptr.?));
+    return visit.?(@ptrCast(watcher.handle), arg);
+}
+
+fn loop_watcher_python_wrapper_cleanup(ptr: ?*anyopaque) void {
+    loop_watchers_cleanup_callback(ptr);
+}
+
+fn loop_watcher_python_wrapper_callback(data: *const CallbackManager.CallbackData) !void {
+    const watcher: *Loop.FDWatcher = @alignCast(@ptrCast(data.user_data.?));
+    const loop_data = watcher.loop_data;
+    const fd = watcher.fd;
+
+    if (data.cancelled() or fd < 0) {
+        loop_watchers_cleanup_callback(watcher);
+        return;
+    }
+
+    var temp_data = data.*;
+    temp_data.user_data = watcher.handle;
+    temp_data.set_python(&watcher.handle.python_payload);
+
+    watcher.handle.cancelled = false;
+    watcher.handle.finished = false;
+
+    try Handle.callback_for_python_generic_callbacks(&temp_data);
+
+    const mutex = &loop_data.mutex;
+    mutex.lock();
+    defer mutex.unlock();
+
+    if (!loop_data.initialized or watcher.fd < 0) {
+        loop_watchers_cleanup_callback(watcher);
+        return;
+    }
+
+    const rearmed = blk: {
+        const watcher_callback: CallbackManager.Callback = .{
+            .func = &loop_watchers_callback,
+            .cleanup = null,
+            .data = .{
+                .user_data = watcher
+            }
+        };
+
+        const blocking_task_id = loop_data.io.queue_unlocked(
+            switch (watcher.event_type) {
+                std.c.POLL.IN => Loop.Scheduling.IO.BlockingOperationData{
+                    .WaitReadable = .{
+                        .fd = watcher.fd,
+                        .callback = watcher_callback,
+                    },
+                },
+                std.c.POLL.OUT => Loop.Scheduling.IO.BlockingOperationData{
+                    .WaitWritable = .{
+                        .fd = watcher.fd,
+                        .callback = watcher_callback,
+                    },
+                },
+                else => break :blk false,
+            }
+        ) catch {
+            break :blk false;
+        };
+        watcher.blocking_task_id = blocking_task_id;
+        break :blk true;
+    };
+
+    if (!rearmed) {
+        loop_watchers_cleanup_callback(watcher);
+    }
+}
+
 fn loop_watchers_callback(data: *const CallbackManager.CallbackData) !void {
     const watcher: *Loop.FDWatcher = @alignCast(@ptrCast(data.user_data.?));
 
@@ -46,57 +121,18 @@ fn loop_watchers_callback(data: *const CallbackManager.CallbackData) !void {
         const loop_data = watcher.loop_data;
         const handle = watcher.handle;
         const callback = CallbackManager.Callback{
-            .func = &Handle.callback_for_python_generic_callbacks,
-            .cleanup = &Handle.release_python_generic_callback,
-            .data = CallbackManager.CallbackData.init_python(handle, &handle.python_payload),
+            .func = &loop_watcher_python_wrapper_callback,
+            .cleanup = &loop_watcher_python_wrapper_cleanup,
+            .data = CallbackManager.CallbackData.init_python(watcher, &watcher.python_payload),
         };
 
+        watcher.blocking_task_id = 0; // Clear blocking task ID since it is no longer in-flight in io_uring
         try Loop.Scheduling.Soon.dispatch(loop_data, &callback);
         python_c.py_incref(@ptrCast(handle));
-    } else if (io_uring_err != .CANCELED or data.cancelled()) {
+    } else {
         @call(.always_inline, loop_watchers_cleanup_callback, .{watcher});
         return;
     }
-
-    // Re-arm poll (on success or timeout)
-    {
-        const loop_data = watcher.loop_data;
-        const watcher_callback: CallbackManager.Callback = .{
-            .func = &loop_watchers_callback,
-            .cleanup = null,
-            .data = .{
-                .user_data = watcher
-            }
-        };
-
-
-        const blocking_task_id = try loop_data.io.queue(
-            switch (watcher.event_type) {
-                std.c.POLL.IN => Loop.Scheduling.IO.BlockingOperationData{
-                    .WaitReadable = .{
-                        .fd = fd,
-                        .callback = watcher_callback,
-                    },
-                },
-                std.c.POLL.OUT => Loop.Scheduling.IO.BlockingOperationData{
-                    .WaitWritable = .{
-                        .fd = fd,
-                        .callback = watcher_callback,
-                    },
-                },
-                else => {
-                    // This is an internal error, but we should not panic.
-                    // Instead, we just stop re-arming.
-                    @call(.always_inline, loop_watchers_cleanup_callback, .{watcher});
-                    return;
-                }
-            }
-        );
-
-        watcher.blocking_task_id = blocking_task_id;
-        return;
-    }
-    @call(.always_inline, loop_watchers_cleanup_callback, .{watcher});
 }
 
 inline fn z_loop_add_watcher(
@@ -177,7 +213,12 @@ inline fn z_loop_add_watcher(
                 return error.PythonError;
             }
         },
-        .fd = fd
+        .fd = fd,
+        .python_payload = .{
+            .module_ptr = @ptrCast(utils.get_parent_ptr(Loop.Python.LoopObject, loop_data)),
+            .callback_ptr = py_handle.py_callback,
+            .traverse = &loop_watcher_python_wrapper_traverse,
+        }
     };
 
         const watchers = switch (operation) {
@@ -200,9 +241,9 @@ inline fn z_loop_add_watcher(
             existing_watcher_data.fd = -1;
             _ = try loop_data.io.queue_unlocked(.{ .Cancel = existing_watcher_data.blocking_task_id });
         } else {
-            // No in-flight IO, clean up directly
-            python_c.py_decref(@ptrCast(existing_watcher_data.handle));
-            allocator.destroy(existing_watcher_data);
+            // Wrapper callback is pending in Soon queue.
+            // We set fd = -1 so the wrapper cleans it up when it runs.
+            existing_watcher_data.fd = -1;
         }
         // Fall through to create a new watcher with the new handle
     }
@@ -318,12 +359,14 @@ inline fn z_loop_remove_watcher(
     const existing_watcher_ptr: ?*Loop.FDWatcher = watchers.delete(fd);
     if (existing_watcher_ptr) |existing_watcher_data| {
         const blocking_task_id = existing_watcher_data.blocking_task_id;
+        existing_watcher_data.fd = -1;
+
         if (blocking_task_id == 0) {
-            python_c.raise_python_runtime_error("Watcher has no associated blocking task id\x00");
-            return error.PythonError;
+            // Watcher is currently waiting in the Python Soon queue.
+            // We just set fd = -1, and the wrapper callback when executed will clean it up.
+            return python_c.get_py_true();
         }
 
-        existing_watcher_data.fd = -1;
         _ = try loop_data.io.queue_unlocked(
             .{
                 .Cancel = blocking_task_id
