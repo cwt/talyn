@@ -371,8 +371,10 @@ fn pidfd_exit_callback(data: *const CallbackManager.CallbackData) !void {
 pub fn start_exit_watcher(transport: *SubprocessTransportObject, loop: *LoopObject) !void {
     const loop_data = utils.get_data_ptr(Loop, loop);
 
-    const pidfd: std.posix.fd_t = @intCast(std.os.linux.syscall2(.pidfd_open, @as(usize, @intCast(transport.pid)), 0));
-    if (pidfd < 0) return error.SystemResources;
+    const rc = std.os.linux.syscall2(.pidfd_open, @as(usize, @intCast(transport.pid)), 0);
+    if (std.posix.errno(rc) != .SUCCESS) return error.SystemResources;
+    const pidfd: std.posix.fd_t = @intCast(rc);
+    _ = std.os.linux.fcntl(pidfd, std.posix.F.SETFD, @intCast(std.posix.FD_CLOEXEC));
     transport.pidfd = pidfd;
     errdefer _ = std.os.linux.close(pidfd);
 

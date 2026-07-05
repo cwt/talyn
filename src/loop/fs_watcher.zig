@@ -26,11 +26,14 @@ pub fn init(self: *FSWatcher, loop: *Loop) !void {
 }
 
 pub fn deinit(self: *FSWatcher) void {
+    if (self.inotify_task_id > 0) {
+        _ = self.loop.io.queue(.{ .Cancel = self.inotify_task_id }) catch {};
+        self.inotify_task_id = 0;
+    }
     if (self.inotify_fd >= 0) {
         _ = std.os.linux.close(self.inotify_fd);
         self.inotify_fd = -1;
     }
-    self.inotify_task_id = 0;
     
     for (self.watchers.items) |watcher| {
         python_c.py_decref(watcher.callback);

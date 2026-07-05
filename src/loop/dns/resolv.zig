@@ -114,6 +114,7 @@ const ServerQueryData = struct {
     pub inline fn cancel(self: *ServerQueryData) void {
         const socket_fd = self.socket_fd;
         if (socket_fd >= 0) {
+            _ = self.control_data.loop.io.queue(.{ .CancelByFd = @intCast(socket_fd) }) catch {};
             _ = std.os.linux.close(socket_fd);
             self.socket_fd = -1;
         }
@@ -794,6 +795,8 @@ pub fn queue(
 
         if (queries_sent == 0) {
             control_data.release();
+        } else {
+            control_data.queries_data = control_data.queries_data[0..queries_sent];
         }
     }
 

@@ -40,15 +40,17 @@ pub fn deinit(self: *ChildWatcher) void {
 }
 
 pub fn add_child_handler(self: *ChildWatcher, pid: i32, callback: PyObject) !void {
-    const pidfd: std.posix.fd_t = @intCast(std.os.linux.syscall2(.pidfd_open, @as(usize, @intCast(pid)), 0));
-    if (pidfd < 0) {
-        const err = utils.getSyscallErrno(@as(usize, @bitCast(@as(isize, pidfd))));
-        if (err == .SRCH) {
+    const rc = std.os.linux.syscall2(.pidfd_open, @as(usize, @intCast(pid)), 0);
+    const errno = std.posix.errno(rc);
+    if (errno != .SUCCESS) {
+        if (errno == .SRCH) {
             python_c.raise_python_runtime_error("No such process\x00");
             return error.PythonError;
         }
         return error.SystemResources;
     }
+    const pidfd: std.posix.fd_t = @intCast(rc);
+    _ = std.os.linux.fcntl(pidfd, std.posix.F.SETFD, @intCast(std.posix.FD_CLOEXEC));
     errdefer _ = std.os.linux.close(pidfd);
 
     const handler = try self.loop.allocator.create(ChildHandler);

@@ -221,7 +221,7 @@ pub fn unlink(self: *UnixSignals, sig: std.os.linux.SIG) !void {
 
 pub fn init(loop: *Loop) !void {
     var mask: std.posix.sigset_t = std.posix.sigemptyset();
-    const fd = try std.posix.signalfd(-1, &mask, 0);
+    const fd = try std.posix.signalfd(-1, &mask, std.os.linux.SFD.CLOEXEC);
     errdefer _ = std.os.linux.close(fd);
 
     loop.unix_signals = .{
