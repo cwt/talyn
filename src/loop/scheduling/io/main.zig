@@ -435,6 +435,15 @@ fixed_files_enabled: bool = false,
 buffer_pool: RegisteredBufferPool = .{},
 
 pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
+    // HARD-01: Minimum Kernel Version Guard
+    const kernel_ver = try checkKernelVersion();
+    if (kernel_ver.major < 6) {
+        python_c.raise_python_runtime_error("Talyn requires Linux kernel 6.0 or newer (found older version).\x00");
+        return error.UnsupportedKernel;
+    } else if (kernel_ver.major == 6 and kernel_ver.minor < 6) {
+        python_c._c.PySys_WriteStderr("warning: Talyn: current Linux kernel version %d.%d.%d is below the recommended baseline of 6.6.0. Please upgrade your kernel to receive critical io_uring security fixes.\n", @as(c_int, @intCast(kernel_ver.major)), @as(c_int, @intCast(kernel_ver.minor)), @as(c_int, @intCast(kernel_ver.patch)));
+    }
+
     self.busy_sets = BlockingTasksSetLinkedList.init(allocator);
 
     self.set_node = try self.busy_sets.create_new_node(.{});
@@ -537,6 +546,7 @@ pub fn register_fixed_file(self: *IO, fd: std.posix.fd_t) !u16 {
     if (!self.fixed_files_enabled) return error.FixedFilesDisabled;
     if (self.ring.fd < 0) return error.LoopDeinitialized;
     const index = self.fixed_file_free.pop() orelse return error.NoFixedFileSlots;
+    std.debug.assert(index < self.fixed_file_table.len); // HARD-05
     // BUG-26: If register_files_update fails, the slot has been
     // popped from fixed_file_free but never re-pushed. The slot
     // would be permanently lost, leading to gradual exhaustion of
@@ -555,6 +565,7 @@ pub fn unregister_fixed_file(self: *IO, index: u16) void {
     defer mutex.unlock();
 
     if (!self.fixed_files_enabled) return;
+    std.debug.assert(index < self.fixed_file_table.len); // HARD-05
     self.fixed_file_table[index] = -1;
     if (self.ring.fd >= 0) {
         self.ring.register_files_update(index, self.fixed_file_table[index..index + 1]) catch {};
@@ -658,6 +669,7 @@ pub fn deinit(self: *IO) void {
     
     self.ring.unregister_buffers() catch {};
     self.buffer_pool.deinit(self.busy_sets.allocator);
+    @atomicStore([*]u8, &self.buffer_pool.buffer_memory.ptr, @ptrFromInt(0xDEADBEEF), .seq_cst); // HARD-04
 
     self.ring.deinit();
     self.busy_sets.allocator.free(self.blocking_ready_tasks);
@@ -756,6 +768,26 @@ pub fn submit_guaranteed(ring: *std.os.linux.IoUring) !u32 {
         };
         return submitted;
     }
+}
+
+fn checkKernelVersion() !std.SemanticVersion {
+    const uname = std.posix.uname();
+    const release = std.mem.sliceTo(&uname.release, 0);
+    
+    var it = std.mem.splitScalar(u8, release, '.');
+    const major_str = it.next() orelse return error.InvalidVersion;
+    const minor_str = it.next() orelse return error.InvalidVersion;
+    
+    const patch_str_raw = it.next() orelse "0";
+    var patch_len: usize = 0;
+    while (patch_len < patch_str_raw.len and std.ascii.isDigit(patch_str_raw[patch_len])) : (patch_len += 1) {}
+    const patch_str = patch_str_raw[0..patch_len];
+    
+    const major = try std.fmt.parseInt(usize, major_str, 10);
+    const minor = try std.fmt.parseInt(usize, minor_str, 10);
+    const patch = if (patch_str.len > 0) try std.fmt.parseInt(usize, patch_str, 10) else 0;
+    
+    return std.SemanticVersion{ .major = major, .minor = minor, .patch = patch };
 }
 
 const IO = @This();
