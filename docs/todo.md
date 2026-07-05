@@ -29,3 +29,4 @@ Welcome to the Leviathan TODO and project tracking documentation. This serves as
 - [Architectural Mandates](architectural-mandates.md)
 - [Reference & Misc](reference-and-misc.md)
 - [Audits and Profiling](audits-and-profiling.md)
+- [io_uring Security Hardening](hardening.md)
