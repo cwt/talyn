@@ -61,8 +61,8 @@ pub fn init(
     const pending_py_objects = try allocator.create(PyBuffersArrayList);
     errdefer allocator.destroy(pending_py_objects);
 
-    pending_buffers.* = .{ .items = &.{}, .capacity = 0 };
-    pending_py_objects.* = .{ .items = &.{}, .capacity = 0 };
+    pending_buffers.* = .empty;
+    pending_py_objects.* = .empty;
 
     self.* = WriteTransport{
         .loop = loop,

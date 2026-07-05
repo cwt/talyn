@@ -182,7 +182,7 @@ test "create_new_record" {
         .arena = std.heap.ArenaAllocator.init(testing.allocator),
         .record = undefined,
         .loop = undefined,
-        .user_callbacks = .{ .items = &.{}, .capacity = 0 },
+        .user_callbacks = .empty,
         .queries_data = &.{},
         .record_evicted = false,
     };
@@ -210,7 +210,7 @@ test "set_resolved_data" {
         .arena = std.heap.ArenaAllocator.init(testing.allocator),
         .record = undefined,
         .loop = undefined,
-        .user_callbacks = .{ .items = &.{}, .capacity = 0 },
+        .user_callbacks = .empty,
         .queries_data = &.{},
         .record_evicted = false,
     };
@@ -246,7 +246,7 @@ test "get record from cache" {
         .arena = std.heap.ArenaAllocator.init(testing.allocator),
         .record = undefined,
         .loop = undefined,
-        .user_callbacks = .{ .items = &.{}, .capacity = 0 },
+        .user_callbacks = .empty,
         .queries_data = &.{},
         .record_evicted = false,
     };
@@ -281,7 +281,7 @@ test "get expired record" {
         .arena = std.heap.ArenaAllocator.init(testing.allocator),
         .record = undefined,
         .loop = undefined,
-        .user_callbacks = .{ .items = &.{}, .capacity = 0 },
+        .user_callbacks = .empty,
         .queries_data = &.{},
         .record_evicted = false,
     };
@@ -315,7 +315,7 @@ test "evict pending record sets record_evicted flag" {
         .arena = std.heap.ArenaAllocator.init(testing.allocator),
         .record = undefined,
         .loop = undefined,
-        .user_callbacks = .{ .items = &.{}, .capacity = 0 },
+        .user_callbacks = .empty,
         .queries_data = &.{},
         .record_evicted = false,
     };

@@ -26,8 +26,8 @@ pub fn init(self: *Future, loop: *Loop) !void {
         .loop = loop,
     };
 
-    self.callbacks_queue = .{ .items = &.{}, .capacity = 0 };
-    self.exceptions_queue = .{ .items = &.{}, .capacity = 0 };
+    self.callbacks_queue = .empty;
+    self.exceptions_queue = .empty;
 }
 
 pub fn release(self: *Future) void {

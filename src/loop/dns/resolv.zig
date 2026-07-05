@@ -635,8 +635,8 @@ fn build_queries(
         .control_data = control_data,
         .hostnames_array = hostnames_array,
         .queries = queries,
-        .results = .{ .items = &.{}, .capacity = 0 },
-        .ptr_results = .{ .items = &.{}, .capacity = 0 },
+        .results = .empty,
+        .ptr_results = .empty,
     };
 }
 
@@ -706,7 +706,7 @@ fn prepare_data(
         .allocator      = allocator,
         .arena          = std.heap.ArenaAllocator.init(allocator),
         .loop           = loop,
-        .user_callbacks = .{ .items = &.{}, .capacity = 0 },
+        .user_callbacks = .empty,
         // .record and .queries_data are filled in just below; use undefined
         // only for fields that are unconditionally assigned before any use.
         .record         = undefined,
@@ -964,7 +964,7 @@ test "ControlData.record_evicted is false after struct-literal init (regression:
         .allocator      = std.testing.allocator,
         .arena          = std.heap.ArenaAllocator.init(std.testing.allocator),
         .loop           = undefined,
-        .user_callbacks = .{ .items = &.{}, .capacity = 0 },
+        .user_callbacks = .empty,
         .record         = undefined,
         .queries_data   = undefined,
         .tasks_finished = 0,

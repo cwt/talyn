@@ -485,7 +485,7 @@ const MultiConnectState = struct {
     timer_scheduled: bool,
     timer_fired: bool,
     failed_count: usize,
-    task_ids: std.ArrayListUnmanaged(usize),
+    task_ids: std.ArrayList(usize),
     all_errors: bool,
     exceptions: ?PyObject = null,
     python_payload: CallbackManager.PythonPayload = .{},
@@ -503,7 +503,7 @@ const MultiConnectState = struct {
             .timer_scheduled = false,
             .timer_fired = false,
             .failed_count = 0,
-            .task_ids = .{ .items = &.{}, .capacity = 0 },
+            .task_ids = .empty,
             .all_errors = all_errors,
             .python_payload = .{
                 .module_ptr = @ptrCast(connection_data.creation_data.loop.?),

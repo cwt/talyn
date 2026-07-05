@@ -429,7 +429,7 @@ blocking_ready_tasks: []std.os.linux.io_uring_cqe = &.{},
 /// Registered as a sparse table via register_files_sparse at init.
 /// Index 0 is reserved for eventfd. Transport sockets use 1..TotalTasksItems-1.
 fixed_file_table: []std.posix.fd_t = &.{},
-fixed_file_free: std.ArrayListUnmanaged(u16) = .{ .items = &.{}, .capacity = 0 },
+fixed_file_free: std.ArrayList(u16) = .empty,
 fixed_files_enabled: bool = false,
 
 buffer_pool: RegisteredBufferPool = .{},
@@ -508,7 +508,7 @@ pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
     errdefer allocator.free(self.fixed_file_table);
     @memset(self.fixed_file_table[0..], -1);
 
-    self.fixed_file_free = .{ .items = &.{}, .capacity = 0 };
+    self.fixed_file_free = .empty;
     try self.fixed_file_free.ensureTotalCapacity(allocator, nr_files - 1);
     for (1..nr_files) |i| {
         self.fixed_file_free.appendAssumeCapacity(@intCast(i));

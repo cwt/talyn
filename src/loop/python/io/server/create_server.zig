@@ -257,7 +257,7 @@ fn z_try_resolve_server_host(creation_data: *ServerCreationData) !void {
 
     if (hostname.len == 0) {
         const allow_ipv6 = loop_data.dns.ipv6_supported;
-        var list = std.ArrayList(utils.Address){ .items = &.{}, .capacity = 0 };
+        var list: std.ArrayList(utils.Address) = .empty;
         try list.append(allocator, utils.Address.initIp4(.{0, 0, 0, 0}, 0));
         if (allow_ipv6) {
             try list.append(allocator, utils.Address.initIp6(.{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0, 0, 0));

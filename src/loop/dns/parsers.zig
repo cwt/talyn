@@ -74,7 +74,7 @@ pub fn build_reverse_name(address: utils.Address, buf: []u8) ![]u8 {
 }
 
 pub fn parse_name(full_data: []const u8, initial_offset: usize, allocator: std.mem.Allocator) ![]u8 {
-    var result = std.ArrayListUnmanaged(u8){ .items = &.{}, .capacity = 0 };
+    var result: std.ArrayList(u8) = .empty;
     errdefer result.deinit(allocator);
     
     var offset = initial_offset;
@@ -158,10 +158,10 @@ pub fn parse_resolv_configuration(allocator: std.mem.Allocator, content: []const
     const search_tmp_buf = try allocator.alloc(u8, 255);
     defer allocator.free(search_tmp_buf);
 
-    var servers = std.ArrayList(utils.Address){ .items = &.{}, .capacity = 0 };
+    var servers: std.ArrayList(utils.Address) = .empty;
     defer servers.deinit(allocator);
 
-    var search_hosts = std.ArrayList([]u8){ .items = &.{}, .capacity = 0 };
+    var search_hosts: std.ArrayList([]u8) = .empty;
     defer search_hosts.deinit(allocator);
     errdefer {
         for (search_hosts.items) |host| {

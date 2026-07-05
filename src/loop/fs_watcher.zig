@@ -10,7 +10,7 @@ const FSWatcher = @This();
 loop: *Loop = undefined,
 inotify_fd: std.posix.fd_t = -1,
 inotify_task_id: usize = 0,
-watchers: std.ArrayListUnmanaged(*Watcher) = .{ .items = &.{}, .capacity = 0 },
+watchers: std.ArrayList(*Watcher) = .empty,
 
 pub const Watcher = struct {
     callback: PyObject,
@@ -20,7 +20,7 @@ pub const Watcher = struct {
 
 pub fn init(self: *FSWatcher, loop: *Loop) !void {
     self.loop = loop;
-    self.watchers = .{ .items = &.{}, .capacity = 0 };
+    self.watchers = .empty;
     self.inotify_fd = -1;
     self.inotify_task_id = 0;
 }
