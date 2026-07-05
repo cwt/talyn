@@ -51,3 +51,22 @@ Unconditionally queuing `CancelByFd` and flushing the submission queue on every 
 ### Registration & Fixed Files
 
 **Lesson 12 (cross-reference)** — `ring.fd >= 0` guard before any `register_files_update` call. See [Event Loop Lifecycle](03-event-loop-lifecycle.md).
+
+---
+
+### Syscall & FD Hardening
+
+**Lesson 108 — `pidfd_open` Syscall Flags Strictness**
+Passing `PIDFD_CLOEXEC` (`0x80000`) directly to the `pidfd_open` syscall's `flags` argument results in `EINVAL`. The kernel's `sys_pidfd_open` validates flags and only allows `PIDFD_NONBLOCK`.
+- **Fix:** Pass `0` to the `pidfd_open` syscall, then use `std.os.linux.fcntl(fd, F_SETFD, FD_CLOEXEC)` to apply `CLOEXEC` to the returned descriptor.
+- **Lesson:** Syscall flag arguments are validated strictly in the kernel. Never assume standard file creation flags (like `O_CLOEXEC`) are accepted by specialized descriptor creation syscalls unless explicitly supported in their syscall interface.
+
+**Lesson 109 — Undefined Behavior Optimization on Syscall Integer Casts**
+Casting the raw `usize` return value of a syscall (like `pidfd_open`) directly to a signed type like `i32` (`std.posix.fd_t`) to check for `< 0` caused the compiler to optimize the check away in `ReleaseFast` mode, because it assumed `@intCast` would not overflow.
+- **Fix:** Check raw syscall returns using `std.posix.errno(rc)` or by casting to `isize` first.
+- **Lesson:** Always use `std.posix.errno` to decode syscall return values or check for errors on the raw `usize`/`isize` before performing any `@intCast` casts to smaller signed types. In optimized release modes, overflow UB will cause the compiler to optimize out negative error checks.
+
+**Lesson 110 — DNS Resolver and Inotify `CancelByFd` Requirements**
+Closing UDP sockets in the DNS resolver or inotify fds in `FSWatcher` without issuing `CancelByFd` or `.Cancel` in io_uring allowed pending SQEs to run on reused fd numbers.
+- **Fix:** Issued `CancelByFd` on socket closure in DNS resolver and `.Cancel` for `inotify_task_id` in `FSWatcher.deinit()`.
+- **Lesson:** Any custom transport, watcher, or resolver that queues io_uring operations and manages its own file descriptors must issue explicit cancellation commands before closing fds, preventing fd-reuse race vulnerabilities.

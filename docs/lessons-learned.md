@@ -5,7 +5,7 @@
 This is the master index for all lessons learned during Leviathan/Talyn development.
 Lessons have been grouped by topic for maximum readability. Each section links to a dedicated file.
 
-> **107 lessons** documented across **10 topic areas**.
+> **110 lessons** documented across **10 topic areas**.
 
 ---
 
@@ -72,7 +72,7 @@ For historical references to lesson numbers in commit messages or bug reports:
 | 3, 4, 7, 11, 14, 18, 25, 26, 30, 36–39, 46, 49, 50, 52, 89, 106, 107 | [Memory & Reference Counting](lessons/01-memory-and-reference-counting.md) |
 | 1, 17, 21, 22, 59, 73, 74, 99 | [Concurrency & Thread Safety](lessons/02-concurrency-and-thread-safety.md) |
 | 2, 5, 8, 10, 12, 19, 20, 47, 56, 57, 82, 84, 85, 86, 104 | [Event Loop Lifecycle](lessons/03-event-loop-lifecycle.md) |
-| 9, 13, 24, 48, 60, 105 | [io_uring & Kernel Interaction](lessons/04-io-uring-and-kernel.md) |
+| 9, 13, 24, 48, 60, 105, 108, 109, 110 | [io_uring & Kernel Interaction](lessons/04-io-uring-and-kernel.md) |
 | 27, 28, 32, 35, 54, 55, 95, 97 | [Python C API Correctness](lessons/05-python-c-api-correctness.md) |
 | 16, 31, 40, 41, 42, 43, 44, 45, 51, 78, 80, 81 | [Network Protocols & I/O](lessons/06-network-protocols-and-io.md) |
 | 23, 53, 72, 83, 94, 100 | [Data Structures & Algorithms](lessons/07-data-structures-and-algorithms.md) |
