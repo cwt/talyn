@@ -1,6 +1,6 @@
 ---
 type: project_priority
-title: PRIORITY 20: TLS/SSL Completion — ✅ DONE (2026-05-25)
+title: "PRIORITY 20: TLS/SSL Completion — ✅ DONE (2026-05-25)"
 description: Project priority tracking document.
 tags: [priority, historical]
 timestamp: 2026-07-07T16:30:00Z
@@ -10,7 +10,7 @@ timestamp: 2026-07-07T16:30:00Z
 
 # 🔵 PRIORITY 20: TLS/SSL Completion — ✅ DONE (2026-05-25)
 
-Make Leviathan's SSL wrapper fully compatible with the standard `test_streams`
+Make Talyn's SSL wrapper fully compatible with the standard `test_streams`
 test suite. The core architecture — Python `ssl.MemoryBIO` over raw Zig transport —
 is sound and mirrors uvloop's proven approach. The remaining work was completed successfully.
 
@@ -68,12 +68,12 @@ buffered data is in the old StreamReaderProtocol, not the transport. Deadlock.
 3. Server calls `StreamWriter.start_tls()` → our `start_tls` swaps protocol
 4. New `_SP` protocol needs ClientHello for handshake but it's in old reader
 
-**Fix needed in `leviathan/loop.py:start_tls()`:**
+**Fix needed in `talyn/loop.py:start_tls()`:**
 - Before swapping protocol, extract any buffered data from the old protocol
 - Feed it to the `_incoming` MemoryBIO before starting handshake
 - Or: re-register the `data_received` callback to replay buffered data
 
-**Files:** `leviathan/loop.py`
+**Files:** `talyn/loop.py`
 
 ---
 
@@ -84,12 +84,12 @@ doesn't wait for the peer's `close_notify` response. Standard asyncio expects
 the transport to complete the TLS shutdown handshake before closing the
 underlying socket.
 
-**Fix needed in `leviathan/loop.py:_SSLTransportWrapper.close()`:**
+**Fix needed in `talyn/loop.py:_SSLTransportWrapper.close()`:**
 - After `unwrap()`, read any remaining data from `_outgoing` bio and write it
 - Wait for incoming `close_notify` (or timeout) before calling `_raw_t.close()`
 - Handle `ssl_ssl_shutdown_timeout` parameter
 
-**Files:** `leviathan/loop.py`
+**Files:** `talyn/loop.py`
 
 ---
 
@@ -100,11 +100,11 @@ underlying socket.
 If the underlying transport's write buffer is full, we need to propagate
 backpressure up to the application protocol.
 
-**Fix needed in `leviathan/loop.py:_SSLTransportWrapper`:**
+**Fix needed in `talyn/loop.py:_SSLTransportWrapper`:**
 - Proxy `pause_writing()` and `resume_writing()` from raw transport
 - Ensure `write()` checks buffer state and returns appropriate control
 
-**Files:** `leviathan/loop.py`
+**Files:** `talyn/loop.py`
 
 ---
 
@@ -114,12 +114,12 @@ backpressure up to the application protocol.
 high-level function with `ssl=True` creates an `_SSLProtocol` flow that may not
 correctly return the wrapped transport to the StreamReader/StreamWriter pair.
 
-**Fix needed in `leviathan/loop.py:_create_ssl_connection()`:**
+**Fix needed in `talyn/loop.py:_create_ssl_connection()`:**
 - Audit the transport wrapping chain: raw transport → `_SP` → `_SSLTransportWrapper`
 - Ensure `StreamWriter` receives `_SSLTransportWrapper`, not raw transport
 - Ensure `StreamReader` receives decrypted data from `_SP`
 
-**Files:** `leviathan/loop.py`
+**Files:** `talyn/loop.py`
 
 ---
 
@@ -136,7 +136,7 @@ Run `scripts/test_all.sh` to confirm across all 4 Python variants.
 
 | File | Role |
 |------|------|
-| `leviathan/loop.py` | All SSL logic (`start_tls`, `_create_ssl_connection`, `_create_ssl_server`, `_SSLTransportWrapper`, `_SP`) |
+| `talyn/loop.py` | All SSL logic (`start_tls`, `_create_ssl_connection`, `_create_ssl_server`, `_SSLTransportWrapper`, `_SP`) |
 | `src/transports/stream/main.zig` | `set_protocol` method (already done) |
 | `src/transports/stream/constructors.zig` | `stream_set_protocol` C export (already done) |
 | `tests/test_ssl.py` | 7 project tests covering SSL basics (all pass) |

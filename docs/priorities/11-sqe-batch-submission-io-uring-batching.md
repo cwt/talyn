@@ -1,6 +1,6 @@
 ---
 type: project_priority
-title: PRIORITY 11: SQE Batch Submission — io_uring Batching (2026-05-13)
+title: "PRIORITY 11: SQE Batch Submission — io_uring Batching (2026-05-13)"
 description: Project priority tracking document.
 tags: [priority, historical]
 timestamp: 2026-07-07T16:30:00Z
@@ -127,6 +127,6 @@ and `BlockingTask.write_iov` fields in the persistent task_data_pool.
 batches and are flushed together in `poll_blocking_events()` maximising each io_uring_enter().
 
 **Expected impact with Phases 2 + 3:** 0.4-0.6× → **1.5-3.0×** asyncio on all I/O benchmarks.
-Leviathan finally leverages io_uring's true advantage: batched submission + kernel-side dispatch.
+Talyn finally leverages io_uring's true advantage: batched submission + kernel-side dispatch.
 
 ---

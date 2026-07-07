@@ -5,9 +5,9 @@ description: Master index for priorities, lessons learned, and architectural man
 timestamp: 2026-07-07T15:35:00Z
 ---
 
-# Leviathan Documentation Index
+# Talyn Documentation Index
 
-Welcome to the Leviathan TODO and project tracking documentation. This serves as the master index for all priorities, lessons learned, and architectural mandates.
+Welcome to the Talyn TODO and project tracking documentation. This serves as the master index for all priorities, lessons learned, and architectural mandates.
 
 [⬅️ Back to Main README](../README.md)
 

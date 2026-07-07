@@ -1,6 +1,6 @@
 ---
 type: project_priority
-title: PRIORITY 14: Remove IOSQE_ASYNC from Data Ops — ✅ DONE (2026-05-15)
+title: "PRIORITY 14: Remove IOSQE_ASYNC from Data Ops — ✅ DONE (2026-05-15)"
 description: Project priority tracking document.
 tags: [priority, historical]
 timestamp: 2026-07-07T16:30:00Z

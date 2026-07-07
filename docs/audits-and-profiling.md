@@ -1,7 +1,7 @@
 ---
 type: analysis
 title: Profiling and Auditing Results
-description: Comparative benchmarks and profiling results (CPU cycles, instructions, IPC) comparing Leviathan event loop performance against standard Python asyncio.
+description: Comparative benchmarks and profiling results (CPU cycles, instructions, IPC) comparing Talyn event loop performance against standard Python asyncio.
 tags: [benchmarks, performance, profiling, analysis]
 timestamp: 2026-05-15T00:00:00Z
 ---
@@ -10,9 +10,9 @@ timestamp: 2026-05-15T00:00:00Z
 
 # 🔍 Profiling Results (2026-05-15)
 
-### TCP Echo (10k iterations) — Leviathan vs asyncio
+### TCP Echo (10k iterations) — Talyn vs asyncio
 
-| Metric | Leviathan | asyncio | Ratio |
+| Metric | Talyn | asyncio | Ratio |
 |--------|-----------|---------|-------|
 | **Time** | 8.39s | 1.16s | **7.2× slower** |
 | **CPU cycles** | 39.6B | 4.0B | 9.8× more |
@@ -22,7 +22,7 @@ timestamp: 2026-05-15T00:00:00Z
 | **Retiring** | 5.4% | 19.7% | 3.6× less |
 | **dTLB loads** | 11.9B | 2.2B | 5.5× more |
 
-**Root Cause:** Leviathan executes 5.3× more instructions for the same work.
+**Root Cause:** Talyn executes 5.3× more instructions for the same work.
 70% backend-bound (memory stalls), only 5.4% useful work retiring.
 
 **Per I/O completion cost:**

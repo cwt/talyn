@@ -1,6 +1,6 @@
 ---
 type: project_priority
-title: PRIORITY 9: Callback Dispatch Rewrite — Flat Ring Buffer (2026-05-11)
+title: "PRIORITY 9: Callback Dispatch Rewrite — Flat Ring Buffer (2026-05-11)"
 description: Project priority tracking document.
 tags: [priority, historical]
 timestamp: 2026-07-07T16:30:00Z
@@ -12,11 +12,11 @@ timestamp: 2026-07-07T16:30:00Z
 
 ### Root Cause of 0.42× Task Performance
 
-After 7 performance optimizations (Priority 8), leviathan remains **2-2.5× slower** than `asyncio` on task-intensive workloads. All incremental fixes hit the same wall: the `CallbacksSetsQueue` linked-list dispatch layer.
+After 7 performance optimizations (Priority 8), Talyn remains **2-2.5× slower** than `asyncio` on task-intensive workloads. All incremental fixes hit the same wall: the `CallbacksSetsQueue` linked-list dispatch layer.
 
 ```
 uvloop/libuv:  array[index++] = callback_ptr     // O(1), 1 store
-leviathan:     walk(node) → find_slot() → copy(80-byte Callback)
+Talyn:         walk(node) → find_slot() → copy(80-byte Callback)
                // O(n) walk, memcpy per append
 ```
 
@@ -54,6 +54,6 @@ Once the dispatch layer is O(1), the next bottleneck is io_uring submission/reap
 | 9.10 | Batch CQE reaping — process all CQEs per `copy_cqes` without re-entering loop | ✅ **DONE** |
 | 9.11 | Registered buffers / fixed files for hot paths | ✅ **DONE** |
 
-**Expected impact with both phases:** leviathan at **2-5×** asyncio, matching or beating uvloop.
+**Expected impact with both phases:** Talyn at **2-5×** asyncio, matching or beating uvloop.
 
 ---

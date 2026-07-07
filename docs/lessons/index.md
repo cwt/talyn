@@ -1,7 +1,7 @@
 ---
 type: index
 title: Lessons Learned Index
-description: Master index of development lessons learned during Talyn/Leviathan development.
+description: Master index of development lessons learned during Talyn development (originally branched from Leviathan).
 timestamp: 2026-07-07T15:35:00Z
 ---
 
@@ -9,7 +9,7 @@ timestamp: 2026-07-07T15:35:00Z
 
 # 🧠 Lessons Learned
 
-This is the master index for all lessons learned during Leviathan/Talyn development.
+This is the master index for all lessons learned during Talyn development (originally branched from Leviathan).
 Lessons have been grouped by topic for maximum readability. Each section links to a dedicated file.
 
 > **110 lessons** documented across **10 topic areas**.

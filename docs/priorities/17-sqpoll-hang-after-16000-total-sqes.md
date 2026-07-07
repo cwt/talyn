@@ -1,6 +1,6 @@
 ---
 type: project_priority
-title: PRIORITY 17: SQPOLL Hang After ~16000 Total SQEs — ⛔ REVERTED (2026-05-17)
+title: "PRIORITY 17: SQPOLL Hang After ~16000 Total SQEs — ⛔ REVERTED (2026-05-17)"
 description: Project priority tracking document.
 tags: [priority, historical]
 timestamp: 2026-07-07T16:30:00Z

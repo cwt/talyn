@@ -1,6 +1,6 @@
 ---
 type: project_priority
-title: PRIORITY 19: Remaining Pre-Existing Issues — ✅ ALL DONE (2026-05-27)
+title: "PRIORITY 19: Remaining Pre-Existing Issues — ✅ ALL DONE (2026-05-27)"
 description: Project priority tracking document.
 tags: [priority, historical]
 timestamp: 2026-07-07T16:30:00Z
@@ -44,7 +44,7 @@ now passes perfectly across all 4 Python variants.
 ### 19.1 — set_exception_handler Not Implemented — ✅ FIXED
 
 Loop was missing `set_exception_handler(handler)`. Standard test_streams had 20
-tests depending on it. Fixed at `leviathan/loop.py:161-165`.
+tests depending on it. Fixed at `talyn/loop.py:161-165`.
 
 ### 19.2 — AsyncMock GC Crash in Free-Threading — ✅ FIXED
 

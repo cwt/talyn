@@ -1,6 +1,6 @@
 ---
 type: project_priority
-title: PRIORITY 13: Subprocess — pidfd-Based Exit Notification — ✅ DONE (2026-05-15)
+title: "PRIORITY 13: Subprocess — pidfd-Based Exit Notification — ✅ DONE (2026-05-15)"
 description: Project priority tracking document.
 tags: [priority, historical]
 timestamp: 2026-07-07T16:30:00Z

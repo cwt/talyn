@@ -1,6 +1,6 @@
 ---
 type: project_priority
-title: PRIORITY 10: Python/Zig Boundary Overhead Elimination (2026-05-13)
+title: "PRIORITY 10: Python/Zig Boundary Overhead Elimination (2026-05-13)"
 description: Project priority tracking document.
 tags: [priority, historical]
 timestamp: 2026-07-07T16:30:00Z
@@ -12,9 +12,9 @@ timestamp: 2026-07-07T16:30:00Z
 
 ### Root Cause of 0.2-0.4× Task Performance (REVISED)
 
-Task Spawn benchmark (zero I/O, pure `create_task()`) shows leviathan at **0.21-0.39×** asyncio. The original analysis blamed 12 "Python/Zig boundary crossings" but this was incorrect — in CPython 3.14, `_enter_task`/`_leave_task`/`_register_task`/`all_tasks` are all **C builtins** (from the `_asyncio` C module), not Python bytecode. `PyObject_Vectorcall` on a C builtin is just a function pointer call — same cost as calling from Zig directly.
+Task Spawn benchmark (zero I/O, pure `create_task()`) shows Talyn at **0.21-0.39×** asyncio. The original analysis blamed 12 "Python/Zig boundary crossings" but this was incorrect — in CPython 3.14, `_enter_task`/`_leave_task`/`_register_task`/`all_tasks` are all **C builtins** (from the `_asyncio` C module), not Python bytecode. `PyObject_Vectorcall` on a C builtin is just a function pointer call — same cost as calling from Zig directly.
 
-The real bottleneck after debugging: the 80-byte `Callback` struct copy per `Soon.dispatch` + `PyIter_Send` overhead (coroutine startup is inherently expensive). These are architectural costs of leviathan's design.
+The real bottleneck after debugging: the 80-byte `Callback` struct copy per `Soon.dispatch` + `PyIter_Send` overhead (coroutine startup is inherently expensive). These are architectural costs of Talyn's design.
 
 **Conclusion: Priority 10 is WON'T FIX.** The perceived boundary crossings were already near-optimal. The core bottleneck is in the task creation and dispatch architecture itself.
 
@@ -44,7 +44,7 @@ The real bottleneck after debugging: the 80-byte `Callback` struct copy per `Soo
 ### Phase 2 Implementation Summary
 
 1. **Task Spawn Vectorcall Trampoline (10.7)**:
-   - **Mechanism**: Implemented a unified native C trampoline in `src/task/trampoline.c` (`leviathan_task_step_trampoline`). This fuses the entire sequence of `_enter_task` ➔ `PyContext_Enter` ➔ `PyIter_Send` ➔ `PyContext_Exit` ➔ `_leave_task` in a single machine-code block.
+   - **Mechanism**: Implemented a unified native C trampoline (later refactored to Zig in `src/task/callbacks.zig`) named `talyn_task_step_trampoline`. This fuses the entire sequence of `_enter_task` ➔ `PyContext_Enter` ➔ `PyIter_Send` ➔ `PyContext_Exit` ➔ `_leave_task` in a single machine-code block.
    - **Impact**: Completely eliminated multiple back-and-forth Zig ➔ CPython vectorcall crossings per task step, yielding a unified single-boundary crossing. Included exception indicator protection with `PyErr_Fetch`/`PyErr_Restore` around boundaries.
 
 2. **GIL-Yielding Frequency Tuning (10.8)**:

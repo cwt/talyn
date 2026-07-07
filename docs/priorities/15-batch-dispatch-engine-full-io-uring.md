@@ -1,6 +1,6 @@
 ---
 type: project_priority
-title: PRIORITY 15: Batch Dispatch Engine + Full io_uring — Architectural Redesign
+title: "PRIORITY 15: Batch Dispatch Engine + Full io_uring — Architectural Redesign"
 description: Project priority tracking document.
 tags: [priority, historical]
 timestamp: 2026-07-07T16:30:00Z
@@ -25,7 +25,7 @@ All 268 tests pass on all 4 Pythons (3.13, 3.14, 3.13t, 3.14t).
 | `src/transports/read_transport.zig` | `perform()`: sets `module_ptr` to `parent_transport` for batch routing; added `batch_dispatched` flag |
 | `src/transports/stream/read.zig` | Skip Python protocol call when `batch_dispatched` is true; still re-queues read |
 | `src/callback_manager.zig` | Added `batch_dispatched` flag to `CallbackData` |
-| `leviathan/loop.py` | `_dispatch_completions()`, `_dispatch_completions_with_list()`, `_dispatch_data_received()`, `_dispatch_eof_received()`, `_dispatch_buffer_updated()`, `_dispatch_connection_lost()` |
+| `talyn/loop.py` | `_dispatch_completions()`, `_dispatch_completions_with_list()`, `_dispatch_data_received()`, `_dispatch_eof_received()`, `_dispatch_buffer_updated()`, `_dispatch_connection_lost()` |
 | `src/loop/python/constructors.zig` | `loop_traverse`: visits `completion_batch` for GC safety |
 
 ### Phase 2: Batch Dispatch — ✅ DONE (2026-05-16)
