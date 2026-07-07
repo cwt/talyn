@@ -640,5 +640,13 @@ pub extern fn PyDict_DelItem(dict: ?*PyObject, key: ?*PyObject) c_int;
 pub extern fn PyObject_VisitManagedDict(obj: ?*PyObject, visit: visitproc, arg: ?*anyopaque) c_int;
 pub extern fn PyObject_ClearManagedDict(obj: ?*PyObject) void;
 
+pub export fn _Py_atomic_load_uint64_relaxed(obj: *const u64) callconv(.c) u64 {
+    return @atomicLoad(u64, obj, .monotonic);
+}
+
+pub export fn _Py_atomic_load_uint32_relaxed(obj: *const u32) callconv(.c) u32 {
+    return @atomicLoad(u32, obj, .monotonic);
+}
+
 const Python = @This();
 

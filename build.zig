@@ -76,11 +76,7 @@ pub fn build(b: *std.Build) void {
 
     if (python_is_gil_disabled) {
         python_c_module.addCMacro("Py_GIL_DISABLED", "1");
-        // Add C stubs for atomic functions that Zig's @cImport can't inline
-        python_c_module.addCSourceFile(.{ .file = b.path("src/pyatomic_stubs.c") });
     }
-    // Always compile the native task step trampoline
-    python_c_module.addCSourceFile(.{ .file = b.path("src/task/trampoline.c") });
 
     python_c_module.addIncludePath(.{
         .cwd_relative = python_include_dir,

@@ -1,7 +1,7 @@
 const python_c = @import("python_c");
 const PyObject = *python_c.PyObject;
 
-extern fn talyn_task_step_trampoline(
+fn talyn_task_step_trampoline(
     enter_task_func: PyObject,
     leave_task_func: PyObject,
     loop: PyObject,
@@ -10,8 +10,45 @@ extern fn talyn_task_step_trampoline(
     context: PyObject,
     send_val: PyObject,
     send_result_out: *c_int,
-    coro_ret_out: *?PyObject
-) ?PyObject;
+    coro_ret_out: *?PyObject,
+) ?PyObject {
+    var args = [2]PyObject{ loop, task };
+
+    // 1. Enter task
+    const enter_ret = python_c.PyObject_Vectorcall(enter_task_func, &args, 2, null) orelse return null;
+    python_c.py_decref(enter_ret);
+
+    // 2 & 3 & 4. Scope context entry, send operation, and context exit
+    if (python_c.PyContext_Enter(context) < 0) return null;
+    
+    var coro_ret: ?PyObject = null;
+    var gen_ret: python_c.PySendResult = undefined;
+    {
+        defer _ = python_c.PyContext_Exit(context);
+        gen_ret = python_c.PyIter_Send(coro, send_val, &coro_ret);
+    }
+
+    // Save active exception to avoid SystemError during _leave_task call
+    const exc = python_c.PyErr_GetRaisedException();
+
+    // 5. Leave task
+    const leave_ret = python_c.PyObject_Vectorcall(leave_task_func, &args, 2, null);
+
+    // Restore the exception
+    python_c.PyErr_SetRaisedException(exc);
+
+    if (leave_ret) |ret| {
+        python_c.py_decref(ret);
+    } else {
+        python_c.py_xdecref(coro_ret);
+        return null;
+    }
+
+    send_result_out.* = @intCast(gen_ret);
+    coro_ret_out.* = coro_ret;
+    
+    return python_c.get_py_none();
+}
 
 const utils = @import("utils");
 
