@@ -1,4 +1,12 @@
-[⬅️ Back to Lessons Index](../lessons-learned.md)
+---
+type: lessons_learned
+title: Python C API Correctness Lessons
+description: Reference stealing, error checking, thread state, and exception handling in the C Python API.
+tags: [python-c-api, cpython, error-handling, refcount]
+timestamp: 2026-07-07T15:35:00Z
+---
+
+[⬅️ Back to Lessons Index](./index.md)
 
 # Python C API Correctness
 

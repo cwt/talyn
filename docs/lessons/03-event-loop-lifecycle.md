@@ -1,4 +1,12 @@
-[⬅️ Back to Lessons Index](../lessons-learned.md)
+---
+type: lessons_learned
+title: Event Loop Lifecycle Lessons
+description: Shutdown ordering, teardown, coroutine cleanup, and event loop lifecycle management.
+tags: [event-loop, lifecycle, shutdown, asyncio, zig]
+timestamp: 2026-07-07T15:35:00Z
+---
+
+[⬅️ Back to Lessons Index](./index.md)
 
 # Event Loop Lifecycle
 

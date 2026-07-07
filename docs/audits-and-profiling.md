@@ -1,4 +1,12 @@
-[⬅️ Back to Index](todo.md)
+---
+type: analysis
+title: Profiling and Auditing Results
+description: Comparative benchmarks and profiling results (CPU cycles, instructions, IPC) comparing Leviathan event loop performance against standard Python asyncio.
+tags: [benchmarks, performance, profiling, analysis]
+timestamp: 2026-05-15T00:00:00Z
+---
+
+[⬅️ Back to Index](index.md)
 
 # 🔍 Profiling Results (2026-05-15)
 

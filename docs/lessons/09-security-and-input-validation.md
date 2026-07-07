@@ -1,4 +1,12 @@
-[⬅️ Back to Lessons Index](../lessons-learned.md)
+---
+type: lessons_learned
+title: Security & Input Validation Lessons
+description: Network payload parsing, validation rules, buffer boundaries, and secure coding practices.
+tags: [security, input-validation, parsing, safety]
+timestamp: 2026-07-07T15:35:00Z
+---
+
+[⬅️ Back to Lessons Index](./index.md)
 
 # Security & Input Validation
 

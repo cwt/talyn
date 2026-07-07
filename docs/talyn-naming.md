@@ -1,3 +1,11 @@
+---
+type: standard
+title: The Naming of Talyn
+description: Historical rationale behind naming the Leviathan fork Talyn, inspired by the Farscape sci-fi universe.
+tags: [naming, standard, history]
+timestamp: 2026-07-07T15:35:00Z
+---
+
 # Why Talyn?
 
 The biblical creature "[Leviathan](https://en.wikipedia.org/wiki/Leviathan)" never really clicked with me. The only Leviathan I truly knew and loved was **[Moya](https://farscape.fandom.com/wiki/Moya)** from the sci-fi series *[Farscape](https://farscape.fandom.com/wiki/Farscape)*.

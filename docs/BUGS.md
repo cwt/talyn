@@ -1,3 +1,11 @@
+---
+type: bug_report_archive
+title: Talyn Static Analysis Bug Report
+description: Historical log of identified and fixed bugs sorted by severity.
+tags: [debugging, static-analysis, historical]
+timestamp: 2026-06-14T00:00:00Z
+---
+
 # Talyn Bug Report
 
 Generated: 2026-05-31
@@ -791,7 +799,7 @@ Edge cases, mitigated issues, or rare-trigger conditions.
 
 ## NEW BUGS (from 2026-06-08 lessons-learned audit)
 
-Bugs discovered by cross-referencing source code against the 104 documented lessons in `docs/lessons-learned.md`.
+Bugs discovered by cross-referencing source code against the 104 documented lessons in `docs/lessons/index.md`.
 
 ---
 
@@ -949,7 +957,7 @@ Bugs discovered by cross-referencing source code against the 104 documented less
 
 ## NEW (2026-06-08 lessons-learned cross-reference — 2nd pass)
 
-Bugs found by cross-referencing source code against the 104 documented lessons in `docs/lessons-learned.md` that were missed by the first pass.
+Bugs found by cross-referencing source code against the 104 documented lessons in `docs/lessons/index.md` that were missed by the first pass.
 
 ---
 

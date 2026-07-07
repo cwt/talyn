@@ -1,4 +1,12 @@
-[⬅️ Back to Lessons Index](../lessons-learned.md)
+---
+type: lessons_learned
+title: Defensive Programming & Code Quality Lessons
+description: Error logging, assertions, invariants, and structural code quality guidelines.
+tags: [defensive-programming, logging, invariants, code-quality]
+timestamp: 2026-07-07T15:35:00Z
+---
+
+[⬅️ Back to Lessons Index](./index.md)
 
 # Defensive Programming & Code Quality
 

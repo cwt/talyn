@@ -1,4 +1,12 @@
-[⬅️ Back to Lessons Index](../lessons-learned.md)
+---
+type: lessons_learned
+title: Network Protocols & I/O Lessons
+description: TCP/UDP, socket lifetime, non-blocking I/O, DNS resolution, and connection handling.
+tags: [network, socket, tcp, udp, dns]
+timestamp: 2026-07-07T15:35:00Z
+---
+
+[⬅️ Back to Lessons Index](./index.md)
 
 # Network Protocols & I/O
 

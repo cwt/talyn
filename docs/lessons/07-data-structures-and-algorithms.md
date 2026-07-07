@@ -1,4 +1,12 @@
-[⬅️ Back to Lessons Index](../lessons-learned.md)
+---
+type: lessons_learned
+title: Data Structures & Algorithms Lessons
+description: Memory layouts, allocator safety, custom maps, trees, and other core data structures.
+tags: [data-structures, algorithms, memory-layout, custom-types]
+timestamp: 2026-07-07T15:35:00Z
+---
+
+[⬅️ Back to Lessons Index](./index.md)
 
 # Data Structures & Algorithms
 

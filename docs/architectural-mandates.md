@@ -1,4 +1,12 @@
-[⬅️ Back to Index](todo.md)
+---
+type: architecture_guideline
+title: Architectural Mandates
+description: Critical rules for development including panic handling, thread safety, and GC initialization constraints.
+tags: [architecture, constraints, zig, python-c-api, thread-safety]
+timestamp: 2026-07-07T15:35:00Z
+---
+
+[⬅️ Back to Index](index.md)
 
 # 🏗 Architectural Mandates (Rules for the Future)
 

@@ -1,4 +1,12 @@
-[⬅️ Back to Lessons Index](../lessons-learned.md)
+---
+type: lessons_learned
+title: Concurrency & Thread Safety Lessons
+description: Lessons about race conditions, atomic operations, mutexes, free-threading, and safe concurrent state management.
+tags: [concurrency, thread-safety, free-threading, mutex, zig]
+timestamp: 2026-07-07T15:35:00Z
+---
+
+[⬅️ Back to Lessons Index](./index.md)
 
 # Concurrency & Thread Safety
 

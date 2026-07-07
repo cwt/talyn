@@ -1,4 +1,12 @@
-[⬅️ Back to Lessons Index](../lessons-learned.md)
+---
+type: lessons_learned
+title: io_uring & Kernel Interaction Lessons
+description: SQE submission queue, kernel interactions, ring lifecycle, and buffer management.
+tags: [io-uring, kernel, async-io, linux, zig]
+timestamp: 2026-07-07T15:35:00Z
+---
+
+[⬅️ Back to Lessons Index](./index.md)
 
 # io_uring & Kernel Interaction
 

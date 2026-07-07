@@ -1,4 +1,12 @@
-[⬅️ Back to Index](todo.md)
+---
+type: runbook
+title: io_uring Security Hardening
+description: Hardening guidelines and recommendations based on audit of io_uring CVE vulnerabilities, mapping out safe usage patterns for Talyn.
+tags: [security, hardening, io-uring, linux]
+timestamp: 2026-07-07T15:35:00Z
+---
+
+[⬅️ Back to Index](index.md)
 
 # 🛡️ io_uring Security Hardening
 

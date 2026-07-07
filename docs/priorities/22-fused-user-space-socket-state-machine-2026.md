@@ -1,4 +1,12 @@
-[⬅️ Back to Index](../todo.md)
+---
+type: project_priority
+title: PRIORITY 22: Fused User-Space Socket State Machine — ABANDONED (2026-05-28 → 2026-05-29)
+description: Project priority tracking document.
+tags: [priority, historical]
+timestamp: 2026-07-07T16:30:00Z
+---
+
+[⬅️ Back to Index](../index.md)
 
 # ⛔ PRIORITY 22: Fused User-Space Socket State Machine — ABANDONED (2026-05-28 → 2026-05-29)
 

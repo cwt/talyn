@@ -1,4 +1,12 @@
-[⬅️ Back to Lessons Index](../lessons-learned.md)
+---
+type: lessons_learned
+title: Memory & Reference Counting Lessons
+description: Lessons about Python C API reference management, GC traversal, use-after-free, double-free, and struct lifecycle.
+tags: [python-c-api, memory, reference-counting, gc, zig]
+timestamp: 2026-07-07T15:35:00Z
+---
+
+[⬅️ Back to Lessons Index](./index.md)
 
 # Memory & Reference Counting
 

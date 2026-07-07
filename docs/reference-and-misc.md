@@ -1,4 +1,12 @@
-[⬅️ Back to Index](todo.md)
+---
+type: reference
+title: Reference & Misc Completed Items
+description: Historical log of completed next steps such as DNS support for server creation, sockaddr handling, and getnameinfo registration.
+tags: [reference, history, completion]
+timestamp: 2026-07-07T15:35:00Z
+---
+
+[⬅️ Back to Index](index.md)
 
 # ✅ Completed Next Steps
 

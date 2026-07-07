@@ -1,4 +1,12 @@
-[⬅️ Back to Lessons Index](../lessons-learned.md)
+---
+type: lessons_learned
+title: Zig-Specific Patterns Lessons
+description: Defer, errdefer, optionals, error handling, casting, and Zig language idiomatic patterns.
+tags: [zig, patterns, error-handling, language-features]
+timestamp: 2026-07-07T15:35:00Z
+---
+
+[⬅️ Back to Lessons Index](./index.md)
 
 # Zig-Specific Patterns
 

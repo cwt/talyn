@@ -1,3 +1,11 @@
+---
+type: article
+title: Talyn Development Journey
+description: The historical narrative and performance journey of developing Talyn from its Leviathan fork, including audits, performance debugging, and tool usage.
+tags: [history, documentation, journey]
+timestamp: 2026-07-07T15:35:00Z
+---
+
 # Talyn Development Journey
 
 I have been obsessed with Python's AsyncIO for many years. If you check my GitHub, you’ll see many projects built around it — [ananta](https://github.com/cwt/ananta), [aiosyslogd](https://github.com/cwt/aiosyslogd), [wormhole](https://github.com/cwt/wormhole), and others.
@@ -10,13 +18,13 @@ I wanted to try it right away, but I soon discovered that Leviathan was incomple
 
 And so the fork began.
 
-I cloned the [uvloop repository](https://github.com/MagicStack/uvloop) and had my AI agents study it thoroughly. My initial prompt was: “Study uvloop, list all the features Leviathan is missing, and create a TODO list.” This became the start of [docs/todo.md](todo.md) — which began as one giant monolithic markdown file.
+I cloned the [uvloop repository](https://github.com/MagicStack/uvloop) and had my AI agents study it thoroughly. My initial prompt was: “Study uvloop, list all the features Leviathan is missing, and create a TODO list.” This became the start of [docs/index.md](index.md) — which began as one giant monolithic markdown file.
 
 To prevent hallucinations and maintain high standards, I created a strict validation script: [scripts/test_all.sh](../scripts/test_all.sh). It builds and tests against four Python versions (3.13, 3.14, 3.13t, and 3.14t), with a simple golden rule: **zero errors and zero warnings**.
 
 The agents worked quickly and implemented most missing features. Once I felt we had enough, I added the full official Python AsyncIO test suite to the testing process. That’s when everything broke.
 
-The Python AsyncIO test suite is **brutal**. We spent a long time fixing bug after bug. This phase became the foundation of [docs/lessons-learned.md](lessons-learned.md).
+The Python AsyncIO test suite is **brutal**. We spent a long time fixing bug after bug. This phase became the foundation of [docs/lessons/index.md](lessons/index.md).
 
 During this period, we hit one extremely stubborn “perma-bug” related to SSL/TLS and the `test_streams` suite ([Priority 20](priorities/20-tls-ssl-completion-2026-05.md)). It caused repeated crashes, segfaults, and hangs. For days and weeks, none of my AI models could solve it.
 
@@ -84,7 +92,7 @@ Through meticulous optimization of struct layouts and memory boundaries, we reso
 
 ## Releasing v0.6.4: Deep Audit, Model Swarms & The Socket Ops Leap
 
-After the release of **v0.6.3**, we took a step back and instructed our coding agents to conduct a deep, comprehensive audit of the entire codebase. The goal was to identify and fix any patterns that violated our accumulated [lessons-learned.md](lessons-learned.md). 
+After the release of **v0.6.3**, we took a step back and instructed our coding agents to conduct a deep, comprehensive audit of the entire codebase. The goal was to identify and fix any patterns that violated our accumulated [lessons/index.md](lessons/index.md). 
 
 During this phase, we established a highly effective multi-model workflow. Because different AI models exhibit different strengths, weaknesses, and blindspots, we leveraged a split-model approach:
 1. **Bug Hunting**: We deployed expensive, high-reasoning models (with large thinking quotas) to scrutinize the code, identify subtle bugs, and document their findings in meticulous detail in [BUGS.md](BUGS.md).
@@ -135,7 +143,7 @@ With the release of **v0.8.0**, we undertook a rigorous effort to transition the
 2. **100% Pure Zig Architecture (C Code Elimination)**:
    Historically, the codebase linked external C helper objects (`pyatomic_stubs.c` and `trampoline.c`) to satisfy atomic definitions and coordinate the scheduler context. In v0.8.0, we rewrote these helpers in pure Zig:
    - Atomic stubs were replaced by native Zig `@atomicLoad` wrappers utilizing the `.monotonic` C-ABI standard calling convention.
-   - The fused trampoline sequence was implemented natively in [callbacks.zig](file:///home/cwt/Projects/talyn/src/task/callbacks.zig), employing block-level `defer` for context exit safety and safe optional capture syntax (`if (optional) |x|`) to completely eliminate the risk of panics in the hot path.
+   - The fused trampoline sequence was implemented natively in [callbacks.zig](../src/task/callbacks.zig), employing block-level `defer` for context exit safety and safe optional capture syntax (`if (optional) |x|`) to completely eliminate the risk of panics in the hot path.
    - Removing the C files decoupled the compilation pipeline from C source dependencies, enabling clean native compilation and inlining optimizations across modules.
 3. **Critical Stability & Leak Fixes**:
    Additionally, we resolved major resource leaks and correctness bugs: plugging descriptor leaks in `signalfd`/`pidfd`, correcting DNS queue and memory allocations, and fixing poll storms in level-triggered watchers.

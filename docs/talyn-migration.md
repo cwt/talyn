@@ -1,3 +1,11 @@
+---
+type: architecture_document
+title: Talyn Migration Plan
+description: Strategy and roadmap for migrating the Leviathan event loop codebase into the production-hardened Talyn project, covering naming and refactoring phases.
+tags: [migration, roadmap, refactoring]
+timestamp: 2026-07-07T15:35:00Z
+---
+
 # Talyn Migration Plan
 
 This document outlines the strategic migration, refactoring, and modernization plan to spin off the **Leviathan** event loop into a distinct, production-hardened project named **Talyn**. 
