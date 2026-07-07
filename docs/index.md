@@ -13,7 +13,7 @@ Welcome to the Talyn TODO and project tracking documentation. This serves as the
 
 ## Priorities
 
-- [✅ PRIORITY 1: Zig 0.16.0 Compatibility — DONE (2026-05-14)](priorities/1-zig-0-16-0-compatibility-2026.md)
+- [✅ PRIORITY 1: Zig 0.15.2 & 0.16.0 Compatibility — DONE](priorities/1-zig-0-16-0-compatibility-2026.md)
 - [🟡 PRIORITY 2: Network & Transport — ALL DONE (7/7)](priorities/2-network-transport-all-7-7.md)
 - [🔵 PRIORITY 4: Standard Compatibility & GC Stability — ✅ DONE (2026-05-10)](priorities/4-standard-compatibility-gc-stability-2026-05.md)
 - [✅ PRIORITY 9: Callback Dispatch Rewrite — Flat Ring Buffer — ✅ DONE (2026-05-11)](priorities/9-callback-dispatch-rewrite-flat-ring-buffer.md)
