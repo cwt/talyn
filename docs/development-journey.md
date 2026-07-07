@@ -122,8 +122,29 @@ For a complete breakdown of the results, see [BENCHMARKS-v0.7.0.md](benchmarks/B
 - **Macbook Neo (ARM64)**: [Python 3.14](benchmarks/macbook-neo/benchmarks-v0.7.0-3.14-starburst.txt) | [Python 3.14t](benchmarks/macbook-neo/benchmarks-v0.7.0-3.14t-starburst.txt)
 - **Intel N6000**: [Python 3.14](benchmarks/n6000/benchmarks-v0.7.0-3.14-starburst.txt) | [Python 3.14t](benchmarks/n6000/benchmarks-v0.7.0-3.14t-starburst.txt)
 
+## Releasing v0.8.0: Security Hardening & 100% Pure Zig (C Elimination)
+
+With the release of **v0.8.0**, we undertook a rigorous effort to transition the runtime into a production-grade, hardened environment, while achieving a long-sought codebase milestone: **eliminating all C source code** to make Talyn a 100% pure Zig project.
+
+1. **Security Hardening Mitigations (HARD Plan)**:
+   Operating directly on `io_uring` kernel queues requires strict defense-in-depth parameters. We implemented several critical security mitigations:
+   - **Kernel Version Guard (HARD-01)**: Enforced runtime checks on startup requiring Linux Kernel `>= 5.11`, blocking execution on older, vulnerable kernels.
+   - **Buffer Pool Overflow Protection (HARD-04)**: Integrated buffer boundary sentinel validation to detect and prevent kernel-to-user memory corruption.
+   - **Fixed File Descriptor Boundary Checks (HARD-05)**: Added strict validation boundaries to ensure user-space requests never exceed allocated descriptor limits.
+   - **Automated CVE Monitoring (HARD-06)**: Integrated automated tracking for kernel-level `io_uring` CVE reports.
+2. **100% Pure Zig Architecture (C Code Elimination)**:
+   Historically, the codebase linked external C helper objects (`pyatomic_stubs.c` and `trampoline.c`) to satisfy atomic definitions and coordinate the scheduler context. In v0.8.0, we rewrote these helpers in pure Zig:
+   - Atomic stubs were replaced by native Zig `@atomicLoad` wrappers utilizing the `.monotonic` C-ABI standard calling convention.
+   - The fused trampoline sequence was implemented natively in [callbacks.zig](file:///home/cwt/Projects/talyn/src/task/callbacks.zig), employing block-level `defer` for context exit safety and safe optional capture syntax (`if (optional) |x|`) to completely eliminate the risk of panics in the hot path.
+   - Removing the C files decoupled the compilation pipeline from C source dependencies, enabling clean native compilation and inlining optimizations across modules.
+3. **Critical Stability & Leak Fixes**:
+   Additionally, we resolved major resource leaks and correctness bugs: plugging descriptor leaks in `signalfd`/`pidfd`, correcting DNS queue and memory allocations, and fixing poll storms in level-triggered watchers.
+
+With these changes, Talyn has achieved its cleanest, most robust, and highest-security release yet.
+
 ---
 
 This project has been a long, humbling, and incredibly rewarding journey. From an inactive, crash-prone prototype to a stable, fully test-suite-passing event loop built with the help of a swarm of AI agents.
 
 And that’s how Talyn came to life.
+

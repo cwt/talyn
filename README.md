@@ -131,7 +131,11 @@ TALYN_OPTIMIZE=ReleaseFast TALYN_CPU=x86_64_v3 pip install .
 
 ---
 
-## 📦 Basic Usage
+## 📦 Usage
+
+### Basic Usage
+
+To run a coroutine directly with the Talyn event loop:
 
 ```python
 import talyn
@@ -146,6 +150,32 @@ async def main():
 talyn.run(main())
 ```
 
+### Graceful Fallback & Hardening Check
+
+For production configurations, you may want to support fallback options. If Talyn is not installed, or if the host Linux kernel does not meet Talyn's safety baseline (monitored by the `HARD-01` Kernel Version Guard which requires kernel `>= 6.0`), the code will gracefully fall back to `uvloop` (if available), and finally to standard Python `asyncio`:
+
+```python
+import asyncio
+
+# 1. Try to initialize Talyn (performs HARD-01 kernel version check)
+try:
+    import talyn
+    talyn.install()
+except (ImportError, RuntimeError):
+    # 2. Fallback to uvloop if Talyn is missing or kernel version is too old
+    try:
+        import uvloop
+        uvloop.install()
+    except (ImportError, AttributeError):
+        # 3. Fallback to standard Python asyncio (do nothing)
+        pass
+
+async def main():
+    print("Running with the best available event loop!")
+
+asyncio.run(main())
+```
+
 ---
 
 ## 💝 Historical Credits & Origin
@@ -154,7 +184,7 @@ Talyn is spun off from **[Leviathan](https://github.com/kython28/leviathan)**, a
 
 As Talyn evolved, the implementation underwent a complete systems-level refactoring to transition from a theoretical prototype to a production-grade, crash-resistant runtime:
 
-- Eliminated multi-crossing Zig/Python vectorcall overhead by implementing a native C step trampoline.
+- Eliminated multi-crossing Zig/Python vectorcall overhead by implementing a fused scheduler step trampoline in pure Zig.
 - Redesigned completion handlers into flat, GC-safe ring buffers.
 - Fully audited and resolved all memory-leak reference cycles under concurrent connections.
 
