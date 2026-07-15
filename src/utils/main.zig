@@ -26,7 +26,19 @@ pub const gpa = struct {
         }
         return std.heap.c_allocator;
     }
-    pub fn deinit(_: @This()) void {}
+    // Tears down the DebugAllocator's internal bookkeeping when the
+    // -Ddebug-alloc build is active. `deinitWithoutLeakChecks` is used
+    // (instead of `deinit`) because this runs from the module's `m_free`
+    // callback at interpreter shutdown, where global module state (Python
+    // type objects, import caches) is still live — a full leak scan would
+    // only report those as false positives. `deinitWithoutLeakChecks` still
+    // releases every tracking structure the allocator owns, so the global
+    // is no longer leaked. No-op for production (c_allocator) builds.
+    pub fn deinit(_: @This()) void {
+        if (build_options.debug_alloc) {
+            debug_gpa.deinitWithoutLeakChecks();
+        }
+    }
 }{};
 
 pub fn init_gpa() void {}
