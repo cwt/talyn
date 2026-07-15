@@ -406,11 +406,54 @@ pub const RegisteredBufferPool = struct {
 
     pub fn release(self: *RegisteredBufferPool, index: u16) void {
         if (self.free_slots.len == 0) return;
+        // Bounds guard: a valid index only ever originates from lease(), which
+        // returns 0..SlotCount-1. Anything else (e.g. a corrupted or stale index)
+        // must not be written into free_slots, which has exactly SlotCount entries.
+        if (index >= SlotCount) return;
         if (self.free_count >= SlotCount) return; // Overflow guard: prevent double-release
         self.free_slots[self.free_count] = index;
         self.free_count += 1;
     }
 };
+
+test "RegisteredBufferPool lease/release/deinit guards (BUG-117 basis)" {
+    const allocator = std.testing.allocator;
+    var pool: RegisteredBufferPool = .{};
+    try pool.init(allocator);
+    defer pool.deinit(allocator);
+
+    // Lease every slot.
+    var leased: [RegisteredBufferPool.SlotCount]RegisteredBufferPool.LeaseResult = undefined;
+    for (&leased) |*slot| {
+        const result = pool.lease();
+        try std.testing.expect(result != null);
+        slot.* = result.?;
+    }
+    // Pool exhausted -> lease returns null (never dereferences freed memory).
+    try std.testing.expectEqual(@as(?RegisteredBufferPool.LeaseResult, null), pool.lease());
+
+    // Release one slot and lease it back; indices must be unique and in range.
+    pool.release(leased[0].index);
+    const reclaimed = pool.lease();
+    try std.testing.expect(reclaimed != null);
+    try std.testing.expectEqual(leased[0].index, reclaimed.?.index);
+    pool.release(reclaimed.?.index);
+
+    // Release the rest back.
+    for (leased[1..]) |*slot| {
+        pool.release(slot.*.index);
+    }
+    try std.testing.expectEqual(RegisteredBufferPool.SlotCount, pool.free_count);
+
+    // Releasing an already-free index is a safe no-op (overflow guard).
+    pool.release(leased[0].index);
+    try std.testing.expectEqual(RegisteredBufferPool.SlotCount, pool.free_count);
+
+    // After deinit the pool is empty and both lease/release are safe no-ops.
+    pool.deinit(allocator);
+    try std.testing.expectEqual(@as(?RegisteredBufferPool.LeaseResult, null), pool.lease());
+    pool.release(0);
+}
 
 loop: *Loop = undefined,
 
@@ -433,6 +476,13 @@ fixed_file_free: std.ArrayList(u16) = .empty,
 fixed_files_enabled: bool = false,
 
 buffer_pool: RegisteredBufferPool = .{},
+
+/// Tracks whether `register_buffers` succeeded. Registered (fixed) buffers are a
+/// performance optimization only; when registration fails (e.g. `RLIMIT_MEMLOCK`
+/// exhaustion) we keep the pool allocated and clear this flag so `lease_buffer()`
+/// returns null and every I/O path transparently falls back to heap buffers.
+/// See BUG-117.
+buffers_registered: bool = false,
 
 pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
     // HARD-01: Minimum Kernel Version Guard
@@ -531,11 +581,20 @@ pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
     try self.buffer_pool.init(allocator);
     errdefer self.buffer_pool.deinit(allocator);
 
+    // Registered (fixed) buffers require locked/pinned memory (RLIMIT_MEMLOCK).
+    // Under memory pressure this can fail (e.g. error.SystemResources). This is a
+    // performance optimization only: when it fails we keep the pool allocated (so
+    // IO.deinit owns it exactly once) and clear `buffers_registered`, which makes
+    // lease_buffer() return null and every I/O path transparently fall back to heap
+    // buffers. We must NOT deinit the pool here — doing so would leave a freed/empty
+    // pool that IO.deinit and the lease/release paths still reference (and it would
+    // also defeat the errdefer above). See BUG-117.
     self.ring.register_buffers(self.buffer_pool.iovecs) catch |err| {
-        // Graceful fallback if buffer registration fails
-        self.buffer_pool.deinit(allocator);
-        std.log.err("io_uring buffer registration failed: {}", .{err});
+        self.buffers_registered = false;
+        std.log.warn("io_uring buffer registration failed; continuing with heap buffers: {}", .{err});
+        return;
     };
+    self.buffers_registered = true;
 }
 
 pub fn register_fixed_file(self: *IO, fd: std.posix.fd_t) !u16 {
@@ -580,6 +639,7 @@ pub fn unregister_fixed_file(self: *IO, index: u16) void {
 }
 
 pub fn lease_buffer(self: *IO) ?RegisteredBufferPool.LeaseResult {
+    if (!self.buffers_registered) return null;
     const mutex = &self.loop.mutex;
     mutex.lock();
     defer mutex.unlock();
@@ -587,6 +647,12 @@ pub fn lease_buffer(self: *IO) ?RegisteredBufferPool.LeaseResult {
 }
 
 pub fn release_buffer(self: *IO, index: u16) void {
+    // Invariant: when `!buffers_registered`, lease_buffer() never succeeds, so no
+    // slot was ever leased and the pool stays completely full. Any release in that
+    // state (e.g. the BUG-117 Zig test) is therefore a safe no-op --
+    // RegisteredBufferPool.release() returns early via its overflow guard.
+    // Consumers also only call this with an index obtained from a successful
+    // lease, so `index` is always valid here.
     const mutex = &self.loop.mutex;
     mutex.lock();
     defer mutex.unlock();

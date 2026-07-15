@@ -1128,6 +1128,36 @@ Bugs discovered and fixed during the June 12 reference-counting and performance 
 
 ---
 
+## NEW BUGS (from 2026-07-15 external integration audit)
+
+### BUG-117: Swallowed error + premature `buffer_pool` teardown when io_uring buffer registration fails under memory pressure
+
+- **Status**: 🟢 Fixed (2026-07-15; see Resolution)
+- **Severity**: 🔴 Critical (latent memory-safety / correctness defect)
+- **File**: `src/loop/scheduling/io/main.zig` — `IO.init` (register_buffers `catch`), `IO.lease_buffer`/`IO.release_buffer`, `IO.deinit`; consumers: `src/transports/read_transport.zig`, `src/transports/datagram/*`.
+- **Description**: In `IO.init`, `self.ring.register_buffers(self.buffer_pool.iovecs)` is wrapped in a `catch` documented as a "Graceful fallback if buffer registration fails":
+  ```zig
+  self.ring.register_buffers(self.buffer_pool.iovecs) catch |err| {
+      // Graceful fallback if buffer registration fails
+      self.buffer_pool.deinit(allocator);
+      std.log.err("io_uring buffer registration failed: {}", .{err});
+  };
+  ```
+  The `catch` **swallows the error**, so `IO.init` returns success and the `Loop` is handed to Python as fully initialized even though a setup step failed. The failure path also calls `self.buffer_pool.deinit(allocator)`, tearing down a pool that `IO.deinit` and the `lease`/`release` paths still logically own.
+
+  **Correction to the original audit (2026-07-15):** the report attributed a deterministic SIGSEGV double-free to this path. On the current revision that SIGSEGV is **not** reproducible from the described mechanism:
+  - `RegisteredBufferPool.deinit` ends with `self.* = .{}` (all slices zeroed), and both `lease`/`release` and `IO.deinit` guard on `len == 0`, so the freed/empty pool is never dereferenced. The only effect is silent loss of the registered-buffer optimization (a performance regression).
+  - The HARD-04 `0xDEADBEEF` write lives in `IO.deinit` (not `buffer_pool.deinit`); it writes to the `.ptr` field of the (now-empty) slice and never dereferences `0xDEADBEEF`, so it cannot segfault.
+
+  The real defect is therefore: (1) a genuine error is swallowed and hidden from callers, and (2) a pool that is still logically owned by later teardown/lease code is freed mid-init — fragile and a latent UAF risk if any path ever dereferences it. The audit's observed proxy crash under ~14 concurrent live loops is more likely an adjacent subsystem failure under the same memory-pressure conditions, not this double-free. Regardless, the swallowed error plus premature teardown must be fixed.
+- **Trigger**: io_uring registered (fixed) buffers require **locked/pinned memory** (`RLIMIT_MEMLOCK`). With `RLIMIT_MEMLOCK = 8 MB` (`ulimit -l 8192`), each loop pins `SlotCount * SlotSize = 1 MB`; ~8–14 concurrent live loops exhaust the budget and `io_uring_register(IORING_REGISTER_BUFFERS)` fails with `error.SystemResources`. Environment: Linux x86_64, CPython 3.14, talyn wheel build; `io_uring_disabled=0`.
+- **Consequences**: Hidden (swallowed) init failure; silent degradation of the registered-buffer optimization; fragile ownership of `buffer_pool` across `init`/`deinit`/`lease`/`release`. In the wormhole proxy, `talyn.install()` runs at import and many parallel tests each own a live loop, so the MEMLOCK budget is exhausted and the fallback engages for later loops.
+- **Resolution (implemented 2026-07-15)**: Option (b) — behavior-preserving graceful fallback (NOT option (a)). Added `buffers_registered: bool` to `IO`. On `register_buffers` failure the `catch` now sets `buffers_registered = false` and returns success **without** deinitializing `buffer_pool`; on success it sets `buffers_registered = true`. `IO.lease_buffer` returns `null` when `!buffers_registered`, so every consumer (`read_transport`, datagram) falls back to a heap buffer, and `read.zig` only issues `ring.read_fixed` when `fixed_buffer_index != null` — satisfying Architectural Mandate #7 (complete feature fallback paths). `IO.deinit` keeps a single, correct `buffer_pool.deinit` (the pool is never torn down in the catch), so there is exactly one owner and one teardown.
+  - Why not option (a) (`return err`): it would make the *first* loop past the MEMLOCK budget fatal, capping talyn at ~8 concurrent live loops and breaking the proxy's many-concurrent-loops use case (the audit shows 1 loop works, ~14 fail — making it fatal forbids >8 entirely). It is also unsafe as written: `Loop.init` has `errdefer self.io.deinit();` while `IO.init` already owns cleanup errdefers (ring, buffer_pool, eventfd); a bare `return err` would double-`deinit` the ring and double-free `blocking_ready_tasks`/`fixed_file_table` and double-`close(eventfd)`. Option (b) avoids both problems.
+  - Regression test: `test "BUG-117: registered-buffer fallback when io_uring buffer registration fails (low RLIMIT_MEMLOCK)"` in `src/loop/main.zig` clamps `RLIMIT_MEMLOCK` (cur) below the 1 MB the pool needs, inits a `Loop`, asserts `loop.io.buffers_registered == false` and `loop.io.lease_buffer() == null`, exercises a safe `release_buffer(0)` no-op, and tears the loop down cleanly; plus a `RegisteredBufferPool` lease/release/deinit guard test.
+
+---
+
 ## Summary
 
 | Severity | Total | Fixed | Open |
@@ -1143,7 +1173,8 @@ Bugs discovered and fixed during the June 12 reference-counting and performance 
 | **New (2026-06-08 pass 2)** | **6** | **6** | **0** |
 | **New (2026-06-11 deep audit)** | **6** | **6** | **0** |
 | **New (2026-06-12 audit/fixes)** | **3** | **3** | **0** |
-| **Grand total** | **115** | **114** | **1 (1 FP)** |
+| **New (2026-07-15 external integration audit)** | **1** | **1** | **0** |
+| **Grand total** | **116** | **115** | **1 (1 FP)** |
 
 **Pass 1 bug breakdown (10 new, 9 fixed):**
 - 🔴 Critical: 3 (BUG-91 ✅, BUG-92 ✅, BUG-93 ✅)
@@ -1163,3 +1194,6 @@ Bugs discovered and fixed during the June 12 reference-counting and performance 
 **2026-06-12 audit/fixes bug breakdown (3 new, 3 fixed):**
 - 🔴 Critical: 1 (BUG-115 ✅)
 - 🟠 High: 2 (BUG-114 ✅, BUG-116 ✅)
+
+**2026-07-15 external integration audit bug breakdown (1 new, 1 fixed):**
+- 🔴 Critical: 1 (BUG-117 ✅)

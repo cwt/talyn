@@ -346,6 +346,41 @@ test "BUG-02: link_timeout failure rollback" {
     try std.testing.expectEqual(@as(u32, @intCast(capacity - 1)), ring.sq_ready());
 }
 
+test "BUG-117: registered-buffer fallback when io_uring buffer registration fails (low RLIMIT_MEMLOCK)" {
+    // Force io_uring_register(IORING_REGISTER_BUFFERS) to fail by clamping the
+    // pinned-memory soft limit below the 1 MiB RegisteredBufferPool needs, while
+    // keeping it high enough for the io_uring ring + fixed-file table to still
+    // initialize. Keep `max` untouched so we can restore it afterwards (raising
+    // cur up to max is always allowed). Restore via defer so the clamp never
+    // leaks to other tests.
+    var orig: std.os.linux.rlimit = undefined;
+    _ = std.os.linux.getrlimit(.MEMLOCK, &orig);
+    defer _ = std.os.linux.setrlimit(.MEMLOCK, &orig);
+
+    const clamped: std.os.linux.rlimit = .{ .cur = 1024 * 1024 - 65536, .max = orig.max };
+    _ = std.os.linux.setrlimit(.MEMLOCK, &clamped);
+
+    const allocator = std.testing.allocator;
+    const loop = try allocator.create(Loop);
+    defer allocator.destroy(loop);
+
+    try loop.init(allocator, 1024);
+    defer loop.release();
+
+    // On privileged environments (CAP_IPC_LOCK) RLIMIT_MEMLOCK is bypassed and
+    // registration always succeeds, so the fallback cannot be exercised here.
+    if (loop.io.buffers_registered) return;
+
+    // Fallback must have engaged: no buffers registered, lease returns null, and
+    // releasing a never-leased index is a safe no-op.
+    try std.testing.expectEqual(false, loop.io.buffers_registered);
+    try std.testing.expect(loop.io.lease_buffer() == null);
+    loop.io.release_buffer(0);
+
+    // Tear-down must be clean (no double-free / use-after-free). loop.release()
+    // runs IO.deinit, which owns buffer_pool exactly once.
+}
+
 const Loop = @This();
 
 
