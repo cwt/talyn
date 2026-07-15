@@ -12,7 +12,7 @@ timestamp: 2026-07-07T15:35:00Z
 This is the master index for all lessons learned during Talyn development (originally branched from Leviathan).
 Lessons have been grouped by topic for maximum readability. Each section links to a dedicated file.
 
-> **110 lessons** documented across **10 topic areas**.
+> **111 lessons** documented across **11 topic areas**.
 
 ---
 
@@ -30,6 +30,7 @@ Lessons have been grouped by topic for maximum readability. Each section links t
 | 8 | [Zig-Specific Patterns](08-zig-specific-patterns.md) | Struct literals for heap types, `errdefer` discipline, LIFO defer ordering, `?T` vs `error{T}!T`, `.?` panic risk, alignment for C-struct mappings, const-folding |
 | 9 | [Security & Input Validation](09-security-and-input-validation.md) | DNS transaction ID randomness & validation, DNS compression pointer bounds, IP parser strictness, ambiguous numeric format rejection |
 | 10 | [Defensive Programming & Code Quality](10-defensive-programming-and-code-quality.md) | Configuration fields, hardcoded constants, float approximate equality, off-by-one fd checks, dead code, debug prints in hot paths, timeout configurability |
+| 11 | [Registered Buffers & MEMLOCK (BUG-117)](23-bug-117-registered-buffer-fallback-2026.md) | io_uring registered-buffer registration failure, behavior-preserving fallback, per-process RLIMIT_MEMLOCK accounting, regression-test isolation |
 
 ---
 
@@ -43,7 +44,7 @@ These lessons have the highest ROI — apply them on every new feature:
 - **In-Flight Lifecycles**: Keep Python owner objects alive via incref when queuing async tasks to prevent UAF on GC. → [Memory §Use-After-Free & Double-Free](01-memory-and-reference-counting.md)
 - **Struct Init**: `allocator.create(T)` returns uninitialized memory. Field defaults are only applied by struct literals. → [Zig §Struct Initialization](08-zig-specific-patterns.md)
 - **Deferred I/O Buffers**: io_uring reads input buffers at *submit time*, not queue time. Stack-allocated inputs are use-after-free. → [io_uring §Deferred Submission](04-io-uring-and-kernel.md)
-- **`errdefer` Immediately**: Add `errdefer cleanup(R)` immediately after every resource acquisition. → [Zig §errdefer](08-zig-specific-patterns.md)
+- **Registered Buffer Fallback**: When `io_uring_register` fails, keep `buffer_pool` allocated and clear `buffers_registered` so `lease_buffer()` returns null and every path falls back to heap — never swallow the error and tear the pool down mid-init. → [io_uring §BUG-117](23-bug-117-registered-buffer-fallback-2026.md)
 
 ### 🟠 High (Races, Hangs, Deadlocks)
 
@@ -80,6 +81,7 @@ For historical references to lesson numbers in commit messages or bug reports:
 | 1, 17, 21, 22, 59, 73, 74, 99 | [Concurrency & Thread Safety](02-concurrency-and-thread-safety.md) |
 | 2, 5, 8, 10, 12, 19, 20, 47, 56, 57, 82, 84, 85, 86, 104 | [Event Loop Lifecycle](03-event-loop-lifecycle.md) |
 | 9, 13, 24, 48, 60, 105, 108, 109, 110 | [io_uring & Kernel Interaction](04-io-uring-and-kernel.md) |
+| 111 | [Registered Buffers & MEMLOCK (BUG-117)](23-bug-117-registered-buffer-fallback-2026.md) |
 | 27, 28, 32, 35, 54, 55, 95, 97 | [Python C API Correctness](05-python-c-api-correctness.md) |
 | 16, 31, 40, 41, 42, 43, 44, 45, 51, 78, 80, 81 | [Network Protocols & I/O](06-network-protocols-and-io.md) |
 | 23, 53, 72, 83, 94, 100 | [Data Structures & Algorithms](07-data-structures-and-algorithms.md) |
