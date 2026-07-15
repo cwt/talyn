@@ -636,7 +636,7 @@ fn schedule_remaining_connects_callback(data: *const CallbackManager.CallbackDat
     }
 }
 
-fn z_create_socket_connection(data: *SocketConnectionData, connection_submitted: *usize) !void {
+fn z_create_socket_connection(data: *SocketConnectionData) !void {
     const creation_data = data.creation_data;
     const address_list = data.address_list orelse {
         python_c.raise_python_runtime_error("No addresses to connect to");
@@ -667,8 +667,23 @@ fn z_create_socket_connection(data: *SocketConnectionData, connection_submitted:
         break :blk python_c.PyObject_IsTrue(py_all_errors) != 0;
     };
 
+    // `connection_data` (== `data`) is owned by `create_socket_connection` until we
+    // successfully build `mcs` below. The guard frees it on any error that occurs
+    // *before* that handoff; once `mcs` exists it owns `connection_data` and frees it
+    // in `MultiConnectState.deinit`. This prevents a double-free: an error after `mcs`
+    // creation used to be freed both by `mcs.deinit` and again by the caller's cleanup
+    // (BUG-118 exposed this by making the submit-error path propagate instead of
+    // swallowing it and returning null).
+    var mcs_owns_connection_data = false;
+    errdefer {
+        if (!mcs_owns_connection_data) {
+            data.deinit();
+        }
+    }
+
     const mcs = try MultiConnectState.init(allocator, data, all_errors);
     errdefer mcs.deinit();
+    mcs_owns_connection_data = true;
 
     var delay: f64 = 0.25;
     if (creation_data.py_happy_eyeballs_delay) |py_delay| {
@@ -709,7 +724,6 @@ fn z_create_socket_connection(data: *SocketConnectionData, connection_submitted:
 
     // Submit first address immediately
     try submit_connect_for_address(mcs, &address_list[0], allocator, loop_data);
-    connection_submitted.* += 1;
 
     // Schedule remaining addresses after happy eyeballs delay
     if (address_list.len > 1 and delay > 0) {
@@ -737,28 +751,31 @@ fn z_create_socket_connection(data: *SocketConnectionData, connection_submitted:
         // Submit all remaining immediately (no delay)
         for (address_list[1..]) |*addr| {
             try submit_connect_for_address(mcs, addr, allocator, loop_data);
-            connection_submitted.* += 1;
         }
     }
 }
 
 fn create_socket_connection(data: *const CallbackManager.CallbackData) !void {
     const socket_creation_data: *SocketConnectionData = @alignCast(@ptrCast(data.user_data.?));
+    // Capture the future handle up front: any failure path below may free
+    // `connection_data` (and the `creation_data` it embeds), so we must not read
+    // `socket_creation_data.creation_data.future` after such a free.
+    const fut = socket_creation_data.creation_data.future.?;
 
-    var connections_submitted: usize = 0;
-    errdefer {
-        if (connections_submitted == 0) {
-            socket_creation_data.deinit();
-        }
-    }
-
+    // `connection_data` is owned by this callback until `z_create_socket_connection`
+    // succeeds in creating the `MultiConnectState` (which then owns it and frees it in
+    // `MultiConnectState.deinit`). On cancellation before that handoff we still own it
+    // and must free it here; any failure *inside* `z_create_socket_connection` is owned
+    // there (it frees `connection_data` directly, or lets `mcs.deinit` do so). We must
+    // NOT free `connection_data` on the error path, or it would be freed twice.
     if (data.cancelled()) {
         python_c.raise_python_runtime_error("Event for socket creation cancelled");
-        return set_future_exception(error.PythonError, socket_creation_data.creation_data.future.?);
+        socket_creation_data.deinit();
+        return set_future_exception(error.PythonError, fut);
     }
 
-    z_create_socket_connection(socket_creation_data, &connections_submitted) catch |err| {
-        return set_future_exception(err, socket_creation_data.creation_data.future.?);
+    z_create_socket_connection(socket_creation_data) catch |err| {
+        return set_future_exception(err, fut);
     };
 }
 

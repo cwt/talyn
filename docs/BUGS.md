@@ -1167,6 +1167,17 @@ Bugs discovered and fixed during the June 12 reference-counting and performance 
 - **Consequences**: glibc heap corruption; the process is aborted by `malloc_printerr` (SIGABRT). Intermittent and load-dependent.
 - **Resolution (2026-07-15)**: Removed the redundant explicit `allocator.destroy(socket_data)` from the `catch` block. The `errdefer` already runs on every error return (including the `task_ids.append` failure after a successful submit), so `socket_data` is now freed exactly once on the error path. The success path leaves `socket_data` owned by the io_uring callback chain, which frees it in `socket_connected_callback` / error handling.
 
+### BUG-119: Double-free of `connection_data` in `create_socket_connection` / `z_create_socket_connection` error path
+
+- **Status**: 🟢 Fixed (2026-07-15)
+- **Severity**: 🔴 Critical (heap corruption → `SIGSEGV` reading freed `SocketConnectionData`)
+- **File**: `src/loop/python/io/client/create_connection.zig` — `create_socket_connection` (`:745`) and `z_create_socket_connection` (`:639`)
+- **Lesson**: [Memory §Lesson 26 (Double-Free in Error Path)](docs/lessons/01-memory-and-reference-counting.md); sibling of BUG-04 / BUG-118.
+- **Description**: `connection_data` (the `SocketConnectionData`) was owned ambiguously on the error path. `z_create_socket_connection` installs `errdefer mcs.deinit()`, and `MultiConnectState.deinit` frees `connection_data`. Separately, `create_socket_connection` had `errdefer { if (connections_submitted == 0) socket_creation_data.deinit(); }`, which also freed `connection_data` when `z_create_socket_connection` failed with no connect submitted. When `z_create_socket_connection` fails **after** `MultiConnectState.init` but before any successful submit (so `connections_submitted == 0`), `mcs.deinit` frees `connection_data` and then the outer `errdefer` frees it **again** — a double-free that manifests as a `SIGSEGV` inside `MultiConnectState.deinit` reading the already-freed (Zig `0xaa` sentinel) `connection_data`.
+- **Trigger**: Many concurrent outbound connections so that `submit_connect_for_address` fails (fd/ring exhaustion). This path became reachable — and began crashing — only after BUG-118 made the submit-error path propagate instead of swallowing it and returning `null`. Reproduced deterministically under a flood of concurrent `loop.create_connection` calls (many cancelled immediately) which drives `submit_connect_for_address` failures under load.
+- **Consequences**: Heap double-free / use-after-free; the process segfaults inside `create_socket_connection` / `MultiConnectState.deinit`.
+- **Resolution (2026-07-15)**: Made `connection_data` single-owner. `create_socket_connection` owns `connection_data` until `z_create_socket_connection` succeeds in creating the `MultiConnectState` (which then owns it and frees it in `MultiConnectState.deinit`). `z_create_socket_connection` installs a guard `errdefer` that frees `connection_data` only on errors **before** `mcs` takes ownership; once `mcs` exists it owns `connection_data` exclusively. The redundant free in `create_socket_connection`'s `errdefer` was removed, and the future handle is captured up front so the cancelled/error paths never read `connection_data` after freeing it.
+
 ---
 
 ## Summary
@@ -1184,8 +1195,8 @@ Bugs discovered and fixed during the June 12 reference-counting and performance 
 | **New (2026-06-08 pass 2)** | **6** | **6** | **0** |
 | **New (2026-06-11 deep audit)** | **6** | **6** | **0** |
 | **New (2026-06-12 audit/fixes)** | **3** | **3** | **0** |
-| **New (2026-07-15 external integration audit)** | **2** | **2** | **0** |
-| **Grand total** | **117** | **116** | **1 (1 FP)** |
+| **New (2026-07-15 external integration audit)** | **3** | **3** | **0** |
+| **Grand total** | **118** | **117** | **1 (1 FP)** |
 
 **Pass 1 bug breakdown (10 new, 9 fixed):**
 - 🔴 Critical: 3 (BUG-91 ✅, BUG-92 ✅, BUG-93 ✅)
@@ -1206,5 +1217,5 @@ Bugs discovered and fixed during the June 12 reference-counting and performance 
 - 🔴 Critical: 1 (BUG-115 ✅)
 - 🟠 High: 2 (BUG-114 ✅, BUG-116 ✅)
 
-**2026-07-15 external integration audit bug breakdown (2 new, 2 fixed):**
-- 🔴 Critical: 2 (BUG-117 ✅, BUG-118 ✅)
+**2026-07-15 external integration audit bug breakdown (3 new, 3 fixed):**
+- 🔴 Critical: 3 (BUG-117 ✅, BUG-118 ✅, BUG-119 ✅)
