@@ -288,17 +288,32 @@ REF_LIB="$(get_python_lib python3.13)"
 ZIG_OPTS="-Doptimize=$OPTIMIZE_MODE -Dpython-include-dir=$REF_INC -Dpython-lib-dir=$(dirname "$REF_LIB") -Dpython-lib=$REF_LIB"
 
 printf "${YELLOW}[zig]${NC} Running zig unit tests...\n"
+# `zig build test` prints a cosmetic "failed command:" line for the spawned
+# test-binary worker even on success; filter it so the result is unambiguous.
+# On success we also run the compiled test binary directly to surface its
+# clear "All N tests passed." summary (the test-runner wrapper suppresses it).
+ZIG_TEST_LOG="$(mktemp)"
 if $VERBOSE; then
-    zig build test $ZIG_OPTS
+    zig build test $ZIG_OPTS 2>&1 | grep -v 'failed command:' | tee "$ZIG_TEST_LOG"
+    rc=${PIPESTATUS[0]}
 else
-    zig build test $ZIG_OPTS >/dev/null 2>&1
+    zig build test $ZIG_OPTS >"$ZIG_TEST_LOG" 2>&1
+    rc=$?
 fi
-if [ $? -eq 0 ]; then
+if [ "$rc" -eq 0 ]; then
+    ZIG_BIN="$(ls -t .zig-cache/o/*/talyn 2>/dev/null | head -n1)"
+    if [ -n "$ZIG_BIN" ]; then
+        SUMMARY="$("$ZIG_BIN" 2>&1 | grep -E "All .* tests passed" | tail -n1)"
+        if [ -n "$SUMMARY" ]; then
+            printf "   %s\n" "$SUMMARY"
+        fi
+    fi
     printf "${GREEN}[zig] PASS${NC}\n"
 else
     printf "${RED}[zig] FAIL${NC}\n"
     FAIL=$((FAIL + 1))
-fi || true
+fi
+rm -f "$ZIG_TEST_LOG"
 
 
 echo ""
