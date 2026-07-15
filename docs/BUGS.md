@@ -1156,6 +1156,17 @@ Bugs discovered and fixed during the June 12 reference-counting and performance 
   - Why not option (a) (`return err`): it would make the *first* loop past the MEMLOCK budget fatal, capping talyn at ~8 concurrent live loops and breaking the proxy's many-concurrent-loops use case (the audit shows 1 loop works, ~14 fail — making it fatal forbids >8 entirely). It is also unsafe as written: `Loop.init` has `errdefer self.io.deinit();` while `IO.init` already owns cleanup errdefers (ring, buffer_pool, eventfd); a bare `return err` would double-`deinit` the ring and double-free `blocking_ready_tasks`/`fixed_file_table` and double-`close(eventfd)`. Option (b) avoids both problems.
   - Regression test: `test "BUG-117: registered-buffer fallback when io_uring buffer registration fails (low RLIMIT_MEMLOCK)"` in `src/loop/main.zig` clamps `RLIMIT_MEMLOCK` (cur) below the 1 MB the pool needs, inits a `Loop`, asserts `loop.io.buffers_registered == false` and `loop.io.lease_buffer() == null`, exercises a safe `release_buffer(0)` no-op, and tears the loop down cleanly; plus a `RegisteredBufferPool` lease/release/deinit guard test.
 
+### BUG-118: Double-free of `socket_data` in `submit_connect_for_address` error path
+
+- **Status**: 🟢 Fixed (2026-07-15)
+- **Severity**: 🔴 Critical (heap corruption → `free(): double free detected in tcache 2` → SIGABRT)
+- **File**: `src/loop/python/io/client/create_connection.zig` — `submit_connect_for_address` (`:591`–`:609`)
+- **Lesson**: [Memory §Lesson 26 (Double-Free in Error Path)](docs/lessons/01-memory-and-reference-counting.md); sibling of BUG-04.
+- **Description**: `submit_connect_for_address` allocated `socket_data` with `try allocator.create(SocketData)` and installed `errdefer allocator.destroy(socket_data)`. The `create_socket_and_submit_connect_req` call was wrapped in a `catch` that ALSO called `allocator.destroy(socket_data)` before `return err`. On any error return from `create_socket_and_submit_connect_req` (e.g. `socket()` returning `EMFILE` under fd exhaustion, or the io_uring submit queue being full), the `catch` freed `socket_data` and then the function's `errdefer` freed it a second time.
+- **Trigger**: Many concurrent outbound connections so that `socket()` or the io_uring queue submission fails. Observed in the wormhole proxy after sustained browsing (hundreds of CONNECT tunnels), where the process aborts with `free(): double free detected in tcache 2`. Reproduced deterministically by flooding the proxy with concurrent connections until fd/ring pressure forces the submit error path.
+- **Consequences**: glibc heap corruption; the process is aborted by `malloc_printerr` (SIGABRT). Intermittent and load-dependent.
+- **Resolution (2026-07-15)**: Removed the redundant explicit `allocator.destroy(socket_data)` from the `catch` block. The `errdefer` already runs on every error return (including the `task_ids.append` failure after a successful submit), so `socket_data` is now freed exactly once on the error path. The success path leaves `socket_data` owned by the io_uring callback chain, which frees it in `socket_connected_callback` / error handling.
+
 ---
 
 ## Summary
@@ -1173,8 +1184,8 @@ Bugs discovered and fixed during the June 12 reference-counting and performance 
 | **New (2026-06-08 pass 2)** | **6** | **6** | **0** |
 | **New (2026-06-11 deep audit)** | **6** | **6** | **0** |
 | **New (2026-06-12 audit/fixes)** | **3** | **3** | **0** |
-| **New (2026-07-15 external integration audit)** | **1** | **1** | **0** |
-| **Grand total** | **116** | **115** | **1 (1 FP)** |
+| **New (2026-07-15 external integration audit)** | **2** | **2** | **0** |
+| **Grand total** | **117** | **116** | **1 (1 FP)** |
 
 **Pass 1 bug breakdown (10 new, 9 fixed):**
 - 🔴 Critical: 3 (BUG-91 ✅, BUG-92 ✅, BUG-93 ✅)
@@ -1195,5 +1206,5 @@ Bugs discovered and fixed during the June 12 reference-counting and performance 
 - 🔴 Critical: 1 (BUG-115 ✅)
 - 🟠 High: 2 (BUG-114 ✅, BUG-116 ✅)
 
-**2026-07-15 external integration audit bug breakdown (1 new, 1 fixed):**
-- 🔴 Critical: 1 (BUG-117 ✅)
+**2026-07-15 external integration audit bug breakdown (2 new, 2 fixed):**
+- 🔴 Critical: 2 (BUG-117 ✅, BUG-118 ✅)

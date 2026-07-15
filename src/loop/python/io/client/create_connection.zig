@@ -591,6 +591,10 @@ fn submit_connect_for_address(
     mcs: *MultiConnectState, address: *const utils.Address, allocator: std.mem.Allocator, loop: *Loop
 ) !void {
     const socket_data = try allocator.create(SocketData);
+    // Single owner of socket_data on the error path. errdefer frees it exactly
+    // once on any error return (including the later task_ids.append failure).
+    // The success path transfers ownership to the io_uring callback chain, so
+    // it must NOT be freed here.
     errdefer allocator.destroy(socket_data);
     socket_data.* = .{
         .multi_state = mcs,
@@ -603,7 +607,9 @@ fn submit_connect_for_address(
     };
 
     const task_id = create_socket_and_submit_connect_req(address, socket_data, loop) catch |err| {
-        allocator.destroy(socket_data);
+        // Do NOT free socket_data here: the errdefer at the top of this
+        // function already runs on every error return (including this one),
+        // so freeing here would double-free. See BUG-04 class of defects.
         return err;
     };
     try mcs.task_ids.append(allocator, task_id);
