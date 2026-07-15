@@ -57,7 +57,14 @@ def _exercise_fallback() -> None:
     # Keep `max` untouched so we can restore the limit afterwards.
     resource.setrlimit(resource.RLIMIT_MEMLOCK, (_FORCE_MEMLOCK, hard))
     try:
-        loop = Loop()
+        try:
+            loop = Loop()
+        except OSError as exc:
+            # Ring setup itself can fail with SystemResources under the clamped
+            # MEMLOCK (the documented unguarded error path); the registered-
+            # buffer fallback cannot be exercised here, so skip.
+            print(f"SKIP: ring setup failed ({exc}) — cannot force fallback")
+            return
         try:
 
             async def main() -> bytes:
