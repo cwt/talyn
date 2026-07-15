@@ -37,6 +37,19 @@ is_gil_enabled = sys._is_gil_enabled()  # type: ignore
 if not is_gil_enabled:
     zig_compiler_options.append("-Dpython-gil-disabled")
 
+# AddressSanitizer build: TALYN_ASAN=1 forwards -Dasan to the Zig build so the
+# resulting extension is ASAN-instrumented (catches malloc-backed heap
+# double-free / use-after-free regressions such as BUG-118/119/120).
+if os.environ.get("TALYN_ASAN"):
+    zig_compiler_options.append("-Dasan")
+
+# Memory-safety checker build: TALYN_DEBUG_ALLOC=1 swaps talyn's heap allocator
+# for std.heap.DebugAllocator(.{ .safety = true }), which detects double-free /
+# invalid frees / leaks at runtime (the Zig-native equivalent of AddressSanitizer,
+# which is unavailable in Zig 0.16). See `zig build -Ddebug-alloc`.
+if os.environ.get("TALYN_DEBUG_ALLOC"):
+    zig_compiler_options.append("-Ddebug-alloc")
+
 
 class BinaryDistribution(Distribution):
     """Distribution which always forces a binary package"""

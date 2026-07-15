@@ -10,8 +10,20 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 const python_c = @import("python_c");
+
+// Memory-safety checker build (see `zig build -Ddebug-alloc`). When enabled,
+// talyn's heap allocations go through std.heap.DebugAllocator(.{ .safety =
+// true }), which detects double-free / invalid frees / leaks at runtime — the
+// Zig-native equivalent of AddressSanitizer (unavailable in Zig 0.16). The
+// c_allocator (malloc/free) is used otherwise for production performance.
+const build_options = @import("build_options");
+var debug_gpa: std.heap.DebugAllocator(.{ .safety = true }) = .{};
+
 pub const gpa = struct {
     pub fn allocator(_: @This()) std.mem.Allocator {
+        if (build_options.debug_alloc) {
+            return debug_gpa.allocator();
+        }
         return std.heap.c_allocator;
     }
     pub fn deinit(_: @This()) void {}

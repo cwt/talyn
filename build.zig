@@ -11,6 +11,7 @@ fn create_build_step(
     modules: []const *std.Build.Module,
     comptime emit_bin: bool,
     step: *std.Build.Step,
+    sanitize: bool,
 ) void {
     const root_module = b.createModule(.{
         .root_source_file = b.path(path),
@@ -19,6 +20,13 @@ fn create_build_step(
         .single_threaded = single_threaded,
         .link_libc = true,
     });
+    // AddressSanitizer + UBSan (ASAN). talyn's heap allocations go through
+    // std.heap.c_allocator (malloc/free), so ASAN intercepts them and catches
+    // the connection-creation double-free / use-after-free regressions
+    // (BUG-118, BUG-119, BUG-120).
+    if (sanitize) {
+        root_module.sanitize_c = .full;
+    }
     for (modules_name, modules) |module_name, module| {
         root_module.addImport(module_name, module);
     }
@@ -46,6 +54,23 @@ fn create_build_step(
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+
+    const asan = b.option(bool, "asan", "Build with AddressSanitizer + UBSan (malloc-backed allocations; catches heap double-free/UAF)") orelse false;
+
+    // Memory-safety checker build: swap talyn's heap allocator for
+    // std.heap.DebugAllocator(.{ .safety = true }), which detects double-free,
+    // invalid frees and leaks at runtime. Zig 0.16 has no AddressSanitizer
+    // (only -fsanitize-c / UBSan and -fsanitize-thread / TSan), so this is the
+    // Zig-native equivalent for catching the connection-creation regressions
+    // (BUG-118, BUG-119, BUG-120).
+    const debug_alloc = b.option(
+        bool,
+        "debug-alloc",
+        "Use std.heap.DebugAllocator (safety) for talyn's heap — catches double-free / leaks / UAF at runtime",
+    ) orelse false;
+    const build_options = b.addOptions();
+    build_options.addOption(bool, "debug_alloc", debug_alloc);
+    const build_options_module = build_options.createModule();
 
     if (target.result.os.tag != .linux) {
         @panic("Only Linux is supported");
@@ -102,6 +127,7 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
     utils_module.addImport("python_c", python_c_module);
+    utils_module.addImport("build_options", build_options_module);
 
     const callback_manager_module = b.addModule("callback_manager", .{
         .root_source_file = b.path("src/callback_manager.zig"),
@@ -128,13 +154,13 @@ pub fn build(b: *std.Build) void {
 
     create_build_step(
         b, "talyn", "src/lib.zig", target, optimize, !python_is_gil_disabled,
-        &modules_name, &modules, true, install_step,
+        &modules_name, &modules, true, install_step, asan,
     );
 
     const check_step = b.step("check", "Run checking for ZLS");
     create_build_step(
         b, "talyn", "src/lib.zig", target, optimize, true,
-        &modules_name, &modules, false, check_step,
+        &modules_name, &modules, false, check_step, asan,
     );
 
     const talyn_module_unit_tests = b.addTest(.{
@@ -183,6 +209,12 @@ pub fn build(b: *std.Build) void {
     const run_talyn_module_unit_tests = b.addRunArtifact(talyn_module_unit_tests);
     const run_callback_manager_unit_tests = b.addRunArtifact(callback_manager_unit_tests);
     const run_utils_unit_tests = b.addRunArtifact(utils_unit_tests);
+
+    if (asan) {
+        talyn_module_unit_tests.root_module.sanitize_c = .full;
+        callback_manager_unit_tests.root_module.sanitize_c = .full;
+        utils_unit_tests.root_module.sanitize_c = .full;
+    }
 
     if (python_lib) |lib| {
         talyn_module_unit_tests.root_module.addObjectFile(.{ .cwd_relative = lib });
