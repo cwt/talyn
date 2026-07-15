@@ -1178,6 +1178,17 @@ Bugs discovered and fixed during the June 12 reference-counting and performance 
 - **Consequences**: Heap double-free / use-after-free; the process segfaults inside `create_socket_connection` / `MultiConnectState.deinit`.
 - **Resolution (2026-07-15)**: Made `connection_data` single-owner. `create_socket_connection` owns `connection_data` until `z_create_socket_connection` succeeds in creating the `MultiConnectState` (which then owns it and frees it in `MultiConnectState.deinit`). `z_create_socket_connection` installs a guard `errdefer` that frees `connection_data` only on errors **before** `mcs` takes ownership; once `mcs` exists it owns `connection_data` exclusively. The redundant free in `create_socket_connection`'s `errdefer` was removed, and the future handle is captured up front so the cancelled/error paths never read `connection_data` after freeing it.
 
+### BUG-120: Use-after-free of `MultiConnectState` (`mcs`) in happy-eyeballs timer callback
+
+- **Status**: 🟢 Fixed (2026-07-15)
+- **Severity**: 🔴 Critical (heap use-after-free → `SIGSEGV` in `schedule_remaining_connects_callback` / `MultiConnectState.traverse_raw` during GC)
+- **File**: `src/loop/python/io/client/create_connection.zig` — `socket_connected_callback` (`:804`, `:903`, `:908`) and `schedule_remaining_connects_callback` (`:618`)
+- **Lesson**: [Memory §Lesson 25 (Use-After-Free)](docs/lessons/01-memory-and-reference-counting.md); sibling of BUG-115 (in-flight callback references a freed owner) — mirror its pattern.
+- **Description**: With happy-eyeballs (`happy_eyeballs_delay > 0` and >1 address), `socket_connected_callback` freed `mcs` the moment the **first** connect succeeded (`if (mcs.pending == 0) mcs.deinit();`) **even while the `WaitTimer` was still pending**. Cancelling a `WaitTimer` in talyn does `ring.timeout_remove`, which still enqueues the timer callback (it runs on fire **or** on cancel). So the pending `schedule_remaining_connects_callback` (whose `user_data == mcs`) then ran and read the freed `mcs.succeeded` / `mcs.pending` → UAF. Under load (many concurrent connects, first connect winning before the 250 ms timer, plus mid-flight cancellation) this crashes; GC could also trip `MultiConnectState.traverse_raw` on the dangling `mcs`.
+- **Trigger**: Many concurrent `loop.create_connection` calls (the proxy's CONNECT path) where the first connect resolves before the happy-eyeballs timer fires. Reproduced deterministically with a talyn-only script that cancels ~half the futures immediately and floods connections; the proxy load test (`CONNECT example.com:443` bursts) also crashed here.
+- **Consequences**: Heap use-after-free; `SIGSEGV` inside `schedule_remaining_connects_callback` (`mov` against a freed `mcs`) and inside `MultiConnectState.traverse_raw` during Python GC.
+- **Resolution (2026-07-15)**: Made the timer callback the **sole teardown owner** of `mcs` whenever a timer is scheduled (BUG-115 pattern). Every `mcs.deinit()` in `socket_connected_callback` now defers while `timer_scheduled and !timer_fired`: `if (!(mcs.timer_scheduled and !mcs.timer_fired) and mcs.pending == 0) mcs.deinit();`. `schedule_remaining_connects_callback` now frees `mcs` on its terminal states (`data.cancelled() or mcs.succeeded`, when `pending == 0`) instead of early-returning and leaking it. Because `pending` is decremented at the top of *every* connect callback, exactly one freer exists in all cases — no double-free, no UAF.
+
 ---
 
 ## Summary
@@ -1195,8 +1206,8 @@ Bugs discovered and fixed during the June 12 reference-counting and performance 
 | **New (2026-06-08 pass 2)** | **6** | **6** | **0** |
 | **New (2026-06-11 deep audit)** | **6** | **6** | **0** |
 | **New (2026-06-12 audit/fixes)** | **3** | **3** | **0** |
-| **New (2026-07-15 external integration audit)** | **3** | **3** | **0** |
-| **Grand total** | **118** | **117** | **1 (1 FP)** |
+| **New (2026-07-15 external integration audit)** | **4** | **4** | **0** |
+| **Grand total** | **119** | **118** | **1 (1 FP)** |
 
 **Pass 1 bug breakdown (10 new, 9 fixed):**
 - 🔴 Critical: 3 (BUG-91 ✅, BUG-92 ✅, BUG-93 ✅)
@@ -1217,5 +1228,5 @@ Bugs discovered and fixed during the June 12 reference-counting and performance 
 - 🔴 Critical: 1 (BUG-115 ✅)
 - 🟠 High: 2 (BUG-114 ✅, BUG-116 ✅)
 
-**2026-07-15 external integration audit bug breakdown (3 new, 3 fixed):**
-- 🔴 Critical: 3 (BUG-117 ✅, BUG-118 ✅, BUG-119 ✅)
+**2026-07-15 external integration audit bug breakdown (4 new, 4 fixed):**
+- 🔴 Critical: 4 (BUG-117 ✅, BUG-118 ✅, BUG-119 ✅, BUG-120 ✅)

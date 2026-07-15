@@ -618,7 +618,17 @@ fn submit_connect_for_address(
 
 fn schedule_remaining_connects_callback(data: *const CallbackManager.CallbackData) !void {
     const mcs: *MultiConnectState = @alignCast(@ptrCast(data.user_data.?));
-    if (data.cancelled() or mcs.succeeded) return;
+    // When a happy-eyeballs timer is scheduled, this callback owns `mcs`
+    // teardown (BUG-120). The connect callbacks defer to us while
+    // `timer_scheduled and !timer_fired`, because cancelling the timer still
+    // enqueues this callback (it runs on fire OR on cancel). Freeing `mcs`
+    // here — while it is still alive — avoids the use-after-free where the
+    // success path freed `mcs` (when the first connect won) and this callback
+    // then ran on the freed `mcs`.
+    if (data.cancelled() or mcs.succeeded) {
+        if (mcs.pending == 0) mcs.deinit();
+        return;
+    }
 
     mcs.timer_fired = true;
 
@@ -815,7 +825,7 @@ fn socket_connected_callback(data: *const CallbackManager.CallbackData) !void {
 
     if (mcs.succeeded or data.cancelled()) {
         if (fd >= 0) _ = std.os.linux.close(fd);
-        if (mcs.pending == 0) mcs.deinit();
+        if (!(mcs.timer_scheduled and !mcs.timer_fired) and mcs.pending == 0) mcs.deinit();
         return;
     }
 
@@ -905,11 +915,11 @@ fn socket_connected_callback(data: *const CallbackManager.CallbackData) !void {
     }
 
     z_create_transport_and_set_future_result(&transport_creation_data) catch |err| {
-        if (mcs.pending == 0) mcs.deinit();
+        if (!(mcs.timer_scheduled and !mcs.timer_fired) and mcs.pending == 0) mcs.deinit();
         return set_future_exception(err, creation_data.future.?);
     };
     transport_creation_data.fd_created = false;
-    if (mcs.pending == 0) mcs.deinit();
+    if (!(mcs.timer_scheduled and !mcs.timer_fired) and mcs.pending == 0) mcs.deinit();
     return;
 }
 
