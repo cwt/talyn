@@ -241,6 +241,7 @@ class FuzzDatagramProtocol(asyncio.DatagramProtocol):
 async def test_datagram_received_exception_no_double_free():
     loop = asyncio.get_running_loop()
     errors = []
+
     def custom_exception_handler(l, context):
         errors.append(context)
 
@@ -266,4 +267,3 @@ async def test_datagram_received_exception_no_double_free():
         assert any(isinstance(e.get("exception"), ValueError) for e in errors)
     finally:
         loop.set_exception_handler(None)
-

@@ -142,4 +142,3 @@ def test_getaddrinfo_shorthand_ipv6() -> None:
         assert result[0][4][0] == "2001:db8::ff00:42:8329"
 
     talyn.run(main())
-

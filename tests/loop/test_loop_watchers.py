@@ -339,7 +339,9 @@ def test_remove_reader_while_callback_pending() -> None:
             nonlocal callback_called
             callback_called = True
             # Try removing the reader from inside the callback where blocking_task_id is 0
-            assert loop.remove_reader(r) is True, "Failed to remove reader from callback"
+            assert loop.remove_reader(r) is True, (
+                "Failed to remove reader from callback"
+            )
             loop.stop()
 
         loop.add_reader(r, reader_callback)

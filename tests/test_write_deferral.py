@@ -99,7 +99,7 @@ def test_write_deferral_with_drain():
 
 def test_write_abort_refcount_underflow():
     async def main():
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
 
         async def handle_client(reader, writer):
             writer.close()
@@ -129,6 +129,7 @@ def test_write_abort_refcount_underflow():
 
         # Trigger GC to verify no segfault/double-free occurs
         import gc
+
         gc.collect()
 
     talyn.run(main())
@@ -164,9 +165,7 @@ def test_stream_transport_gc():
     talyn.run(main())
 
     import gc
+
     gc.collect()
 
     assert not any(id(obj) == transport_id for obj in gc.get_objects())
-
-
-
