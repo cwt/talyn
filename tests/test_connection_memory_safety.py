@@ -21,13 +21,10 @@ catches double-free) or ``-Dasan`` (UBSan) and run ``scripts/memcheck.sh``.
 from __future__ import annotations
 
 import os
-import signal
-import socket
 import subprocess
 import sys
 import tempfile
 import textwrap
-import threading
 from pathlib import Path
 
 import pytest
@@ -35,7 +32,9 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
-def _run_repro_in_subprocess(script: str, timeout: int = 120) -> subprocess.CompletedProcess[str]:
+def _run_repro_in_subprocess(
+    script: str, timeout: int = 120
+) -> subprocess.CompletedProcess[str]:
     """Write ``script`` to a temp file and run it under the current interpreter.
 
     The subprocess inherits ``PYTHONPATH=.`` so the in-tree ``talyn`` package
@@ -47,7 +46,9 @@ def _run_repro_in_subprocess(script: str, timeout: int = 120) -> subprocess.Comp
     try:
         env = dict(os.environ)
         existing = env.get("PYTHONPATH", "")
-        env["PYTHONPATH"] = f"{REPO_ROOT}{os.pathsep}{existing}" if existing else str(REPO_ROOT)
+        env["PYTHONPATH"] = (
+            f"{REPO_ROOT}{os.pathsep}{existing}" if existing else str(REPO_ROOT)
+        )
         return subprocess.run(
             [sys.executable, script_path],
             cwd=str(REPO_ROOT),
@@ -65,9 +66,7 @@ def _assert_clean(result: subprocess.CompletedProcess[str], label: str) -> None:
         # A crash (SIGSEGV=139, SIGABRT=134) or any non-zero exit means the
         # regression is present. Surface the tail of the output for debugging.
         tail = "\n".join((result.stdout + result.stderr).splitlines()[-25:])
-        pytest.fail(
-            f"{label} crashed (returncode={result.returncode}).\n{tail}"
-        )
+        pytest.fail(f"{label} crashed (returncode={result.returncode}).\n{tail}")
     assert "DONE" in result.stdout, f"{label}: repro did not complete cleanly"
 
 

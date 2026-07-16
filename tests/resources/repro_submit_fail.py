@@ -5,6 +5,7 @@ Lowers RLIMIT_NOFILE so many concurrent connects fail at submit time, driving
 ``connection_data`` twice. Prints DONE on success, crashes if the regression
 is present. Run under a DebugAllocator / ASAN build for a precise report.
 """
+
 import asyncio
 import resource
 import socket
@@ -46,7 +47,9 @@ threading.Thread(target=serve, daemon=True).start()
 
 async def main() -> None:
     loop = asyncio.get_running_loop()
-    tasks = [loop.create_connection(asyncio.Protocol, "127.0.0.1", port) for _ in range(2000)]
+    tasks = [
+        loop.create_connection(asyncio.Protocol, "127.0.0.1", port) for _ in range(2000)
+    ]
     await asyncio.gather(*tasks, return_exceptions=True)
 
 

@@ -133,6 +133,22 @@ pub const PyUnicode_AsUTF8 = _c.PyUnicode_AsUTF8;
 pub const PyUnicode_AsUTF8AndSize = _c.PyUnicode_AsUTF8AndSize;
 pub const PyUnicode_CompareWithASCIIString = _c.PyUnicode_CompareWithASCIIString;
 
+// --- Type check helpers (inline functions in CPython) ---
+pub const PyLong_Check = _c.PyLong_Check;
+pub const PyBytes_Check = _c.PyBytes_Check;
+pub const PyByteArray_Check = _c.PyByteArray_Check;
+pub const PyUnicode_Check = _c.PyUnicode_Check;
+
+// --- Bytes / bytearray buffer accessors ---
+pub const PyBytes_AsString = _c.PyBytes_AsString;
+pub const PyBytes_Size = _c.PyBytes_Size;
+pub const PyBytes_GET_SIZE = _c.PyBytes_GET_SIZE;
+pub const PyByteArray_AsString = _c.PyByteArray_AsString;
+pub const PyByteArray_Size = _c.PyByteArray_Size;
+
+// --- Buffer protocol (PyBuffer_Release is declared later in the file) ---
+pub const PyMemoryView_FromObject = _c.PyMemoryView_FromObject;
+
 pub const PyCapsule_New = _c.PyCapsule_New;
 pub const PyCapsule_GetPointer = _c.PyCapsule_GetPointer;
 
@@ -286,7 +302,7 @@ inline fn type_hasfeature(arg_type: *Python.PyTypeObject, arg_feature: c_ulong) 
     const flags: c_ulong = blk: {
         if (builtin.single_threaded) {
             break :blk arg_type.tp_flags;
-        }else{
+        } else {
             break :blk @atomicLoad(c_ulong, &arg_type.tp_flags, .unordered);
         }
     };
@@ -412,7 +428,7 @@ pub fn py_visit(object: anytype, visit: Python.visitproc, arg: ?*anyopaque) c_in
                         }
                         continue :loop;
                     },
-                    else => continue :loop
+                    else => continue :loop,
                 }
             },
             .pointer => |data| blk: {
@@ -431,7 +447,7 @@ pub fn py_visit(object: anytype, visit: Python.visitproc, arg: ?*anyopaque) c_in
 
                 continue :loop;
             },
-            else => continue :loop
+            else => continue :loop,
         };
 
         if (value) |v| {
@@ -457,11 +473,11 @@ pub fn traverse_pyobject_callback(ptr: ?*anyopaque, visit_ptr: ?*anyopaque, arg:
 pub fn verify_gc_coverage(comptime T: type, comptime excluded: []const []const u8) void {
     const info = @typeInfo(T);
     const fields = if (info == .pointer) std.meta.fields(info.pointer.child) else std.meta.fields(T);
-    
+
     inline for (fields) |field| {
         const field_name = field.name;
         if (comptime std.mem.eql(u8, field_name, "ob_base")) continue;
-        
+
         var is_excluded = false;
         inline for (excluded) |ex| {
             if (comptime std.mem.eql(u8, field_name, ex)) {
@@ -475,7 +491,7 @@ pub fn verify_gc_coverage(comptime T: type, comptime excluded: []const []const u
                 const p_child = p_info.child;
                 if (p_child == Python.PyObject) continue;
                 if (@typeInfo(p_child) == .@"struct" and @hasField(p_child, "ob_base")) continue;
-                
+
                 @compileError("Field '" ++ field_name ++ "' in " ++ @typeName(T) ++ " is a pointer but not identified as PyObject-compatible. Add to excluded list if it doesn't hold Python references.");
             },
             .optional => |o_info| {
@@ -484,7 +500,7 @@ pub fn verify_gc_coverage(comptime T: type, comptime excluded: []const []const u
                     const p_child = @typeInfo(o_child).pointer.child;
                     if (p_child == Python.PyObject) continue;
                     if (@typeInfo(p_child) == .@"struct" and @hasField(p_child, "ob_base")) continue;
-                    
+
                     @compileError("Field '" ++ field_name ++ "' in " ++ @typeName(T) ++ " is an optional pointer but not identified as PyObject-compatible. Add to excluded list if it doesn't hold Python references.");
                 }
             },
@@ -495,11 +511,7 @@ pub fn verify_gc_coverage(comptime T: type, comptime excluded: []const []const u
     }
 }
 
-pub inline fn parse_vector_call_kwargs(
-    knames: ?*Python.PyObject, args_ptr: [*]?*Python.PyObject,
-    comptime names: []const []const u8,
-    py_objects: []const *?*Python.PyObject
-) !void {
+pub inline fn parse_vector_call_kwargs(knames: ?*Python.PyObject, args_ptr: [*]?*Python.PyObject, comptime names: []const []const u8, py_objects: []const *?*Python.PyObject) !void {
     const len = names.len;
     if (len != py_objects.len) {
         return error.InvalidLength;
@@ -512,7 +524,7 @@ pub inline fn parse_vector_call_kwargs(
         const args = args_ptr[0..@as(usize, @intCast(kwargs_len))];
         if (kwargs_len < 0) {
             return error.PythonError;
-        }else if (kwargs_len <= len) {
+        } else if (kwargs_len <= len) {
             loop: for (args, 0..) |arg, i| {
                 const key = Python.PyTuple_GetItem(kwargs, @intCast(i)) orelse return error.PythonError;
                 inline for (names, &_py_objects) |name, *obj| {
@@ -525,7 +537,7 @@ pub inline fn parse_vector_call_kwargs(
                 Python.raise_python_value_error("Invalid keyword argument\x00");
                 return error.PythonError;
             }
-        }else if (kwargs_len > len) {
+        } else if (kwargs_len > len) {
             Python.raise_python_value_error("Too many keyword arguments\x00");
             return error.PythonError;
         }
@@ -541,7 +553,7 @@ pub inline fn parse_vector_call_kwargs(
 pub inline fn raise_python_error(exception: *Python.PyObject, message: ?[:0]const u8) void {
     if (message) |msg| {
         Python.PyErr_SetString(exception, @ptrCast(msg));
-    }else{
+    } else {
         Python.PyErr_SetNone(exception);
     }
 }
@@ -558,9 +570,7 @@ pub inline fn raise_python_runtime_error(message: ?[:0]const u8) void {
     raise_python_error(Python.PyExc_RuntimeError.?, message);
 }
 
-pub inline fn initialize_object_fields(
-    object: anytype, comptime exclude_fields: []const []const u8
-) void {
+pub inline fn initialize_object_fields(object: anytype, comptime exclude_fields: []const []const u8) void {
     const fields = comptime std.meta.fields(@typeInfo(@TypeOf(object)).pointer.child);
     loop: inline for (fields) |field| {
         const field_name = field.name;
@@ -575,9 +585,7 @@ pub inline fn initialize_object_fields(
     }
 }
 
-pub fn deinitialize_object_fields(
-    object: anytype, comptime exclude_fields: []const []const u8
-) void {
+pub fn deinitialize_object_fields(object: anytype, comptime exclude_fields: []const []const u8) void {
     const fields = comptime std.meta.fields(@typeInfo(@TypeOf(object)).pointer.child);
     loop: inline for (fields) |field| {
         const field_name = field.name;
@@ -609,7 +617,7 @@ pub fn deinitialize_object_fields(
                 if (data.child == Python.PyObject) {
                     py_decref(@field(object, field_name));
                     @field(object, field_name) = undefined;
-                }else if (@typeInfo(data.child) == .@"struct") {
+                } else if (@typeInfo(data.child) == .@"struct") {
                     if (@hasField(data.child, "ob_base")) {
                         py_decref(@ptrCast(@field(object, field_name)));
                         continue :loop;
@@ -649,4 +657,3 @@ pub export fn _Py_atomic_load_uint32_relaxed(obj: *const u32) callconv(.c) u32 {
 }
 
 const Python = @This();
-

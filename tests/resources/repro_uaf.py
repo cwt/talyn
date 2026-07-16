@@ -6,6 +6,7 @@ before the timer fires; with the regression, the success path frees ``mcs``
 while the pending timer callback still references it. Prints DONE on success,
 crashes (SIGSEGV/SIGABRT) if the regression is present.
 """
+
 import asyncio
 import socket
 import threading
