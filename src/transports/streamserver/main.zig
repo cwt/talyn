@@ -180,7 +180,11 @@ fn accept_callback(data: *const CallbackManager.CallbackData) !void {
     var should_reenqueue = !server.closed and server.loop != null;
     defer {
         if (should_reenqueue and !server.accept_paused) {
-            enqueue_accept(server) catch {};
+            // A re-arm failure here (e.g. transient SQ-ring or blocking-task
+            // pool exhaustion) must NOT be silently dropped — otherwise the
+            // listening socket loses its watcher permanently and the proxy
+            // stops accepting new connections. Schedule a retry instead.
+            enqueue_accept(server) catch schedule_accept_retry(server);
         }
     }
 
@@ -208,13 +212,19 @@ fn accept_callback(data: *const CallbackManager.CallbackData) !void {
         // BUG-33: EMFILE/ENFILE mean we've hit the per-process or system-wide
         // file-descriptor limit. Re-enqueueing immediately would spin at 100%
         // CPU because the kernel keeps completing accept with the same error.
-        // Pause the accept loop; the server can be resumed via start_serving().
+        // Pause the accept loop, but schedule a retry so it automatically
+        // resumes once file descriptors become available again. Without this
+        // retry the listener is lost permanently (the proxy stops accepting).
         const emfile = @intFromEnum(std.os.linux.E.MFILE);
         const enfile = @intFromEnum(std.os.linux.E.NFILE);
         if (errno_val == emfile or errno_val == enfile) {
             server.accept_paused = true;
             should_reenqueue = false;
-            return error.SystemResources;
+            // Schedule a retry instead of propagating an error: the listener
+            // must not be lost, and surfacing this as a callback exception
+            // would spam the log (and, in the stock loop, terminate it).
+            schedule_accept_retry(server);
+            return;
         }
         return error.SystemResources;
     }
@@ -266,6 +276,55 @@ fn enqueue_accept(server: *StreamServerObject) !void {
         },
     });
     python_c.py_incref(@ptrCast(server));
+}
+
+/// Re-arm the accept watcher after a fatal (EMFILE/ENFILE) or transient
+/// re-arm failure. The callback is scheduled on the loop's timer so we do not
+/// busy-spin while descriptors are still exhausted; once `enqueue_accept`
+/// succeeds (descriptors freed) the listener resumes. If it still fails, we
+/// pause again and schedule another retry, guaranteeing eventual recovery.
+fn schedule_accept_retry(server: *StreamServerObject) void {
+    const loop_obj = @as(*Loop.Python.LoopObject, @ptrCast(server.loop.?));
+    const loop_data = utils.get_data_ptr(Loop, loop_obj);
+
+    const cb = CallbackManager.Callback{
+        .func = &accept_retry_callback,
+        .cleanup = null,
+        .data = .{ .user_data = server },
+    };
+
+    // Hold a reference for the lifetime of the pending timer callback.
+    python_c.py_incref(@ptrCast(server));
+    if (Loop.Scheduling.IO.queue(&loop_data.io, .{
+        .WaitTimer = .{
+            .callback = cb,
+            // Retry shortly; bounded rate, no spin.
+            .duration = .{ .sec = 0, .nsec = 250_000_000 },
+            .delay_type = .Relative,
+        },
+    })) |_| {
+        // Timer scheduled; reference is owned by the pending callback now.
+    } else |_| {
+        // Timer could not be queued; drop the held reference and leave the
+        // listener paused. This path is extremely unlikely (timers need no
+        // fds), but if it happens the listener stays paused.
+        python_c.py_decref(@ptrCast(server));
+    }
+}
+
+fn accept_retry_callback(data: *const CallbackManager.CallbackData) !void {
+    const server: *StreamServerObject = @alignCast(@ptrCast(data.user_data.?));
+    defer python_c.py_decref(@ptrCast(server));
+
+    if (data.cancelled() or server.closed or server.loop == null) return;
+
+    server.accept_paused = false;
+    enqueue_accept(server) catch {
+        // Still cannot accept (descriptors still exhausted, or ring busy).
+        // Re-pause and schedule another retry so we recover once resources
+        // become available.
+        schedule_accept_retry(server);
+    };
 }
 
 fn z_close_server(self: *StreamServerObject) !void {
