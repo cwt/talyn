@@ -114,11 +114,18 @@ get_timeout_cmd() {
     if command -v timeout >/dev/null 2>&1; then echo "timeout"; else echo "gtimeout"; fi
 }
 
+# Per-test timeouts are calibrated for native speed. Slow environments (e.g.
+# foreign-arch full-system emulation via QEMU TCG) can raise them:
+#   TALYN_TEST_TIMEOUT   pytest suite per python (default 600s)
+#   TALYN_STDLIB_TIMEOUT per standard-asyncio module (default 60s)
+TALYN_TEST_TIMEOUT="${TALYN_TEST_TIMEOUT:-600}"
+TALYN_STDLIB_TIMEOUT="${TALYN_STDLIB_TIMEOUT:-60}"
+
 run_tests() {
     local py="$1" label="$2" cmd=""
     printf "${YELLOW}[%s]${NC} Running tests...\n" "$label"
     if has_timeout; then
-        cmd="$(get_timeout_cmd) -k 5 600 $py"
+        cmd="$(get_timeout_cmd) -k 5 $TALYN_TEST_TIMEOUT $py"
     else
         cmd="$py"
     fi
@@ -176,7 +183,7 @@ run_std_tests() {
             # 60s per module — most modules finish in <5s, but test_subprocess
             # takes ~35s on a healthy run; a hanging module gets killed
             # quickly rather than blocking the whole suite.
-            cmd="$(get_timeout_cmd) -k 5 60 $py"
+            cmd="$(get_timeout_cmd) -k 5 $TALYN_STDLIB_TIMEOUT $py"
         else
             cmd="$py"
         fi
@@ -255,20 +262,28 @@ for ver in $SELECTED_PYTHONS; do
         gilflag="-Dpython-gil-disabled=true"
     fi
 
+    # Under `set -e`, a bare failing `zig build` exits the whole script before
+    # the $? check below. Guard it so a build failure is reported and the run
+    # continues to the remaining interpreters.
+    build_ok=true
     if $VERBOSE; then
-        zig build install -Doptimize=$OPTIMIZE_MODE \
+        if ! zig build install -Doptimize=$OPTIMIZE_MODE \
             -Dpython-include-dir="$inc" \
             -Dpython-lib-dir="$(dirname "$lib")" \
             -Dpython-lib="$lib" \
-            $gilflag
+            $gilflag; then
+            build_ok=false
+        fi
     else
-        zig build install -Doptimize=$OPTIMIZE_MODE \
+        if ! zig build install -Doptimize=$OPTIMIZE_MODE \
             -Dpython-include-dir="$inc" \
             -Dpython-lib-dir="$(dirname "$lib")" \
             -Dpython-lib="$lib" \
-            $gilflag >/dev/null 2>&1
+            $gilflag >/dev/null 2>&1; then
+            build_ok=false
+        fi
     fi
-    if [ $? -ne 0 ]; then
+    if [ "$build_ok" = false ]; then
         printf "${RED}[%s]${NC} BUILD FAILED\n" "$py"
         FAIL=$((FAIL + 1))
         continue
