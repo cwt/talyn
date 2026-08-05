@@ -27,17 +27,40 @@ find talyn/ -name '*.so' -delete 2>/dev/null || true
 PYTHONS=("python3.13" "python3.14" "python3.13t" "python3.14t")
 BUILT_COUNT=0
 
-# Detect architecture and set CPU and platform parameters
-ARCH="$(uname -m)"
-if [ "$ARCH" = "x86_64" ]; then
+# Detect the host architecture and the requested build architecture.
+# TALYN_WANT_ARCH overrides the target so cross-compiled wheels can be built
+# on a different host (e.g. aarch64 wheels on an x86_64 PC, via Zig's
+# native cross-compiler - no QEMU required).
+HOST_ARCH="$(uname -m)"
+if [ "$HOST_ARCH" = "arm64" ]; then
+    HOST_ARCH="aarch64"
+fi
+WANT_ARCH="${TALYN_WANT_ARCH:-$HOST_ARCH}"
+if [ "$WANT_ARCH" = "arm64" ]; then
+    WANT_ARCH="aarch64"
+fi
+
+if [ "$WANT_ARCH" = "x86_64" ]; then
     PLAT_NAME="manylinux_2_36_x86_64"
     TALYN_CPU="x86_64"
-elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+elif [ "$WANT_ARCH" = "aarch64" ]; then
     PLAT_NAME="manylinux_2_36_aarch64"
     TALYN_CPU="generic"
 else
-    printf "${RED}Unsupported build architecture: %s${NC}\n" "$ARCH"
+    printf "${RED}Unsupported build architecture: %s${NC}\n" "$WANT_ARCH"
     exit 1
+fi
+
+# For cross-compiles, tell setup.py the target triplet so Zig builds the
+# native extension for the foreign architecture. setup.py then skips linking
+# the host's libpython (wrong ELF architecture).
+CROSS_ENV=()
+if [ "$WANT_ARCH" != "$HOST_ARCH" ]; then
+    printf "${YELLOW}Cross-compiling %s wheels on a %s host (Zig native cross-compile, no QEMU)${NC}\n" "$WANT_ARCH" "$HOST_ARCH"
+    case "$WANT_ARCH" in
+        x86_64)  CROSS_ENV=(TALYN_TARGET="x86_64-linux-gnu") ;;
+        aarch64) CROSS_ENV=(TALYN_TARGET="aarch64-linux-gnu") ;;
+    esac
 fi
 
 # Clean old wheels for the current platform target to avoid blowing away
@@ -65,7 +88,7 @@ for py in "${PYTHONS[@]}"; do
     find . -name '*.pyc' -delete 2>/dev/null || true
 
     printf "${GREEN}[%s]${NC} Compiling and building binary wheel for %s...\n" "$py" "$PLAT_NAME"
-    if TALYN_OPTIMIZE=ReleaseFast TALYN_CPU="$TALYN_CPU" "$py" setup.py bdist_wheel --dist-dir "$DIST_DIR" --plat-name "$PLAT_NAME"; then
+    if env TALYN_OPTIMIZE=ReleaseFast TALYN_CPU="$TALYN_CPU" "${CROSS_ENV[@]}" "$py" setup.py bdist_wheel --dist-dir "$DIST_DIR" --plat-name "$PLAT_NAME"; then
         printf "${GREEN}[%s] Wheel successfully built!${NC}\n\n" "$py"
         BUILT_COUNT=$((BUILT_COUNT + 1))
     else

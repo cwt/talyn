@@ -202,6 +202,13 @@ pub fn parse_resolv_configuration(allocator: std.mem.Allocator, content: []const
                 }
 
                 const parsed_hostname = std.ascii.lowerString(search_tmp_buf, word);
+                // A lone "." search entry (e.g. systemd-resolved emits
+                // "search ." when no search domains are configured) means
+                // "root domain, no search suffix". Skip it instead of failing
+                // hostname validation.
+                if (std.mem.eql(u8, parsed_hostname, ".")) {
+                    continue;
+                }
                 if (!validate_hostname(parsed_hostname)) return error.InvalidConfiguration;
 
                 const host = try allocator.dupe(u8, parsed_hostname);

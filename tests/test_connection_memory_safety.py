@@ -33,13 +33,18 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _run_repro_in_subprocess(
-    script: str, timeout: int = 120
+    script: str, timeout: int = 0
 ) -> subprocess.CompletedProcess[str]:
     """Write ``script`` to a temp file and run it under the current interpreter.
 
     The subprocess inherits ``PYTHONPATH=.`` so the in-tree ``talyn`` package
     (and its freshly built extension) is importable. Returns the CompletedProcess.
+
+    The default 120s timeout can be raised for slow environments (e.g. aarch64
+    full-system emulation) via ``TALYN_REPRO_TIMEOUT``.
     """
+    if timeout <= 0:
+        timeout = int(os.environ.get("TALYN_REPRO_TIMEOUT", "120"))
     with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as f:
         f.write(script)
         script_path = f.name
