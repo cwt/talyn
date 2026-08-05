@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Builds all 8 wheels (x86_64 + aarch64 x 4 Python variants) natively on a
-# Linux host. Zig's native cross-compiler produces the foreign-architecture
+# Builds all wheels (x86_64 + aarch64 + riscv64 x 4 Python variants) natively
+# on a Linux host. Zig's native cross-compiler produces the foreign-architecture
 # wheels at full host speed - no QEMU, no containers.
 # The wheels are collected in ./dist, ready for publication to PyPI.
 
@@ -11,6 +11,9 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${ROOT_DIR}"
 
 HOST_ARCH="$(uname -m)"
+if [ "$HOST_ARCH" = "arm64" ]; then
+    HOST_ARCH="aarch64"
+fi
 
 # 1. Check prerequisites
 for tool in zig; do
@@ -37,21 +40,31 @@ mkdir -p dist
 echo "Building ${HOST_ARCH} wheels (native)..."
 bash scripts/build.sh
 
-# 4. Cross-compile the other architecture's wheels (Zig cross-compiler)
+# 4. Cross-compile the other architectures' wheels (Zig cross-compiler).
+# Default target set per host; override with TALYN_WANT_ARCHES (space-separated).
 case "$HOST_ARCH" in
     x86_64)
-        echo "Cross-compiling aarch64 wheels (Zig native cross-compile)..."
-        TALYN_WANT_ARCH=aarch64 bash scripts/build.sh
+        CROSS_ARCHES=(aarch64 riscv64)
         ;;
     aarch64)
-        echo "Cross-compiling x86_64 wheels (Zig native cross-compile)..."
-        TALYN_WANT_ARCH=x86_64 bash scripts/build.sh
+        CROSS_ARCHES=(x86_64 riscv64)
         ;;
     *)
         echo "Error: unsupported host architecture: $HOST_ARCH"
         exit 1
         ;;
 esac
+if [ -n "${TALYN_WANT_ARCHES:-}" ]; then
+    read -r -a CROSS_ARCHES <<< "$TALYN_WANT_ARCHES"
+fi
+
+for arch in "${CROSS_ARCHES[@]}"; do
+    if [ "$arch" = "$HOST_ARCH" ]; then
+        continue
+    fi
+    echo "Cross-compiling ${arch} wheels (Zig native cross-compile)..."
+    TALYN_WANT_ARCH="$arch" bash scripts/build.sh
+done
 
 echo "=========================================="
 echo "Built distributions in ./dist:"

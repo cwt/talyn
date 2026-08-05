@@ -46,6 +46,11 @@ if [ "$WANT_ARCH" = "x86_64" ]; then
 elif [ "$WANT_ARCH" = "aarch64" ]; then
     PLAT_NAME="manylinux_2_36_aarch64"
     TALYN_CPU="generic"
+elif [ "$WANT_ARCH" = "riscv64" ]; then
+    PLAT_NAME="manylinux_2_36_riscv64"
+    # rv64gc baseline (I, M, A, F, D, C). Zig has no literal "rv64gc" CPU
+    # model, so express it as feature additions over the generic rv64 model.
+    TALYN_CPU="generic_rv64+m+a+f+d+c"
 else
     printf "${RED}Unsupported build architecture: %s${NC}\n" "$WANT_ARCH"
     exit 1
@@ -60,6 +65,7 @@ if [ "$WANT_ARCH" != "$HOST_ARCH" ]; then
     case "$WANT_ARCH" in
         x86_64)  CROSS_ENV=(TALYN_TARGET="x86_64-linux-gnu") ;;
         aarch64) CROSS_ENV=(TALYN_TARGET="aarch64-linux-gnu") ;;
+        riscv64) CROSS_ENV=(TALYN_TARGET="riscv64-linux-gnu") ;;
     esac
 fi
 

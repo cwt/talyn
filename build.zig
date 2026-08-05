@@ -103,6 +103,14 @@ pub fn build(b: *std.Build) void {
         python_c_module.addCMacro("Py_GIL_DISABLED", "1");
     }
 
+    // Zig 0.16 translate-c does not emit __riscv_float_abi_double for riscv64
+    // targets (zig cc does), which makes glibc's riscv bits/setjmp.h fail with
+    // "unsupported FLEN". riscv64 Linux uses the LP64D (double-precision) ABI,
+    // so define the macro explicitly for riscv64.
+    if (target.result.cpu.arch == .riscv64) {
+        python_c_module.addCMacro("__riscv_float_abi_double", "1");
+    }
+
     python_c_module.addIncludePath(.{
         .cwd_relative = python_include_dir,
     });
