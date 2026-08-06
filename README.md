@@ -30,7 +30,13 @@ Talyn prioritizes **correctness, complete system safety, and high usability** ov
 
 > [!NOTE]
 > **Tested Platform Verification**:
-> Talyn has been built, compiled, and verified extensively under **Fedora 43-44** on an **x86_64** architecture equipped with an **Intel(R) Core(TM) Ultra 7 265** processor. Compatibility with other Linux distributions, older kernels, or alternative hardware architectures (e.g. AArch64) has not been verified yet. We welcome feedback and pull requests for other environments!
+> Talyn is primarily developed and tested under **Fedora 44** on an **x86_64**
+> architecture equipped with an **Intel(R) Core(TM) Ultra 7 265** processor.
+> Since v0.8.4 we also build and verify **aarch64** and **riscv64** wheels on
+> the same x86_64 host: the native extension is cross-compiled by Zig, and the
+> full test suite is executed inside Fedora 44 QEMU VMs (see
+> [Linux Development](#-linux-x86_64-development-build-cross-compile--multi-arch-testing)
+> below).
 
 ---
 
@@ -99,6 +105,96 @@ If you are developing on macOS (Apple Silicon) and need to build and publish whe
    ```bash
    ./scripts/publish.sh
    ```
+
+
+
+## 🖥️ Linux (x86_64) Development: Build, Cross-Compile & Multi-Arch Testing
+
+All of Talyn's development—including **aarch64** and **riscv64** wheels and full test-suite runs—can be done on an **x86_64 (Intel) Linux PC**, with no MacBook required:
+
+- **Building**: Zig is a native cross-compiler, so foreign-architecture wheels and the extension are produced at full host speed — no QEMU involved.
+- **Testing**: QEMU user-mode emulation (e.g. `podman run --platform linux/arm64`) **cannot** run Talyn, because `io_uring_setup` returns `ENOSYS` under user-mode emulation and Talyn requires `io_uring` with no fallback. Instead, we boot a **full-system Fedora 44 VM** per architecture, whose real guest kernel passes `io_uring` syscalls through to the host kernel.
+
+### 📋 1. Fedora 44 required packages
+
+Install Zig, all four Python interpreters with development headers, and the stdlib test suites:
+
+```bash
+sudo dnf install zig \
+    python3.13 python3.13-devel python3.13-freethreading \
+    python3.14 python3.14-devel python3.14-freethreading python3.14-freethreading-devel \
+    python3.13-test python3.14-test python3.14-freethreading-test
+```
+
+Bootstrap pip and the test tooling for each interpreter:
+
+```bash
+for p in python3.13 python3.13t python3.14 python3.14t; do
+    $p -m ensurepip --upgrade
+    $p -m pip install --user pytest pytest-asyncio
+done
+```
+
+For foreign-architecture VM testing (aarch64 / riscv64), additionally:
+
+```bash
+sudo dnf install qemu-system-aarch64 edk2-aarch64 qemu-system-riscv edk2-riscv64 \
+    genisoimage openssh-clients
+```
+
+> [!NOTE]
+> `python3.13-freethreading-test` is not packaged for Fedora 44; the stdlib asyncio modules for the free-threaded 3.13 build are skipped automatically by the test suite.
+
+### 🏗️ 2. Build all wheels natively (x86_64 + aarch64 + riscv64)
+
+```bash
+./scripts/linux/build_all_wheels.sh
+```
+
+Uses Zig's native cross-compiler — no QEMU needed. Produces **12 wheels** (4 Python variants × 3 architectures) in `./dist/`, ready for `./scripts/publish.sh`.
+
+### 🧪 3. Run the test suite natively (x86_64)
+
+```bash
+./scripts/test_all.sh                  # Debug build
+./scripts/test_all.sh --starburst      # ReleaseFast build
+```
+
+### 🖥️ 4. Test foreign-architecture wheels in VMs
+
+Boots a real Fedora 44 VM per architecture (first run downloads the ~0.5 GB cloud image to `~/.cache/talyn-*-vm/`) and runs the **full pytest suite against each installed wheel**:
+
+```bash
+./scripts/linux/run_tests.sh                     # aarch64 wheels
+./scripts/linux/run_tests.sh --arch=riscv64      # riscv64 wheels
+./scripts/linux/run_tests.sh --smoke             # quick import + event-loop smoke test only
+./scripts/linux/run_tests.sh --shutdown          # stop the VM after the run
+```
+
+### ⚡ 5. Run the full `test_all.sh` suite in VMs (cross-compiled, fast)
+
+`test_all.sh` normally compiles the extension *inside* the VM, which is slow under QEMU TCG. Instead, cross-compile the four extension variants **natively on the host** (the same build flags the wheels use) and run `test_all.sh --no-build` in the VM:
+
+```bash
+./scripts/linux/run_test_all.sh --arch=aarch64 --starburst
+./scripts/linux/run_test_all.sh --arch=riscv64 --starburst
+```
+
+Under heavy emulation, a stdlib module may exceed its per-module timeout (e.g. `test_subprocess` on riscv64); raise it with `TALYN_STDLIB_TIMEOUT=600` and the memory-safety repro timeout with `TALYN_REPRO_TIMEOUT=900`.
+
+### ⏱️ Measured timings
+
+`scripts/test_all.sh --starburst` (4 Python variants: pytest suite + stdlib asyncio suite):
+
+| Environment | Total time |
+|---|---|
+| x86_64 (native) | **8m28s** |
+| aarch64 VM, in-VM build | 42m33s |
+| riscv64 VM, in-VM build | 44m56s |
+| aarch64 VM, cross-built (`run_test_all.sh`) | **17m47s** |
+| riscv64 VM, cross-built (`run_test_all.sh`) | **24m48s** |
+
+All configurations pass the pytest suite; under QEMU TCG the emulated runs are ~5× slower than native, and the cross-built runs cut the in-VM build phase (~2.4× speedup on aarch64). An occasional stdlib-asyncio module may time out under heavy emulation (see note above about `TALYN_STDLIB_TIMEOUT`).
 
 
 
