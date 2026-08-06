@@ -1192,6 +1192,21 @@ Bugs discovered and fixed during the June 12 reference-counting and performance 
 
 ---
 
+## NEW BUGS (from 2026-08-06 v0.8.5 release audit)
+
+### BUG-121: Loop init fails with `error.InvalidConfiguration` when `/etc/resolv.conf` contains `search .`
+
+- **Status**: 🟢 Fixed (2026-08-06)
+- **Severity**: 🟠 High — `Loop()` construction raises `RuntimeError: InvalidConfiguration` on any host whose resolv.conf has a lone `.` search entry, making Talyn unusable there
+- **File**: `src/loop/dns/parsers.zig` — `parse_resolv_configuration` search-directive handling
+- **Description**: The `search` directive parser calls `validate_hostname()` on every search-domain token and returns `error.InvalidConfiguration` on failure. A lone `.` (the root domain) fails validation because splitting `.` on `.` yields an empty label (`label.len < 1`). systemd-resolved emits `search .` in its stub-resolv.conf when **no search domains are configured**, so the loop could not initialize on such machines.
+- **Trigger**: Any machine where `/etc/resolv.conf` contains `search .` (the default systemd-resolved stub output when no search domains are set — observed inside Fedora 44 aarch64/riscv64 QEMU VMs).
+- **Consequences**: `talyn.install()` succeeds but creating any event loop crashes with `RuntimeError: InvalidConfiguration` (surfaced from the native error set via `handle_zig_function_error`). Since the host's resolv.conf had real search domains, the bug was latent on the primary dev machine and only surfaced during foreign-arch VM validation.
+- **Resolution (2026-08-06)**: Skip a lone `.` search entry (root domain → no search suffix) instead of failing hostname validation.
+- **Regression coverage**: The full pytest suite (292 tests) passes on native x86_64 and inside aarch64/riscv64 Fedora 44 VMs whose resolv.conf emits `search .` (see `scripts/linux/run_tests.sh`, `scripts/linux/run_test_all.sh`).
+
+---
+
 ## Summary
 
 | Severity | Total | Fixed | Open |
@@ -1208,7 +1223,8 @@ Bugs discovered and fixed during the June 12 reference-counting and performance 
 | **New (2026-06-11 deep audit)** | **6** | **6** | **0** |
 | **New (2026-06-12 audit/fixes)** | **3** | **3** | **0** |
 | **New (2026-07-15 external integration audit)** | **4** | **4** | **0** |
-| **Grand total** | **119** | **118** | **1 (1 FP)** |
+| **New (2026-08-06 v0.8.5 release audit)** | **1** | **1** | **0** |
+| **Grand total** | **120** | **119** | **1 (1 FP)** |
 
 **Pass 1 bug breakdown (10 new, 9 fixed):**
 - 🔴 Critical: 3 (BUG-91 ✅, BUG-92 ✅, BUG-93 ✅)

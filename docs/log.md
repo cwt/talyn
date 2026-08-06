@@ -2,6 +2,14 @@
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
 
+## [2026-08-06] — v0.8.5 Release: Multi-Arch Linux Build/Test on x86_64, BUG-121 Fix
+- Fixed **BUG-121** (High): `/etc/resolv.conf` with a lone `search .` entry (systemd-resolved stub output when no search domains are configured) crashed loop init with `RuntimeError: InvalidConfiguration`. The search-directive parser now skips a `.` root-domain entry instead of failing hostname validation. See `docs/BUGS.md`.
+- Added **native multi-architecture wheel building on x86_64**: Zig's cross-compiler now produces `aarch64` and `riscv64` wheels at full host speed (`scripts/linux/build_all_wheels.sh`, 12 wheels total). `setup.py` detects cross-compilation (skips linking the host's `libpython`, rewrites the extension SOABI suffix for the target arch), and `build.zig` defines `__riscv_float_abi_double` for riscv64 (Zig 0.16 translate-c omission).
+- Added **foreign-architecture VM testing**: `scripts/linux/run_tests.sh` boots real Fedora 44 aarch64/riscv64 QEMU VMs and runs the full pytest suite against each installed wheel; `scripts/linux/run_test_all.sh` cross-compiles the extension natively and runs `test_all.sh --no-build` in the VM (~2.4x faster than an in-VM build). QEMU user-mode/containers cannot run Talyn (io_uring is `ENOSYS` under user-mode emulation).
+- Improved `scripts/test_all.sh`: per-test timeouts are overridable (`TALYN_TEST_TIMEOUT`, `TALYN_STDLIB_TIMEOUT`) and a failing build no longer silently aborts the suite under `set -e`.
+- Documented the full workflow in `README.md` (Fedora 44 prerequisites, build/cross-compile/test, measured timings) and `docs/development-journey.md` (v0.8.5 section).
+- Bumped version to **0.8.5** in `pyproject.toml` and `build.zig.zon`.
+
 ## [2026-07-07] — Bundle Initialization & OKF Conversion
 - Converted the entire `docs/` folder into a unified OKF Bundle (Option B).
 - Renamed `docs/todo.md` to `docs/index.md` to serve as the bundle's root index.

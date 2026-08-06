@@ -150,6 +150,23 @@ With the release of **v0.8.0**, we undertook a rigorous effort to transition the
 
 With these changes, Talyn has achieved its cleanest, most robust, and highest-security release yet.
 
+## Releasing v0.8.5: Native Multi-Arch Builds, Foreign-Arch VM Testing & A Portability Fix
+
+With the release of **v0.8.5**, we removed the last dependency on Apple Silicon for publishing and expanded verified platform coverage to three CPU architectures, all from the x86_64 development PC.
+
+1. **Native Multi-Architecture Wheel Building (Zig Cross-Compiler)**:
+   Previously, building `aarch64` (and emulated `x86_64`) wheels required Podman on a Mac. Because Talyn's native extension is built by Zig — a native cross-compiler — v0.8.5 builds **x86_64, aarch64 and riscv64** wheels directly on the Intel PC at full host speed, with no QEMU involved (`scripts/linux/build_all_wheels.sh`, 12 wheels: 4 Python variants × 3 architectures). This required:
+   - `setup.py` cross-build detection: when the Zig target differs from the running host, the host's `libpython` (wrong ELF architecture) is not linked — Linux CPython extension modules resolve the C API at import time — and the extension SOABI suffix is rewritten to the *guest* architecture so the wheel imports on the target machine.
+   - `build.zig`: define `__riscv_float_abi_double` for riscv64, working around a Zig 0.16 translate-c omission that otherwise breaks glibc's riscv `bits/setjmp.h` (`unsupported FLEN`). riscv64 wheels are pinned to the `rv64gc` baseline (`generic_rv64+m+a+f+d+c` = RV64IMAFDC), the de facto minimum for RISC-V Linux userspace.
+2. **Foreign-Architecture VM Testing (Full-System QEMU)**:
+   QEMU **user-mode** emulation (e.g. `podman run --platform linux/arm64`) cannot run Talyn: `io_uring_setup` returns `ENOSYS` under user-mode emulation and Talyn requires `io_uring` with no fallback. So v0.8.5 boots real **full-system Fedora 44 VMs** per architecture, whose guest kernel passes `io_uring` through to the host. `scripts/linux/run_tests.sh` runs the full pytest suite against each wheel; `scripts/linux/run_test_all.sh` cross-compiles the extension natively and runs the entire `test_all.sh` suite with `--no-build` (about **2.4x faster** than compiling in the VM). The full `--starburst` suite passes on all three architectures.
+3. **Portability Bug Fix (BUG-121)**:
+   Foreign-arch VM validation surfaced a latent bug: a `/etc/resolv.conf` containing a lone `search .` (the systemd-resolved stub output when no search domains are configured) crashed loop init with `error.InvalidConfiguration`. The DNS parser now treats `.` as the root domain (no search suffix) instead of rejecting it.
+4. **Test Infrastructure Hardening**:
+   `test_all.sh` per-test timeouts are now overridable (`TALYN_TEST_TIMEOUT`, `TALYN_STDLIB_TIMEOUT`) for slow emulated environments, and a failing Zig build no longer silently aborts the whole suite under `set -e`.
+
+The full development workflow — build, cross-compile, and test across **x86_64, aarch64, and riscv64** — is documented in [README.md](../README.md) and requires only an Intel Linux PC running Fedora 44.
+
 ---
 
 This project has been a long, humbling, and incredibly rewarding journey. From an inactive, crash-prone prototype to a stable, fully test-suite-passing event loop built with the help of a swarm of AI agents.
