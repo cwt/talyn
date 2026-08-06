@@ -24,6 +24,7 @@ FAIL=0
 OPTIMIZE_MODE="Debug"
 SELECTED_PYTHONS="3.13 3.14 3.13t 3.14t"
 VERBOSE=false
+NO_BUILD=false
 for arg in "$@"; do
     case "$arg" in
         --starburst|--releasefast)
@@ -31,6 +32,13 @@ for arg in "$@"; do
             ;;
         --safe)
             OPTIMIZE_MODE="ReleaseSafe"
+            ;;
+        --no-build)
+            # Use prebuilt talyn_zig*.so files already present in talyn/ and
+            # skip all Zig compilation (including `zig build test`). Intended
+            # for foreign-arch VMs where the extension was cross-compiled
+            # natively on the host (QEMU TCG compilation is very slow).
+            NO_BUILD=true
             ;;
         --verbose)
             VERBOSE=true
@@ -63,6 +71,7 @@ Options:
   --starburst           Build with ReleaseFast
   --releasefast         Alias for --starburst
   --safe                Build with ReleaseSafe
+  --no-build            Skip Zig compilation; use prebuilt talyn_zig*.so files
   --verbose             Show Zig compiler output on build/test failures
   -h, --help            Show this help
 EOF
@@ -83,7 +92,9 @@ ensure_test_cert() {
 
 clean() {
     rm -rf zig-out zig-cache .zig-cache .pytest_cache 2>/dev/null || true
-    rm -f talyn/talyn_zig*.so talyn/talyn_zig*.pyd 2>/dev/null || true
+    if [ "$NO_BUILD" != true ]; then
+        rm -f talyn/talyn_zig*.so talyn/talyn_zig*.pyd 2>/dev/null || true
+    fi
     find . -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
     find . -name '*.pyc' -delete 2>/dev/null || true
 }
@@ -250,54 +261,67 @@ for ver in $SELECTED_PYTHONS; do
         continue
     fi
 
-    printf "${YELLOW}[%s]${NC} Building...\n" "$py"
-
-    # Clean zig build artifacts between variants (different headers/libs)
-    rm -rf zig-out zig-cache .zig-cache .pytest_cache 2>/dev/null || true
-    find . -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
-    find . -name '*.pyc' -delete 2>/dev/null || true
-
-    gilflag=""
-    if is_free_threading "$py"; then
-        gilflag="-Dpython-gil-disabled=true"
-    fi
-
-    # Under `set -e`, a bare failing `zig build` exits the whole script before
-    # the $? check below. Guard it so a build failure is reported and the run
-    # continues to the remaining interpreters.
-    build_ok=true
-    if $VERBOSE; then
-        if ! zig build install -Doptimize=$OPTIMIZE_MODE \
-            -Dpython-include-dir="$inc" \
-            -Dpython-lib-dir="$(dirname "$lib")" \
-            -Dpython-lib="$lib" \
-            $gilflag; then
-            build_ok=false
+    if [ "$NO_BUILD" = true ]; then
+        ext_suffix=$("$py" -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))")
+        if [ ! -f "talyn/talyn_zig${ext_suffix}" ]; then
+            printf "${RED}[%s]${NC} prebuilt extension talyn/talyn_zig${ext_suffix} not found (--no-build)\n" "$py"
+            FAIL=$((FAIL + 1))
+            continue
         fi
     else
-        if ! zig build install -Doptimize=$OPTIMIZE_MODE \
-            -Dpython-include-dir="$inc" \
-            -Dpython-lib-dir="$(dirname "$lib")" \
-            -Dpython-lib="$lib" \
-            $gilflag >/dev/null 2>&1; then
-            build_ok=false
+        printf "${YELLOW}[%s]${NC} Building...\n" "$py"
+
+        # Clean zig build artifacts between variants (different headers/libs)
+        rm -rf zig-out zig-cache .zig-cache .pytest_cache 2>/dev/null || true
+        find . -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
+        find . -name '*.pyc' -delete 2>/dev/null || true
+
+        gilflag=""
+        if is_free_threading "$py"; then
+            gilflag="-Dpython-gil-disabled=true"
         fi
-    fi
-    if [ "$build_ok" = false ]; then
-        printf "${RED}[%s]${NC} BUILD FAILED\n" "$py"
-        FAIL=$((FAIL + 1))
-        continue
+
+        # Under `set -e`, a bare failing `zig build` exits the whole script before
+        # the $? check below. Guard it so a build failure is reported and the run
+        # continues to the remaining interpreters.
+        build_ok=true
+        if $VERBOSE; then
+            if ! zig build install -Doptimize=$OPTIMIZE_MODE \
+                -Dpython-include-dir="$inc" \
+                -Dpython-lib-dir="$(dirname "$lib")" \
+                -Dpython-lib="$lib" \
+                $gilflag; then
+                build_ok=false
+            fi
+        else
+            if ! zig build install -Doptimize=$OPTIMIZE_MODE \
+                -Dpython-include-dir="$inc" \
+                -Dpython-lib-dir="$(dirname "$lib")" \
+                -Dpython-lib="$lib" \
+                $gilflag >/dev/null 2>&1; then
+                build_ok=false
+            fi
+        fi
+        if [ "$build_ok" = false ]; then
+            printf "${RED}[%s]${NC} BUILD FAILED\n" "$py"
+            FAIL=$((FAIL + 1))
+            continue
+        fi
+
+        ext_suffix=$("$py" -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))")
+        cp zig-out/lib/libtalyn.so "talyn/talyn_zig${ext_suffix}"
+        rm -f talyn/talyn_zig.so
     fi
 
-    ext_suffix=$("$py" -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))")
-    cp zig-out/lib/libtalyn.so "talyn/talyn_zig${ext_suffix}"
-    rm -f talyn/talyn_zig.so
     run_tests "$py" "$py" || true
     run_std_tests "$py" "$py" || true
     echo ""
 done
 
 # ---- zig tests ----
+if [ "$NO_BUILD" = true ]; then
+    printf "${YELLOW}[zig]${NC} Skipping zig unit tests (--no-build)\n"
+else
 REF_INC="$(get_python_include python3.13)"
 REF_LIB="$(get_python_lib python3.13)"
 ZIG_OPTS="-Doptimize=$OPTIMIZE_MODE -Dpython-include-dir=$REF_INC -Dpython-lib-dir=$(dirname "$REF_LIB") -Dpython-lib=$REF_LIB"
@@ -329,6 +353,7 @@ else
     FAIL=$((FAIL + 1))
 fi
 rm -f "$ZIG_TEST_LOG"
+fi
 
 
 echo ""
