@@ -343,7 +343,7 @@ fn parse_individual_dns_result(full_data: []const u8, initial_offset: usize, res
                 ttl.* = r_ttl;
             },
             else => {
-                std.log.warn("parse_rr: unknown DNS RR type {t}", .{r_type});
+                std.log.warn("parse_rr: unknown DNS RR type {d}", .{r_type});
             },
         }
     }

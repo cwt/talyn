@@ -235,7 +235,7 @@ pub fn RingBuffer(comptime N: usize) type {
 
                 const callback = &self.callbacks[idx];
                 if (callback.data.traverse()) |t| {
-                    const vret = t(callback.data.user_data, @ptrCast(visit), arg);
+                    const vret = t(callback.data.user_data, @constCast(@ptrCast(visit)), arg);
                     if (vret != 0) return vret;
                 }
 
@@ -402,7 +402,7 @@ pub const DynamicRingBuffer = struct {
 
             const callback = &self.callbacks[idx];
             if (callback.data.traverse()) |t| {
-                const vret = t(callback.data.user_data, @ptrCast(visit), arg);
+                const vret = t(callback.data.user_data, @constCast(@ptrCast(visit)), arg);
                 if (vret != 0) return vret;
             }
 

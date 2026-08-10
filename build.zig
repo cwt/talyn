@@ -86,7 +86,8 @@ pub fn build(b: *std.Build) void {
 
     const python_lib_dir = b.option([]const u8, "python-lib-dir", "Path to python library directory");
 
-    const python_lib = b.option([]const u8, "python-lib", "Path to the python shared library");
+    const python_lib: ?[]const u8 = b.option([]const u8, "python-lib", "Path to the python shared library")
+        orelse "/usr/lib64/libpython3.14.so";
 
     const python_is_gil_disabled = b.option(bool, "python-gil-disabled", "Is GIL disabled")
         orelse false;
