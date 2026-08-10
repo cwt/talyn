@@ -8,7 +8,7 @@ const utils = @import("utils");
 const ChildWatcher = @This();
 
 loop: *Loop = undefined,
-handlers: std.AutoHashMap(i32, *ChildHandler) = undefined,
+handlers: std.AutoHashMapUnmanaged(i32, *ChildHandler) = .empty,
 
 const ChildHandler = struct {
     pid: i32,
@@ -20,7 +20,6 @@ const ChildHandler = struct {
 
 pub fn init(self: *ChildWatcher, loop: *Loop) !void {
     self.loop = loop;
-    self.handlers = std.AutoHashMap(i32, *ChildHandler).init(loop.allocator);
 }
 
 pub fn deinit(self: *ChildWatcher) void {
@@ -36,7 +35,7 @@ pub fn deinit(self: *ChildWatcher) void {
         python_c.py_decref(handler.callback);
         self.loop.allocator.destroy(handler);
     }
-    self.handlers.deinit();
+    self.handlers.deinit(self.loop.allocator);
 }
 
 pub fn add_child_handler(self: *ChildWatcher, pid: i32, callback: PyObject) !void {
@@ -74,7 +73,7 @@ pub fn add_child_handler(self: *ChildWatcher, pid: i32, callback: PyObject) !voi
         }
     });
 
-    try self.handlers.put(pid, handler);
+    try self.handlers.put(self.loop.allocator, pid, handler);
 }
 
 pub fn remove_child_handler(self: *ChildWatcher, pid: i32) bool {

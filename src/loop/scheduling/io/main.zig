@@ -561,7 +561,7 @@ pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
     self.fixed_file_free = .empty;
     try self.fixed_file_free.ensureTotalCapacity(allocator, nr_files - 1);
     for (1..nr_files) |i| {
-        self.fixed_file_free.appendAssumeCapacity(@intCast(i));
+        try self.fixed_file_free.append(allocator, @intCast(i));
     }
 
     self.ring.register_files_sparse(nr_files) catch {
@@ -591,7 +591,7 @@ pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
     // also defeat the errdefer above). See BUG-117.
     self.ring.register_buffers(self.buffer_pool.iovecs) catch |err| {
         self.buffers_registered = false;
-        std.log.warn("io_uring buffer registration failed; continuing with heap buffers: {}", .{err});
+        std.log.warn("io_uring buffer registration failed; continuing with heap buffers: {t}", .{err});
         return;
     };
     self.buffers_registered = true;
@@ -634,7 +634,7 @@ pub fn unregister_fixed_file(self: *IO, index: u16) void {
     // Now we log the error so it's visible — the slot leak is
     // still going to happen, but at least the operator sees it.
     self.fixed_file_free.append(self.loop.allocator, index) catch |err| {
-        std.log.err("unregister_fixed_file: failed to append slot {d} back to free list: {}", .{ index, err });
+        std.log.err("unregister_fixed_file: failed to append slot {d} back to free list: {t}", .{ index, err });
     };
 }
 
@@ -701,7 +701,7 @@ pub fn wakeup_eventfd(self: *IO) !void {
         switch (std.os.errno(ret)) {
             .INTR => continue,
             else => {
-                std.log.warn("eventfd write failed: {}", .{@tagName(std.os.errno(ret))});
+                std.log.warn("eventfd write failed: {s}", .{@tagName(std.os.errno(ret))});
                 return;
             },
         }
