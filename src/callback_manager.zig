@@ -528,7 +528,7 @@ pub fn release_ring_buffer(
 ) void {
     while (ring.next()) |callback| {
         callback.data.set_cancelled(true);
-        _ = callback.func(&callback.data) catch {};
+        callback.func(&callback.data) catch |err| std.log.err("callback error in release: {s}", .{@errorName(err)});
         ring.consume();
     }
 }
@@ -626,7 +626,7 @@ pub fn release_dynamic_ring_buffer(
 ) void {
     while (ring.next()) |callback| {
         callback.data.set_cancelled(true);
-        _ = callback.func(&callback.data) catch {};
+        callback.func(&callback.data) catch |err| std.log.err("callback error in release: {s}", .{@errorName(err)});
         ring.consume();
     }
 }

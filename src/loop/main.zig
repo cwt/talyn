@@ -73,10 +73,10 @@ pub fn init(self: *Loop, allocator: std.mem.Allocator, rtq_capacity: usize) !voi
     }
 
     var reader_watchers = try WatchersBTree.init(allocator);
-    errdefer reader_watchers.deinit() catch {};
+    errdefer reader_watchers.deinit() catch |err| std.log.warn("deinit failed: {s}", .{@errorName(err)});
 
     var writer_watchers = try WatchersBTree.init(allocator);
-    errdefer writer_watchers.deinit() catch {};
+    errdefer writer_watchers.deinit() catch |err| std.log.warn("deinit failed: {s}", .{@errorName(err)});
 
     const queues = try allocator.create([2]CallbackManager.DynamicRingBuffer);
     errdefer allocator.destroy(queues);
@@ -154,8 +154,8 @@ pub fn release(self: *Loop) void {
         while (self.reader_watchers.pop(&sig)) |_| {}
         while (self.writer_watchers.pop(&sig)) |_| {}
     }
-    self.reader_watchers.deinit() catch {};
-    self.writer_watchers.deinit() catch {};
+    self.reader_watchers.deinit() catch |err| std.log.warn("deinit failed: {s}", .{@errorName(err)});
+    self.writer_watchers.deinit() catch |err| std.log.warn("deinit failed: {s}", .{@errorName(err)});
 
     self.io.deinit();
 
@@ -230,7 +230,7 @@ pub fn remove_hook(self: *Loop, hook_type: HookType, node: HooksList.Node) void 
         .check => &self.check_hooks,
         .idle => &self.idle_hooks,
     };
-    hooks.unlink_node(node) catch {};
+    hooks.unlink_node(node) catch |err| std.log.warn("unlink_node failed: {s}", .{@errorName(err)});
     hooks.release_node(node);
 }
 

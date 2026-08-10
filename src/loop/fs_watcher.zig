@@ -27,7 +27,7 @@ pub fn init(self: *FSWatcher, loop: *Loop) !void {
 
 pub fn deinit(self: *FSWatcher) void {
     if (self.inotify_task_id > 0) {
-        _ = self.loop.io.queue(.{ .Cancel = self.inotify_task_id }) catch {};
+        _ = self.loop.io.queue(.{ .Cancel = self.inotify_task_id }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
         self.inotify_task_id = 0;
     }
     if (self.inotify_fd >= 0) {

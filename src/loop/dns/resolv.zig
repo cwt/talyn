@@ -114,7 +114,7 @@ const ServerQueryData = struct {
     pub inline fn cancel(self: *ServerQueryData) void {
         const socket_fd = self.socket_fd;
         if (socket_fd >= 0) {
-            _ = self.control_data.loop.io.queue(.{ .CancelByFd = @intCast(socket_fd) }) catch {};
+            _ = self.control_data.loop.io.queue(.{ .CancelByFd = @intCast(socket_fd) }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
             _ = std.os.linux.close(socket_fd);
             self.socket_fd = -1;
         }
@@ -186,7 +186,7 @@ pub const ControlData = struct {
             }
         }
 
-        self.loop.dns.pending_queries.unlink_node(self.node) catch {};
+        self.loop.dns.pending_queries.unlink_node(self.node) catch |err| std.log.warn("unlink_node failed: {s}", .{@errorName(err)});
         self.arena.deinit();
         self.allocator.destroy(self);
     }

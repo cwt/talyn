@@ -215,7 +215,7 @@ pub const BlockingTasksSet = struct {
 
     pub fn deinit(self: *BlockingTasksSet) void { 
         if (self.disattached) {
-            self.list.unlink_node(self.node) catch {};
+            self.list.unlink_node(self.node) catch |err| std.log.warn("unlink_node failed: {s}", .{@errorName(err)});
         }
 
         self.list.release_node(self.node);
@@ -570,7 +570,7 @@ pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
         self.fixed_files_enabled = false;
         return;
     };
-    errdefer self.ring.unregister_files() catch {};
+    errdefer self.ring.unregister_files() catch |err| std.log.warn("unregister_files failed: {s}", .{@errorName(err)});
 
     // Register eventfd at fixed file index 0
     self.fixed_file_table[0] = self.eventfd;
@@ -613,7 +613,7 @@ pub fn register_fixed_file(self: *IO, fd: std.posix.fd_t) !u16 {
     // all new connections. Added an errdefer to re-push the slot
     // on failure.
     self.fixed_file_table[index] = fd;
-    errdefer self.fixed_file_free.append(self.loop.allocator, index) catch {};
+    errdefer self.fixed_file_free.append(self.loop.allocator, index) catch |err| std.log.warn("append failed: {s}", .{@errorName(err)});
     try self.ring.register_files_update(index, self.fixed_file_table[index..index + 1]);
     return index;
 }
@@ -627,7 +627,7 @@ pub fn unregister_fixed_file(self: *IO, index: u16) void {
     std.debug.assert(index < self.fixed_file_table.len); // HARD-05
     self.fixed_file_table[index] = -1;
     if (self.ring.fd >= 0) {
-        self.ring.register_files_update(index, self.fixed_file_table[index..index + 1]) catch {};
+        self.ring.register_files_update(index, self.fixed_file_table[index..index + 1]) catch |err| std.log.warn("register_files_update failed: {s}", .{@errorName(err)});
     }
     // BUG-27: If the append fails (OOM), the slot index is
     // permanently lost. Previously this was a silent `catch {}`.
@@ -722,18 +722,18 @@ pub fn traverse(self: *const IO, visit: python_c.visitproc, arg: ?*anyopaque) c_
 }
 
 pub fn deinit(self: *IO) void {
-    self.set.cancel_all(self.loop) catch {};
+    self.set.cancel_all(self.loop) catch |err| std.log.warn("cancel_all failed: {s}", .{@errorName(err)});
     self.set.deinit();
     var node: ?BlockingTasksSetLinkedList.Node = self.busy_sets.first;
     while (node) |n| {
         node = n.next;
 
         const set = &n.data;
-        set.cancel_all(self.loop) catch {};
+        set.cancel_all(self.loop) catch |err| std.log.warn("cancel_all failed: {s}", .{@errorName(err)});
         set.deinit();
     }
     
-    self.ring.unregister_buffers() catch {};
+    self.ring.unregister_buffers() catch |err| std.log.warn("unregister_buffers failed: {s}", .{@errorName(err)});
     self.buffer_pool.deinit(self.busy_sets.allocator);
     @atomicStore([*]u8, &self.buffer_pool.buffer_memory.ptr, @ptrFromInt(0xDEADBEEF), .seq_cst); // HARD-04
 

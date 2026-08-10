@@ -251,11 +251,11 @@ pub fn deinit(self: *UnixSignals) void {
 
         _ = signal_c.signal(@as(i32, @intCast(sig)), signal_c.default_handler);
         value.data.set_cancelled(true);
-        Loop.Scheduling.Soon.dispatch_guaranteed_nonthreadsafe(loop, &value) catch {};
+        Loop.Scheduling.Soon.dispatch_guaranteed_nonthreadsafe(loop, &value) catch |err| std.log.warn("dispatch failed: {s}", .{@errorName(err)});
     }
 
     std.posix.sigprocmask(std.os.linux.SIG.UNBLOCK, &mask, null);
-    self.callbacks.deinit() catch {};
+    self.callbacks.deinit() catch |err| std.log.warn("deinit failed: {s}", .{@errorName(err)});
     self.fd = -1;
 }
 

@@ -27,7 +27,7 @@ pub fn deinit(self: *ChildWatcher) void {
     while (it.next()) |entry| {
         const handler = entry.value_ptr.*;
         if (handler.task_id != 0) {
-            _ = self.loop.io.queue(.{ .Cancel = handler.task_id }) catch {};
+            _ = self.loop.io.queue(.{ .Cancel = handler.task_id }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
         }
         if (handler.pidfd >= 0) {
             _ = std.os.linux.close(handler.pidfd);
@@ -80,7 +80,7 @@ pub fn remove_child_handler(self: *ChildWatcher, pid: i32) bool {
     if (self.handlers.fetchRemove(pid)) |entry| {
         const handler = entry.value;
         if (handler.task_id != 0) {
-            _ = self.loop.io.queue(.{ .Cancel = handler.task_id }) catch {};
+            _ = self.loop.io.queue(.{ .Cancel = handler.task_id }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
         }
         if (handler.pidfd >= 0) {
             _ = std.os.linux.close(handler.pidfd);

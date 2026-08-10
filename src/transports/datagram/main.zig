@@ -163,10 +163,10 @@ fn datagram_close(self: ?*DatagramTransportObject, _: ?PyObject) callconv(.c) ?P
             const loop_data = utils.get_data_ptr(Loop, loop_obj);
             if (loop_data.initialized) {
                 if (instance.read_task_id != 0) {
-                    _ = loop_data.io.queue(.{ .Cancel = instance.read_task_id }) catch {};
+                    _ = loop_data.io.queue(.{ .Cancel = instance.read_task_id }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
                 }
                 if (instance.fd >= 0) {
-                    _ = loop_data.io.queue(.{ .CancelByFd = @intCast(instance.fd) }) catch {};
+                    _ = loop_data.io.queue(.{ .CancelByFd = @intCast(instance.fd) }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
                 }
             }
         }

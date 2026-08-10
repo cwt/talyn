@@ -80,7 +80,7 @@ fn ensure_fd_limit() void {
     // pytest collection and IO fixed-file registration both need
     // more than the SSH-default 1024 fds.
     const rlim = std.posix.getrlimit(.NOFILE) catch return;
-    std.posix.setrlimit(.NOFILE, .{ .cur = 8256, .max = rlim.max }) catch {};
+    std.posix.setrlimit(.NOFILE, .{ .cur = 8256, .max = rlim.max }) catch |err| std.log.warn("setrlimit failed: {s}", .{@errorName(err)});
 }
 
 fn initialize_talyn_types() !void {

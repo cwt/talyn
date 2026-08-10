@@ -523,7 +523,7 @@ const MultiConnectState = struct {
         const allocator = loop_data.allocator;
 
         for (self.task_ids.items) |task_id| {
-            _ = Loop.Scheduling.IO.queue(&loop_data.io, .{ .Cancel = task_id }) catch {};
+            _ = Loop.Scheduling.IO.queue(&loop_data.io, .{ .Cancel = task_id }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
         }
         self.task_ids.deinit(allocator);
         if (self.exceptions) |e| python_c.py_decref(e);
@@ -897,7 +897,7 @@ fn socket_connected_callback(data: *const CallbackManager.CallbackData) !void {
     mcs.succeeded = true;
 
     for (mcs.task_ids.items) |task_id| {
-        _ = loop_data.io.queue(.{ .Cancel = task_id }) catch {};
+        _ = loop_data.io.queue(.{ .Cancel = task_id }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
     }
 
     var transport_creation_data = TransportCreationData{

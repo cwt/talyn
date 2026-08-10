@@ -33,8 +33,8 @@ pub fn close_transports(
 ) void {
     const closed_already = transport.closed;
 
-    read_transport.close() catch {};
-    write_transport.close() catch {};
+    read_transport.close() catch |err| std.log.warn("read_transport close failed: {s}", .{@errorName(err)});
+    write_transport.close() catch |err| std.log.warn("write_transport close failed: {s}", .{@errorName(err)});
 
     transport.is_reading = false;
 
@@ -163,8 +163,8 @@ pub fn transport_force_close(self: ?*StreamTransportObject, exc: ?PyObject) call
     const read_transport = utils.get_data_ptr2(ReadTransport, "read_transport", instance);
     const write_transport = utils.get_data_ptr2(WriteTransport, "write_transport", instance);
 
-    read_transport.force_close() catch {};
-    write_transport.force_close() catch {};
+    read_transport.force_close() catch |err| std.log.warn("read_transport force_close failed: {s}", .{@errorName(err)});
+    write_transport.force_close() catch |err| std.log.warn("write_transport force_close failed: {s}", .{@errorName(err)});
 
     instance.is_reading = false;
     instance.is_writing = false;
@@ -197,7 +197,7 @@ pub fn cancel_and_close_fd(self: *StreamTransportObject) void {
                 const has_pending = (read_transport.initialized and read_transport.blocking_task_id > 0) or
                                     (write_transport.initialized and write_transport.blocking_task_id > 0);
                 if (has_pending) {
-                    _ = loop_data.io.queue(.{ .CancelByFd = @intCast(fd) }) catch {};
+                    _ = loop_data.io.queue(.{ .CancelByFd = @intCast(fd) }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
                 }
             }
             if (self.fixed_file_index != 0) {
