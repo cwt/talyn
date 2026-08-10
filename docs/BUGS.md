@@ -1207,6 +1207,166 @@ Bugs discovered and fixed during the June 12 reference-counting and performance 
 
 ---
 
+## NEW BUGS (from 2026-08-14 Zig v0.16.0 compliance audit)
+
+Bugs and violations discovered by scanning the source tree against the Zig 0.16.0 development skill rules and the project's own architectural mandates.
+
+---
+
+### CRITICAL
+
+#### BUG-122: 34 `catch {}` silent error suppressions across the codebase
+
+- **Status**: ⚪ Open
+- **Severity**: 🔴 Critical (latent correctness / error-visibility defect)
+- **Files**: 14 files, 34 call sites (see table below)
+- **Lesson**: [Defensive §Lesson 57 — Silent Failure](docs/lessons/10-defensive-programming-and-code-quality.md); [Event Loop §Lesson 85 — Make `else` Branches Visible](docs/lessons/03-event-loop-lifecycle.md)
+- **Description**: The Zig 0.16.0 skill (Rule 6) explicitly forbids `catch {}` and `catch |_| {}`. Every such site silently swallows errors, making it impossible to diagnose failures at runtime. Some are in teardown/cleanup paths where best-effort is arguable, but many sit in hot paths and callback dispatch — those are unconditionally wrong.
+- **Consequences**: Error conditions are invisible. Kernel-level failures, allocation errors, and queue submission errors are silently discarded, making debugging extremely difficult and masking real failure modes.
+- **Full instance table**:
+
+| # | File | Line | Expression | Severity assessment |
+|---|------|------|------------|--------------------|
+| 1 | `src/callback_manager.zig` | 531 | `_ = callback.func(&callback.data) catch {};` | 🔴 **Critical** — release_ring_buffer swallows callback errors |
+| 2 | `src/callback_manager.zig` | 629 | `_ = callback.func(&callback.data) catch {};` | 🔴 **Critical** — release_dynamic_ring_buffer swallows callback errors |
+| 3 | `src/lib.zig` | 83 | `std.posix.setrlimit(.NOFILE, …) catch {};` | 🟡 Acceptable — best-effort fd-limit raise |
+| 4 | `src/loop/child_watcher.zig` | 31 | `_ = self.loop.io.queue(…) catch {};` | 🟡 Acceptable — fire-and-forget cancel during teardown |
+| 5 | `src/loop/child_watcher.zig` | 84 | `_ = self.loop.io.queue(…) catch {};` | 🟡 Acceptable — fire-and-forget cancel during teardown |
+| 6 | `src/loop/fs_watcher.zig` | 30 | `_ = self.loop.io.queue(…) catch {};` | 🟡 Acceptable — fire-and-forget cancel during teardown |
+| 7 | `src/loop/main.zig` | 76 | `errdefer reader_watchers.deinit() catch {};` | 🟡 Acceptable — cleanup-on-init-failure |
+| 8 | `src/loop/main.zig` | 79 | `errdefer writer_watchers.deinit() catch {};` | 🟡 Acceptable — cleanup-on-init-failure |
+| 9 | `src/loop/main.zig` | 157 | `self.reader_watchers.deinit() catch {};` | 🟡 Acceptable — best-effort teardown |
+| 10 | `src/loop/main.zig` | 158 | `self.writer_watchers.deinit() catch {};` | 🟡 Acceptable — best-effort teardown |
+| 11 | `src/loop/main.zig` | 233 | `hooks.unlink_node(node) catch {};` | 🟡 Acceptable — best-effort unlink |
+| 12 | `src/loop/unix_signals.zig` | 258 | `dispatch_guaranteed_nonthreadsafe(…) catch {};` | 🟡 Acceptable — fire-and-forget dispatch |
+| 13 | `src/loop/unix_signals.zig` | 262 | `self.callbacks.deinit() catch {};` | 🟡 Acceptable — best-effort teardown |
+| 14 | `src/utils/lock.zig` | 23 | `std.Thread.yield() catch {};` | 🟢 Low — spinlock internal |
+| 15 | `src/transports/datagram/main.zig` | 166 | `_ = loop_data.io.queue(…) catch {};` | 🟡 Acceptable — cancel on close |
+| 16 | `src/transports/datagram/main.zig` | 169 | `_ = loop_data.io.queue(…) catch {};` | 🟡 Acceptable — cancel on close |
+| 17 | `src/transports/stream/lifecycle.zig` | 36 | `read_transport.close() catch {};` | 🟡 Acceptable — best-effort close |
+| 18 | `src/transports/stream/lifecycle.zig` | 37 | `write_transport.close() catch {};` | 🟡 Acceptable — best-effort close |
+| 19 | `src/transports/stream/lifecycle.zig` | 166 | `read_transport.force_close() catch {};` | 🟡 Acceptable — best-effort force close |
+| 20 | `src/transports/stream/lifecycle.zig` | 167 | `write_transport.force_close() catch {};` | 🟡 Acceptable — best-effort force close |
+| 21 | `src/transports/stream/lifecycle.zig` | 200 | `_ = loop_data.io.queue(…) catch {};` | 🟡 Acceptable — cancel during teardown |
+| 22 | `src/transports/subprocess/transport.zig` | 163 | `_ = loop_data.io.queue(…) catch {};` | 🟡 Acceptable — cancel during teardown |
+| 23 | `src/loop/dns/resolv.zig` | 117 | `_ = self.control_data.loop.io.queue(…) catch {};` | 🟡 Acceptable — cancel during teardown |
+| 24 | `src/loop/dns/resolv.zig` | 189 | `self.loop.dns.pending_queries.unlink_node(…) catch {};` | 🟡 Acceptable — best-effort unlink |
+| 25 | `src/loop/scheduling/io/main.zig` | 218 | `self.list.unlink_node(…) catch {};` | 🟡 Acceptable — best-effort unlink |
+| 26 | `src/loop/scheduling/io/main.zig` | 573 | `errdefer self.ring.unregister_files() catch {};` | 🟡 Acceptable — cleanup-on-init-failure |
+| 27 | `src/loop/scheduling/io/main.zig` | 616 | `errdefer self.fixed_file_free.append(…) catch {};` | 🟡 Acceptable — cleanup-on-init-failure |
+| 28 | `src/loop/scheduling/io/main.zig` | 630 | `self.ring.register_files_update(…) catch {};` | 🟡 Acceptable — best-effort update |
+| 29 | `src/loop/scheduling/io/main.zig` | 725 | `self.set.cancel_all(self.loop) catch {};` | 🟡 Acceptable — best-effort cancel-all on teardown |
+| 30 | `src/loop/scheduling/io/main.zig` | 732 | `set.cancel_all(self.loop) catch {};` | 🟡 Acceptable — best-effort cancel-all on teardown |
+| 31 | `src/loop/scheduling/io/main.zig` | 736 | `self.ring.unregister_buffers() catch {};` | 🟡 Acceptable — best-effort teardown |
+| 32 | `src/loop/python/io/client/create_connection.zig` | 526 | `_ = Loop.Scheduling.IO.queue(…) catch {};` | 🟡 Acceptable — cancel during teardown |
+| 33 | `src/loop/python/io/client/create_connection.zig` | 900 | `_ = loop_data.io.queue(…) catch {};` | 🟡 Acceptable — cancel during teardown |
+
+- **Fix**: Replace all **critical** instances (#1, #2) with proper error handling (log + return). The **acceptable** instances (#3–33) should at minimum use `std.log.warn` to make the silent failure visible. Even in teardown paths, silently swallowing errors makes debugging harder. Consider replacing all with `catch |err| std.log.warn("{s}: {}", .{ @errorName(err), ... })`.
+
+---
+
+### HIGH
+
+#### BUG-123: `@cImport` used in `src/loop/unix_signals.zig`
+
+- **Status**: ⚪ Open
+- **Severity**: 🟠 High — direct Zig 0.16.0 rule violation (Rule 7)
+- **File**: `src/loop/unix_signals.zig:11`
+- **Lesson**: [Zig §Rule 7 — No `@cImport`](docs/lessons/08-zig-specific-patterns.md)
+- **Description**: `const c = @cImport({ @cInclude("signal.h"); });` is used to call `c.signal()` and `c.siginterrupt()`. The skill explicitly requires `b.addTranslateC` in `build.zig` instead. (Note: `src/python_c.zig:1` also uses `@cImport` — this is a binding-layer file and arguably unavoidable; the `unix_signals.zig` one is a direct violation.)
+- **Trigger**: Any signal handling code path.
+- **Consequences**: Non-portable; `@cImport` cannot be cross-compiled; violates Zig 0.16.0 best practices.
+- **Fix**: Add `addTranslateC` for `signal.h` in `build.zig` and import via `@import("c")`.
+
+#### BUG-124: Wrong format specifiers `{}` for errors and enums in log messages
+
+- **Status**: ⚪ Open
+- **Severity**: 🟠 High — Zig 0.16.0 rule violation (Rule 9)
+- **Files**: 5 instances across 4 files
+- **Lesson**: [Zig §Rule 9 — Print strings with `{s}`, ints with `{d}`, errors/enums with `{t}`](docs/lessons/08-zig-specific-patterns.md)
+- **Description**: Five `std.log.warn` / `std.log.err` calls use `{}` for error or enum values instead of `{t}`. In Zig 0.16.0, `{}` on an error type may compile but produces incorrect/misleading output. `{}` on an enum produces the integer value, not the name.
+- **Full instance table**:
+
+| # | File | Line | Code | Value type |
+|---|------|------|------|------------|
+| 1 | `src/loop/scheduling/io/main.zig` | 594 | `std.log.warn("…: {}", .{err});` | `anyerror` → `{t}` |
+| 2 | `src/loop/scheduling/io/main.zig` | 637 | `std.log.err("…: {}", .{ index, err });` | `anyerror` → `{t}` |
+| 3 | `src/loop/dns/resolv.zig` | 346 | `std.log.warn("…: {}", .{r_type});` | `u16` enum → `{t}` |
+| 4 | `src/utils/address.zig` | 73 | `std.log.warn("…: {}", .{self.any.family});` | `i32` enum → `{t}` |
+| 5 | `src/loop/scheduling/io/main.zig` | 704 | `std.log.warn("…: {}", .{@tagName(std.os.errno(ret))});` | string → `{s}` |
+
+- **Fix**: Replace `{}` with `{t}` for all error/enum values; replace `{}` with `{s}` for the `@tagName` string.
+
+#### BUG-125: `std.Thread.yield()` usage in spinlock
+
+- **Status**: ⚪ Open
+- **Severity**: 🟠 High — Zig 0.16.0 rule violation (Rule 6 / old API)
+- **File**: `src/utils/lock.zig:23`
+- **Lesson**: [Zig §Rule 6 — No silent errors](docs/lessons/08-zig-specific-patterns.md)
+- **Description**: `std.Thread.yield() catch {};` uses the old `std.Thread` API and silently swallows the yield error. In Zig 0.16.0, `std.Thread.yield()` is the correct function but the `catch {}` is a rule violation.
+- **Fix**: Replace with `std.Thread.yield() catch {};` → just `std.Thread.yield();` (the function returns `void` in 0.16) or `std.Thread.yield() catch {};` → `std.Thread.yield() catch unreachable;` if yield must always succeed.
+
+#### BUG-126: `std.AutoHashMap` (managed) instead of `std.AutoHashMapUnmanaged` in `child_watcher.zig`
+
+- **Status**: ⚪ Open
+- **Severity**: 🟠 High — Zig 0.16.0 rule violation (Rule 4)
+- **File**: `src/loop/child_watcher.zig:13, 28, 34`
+- **Lesson**: [Zig §Rule 4 — Empty list/map must use `.empty`](docs/lessons/08-zig-specific-patterns.md)
+- **Description**: `handlers: std.AutoHashMap(i32, *ChildHandler) = undefined` is the managed container style. In 0.16, all containers must use the unmanaged style: `.empty` + pass allocator to every method + `defer .deinit(gpa)`. The managed style is removed in 0.16.
+- **Trigger**: Every child watcher operation (add/remove handler).
+- **Consequences**: Compile error in Zig 0.16.0 (`.init(allocator)` constructor no longer exists on managed containers); even if it compiles, the API surface is wrong.
+- **Fix**: Change to `std.AutoHashMapUnmanaged(i32, *ChildHandler) = .empty;` and update all `put`/`fetchRemove`/`deinit` calls to pass `gpa`.
+
+---
+
+### MEDIUM
+
+#### BUG-127: `appendAssumeCapacity` used in loop init path
+
+- **Status**: ⚪ Open
+- **Severity**: 🟡 Medium — non-idiomatic 0.16 pattern
+- **File**: `src/loop/scheduling/io/main.zig:564`
+- **Lesson**: [Zig §Rule 4 — Unmanaged container methods](docs/lessons/08-zig-specific-patterns.md)
+- **Description**: `self.fixed_file_free.appendAssumeCapacity(@intCast(i))` is a managed-container method. In 0.16 unmanaged style, use `try self.fixed_file_free.append(gpa, @intCast(i))` after calling `ensureTotalCapacity`.
+- **Fix**: Replace with `try self.fixed_file_free.append(gpa, @intCast(i));`
+
+#### BUG-128: Unit tests fail to link — libpython symbols unresolved
+
+- **Status**: ⚪ Open
+- **Severity**: 🟡 Medium — build infrastructure gap
+- **File**: `build.zig` (test module setup)
+- **Description**: `zig build test` produces 28 undefined symbol errors (`PyExc_RuntimeError`, `PyErr_Occurred`, `Py_IncRef`, `Py_DecRef`, `PySys_WriteStderr`, etc.) because the test modules are not linked against libpython. The production build (`zig build`) succeeds because `src/lib.zig` links the Python shared library via `addObjectFile`. The test modules (`talyn`, `utils`, `callback_manager`) are missing this link step.
+- **Trigger**: Running `zig build test`.
+- **Consequences**: No unit tests can be executed; `zig build test` always fails with link errors. The 16 Zig tests that do pass are only the ones compiled as part of the `zig build` target (lib.zig), not the module-specific unit tests.
+- **Fix**: Add `addObjectFile(.{ .cwd_relative = python_lib })` and `linker_allow_shlib_undefined = true` to each test module in `build.zig` (mirror the existing pattern for the production build).
+
+#### BUG-129: `py_xdecref` still has the `0xFFFF` heuristic (partial BUG-67 regression)
+
+- **Status**: ⚪ Open
+- **Severity**: 🟡 Medium — latent refcount bug
+- **File**: `src/python_c.zig:391-395`
+- **Lesson**: [Memory §BUG-67 (partial fix)](docs/BUGS.md)
+- **Description**: BUG-67 fixed `py_incref` and `py_decref` to always call the real C function, but `py_xdecref` (the optional variant) still has the `if (@intFromPtr(o) > 0xFFFF)` guard. This means `py_xdecref(None)`, `py_xdecref(True)`, `py_xdecref(False)` silently skips the decref, causing a reference leak for these singleton objects when passed through the optional path. `py_xincref` does NOT have this guard (it calls `Py_IncRef` unconditionally), so incref/decref are asymmetric for singletons.
+- **Trigger**: Any code path that calls `py_xdecref` with a singleton PyObject (None, True, False, small ints).
+- **Consequences**: Reference leak for singleton objects; refcount asymmetry between incref and decref paths.
+- **Fix**: Remove the `@intFromPtr(o) > 0xFFFF` guard from `py_xdecref`, matching the BUG-67 fix for `py_decref`.
+
+---
+
+### LOW
+
+#### BUG-130: `@constCast` on visit-proc pointer in GC traverse paths
+
+- **Status**: ⚪ Open
+- **Severity**: 🟢 Low — latent UB risk under aggressive optimization
+- **Files**: `src/callback_manager.zig:238, 405`; `src/loop/scheduling/io/main.zig:311`; `src/loop/unix_signals.zig:275`
+- **Description**: In four GC traverse methods, `visit` (typed `?*anyopaque`) is cast through `@constCast(@ptrCast(visit))` before being passed to the C `visitproc` callback. The `@constCast` is needed because the visitor function pointer type doesn't match exactly, but it creates a const-correctness hole. Under `ReleaseFast`, LLVM may optimize based on the const assumption and produce incorrect behavior if the visitor mutates state.
+- **Trigger**: GC traversal in free-threaded builds under `ReleaseFast`.
+- **Consequences**: Potential UB if the visitor function writes through the arg pointer.
+- **Fix**: Use a proper C-compatible wrapper function instead of `@constCast(@ptrCast(...))`.
+
+---
+
 ## Summary
 
 | Severity | Total | Fixed | Open |
@@ -1224,7 +1384,8 @@ Bugs discovered and fixed during the June 12 reference-counting and performance 
 | **New (2026-06-12 audit/fixes)** | **3** | **3** | **0** |
 | **New (2026-07-15 external integration audit)** | **4** | **4** | **0** |
 | **New (2026-08-06 v0.8.5 release audit)** | **1** | **1** | **0** |
-| **Grand total** | **120** | **119** | **1 (1 FP)** |
+| **New (2026-08-14 Zig 0.16.0 compliance)** | **8** | **0** | **8** |
+| **Grand total** | **128** | **119** | **9 (1 FP)** |
 
 **Pass 1 bug breakdown (10 new, 9 fixed):**
 - 🔴 Critical: 3 (BUG-91 ✅, BUG-92 ✅, BUG-93 ✅)
@@ -1247,3 +1408,9 @@ Bugs discovered and fixed during the June 12 reference-counting and performance 
 
 **2026-07-15 external integration audit bug breakdown (4 new, 4 fixed):**
 - 🔴 Critical: 4 (BUG-117 ✅, BUG-118 ✅, BUG-119 ✅, BUG-120 ✅)
+
+**2026-08-14 Zig 0.16.0 compliance audit bug breakdown (8 new, 0 fixed):**
+- 🔴 Critical: 1 (BUG-122 ⚪ — 34 `catch {}` instances, 2 critical in callback release paths)
+- 🟠 High: 4 (BUG-123 ⚪ `@cImport`, BUG-124 ⚪ wrong format specifiers, BUG-125 ⚪ `std.Thread.yield`, BUG-126 ⚪ managed `AutoHashMap`)
+- 🟡 Medium: 2 (BUG-127 ⚪ `appendAssumeCapacity`, BUG-128 ⚪ test link failure, BUG-129 ⚪ `py_xdecref` heuristic)
+- 🟢 Low: 1 (BUG-130 ⚪ `@constCast` on visit-proc in traverse paths)
