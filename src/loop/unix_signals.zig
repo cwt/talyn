@@ -3,14 +3,10 @@ const std = @import("std");
 
 const python_c = @import("python_c");
 const utils = @import("utils");
+const signal_c = @import("signal_c");
 
 const Loop = @import("main.zig");
 const CallbackManager = @import("callback_manager");
-
-
-const c = @cImport({
-    @cInclude("signal.h");
-});
 
 const CallbacksBTree = utils.BTree(u6, CallbackManager.Callback, 3);
 
@@ -23,7 +19,7 @@ blocking_task_id: usize = 0,
 
 signalfd_info: std.os.linux.signalfd_siginfo = undefined,
 
-fn dummy_signal_handler(_: c_int) callconv(.c) void {
+fn dummy_signal_handler(_: i32) callconv(.c) void {
     // std.log.info("Dummy signal handler", .{});
 }
 
@@ -139,12 +135,12 @@ fn enqueue_signal_fd(self: *UnixSignals) !void {
 
 pub fn link(self: *UnixSignals, sig: std.os.linux.SIG, callback: CallbackManager.Callback) !void {
     // When the user create a new thread, we need to avoid that python catch the signal
-    _ = c.signal(@as(c_int, @intCast(@intFromEnum(sig))), &dummy_signal_handler);
+    _ = signal_c.signal(@as(i32, @intCast(@intFromEnum(sig))), &dummy_signal_handler);
 
     const mask = &self.mask;
     std.posix.sigaddset(mask, sig);
     std.posix.sigprocmask(std.os.linux.SIG.BLOCK, mask, null);
-    _ = c.siginterrupt(@as(c_int, @intCast(@intFromEnum(sig))), 0);
+    _ = signal_c.siginterrupt(@as(i32, @intCast(@intFromEnum(sig))), 0);
 
     self.fd = try std.posix.signalfd(self.fd, mask, 0);
     try self.enqueue_signal_fd();
@@ -182,8 +178,8 @@ pub fn unlink(self: *UnixSignals, sig: std.os.linux.SIG) !void {
 
             std.posix.sigdelset(&self.mask, sig);
             self.fd = try std.posix.signalfd(self.fd, &self.mask, 0);
-            _ = c.signal(@as(c_int, @intCast(@intFromEnum(sig))), c.SIG_DFL);
-            _ = c.siginterrupt(@as(c_int, @intCast(@intFromEnum(sig))), 1);
+            _ = signal_c.signal(@as(i32, @intCast(@intFromEnum(sig))), signal_c.default_handler);
+            _ = signal_c.siginterrupt(@as(i32, @intCast(@intFromEnum(sig))), 1);
             return;
         },
         else => {
@@ -207,8 +203,8 @@ pub fn unlink(self: *UnixSignals, sig: std.os.linux.SIG) !void {
 
             std.posix.sigdelset(&self.mask, sig);
             self.fd = try std.posix.signalfd(self.fd, &self.mask, 0);
-        _ = c.signal(@as(c_int, @intCast(@intFromEnum(sig))), c.SIG_DFL);
-            _ = c.siginterrupt(@as(c_int, @intCast(@intFromEnum(sig))), 1);
+        _ = signal_c.signal(@as(i32, @intCast(@intFromEnum(sig))), signal_c.default_handler);
+            _ = signal_c.siginterrupt(@as(i32, @intCast(@intFromEnum(sig))), 1);
             return;
         }
     };
@@ -253,7 +249,7 @@ pub fn deinit(self: *UnixSignals) void {
         var value = self.callbacks.pop(&sig) orelse break;
         std.posix.sigaddset(&mask, @as(std.os.linux.SIG, @enumFromInt(sig)));
 
-        _ = c.signal(@as(c_int, @intCast(sig)), c.SIG_DFL);
+        _ = signal_c.signal(@as(i32, @intCast(sig)), signal_c.default_handler);
         value.data.set_cancelled(true);
         Loop.Scheduling.Soon.dispatch_guaranteed_nonthreadsafe(loop, &value) catch {};
     }
@@ -263,12 +259,12 @@ pub fn deinit(self: *UnixSignals) void {
     self.fd = -1;
 }
 
-pub fn traverse(self: *const UnixSignals, visit: python_c.visitproc, arg: ?*anyopaque) c_int {
+pub fn traverse(self: *const UnixSignals, visit: python_c.visitproc, arg: ?*anyopaque) i32 {
     if (self.fd < 0) return 0;
     return traverse_btree_node(self.callbacks.parent, visit, arg);
 }
 
-fn traverse_btree_node(node: anytype, visit: python_c.visitproc, arg: ?*anyopaque) c_int {
+fn traverse_btree_node(node: anytype, visit: python_c.visitproc, arg: ?*anyopaque) i32 {
     const nkeys = node.nkeys;
     for (node.values[0..nkeys]) |*cb| {
         if (cb.data.traverse()) |t| {

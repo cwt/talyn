@@ -92,6 +92,14 @@ pub fn build(b: *std.Build) void {
     const python_is_gil_disabled = b.option(bool, "python-gil-disabled", "Is GIL disabled")
         orelse false;
 
+    // BUG-123: Use addTranslateC for signal.h instead of @cImport in unix_signals.zig.
+    const signal_c_module = b.addModule("signal_c", .{
+        .root_source_file = b.path("c_imports/signal_c.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+
     const python_c_module = b.addModule("python_c", .{
         .root_source_file = b.path("src/python_c.zig"),
         .target = target,
@@ -137,6 +145,7 @@ pub fn build(b: *std.Build) void {
     });
     utils_module.addImport("python_c", python_c_module);
     utils_module.addImport("build_options", build_options_module);
+    utils_module.addImport("signal_c", signal_c_module);
 
     const callback_manager_module = b.addModule("callback_manager", .{
         .root_source_file = b.path("src/callback_manager.zig"),
@@ -156,9 +165,10 @@ pub fn build(b: *std.Build) void {
     talyn_module.addImport("python_c", python_c_module);
     talyn_module.addImport("utils", utils_module);
     talyn_module.addImport("callback_manager", callback_manager_module);
+    talyn_module.addImport("signal_c", signal_c_module);
 
-    const modules_name = .{ "talyn", "python_c", "utils" };
-    const modules = .{ talyn_module, python_c_module, utils_module };
+    const modules_name = .{ "talyn", "python_c", "utils", "signal_c" };
+    const modules = .{ talyn_module, python_c_module, utils_module, signal_c_module };
     const install_step = b.getInstallStep();
 
     create_build_step(
@@ -183,6 +193,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "callback_manager", .module = callback_manager_module },
                 .{ .name = "python_c", .module = python_c_module },
                 .{ .name = "utils", .module = utils_module },
+                .{ .name = "signal_c", .module = signal_c_module },
             },
         }),
     });
