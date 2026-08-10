@@ -32,7 +32,7 @@ Talyn prioritizes **correctness, complete system safety, and high usability** ov
 > **Tested Platform Verification**:
 > Talyn is primarily developed and tested under **Fedora 44** on an **x86_64**
 > architecture equipped with an **Intel(R) Core(TM) Ultra 7 265** processor.
-> Since v0.8.6 we also build and verify **aarch64** and **riscv64** wheels on
+> Since v0.8.7 we also build and verify **aarch64** and **riscv64** wheels on
 > the same x86_64 host: the native extension is cross-compiled by Zig, and the
 > full test suite is executed inside Fedora 44 QEMU VMs (see
 > [Linux Development](#-linux-x86_64-development-build-cross-compile--multi-arch-testing)

@@ -2,7 +2,7 @@
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
 
-## [2026-08-10] — v0.8.6 Release: Zig 0.16.0 Compliance Audit Fixes
+## [2026-08-10] — v0.8.7 Release: Zig 0.16.0 Compliance Audit Fixes & Cross-Compile Fix
 
 This release fixes 9 bugs (BUG-122 through BUG-130) discovered by a Zig 0.16.0 compliance audit, plus restructures the entire documentation under the OKF bundle.
 
@@ -12,11 +12,11 @@ This release fixes 9 bugs (BUG-122 through BUG-130) discovered by a Zig 0.16.0 c
 - Fixed **BUG-125** (High): `std.Thread.yield()` in spinlock now handles `YieldError` properly via `catch |err| std.log.warn(...)` instead of `catch {}`.
 - Fixed **BUG-126** (High): replaced managed `std.AutoHashMap` with `AutoHashMapUnmanaged` + `.empty` in `child_watcher.zig` (3 call sites), matching Zig 0.16 unmanaged-container style.
 - Fixed **BUG-127** (Medium): replaced `appendAssumeCapacity` with `try append(gpa, ...)` in the fixed_file_free initialization loop in `io/main.zig`.
-- Fixed **BUG-128** (Medium): added default value for `-Dpython-lib` in `build.zig` so `zig build test` links against libpython without requiring explicit options. Also fixed a `{t}`→`{d}` format-specifier mismatch in `address.zig` for the `u16` family field.
+- Fixed **BUG-128** (Medium): added default value for `-Dpython-lib` in `build.zig` so `zig build test` links against libpython without requiring explicit options. Also fixed a `{t}`→`{d}` format-specifier mismatch in `address.zig` for the `u16` family field. Subsequently removed the architecture-specific `orelse "/usr/lib64/libpython3.14.so"` default (x86_64-only path broke cross-compiles for aarch64/riscv64), restoring the pre-BUG-128 behaviour where `python_lib` is optional and passed by `setup.py` only for native builds.
 - Fixed **BUG-129** (Medium): removed the `0xFFFF` heuristic guard from `py_xdecref` in `python_c.zig` — now matches `py_decref`'s unconditional `Py_DecRef` call, fixing a refcount leak for singleton objects (None, True, False).
 - Fixed **BUG-130** (Low): replaced `@constCast(@ptrCast(visit))` with `@ptrCast(visit)` in 4 GC traverse paths to avoid a false const-correctness guarantee under ReleaseFast.
 - **Documentation restructuring**: split monolithic `docs/BUGS.md` into 129 individual OKF-compliant bug files under `docs/development/bugs/` (001.md–130.md, skipping BUG-097). Restructured all development docs under `docs/development/` (lessons/, priorities/, architectural-mandates.md, audits-and-profiling.md, development-journey.md, hardening.md, log.md, reference-and-misc.md, talyn-migration.md, talyn-naming.md). Added OKF bundle roots with index.md + README.md symlinks. Updated all internal cross-references in docs/index.md, AGENTS.md, README.md, and all affected bug files.
-- Bumped version to **0.8.6** in `pyproject.toml` and `build.zig.zon`.
+- Bumped version to **0.8.7** in `pyproject.toml` and `build.zig.zon`.
 
 ## [2026-08-06] — v0.8.5 Release: Multi-Arch Linux Build/Test on x86_64, BUG-121 Fix
 - Fixed **BUG-121** (High): `/etc/resolv.conf` with a lone `search .` entry (systemd-resolved stub output when no search domains are configured) crashed loop init with `RuntimeError: InvalidConfiguration`. The search-directive parser now skips a `.` root-domain entry instead of failing hostname validation. See [development/bugs/121.md](development/bugs/121.md).

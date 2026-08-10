@@ -150,9 +150,11 @@ With the release of **v0.8.0**, we undertook a rigorous effort to transition the
 
 With these changes, Talyn has achieved its cleanest, most robust, and highest-security release yet.
 
-## Releasing v0.8.6: Zig 0.16.0 Compliance Audit Fixes & OKF Doc Restructure
+## Releasing v0.8.7: Zig 0.16.0 Compliance Audit Fixes & Cross-Compile Fix
 
-With the release of **v0.8.6**, a full Zig 0.16.0 compliance audit surfaced 9 bugs (BUG-122 through BUG-130) that were all fixed in this patch release. The audit focused on Rule 6 (no silent `catch {}`), Rule 7 (no `@cImport`), Rule 9 (proper format specifiers), and Rule 4 (unmanaged containers). Additionally, the entire documentation was restructured under the Open Knowledge Format (OKF v0.1) as `docs/development/`, with all 129 bugs split into individual well-formed files.
+With the release of **v0.8.7**, a full Zig 0.16.0 compliance audit surfaced 9 bugs (BUG-122 through BUG-130) that were all fixed in this patch release. The audit focused on Rule 6 (no silent `catch {}`), Rule 7 (no `@cImport`), Rule 9 (proper format specifiers), and Rule 4 (unmanaged containers). Additionally, the entire documentation was restructured under the Open Knowledge Format (OKF v0.1) as `docs/development/`, with all 129 bugs split into individual well-formed files.
+
+This release also fixes a cross-compilation breakage introduced during the BUG-128 fix: the hardcoded default `orelse "/usr/lib64/libpython3.14.so"` for the `-Dpython-lib` option caused `ld.lld` to reject the x86_64-only library when cross-compiling for aarch64/riscv64 ("incompatible with aarch64linux"). The fix removes the default so `python_lib` is `null` on cross-compiles, where Linux CPython extensions resolve the C API at runtime without linking libpython.
 
 1. **BUG-122 — 34 silent `catch {}` replaced with logging** (Critical): The two most dangerous were in `release_ring_buffer` and `release_dynamic_ring_buffer` where callback errors were swallowed. The remaining 32 were in teardown paths where at minimum `std.log.warn` makes them visible at runtime.
 2. **BUG-123 — `@cImport` removed from unix_signals.zig** (High): signal() and siginterrupt() are now declared as inline `extern "c"` with SIG_DFL/SigHandler constants — no separate c_imports/ module needed.
@@ -160,12 +162,12 @@ With the release of **v0.8.6**, a full Zig 0.16.0 compliance audit surfaced 9 bu
 4. **BUG-125 — `std.Thread.yield()` error handled** (High): spinlock now logs yield failures instead of silently swallowing them.
 5. **BUG-126 — `AutoHashMap` → `AutoHashMapUnmanaged`** (High): child_watcher.zig now uses the 0.16 unmanaged container style (`.empty` + explicit gpa).
 6. **BUG-127 — `appendAssumeCapacity` → `try append`** (Medium): fixed_file_free init loop now matches unmanaged container conventions.
-7. **BUG-128 — test linking fixed** (Medium): `build.zig` now defaults `-Dpython-lib` so `zig build test` links libpython without explicit options.
+7. **BUG-128 — test linking fixed** (Medium): `build.zig` now defaults `-Dpython-lib` so `zig build test` links libpython without explicit options. The architecture-specific `orelse` default was later removed to fix a cross-compile breakage (x86_64 libpython path rejected by ld.lld for aarch64/riscv64 targets).
 8. **BUG-129 — `py_xdecref` heuristic removed** (Medium): singleton objects (None/True/False) no longer leak refcounts through the optional decref path.
 9. **BUG-130 — `@constCast` removed from GC traverse paths** (Low): 4 traverse methods now use plain `@ptrCast` to avoid false const-correctness under ReleaseFast.
 10. **OKF documentation restructure**: 129 individual bug files under `docs/development/bugs/`, lessons and priorities organized as OKF bundles with index.md + symlinks.
 
-Bumped version to **0.8.6** in `pyproject.toml` and `build.zig.zon`.
+Bumped version to **0.8.7** in `pyproject.toml` and `build.zig.zon`.
 
 ## Releasing v0.8.5: Native Multi-Arch Builds, Foreign-Arch VM Testing & A Portability Fix
 
