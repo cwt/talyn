@@ -159,6 +159,7 @@ pub fn build(b: *std.Build) void {
     talyn_module.addImport("utils", utils_module);
     talyn_module.addImport("callback_manager", callback_manager_module);
 
+    const modules_name = .{ "talyn", "python_c", "utils" };
     const modules = .{ talyn_module, python_c_module, utils_module };
     const install_step = b.getInstallStep();
 

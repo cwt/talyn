@@ -9,10 +9,13 @@ const CallbackManager = @import("callback_manager");
 
 // BUG-123: signal() and siginterrupt() are not wrapped by std.os.linux.
 // Declare them as extern "c" directly instead of using @cImport (Rule 7).
-pub const SIG_DFL: i32 = 0;
+pub const SIG_DFL: usize = 0;
+pub const SIG_IGN: usize = 1;
 pub const SigHandler = *const fn (i32) callconv(.c) void;
 extern "c" fn signal(sig: i32, handler: SigHandler) callconv(.c) SigHandler;
 extern "c" fn siginterrupt(sig: i32, flag: i32) i32;
+
+fn default_signal_handler(_: i32) callconv(.c) void {}
 
 const CallbacksBTree = utils.BTree(u6, CallbackManager.Callback, 3);
 
@@ -141,7 +144,7 @@ fn enqueue_signal_fd(self: *UnixSignals) !void {
 
 pub fn link(self: *UnixSignals, sig: std.os.linux.SIG, callback: CallbackManager.Callback) !void {
     // When the user create a new thread, we need to avoid that python catch the signal
-    _ = signal(@as(i32, @intCast(@intFromEnum(sig))), &dummy_signal_handler);
+    _ = signal(@as(i32, @intCast(@intFromEnum(sig))), @ptrCast(&dummy_signal_handler));
 
     const mask = &self.mask;
     std.posix.sigaddset(mask, sig);
