@@ -390,9 +390,7 @@ pub fn py_decref(op: *Python.PyObject) void {
 
 pub inline fn py_xdecref(op: ?*Python.PyObject) void {
     if (op) |o| {
-        if (@intFromPtr(o) > 0xFFFF) {
-            _c.Py_DecRef(o);
-        }
+        _c.Py_DecRef(o);
     }
 }
 
