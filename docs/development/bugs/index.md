@@ -9,7 +9,7 @@ timestamp: "2026-08-14T00:00:00Z"
 
 Sorted by bug number. See individual bug files for details.
 
-[⬅️ Back to Main Index](../index.md)
+[⬅️ Back to Main Index](../../index.md)
 
 ## Summary by Severity
 
@@ -28,9 +28,9 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 119 |
+| Fixed | 128 |
+| Open | 0 |
 | False Positive | 1 |
-| Open | 9 |
 | **Total** | **129** |
 
 ## All Bugs
@@ -157,12 +157,12 @@ Sorted by bug number. See individual bug files for details.
 | [119](119.md) | Double-free of `connection_data` in `create_socket_connection` / `z_create_socket_connection` error path | Critical | Fixed |
 | [120](120.md) | Use-after-free of `MultiConnectState` (`mcs`) in happy-eyeballs timer callback | Critical | Fixed |
 | [121](121.md) | Loop init fails with `error.InvalidConfiguration` when `/etc/resolv.conf` contains `search .` | High | Fixed |
-| [122](122.md) | 34 `catch {}` silent error suppressions across the codebase | Critical | Open |
-| [123](123.md) | `@cImport` used in `src/loop/unix_signals.zig` | High | Open |
-| [124](124.md) | Wrong format specifiers `{}` for errors and enums in log messages | High | Open |
-| [125](125.md) | `std.Thread.yield()` usage in spinlock | High | Open |
-| [126](126.md) | `std.AutoHashMap` (managed) instead of `std.AutoHashMapUnmanaged` in `child_watcher.zig` | High | Open |
-| [127](127.md) | `appendAssumeCapacity` used in loop init path | Medium | Open |
-| [128](128.md) | Unit tests fail to link — libpython symbols unresolved | Medium | Open |
-| [129](129.md) | `py_xdecref` still has the `0xFFFF` heuristic (partial BUG-67 regression) | Medium | Open |
-| [130](130.md) | `@constCast` on visit-proc pointer in GC traverse paths | Low | Open |
+| [122](122.md) | 34 `catch {}` silent error suppressions across the codebase | Critical | Fixed |
+| [123](123.md) | `@cImport` used in `src/loop/unix_signals.zig` | High | Fixed |
+| [124](124.md) | Wrong format specifiers `{}` for errors and enums in log messages | High | Fixed |
+| [125](125.md) | `std.Thread.yield()` usage in spinlock | High | Fixed |
+| [126](126.md) | `std.AutoHashMap` (managed) instead of `std.AutoHashMapUnmanaged` in `child_watcher.zig` | High | Fixed |
+| [127](127.md) | `appendAssumeCapacity` used in loop init path | Medium | Fixed |
+| [128](128.md) | Unit tests fail to link — libpython symbols unresolved | Medium | Fixed |
+| [129](129.md) | `py_xdecref` still has the `0xFFFF` heuristic (partial BUG-67 regression) | Medium | Fixed |
+| [130](130.md) | `@constCast` on visit-proc pointer in GC traverse paths | Low | Fixed |
