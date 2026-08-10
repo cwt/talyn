@@ -70,7 +70,7 @@ pub const Address = extern union {
                 self.in6.sa.port = std.mem.nativeToBig(u16, port);
             },
             else => {
-                std.log.warn("setPort: unexpected address family {}", .{self.any.family});
+                std.log.warn("setPort: unexpected address family {t}", .{self.any.family});
             },
         }
     }
