@@ -293,8 +293,8 @@ To honor the project's roots and Enrique's early work:
 
 ## 📖 Project Story
 
-- **[Development Journey](docs/development-journey.md)** — The full story: from discovery to challenges, the shift from "ultra-fast" to "realistic fast and stable", and how Talyn was built.
-- **[Why Talyn?](docs/talyn-naming.md)** — The personal story and meaning behind the new name.
+- **[Development Journey](docs/development/development-journey.md)** — The full story: from discovery to challenges, the shift from "ultra-fast" to "realistic fast and stable", and how Talyn was built.
+- **[Why Talyn?](docs/development/talyn-naming.md)** — The personal story and meaning behind the new name.
 
 ---
 

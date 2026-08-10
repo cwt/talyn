@@ -9,7 +9,7 @@ timestamp: "2026-08-14T00:00:00Z"
 
 Sorted by bug number. See individual bug files for details.
 
-[⬅️ Back to Main Index](../../index.md)
+[⬅️ Back to Main Index](../index.md)
 
 ## Summary by Severity
 
