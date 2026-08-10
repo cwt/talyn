@@ -20,7 +20,7 @@ const SpinMutex = struct {
                     std.atomic.spinLoopHint();
                 }
             } else {
-                std.Thread.yield();
+                std.Thread.yield() catch |err| std.log.warn("yield failed: {s}", .{@errorName(err)});
                 spin = 0;
             }
         }
