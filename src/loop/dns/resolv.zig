@@ -224,9 +224,11 @@ fn mark_resolved_and_execute_user_callbacks(server_data: *ServerQueryData) !void
         if (server_data.ptr_results.items.len > 0) {
             const ptr_name = try control_data.allocator.dupe(u8, server_data.ptr_results.items[0]);
             control_data.record.set_ptr_data(ptr_name, server_data.min_ttl);
-        } else {
+        } else if (server_data.results.items.len > 0) {
             const address_list = try control_data.allocator.dupe(utils.Address, server_data.results.items);
             control_data.record.set_resolved_data(address_list, server_data.min_ttl);
+        } else {
+            control_data.record.discard();
         }
     }
 

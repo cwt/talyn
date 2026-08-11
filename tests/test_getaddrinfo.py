@@ -142,3 +142,16 @@ def test_getaddrinfo_shorthand_ipv6() -> None:
         assert result[0][4][0] == "2001:db8::ff00:42:8329"
 
     talyn.run(main())
+
+
+def test_getaddrinfo_nonexistent_domain_does_not_poison_cache() -> None:
+    """Non-existent or failing domain resolution must raise error and not poison DNS cache permanently."""
+
+    async def main() -> None:
+        loop = asyncio.get_running_loop()
+        domain = "nonexistent-domain-test-123456789.invalid"
+        with pytest.raises(Exception):
+            await loop.getaddrinfo(domain, 80)
+
+    talyn.run(main())
+

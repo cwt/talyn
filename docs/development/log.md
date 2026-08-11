@@ -2,6 +2,15 @@
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
 
+## [2026-08-11] — v0.8.8 Release: DNS Cache Poisoning Fix (BUG-131)
+
+This patch release fixes a high-severity DNS cache poisoning bug that caused long-running asyncio web proxies to fail DNS resolution after extended operation.
+
+- Fixed **BUG-131** (High): `mark_resolved_and_execute_user_callbacks` in `src/loop/dns/resolv.zig` previously cached empty address results (`&[]`) with infinite TTL (`maxInt(i64)`) when a DNS query returned 0 addresses (e.g. transient UDP packet loss or DNS timeout). Failed/empty lookups now call `control_data.record.discard()` to be evicted immediately. Additionally, capped default TTLs in `src/loop/dns/cache.zig` to 60 seconds instead of setting `expire_at` to infinity.
+- Added regression test `test_getaddrinfo_nonexistent_domain_does_not_poison_cache` in `tests/test_getaddrinfo.py`.
+- Added **Lesson 112** (*Never Cache Empty/Failed DNS Results with Infinite TTL*) to `docs/development/lessons/06-network-protocols-and-io.md`.
+- Bumped version to **0.8.8** in `pyproject.toml` and `build.zig.zon`.
+
 ## [2026-08-10] — v0.8.7 Release: Zig 0.16.0 Compliance Audit Fixes & Cross-Compile Fix
 
 This release fixes 9 bugs (BUG-122 through BUG-130) discovered by a Zig 0.16.0 compliance audit, plus restructures the entire documentation under the OKF bundle.

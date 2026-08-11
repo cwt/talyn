@@ -41,24 +41,16 @@ pub const Record = struct {
     }
 
     pub inline fn set_resolved_data(self: *Record, address_list: []utils.Address, ttl: u32) void {
-        var expire_at: i64 = std.math.maxInt(i64);
-        if (ttl < std.math.maxInt(u32)) {
-            expire_at = timestamp() + ttl;
-        }
-
-        self.expire_at = expire_at;
+        const effective_ttl: i64 = if (ttl < std.math.maxInt(u32)) @intCast(ttl) else 60;
+        self.expire_at = timestamp() + effective_ttl;
         self.state = .{
             .resolved = address_list
         };
     }
 
     pub inline fn set_ptr_data(self: *Record, hostname: []u8, ttl: u32) void {
-        var expire_at: i64 = std.math.maxInt(i64);
-        if (ttl < std.math.maxInt(u32)) {
-            expire_at = timestamp() + ttl;
-        }
-
-        self.expire_at = expire_at;
+        const effective_ttl: i64 = if (ttl < std.math.maxInt(u32)) @intCast(ttl) else 60;
+        self.expire_at = timestamp() + effective_ttl;
         self.state = .{
             .ptr = hostname
         };

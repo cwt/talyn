@@ -90,6 +90,11 @@ Same root cause as Lesson 42 — `Cache.get` triggered eviction of pending recor
 - **Fix:** Changed to `utils.get_data_ptr(Future, future)`.
 - **Lesson:** When working with multiple futures in a task (the task's own future and futures it's awaiting), be careful about which future's data you pass. Always verify you're passing the correct object, not just any future that happens to be in scope.
 
+**Lesson 112 — Never Cache Empty/Failed DNS Results with Infinite TTL**
+When a DNS resolution attempt returns 0 address results (e.g., due to a dropped UDP datagram or transient timeout), caching the empty result with a default `maxInt(u32)` TTL sets `expire_at = maxInt(i64)`, permanently poisoning the DNS cache.
+- **Fix:** Call `control_data.record.discard()` when no address/PTR records are received, ensuring failed lookups are evicted immediately. Cap default TTLs in `cache.zig` to 60 seconds instead of setting `expire_at` to infinity (`maxInt(i64)`).
+- **Lesson:** Failed or transient network operations must never be cached with infinite or long TTLs. Either discard negative cache entries immediately or use short negative caching TTLs (e.g. 5–60s).
+
 ---
 
 ### Signal Handling

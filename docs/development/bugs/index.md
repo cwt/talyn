@@ -1,7 +1,7 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 129 bugs discovered across 8 audit passes."
+description: "Individual bug entries for talyn, one file per bug. 130 bugs discovered across 9 audit passes."
 timestamp: "2026-08-14T00:00:00Z"
 ---
 
@@ -15,23 +15,23 @@ Sorted by bug number. See individual bug files for details.
 
 | Severity | Count |
 |---|---:|
-| High | 34 |
+| High | 35 |
 | Low | 32 |
 | Critical | 17 |
 | Medium-Low | 13 |
 | Medium-High | 12 |
 | Medium-Mid | 11 |
 | Medium | 10 |
-| **Total** | **129** |
+| **Total** | **130** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
-| Fixed | 128 |
+| Fixed | 129 |
 | Open | 0 |
 | False Positive | 1 |
-| **Total** | **129** |
+| **Total** | **130** |
 
 ## All Bugs
 
@@ -166,3 +166,4 @@ Sorted by bug number. See individual bug files for details.
 | [128](128.md) | Unit tests fail to link — libpython symbols unresolved | Medium | Fixed |
 | [129](129.md) | `py_xdecref` still has the `0xFFFF` heuristic (partial BUG-67 regression) | Medium | Fixed |
 | [130](130.md) | `@constCast` on visit-proc pointer in GC traverse paths | Low | Fixed |
+| [131](131.md) | DNS cache stores empty/failed lookup results with infinite TTL (cache poisoning) | High | Fixed |
