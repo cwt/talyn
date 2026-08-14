@@ -77,15 +77,12 @@ fn get_host_slice(data: *ServerCreationData) ![]const u8 {
     }
 
     var host_ptr_length: python_c.Py_ssize_t = undefined;
-    const host_ptr = python_c.PyUnicode_AsUTF8AndSize(py_host, &host_ptr_length)
-        orelse return error.PythonError;
+    const host_ptr = python_c.PyUnicode_AsUTF8AndSize(py_host, &host_ptr_length) orelse return error.PythonError;
 
     return host_ptr[0..@intCast(host_ptr_length)];
 }
 
-inline fn z_loop_create_server(
-    self: *LoopObject, args: []?PyObject, knames: ?PyObject
-) !*FutureObject {
+inline fn z_loop_create_server(self: *LoopObject, args: []?PyObject, knames: ?PyObject) !*FutureObject {
     if (Loop.Python.check_forked(self)) return error.PythonError;
     if (Loop.Python.check_thread(self)) return error.PythonError;
     if (args.len < 2) {
@@ -104,7 +101,8 @@ inline fn z_loop_create_server(
 
     // Parse kwargs first to check for sock
     try python_c.parse_vector_call_kwargs(
-        knames, args.ptr + args.len,
+        knames,
+        args.ptr + args.len,
         &.{ "family\x00", "flags\x00", "sock\x00", "backlog\x00", "reuse_address\x00", "reuse_port\x00", "dns_timeout\x00" },
         &.{ &creation_data.py_family, &creation_data.py_flags, &creation_data.py_sock, &creation_data.py_backlog, &creation_data.py_reuse_address, &creation_data.py_reuse_port, &creation_data.py_dns_timeout },
     );
@@ -130,12 +128,10 @@ inline fn z_loop_create_server(
     errdefer allocator.destroy(creation_data_ptr);
 
     if (creation_data.py_sock) |sock| {
-        const fileno_func = python_c.PyObject_GetAttrString(sock, "fileno\x00")
-            orelse return error.PythonError;
+        const fileno_func = python_c.PyObject_GetAttrString(sock, "fileno\x00") orelse return error.PythonError;
         defer python_c.py_decref(fileno_func);
 
-        const py_fd = python_c.PyObject_CallNoArgs(fileno_func)
-            orelse return error.PythonError;
+        const py_fd = python_c.PyObject_CallNoArgs(fileno_func) orelse return error.PythonError;
         defer python_c.py_decref(py_fd);
 
         const fd = python_c.PyLong_AsLongLong(py_fd);
@@ -146,16 +142,13 @@ inline fn z_loop_create_server(
             return error.PythonError;
         }
 
-        const getsockname_func = python_c.PyObject_GetAttrString(sock, "getsockname\x00")
-            orelse return error.PythonError;
+        const getsockname_func = python_c.PyObject_GetAttrString(sock, "getsockname\x00") orelse return error.PythonError;
         defer python_c.py_decref(getsockname_func);
 
-        const py_addr = python_c.PyObject_CallNoArgs(getsockname_func)
-            orelse return error.PythonError;
+        const py_addr = python_c.PyObject_CallNoArgs(getsockname_func) orelse return error.PythonError;
         defer python_c.py_decref(py_addr);
 
-        const py_family_attr = python_c.PyObject_GetAttrString(sock, "family\x00")
-            orelse return error.PythonError;
+        const py_family_attr = python_c.PyObject_GetAttrString(sock, "family\x00") orelse return error.PythonError;
         defer python_c.py_decref(py_family_attr);
 
         const family = python_c.PyLong_AsLong(py_family_attr);
@@ -222,7 +215,7 @@ inline fn z_loop_create_server(
         };
         try Loop.Scheduling.Soon.dispatch(loop_data, &callback);
 
-        python_c.deinitialize_object_fields(creation_data_ptr, &.{"future", "protocol_factory"});
+        python_c.deinitialize_object_fields(creation_data_ptr, &.{ "future", "protocol_factory", "loop" });
         return fut;
     }
 
@@ -258,9 +251,9 @@ fn z_try_resolve_server_host(creation_data: *ServerCreationData) !void {
     if (hostname.len == 0) {
         const allow_ipv6 = loop_data.dns.ipv6_supported;
         var list: std.ArrayList(utils.Address) = .empty;
-        try list.append(allocator, utils.Address.initIp4(.{0, 0, 0, 0}, 0));
+        try list.append(allocator, utils.Address.initIp4(.{ 0, 0, 0, 0 }, 0));
         if (allow_ipv6) {
-            try list.append(allocator, utils.Address.initIp6(.{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0, 0, 0));
+            try list.append(allocator, utils.Address.initIp6(.{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, 0, 0, 0));
         }
         server_data.address_list = try list.toOwnedSlice(allocator);
         const callback = CallbackManager.Callback{
@@ -305,7 +298,7 @@ fn z_try_resolve_server_host(creation_data: *ServerCreationData) !void {
 }
 
 fn try_resolve_server_host(data: *const CallbackManager.CallbackData) !void {
-    const creation_data: *ServerCreationData = @alignCast(@ptrCast(data.user_data.?));
+    const creation_data: *ServerCreationData = @ptrCast(@alignCast(data.user_data.?));
     errdefer creation_data.deinit();
 
     if (data.cancelled()) {
@@ -351,7 +344,7 @@ fn z_server_host_resolved_callback(server_data: *ServerSocketData) !void {
 }
 
 fn server_host_resolved_callback(data: *const CallbackManager.CallbackData) !void {
-    const server_data: *ServerSocketData = @alignCast(@ptrCast(data.user_data.?));
+    const server_data: *ServerSocketData = @ptrCast(@alignCast(data.user_data.?));
     errdefer server_data.deinit();
 
     if (data.cancelled()) {
@@ -480,10 +473,7 @@ fn z_create_server_socket(server_data: *ServerSocketData) !void {
         const protocol_factory = creation_data.protocol_factory.?;
         const loop_obj = creation_data.loop.?;
 
-        const server = python_c.PyObject_CallFunction(
-            @as(*python_c.PyObject, @ptrCast(StreamServer.StreamServerType.?)), "OOOOO\x00",
-            @as(*python_c.PyObject, @ptrCast(loop_obj)), protocol_factory, py_fd, py_family_obj, py_backlog_obj
-        ) orelse return error.PythonError;
+        const server = python_c.PyObject_CallFunction(@as(*python_c.PyObject, @ptrCast(StreamServer.StreamServerType.?)), "OOOOO\x00", @as(*python_c.PyObject, @ptrCast(loop_obj)), protocol_factory, py_fd, py_family_obj, py_backlog_obj) orelse return error.PythonError;
         errdefer python_c.py_decref(server);
 
         const server_ptr: *StreamServer.StreamServerObject = @ptrCast(server);
@@ -502,16 +492,13 @@ fn z_create_server_socket(server_data: *ServerSocketData) !void {
     if (python_c.PyList_Size(servers_list) == 0) {
         if (last_err) |err| {
             if (err == error.AddressNotAvailable) {
-                const exception = python_c.PyObject_CallFunction(
-                    python_c.PyExc_OSError, "is\x00",
+                const exception = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "is\x00",
                     // BUG-71: Use std.os.linux.E.ADDRNOTAVAIL
                     // instead of the hardcoded value 99. The
                     // previous hardcoded value was correct for
                     // Linux but would be wrong on any other
                     // platform with a different errno numbering.
-                    @as(c_int, @intFromEnum(std.os.linux.E.ADDRNOTAVAIL)),
-                    "Cannot assign requested address\x00"
-                ) orelse return error.PythonError;
+                    @as(c_int, @intFromEnum(std.os.linux.E.ADDRNOTAVAIL)), "Cannot assign requested address\x00") orelse return error.PythonError;
                 python_c.PyErr_SetRaisedException(exception);
                 return error.PythonError;
             }
@@ -526,7 +513,7 @@ fn z_create_server_socket(server_data: *ServerSocketData) !void {
 }
 
 fn create_server_socket(data: *const CallbackManager.CallbackData) !void {
-    const server_data: *ServerSocketData = @alignCast(@ptrCast(data.user_data.?));
+    const server_data: *ServerSocketData = @ptrCast(@alignCast(data.user_data.?));
     defer server_data.deinit();
 
     if (data.cancelled()) {
@@ -541,10 +528,9 @@ fn create_server_socket(data: *const CallbackManager.CallbackData) !void {
 
 // -----------------------------------------------------------------
 
-pub fn loop_create_server(
-    self: ?*LoopObject, args: ?[*]?PyObject, nargs: isize, knames: ?PyObject
-) callconv(.c) ?*FutureObject {
+pub fn loop_create_server(self: ?*LoopObject, args: ?[*]?PyObject, nargs: isize, knames: ?PyObject) callconv(.c) ?*FutureObject {
     return utils.execute_zig_function(
-        z_loop_create_server, .{ self.?, args.?[0..@as(usize, @intCast(nargs))], knames },
+        z_loop_create_server,
+        .{ self.?, args.?[0..@as(usize, @intCast(nargs))], knames },
     );
 }

@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 141 |
-| Open | 8 |
+| Fixed | 142 |
+| Open | 7 |
 | False Positive | 2 |
 | **Total** | **151** |
 
@@ -180,7 +180,7 @@ Sorted by bug number. See individual bug files for details.
 | [142](142.md) | Double-add of `Loop` type object in `src/lib.zig` causes reference count underflow | Critical | Fixed |
 | [143](143.md) | Parent transport reference leak on I/O read error in `ReadTransport` | High | Fixed |
 | [144](144.md) | Reference leak of coroutine, context, and name in `create_task` with custom `task_factory` | High | Fixed |
-| [145](145.md) | Double decref and use-after-free of `loop` in `create_server` with custom socket | Critical | Open |
+| [145](145.md) | Double decref and use-after-free of `loop` in `create_server` with custom socket | Critical | Fixed |
 | [146](146.md) | `OSError` reference leak on single connection failure in `create_connection` | Medium-High | Open |
 | [147](147.md) | `FDWatcher` struct and `handle` PyObject leak on Loop release with active watchers | Medium-High | Open |
 | [148](148.md) | Memory leak in `LRUCache.put` on `map.put` allocation failure | Medium-Low | Open |
