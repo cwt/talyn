@@ -54,7 +54,7 @@ pub fn add_child_handler(self: *ChildWatcher, pid: i32, callback: PyObject) !voi
 
     const handler = try self.loop.allocator.create(ChildHandler);
     errdefer self.loop.allocator.destroy(handler);
-    
+
     handler.* = .{
         .pid = pid,
         .pidfd = pidfd,
@@ -62,16 +62,14 @@ pub fn add_child_handler(self: *ChildWatcher, pid: i32, callback: PyObject) !voi
         .watcher = self,
     };
 
-    handler.task_id = try self.loop.io.queue(.{
-        .WaitReadable = .{
-            .fd = pidfd,
-            .callback = .{
-                .func = &on_child_exit,
-                .cleanup = null,
-                .data = .{ .user_data = handler },
-            },
-        }
-    });
+    handler.task_id = try self.loop.io.queue(.{ .WaitReadable = .{
+        .fd = pidfd,
+        .callback = .{
+            .func = &on_child_exit,
+            .cleanup = null,
+            .data = .{ .user_data = handler },
+        },
+    } });
 
     try self.handlers.put(self.loop.allocator, pid, handler);
 }
@@ -93,7 +91,7 @@ pub fn remove_child_handler(self: *ChildWatcher, pid: i32) bool {
 }
 
 fn on_child_exit(data: *const CallbackManager.CallbackData) !void {
-    const handler: *ChildHandler = @alignCast(@ptrCast(data.user_data.?));
+    const handler: *ChildHandler = @ptrCast(@alignCast(data.user_data.?));
     const self = handler.watcher;
 
     if (data.cancelled() or !self.loop.initialized) {
@@ -129,16 +127,14 @@ fn on_child_exit(data: *const CallbackManager.CallbackData) !void {
         }
         // Process might still be alive (though POLLIN triggered)?
         // Re-arm
-        handler.task_id = try self.loop.io.queue(.{
-            .WaitReadable = .{
-                .fd = handler.pidfd,
-                .callback = .{
-                    .func = &on_child_exit,
-                    .cleanup = null,
-                    .data = .{ .user_data = handler },
-                },
-            }
-        });
+        handler.task_id = try self.loop.io.queue(.{ .WaitReadable = .{
+            .fd = handler.pidfd,
+            .callback = .{
+                .func = &on_child_exit,
+                .cleanup = null,
+                .data = .{ .user_data = handler },
+            },
+        } });
         return;
     }
 
@@ -157,18 +153,20 @@ fn on_child_exit(data: *const CallbackManager.CallbackData) !void {
     defer python_c.py_decref(py_pid);
     const py_rc = python_c.PyLong_FromLong(returncode) orelse return error.PythonError;
     defer python_c.py_decref(py_rc);
-    
+
     const py_args = python_c.PyTuple_Pack(2, py_pid, py_rc) orelse return error.PythonError;
     defer python_c.py_decref(py_args);
-    
+
     const py_res = python_c.PyObject_Call(handler.callback, py_args, null) orelse {
         const exc = python_c.PyErr_GetRaisedException() orelse return;
         defer python_c.py_decref(exc);
-        const loop_obj = utils.get_parent_ptr(Loop.Python.LoopObject, self.loop);
         const ctx = python_c.PyDict_New() orelse return;
         defer python_c.py_decref(ctx);
-        _ = python_c.PyDict_SetItemString(ctx, "message\x00", python_c.PyUnicode_FromString("Exception in child handler callback\x00") orelse return);
+        const msg = python_c.PyUnicode_FromString("Exception in child handler callback\x00") orelse return;
+        defer python_c.py_decref(msg);
+        _ = python_c.PyDict_SetItemString(ctx, "message\x00", msg);
         _ = python_c.PyDict_SetItemString(ctx, "exception\x00", exc);
+        const loop_obj = utils.get_parent_ptr(Loop.Python.LoopObject, self.loop);
         const ret = python_c.PyObject_CallMethod(@ptrCast(loop_obj), "call_exception_handler\x00", "O\x00", ctx) orelse {
             python_c.PyErr_Clear();
             return;

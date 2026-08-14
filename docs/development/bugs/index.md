@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 145 |
-| Open | 3 |
+| Fixed | 146 |
+| Open | 2 |
 | False Positive | 3 |
 | **Total** | **151** |
 
@@ -185,6 +185,6 @@ Sorted by bug number. See individual bug files for details.
 | [147](147.md) | `FDWatcher` struct and `handle` PyObject leak on Loop release with active watchers | Medium-High | False Positive |
 | [148](148.md) | Memory leak in `LRUCache.put` on `map.put` allocation failure | Medium-Low | Fixed |
 | [149](149.md) | `PyObject` reference leak via `get_py_none()` default in task stack keyword argument parsing | Low | Fixed |
-| [150](150.md) | Leaked `PyUnicode` strings in child watcher and FS watcher exception dictionaries | Low | Open |
+| [150](150.md) | Leaked `PyUnicode` strings in child watcher and FS watcher exception dictionaries | Low | Fixed |
 | [151](151.md) | Broken / uncalled dead code `write_completed` in datagram transport | Low | Open |
 | [152](152.md) | Unreachable dead code in `UnixSignals.unlink` | Low | Open |
