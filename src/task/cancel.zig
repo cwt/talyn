@@ -42,12 +42,13 @@ inline fn fast_task_cancel(task: *PythonTaskObject, data: *Future, cancel_msg_py
         task.fut.cancel_msg_py_object = python_c.py_newref(pyobj);
     }
 
+    task.cancel_requests +|= 1;
+
     if (task.fut_waiter) |fut_waiter| {
         const ret = try cancel_future_waiter(fut_waiter, cancel_msg_py_object);
         return ret;
     }
 
-    task.cancel_requests +|= 1;
     task.must_cancel = true;
     return true;
 }

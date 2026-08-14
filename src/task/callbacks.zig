@@ -20,7 +20,7 @@ fn talyn_task_step_trampoline(
 
     // 2 & 3 & 4. Scope context entry, send operation, and context exit
     if (python_c.PyContext_Enter(context) < 0) return null;
-    
+
     var coro_ret: ?PyObject = null;
     var gen_ret: python_c.PySendResult = undefined;
     {
@@ -46,7 +46,7 @@ fn talyn_task_step_trampoline(
 
     send_result_out.* = @intCast(gen_ret);
     coro_ret_out.* = coro_ret;
-    
+
     return python_c.get_py_none();
 }
 
@@ -60,41 +60,27 @@ const Loop = @import("../loop/main.zig");
 
 const std = @import("std");
 
-pub const Data = struct {
-    task: *Task.PythonTaskObject,
-    exc_value: ?PyObject = null
-};
+pub const Data = struct { task: *Task.PythonTaskObject, exc_value: ?PyObject = null };
 
+pub const TalynPyTaskWakeupMethod = python_c.PyMethodDef{ .ml_name = "wake_up_task\x00", .ml_meth = @ptrCast(&py_wake_up), .ml_doc = "Wakeup the task.\x00", .ml_flags = python_c.METH_O };
 
-pub const TalynPyTaskWakeupMethod = python_c.PyMethodDef{
-    .ml_name = "wake_up_task\x00",
-    .ml_meth = @ptrCast(&py_wake_up),
-    .ml_doc = "Wakeup the task.\x00",
-    .ml_flags = python_c.METH_O
-};
-
-inline fn set_fut_waiter(
-    task: *Task.PythonTaskObject, future: PyObject
-) !void {
+inline fn set_fut_waiter(task: *Task.PythonTaskObject, future: PyObject) !void {
     if (task.fut_waiter) |_| {
         python_c.raise_python_runtime_error("Task is already awaiting another future\x00");
         return error.PythonError;
-    }else{
+    } else {
         task.fut_waiter = python_c.py_newref(future);
     }
 }
 
-inline fn set_result(
-    task: *Task.PythonTaskObject, future_data: *Future,
-    result: PyObject
-) !void {
+inline fn set_result(task: *Task.PythonTaskObject, future_data: *Future, result: PyObject) !void {
     if (task.must_cancel) {
         _ = try Future.Python.Cancel.future_fast_cancel(&task.fut, future_data, task.fut.cancel_msg_py_object);
-    }else{
+    } else {
         try Future.Python.Result.future_fast_set_result(future_data, result);
     }
     if (task.fut.py_loop) |py_loop| {
-        const loop_obj: *Loop.Python.LoopObject = @alignCast(@ptrCast(py_loop));
+        const loop_obj: *Loop.Python.LoopObject = @ptrCast(@alignCast(py_loop));
         if (loop_obj.asyncio_tasks_set) |tasks_set| {
             _ = python_c.PySet_Discard(tasks_set, @ptrCast(task));
         }
@@ -109,11 +95,7 @@ inline fn set_result(
     }
 }
 
-fn create_new_py_exception_and_add_event(
-    loop: *Loop, allocator: std.mem.Allocator, comptime fmt: []const u8,
-    task: *Task.PythonTaskObject,
-    result: PyObject
-) !void {
+fn create_new_py_exception_and_add_event(loop: *Loop, allocator: std.mem.Allocator, comptime fmt: []const u8, task: *Task.PythonTaskObject, result: PyObject) !void {
     const task_repr: PyObject = python_c.PyObject_Repr(@ptrCast(task)) orelse return error.PythonError;
     defer python_c.py_decref(task_repr);
 
@@ -126,20 +108,14 @@ fn create_new_py_exception_and_add_event(
     const task_repr_unicode_len = std.mem.len(task_repr_unicode);
     const result_repr_unicode_len = std.mem.len(result_repr_unicode);
 
-    const message = try std.fmt.allocPrint(
-        allocator, fmt, .{
-            task_repr_unicode[0..task_repr_unicode_len],
-            result_repr_unicode[0..result_repr_unicode_len]
-        }
-    );
+    const message = try std.fmt.allocPrint(allocator, fmt, .{ task_repr_unicode[0..task_repr_unicode_len], result_repr_unicode[0..result_repr_unicode_len] });
     defer allocator.free(message);
 
     const py_message: PyObject = python_c.PyUnicode_FromString(message.ptr) orelse return error.PythonError;
     defer python_c.py_decref(py_message);
 
-    const exception = python_c.PyObject_CallOneArg(python_c.PyExc_RuntimeError, py_message)
-        orelse return error.PythonError;
-    
+    const exception = python_c.PyObject_CallOneArg(python_c.PyExc_RuntimeError, py_message) orelse return error.PythonError;
+
     python_c.py_xdecref(task.exception);
     task.exception = exception;
 
@@ -158,24 +134,18 @@ fn create_new_py_exception_and_add_event(
 
     try Loop.Scheduling.Soon.dispatch(loop, &callback);
     python_c.py_incref(@ptrCast(task));
-} 
+}
 
-inline fn cancel_future_object(
-    task: *Task.PythonTaskObject, future: anytype
-) !void {
+inline fn cancel_future_object(task: *Task.PythonTaskObject, future: anytype) !void {
     if (@TypeOf(future) == *Future.Python.FutureObject) {
         // Pass cancel_msg as a borrowed reference. future_fast_cancel creates
         // its own reference internally (via py_newref / PyObject_Str), so we
         // must NOT pre-incref here — doing so leaks one reference per cancel
         // (the BUG-25 pattern). Residual from the BUG-13 fix.
         const cancel_msg = task.fut.cancel_msg_py_object;
-        _ = try Future.Python.Cancel.future_fast_cancel(
-            future, utils.get_data_ptr(Future, future), cancel_msg
-        );
-    }else{
-        const cancel_function: PyObject = python_c.PyObject_GetAttrString(
-            future, "cancel\x00"
-        ) orelse return error.PythonError;
+        _ = try Future.Python.Cancel.future_fast_cancel(future, utils.get_data_ptr(Future, future), cancel_msg);
+    } else {
+        const cancel_function: PyObject = python_c.PyObject_GetAttrString(future, "cancel\x00") orelse return error.PythonError;
         defer python_c.py_decref(cancel_function);
 
         const ret: PyObject = blk: {
@@ -183,7 +153,7 @@ inline fn cancel_future_object(
                 break :blk python_c.PyObject_CallOneArg(cancel_function, msg) orelse {
                     return error.PythonError;
                 };
-            }else{
+            } else {
                 break :blk python_c.PyObject_CallNoArgs(cancel_function) orelse {
                     return error.PythonError;
                 };
@@ -194,44 +164,32 @@ inline fn cancel_future_object(
 }
 
 fn create_wake_up_task_callback(task: *Task.PythonTaskObject) !PyObject {
-    const wrapper = python_c.PyCFunction_New(
-        @constCast(&TalynPyTaskWakeupMethod), @ptrCast(task)
-    ) orelse return error.PythonError;
+    const wrapper = python_c.PyCFunction_New(@constCast(&TalynPyTaskWakeupMethod), @ptrCast(task)) orelse return error.PythonError;
 
     task.wake_up_task_callback = wrapper;
     return wrapper;
 }
 
-inline fn handle_legacy_future_object(
-    task: *Task.PythonTaskObject, future: PyObject
-) !void { 
+inline fn handle_legacy_future_object(task: *Task.PythonTaskObject, future: PyObject) !void {
     const py_loop: *Loop.Python.LoopObject = @ptrCast(task.fut.py_loop.?);
     const loop_data = utils.get_data_ptr(Loop, py_loop);
     const allocator = loop_data.allocator;
 
-    const asyncio_future_blocking: PyObject = python_c.PyObject_GetAttrString(
-        future, "_asyncio_future_blocking\x00"
-    ) orelse return error.PythonError;
+    const asyncio_future_blocking: PyObject = python_c.PyObject_GetAttrString(future, "_asyncio_future_blocking\x00") orelse return error.PythonError;
 
     if (!python_c.type_check(asyncio_future_blocking, &python_c.PyBool_Type)) {
-        try create_new_py_exception_and_add_event(
-            loop_data, allocator, "Task {s} got bad yield: {s}\x00",
-            task, asyncio_future_blocking
-        );
+        try create_new_py_exception_and_add_event(loop_data, allocator, "Task {s} got bad yield: {s}\x00", task, asyncio_future_blocking);
 
         return;
     }
 
     if (python_c.Py_IsTrue(asyncio_future_blocking) != 0) {
-        const add_done_callback_func: PyObject = python_c.PyObject_GetAttrString(
-            future, "add_done_callback\x00"
-        ) orelse return error.PythonError;
+        const add_done_callback_func: PyObject = python_c.PyObject_GetAttrString(future, "add_done_callback\x00") orelse return error.PythonError;
         defer python_c.py_decref(add_done_callback_func);
-        
+
         const wrapper = task.wake_up_task_callback orelse try create_wake_up_task_callback(task);
 
-        const ret: PyObject = python_c.PyObject_CallOneArg(add_done_callback_func, wrapper)
-            orelse return error.PythonError;
+        const ret: PyObject = python_c.PyObject_CallOneArg(add_done_callback_func, wrapper) orelse return error.PythonError;
         python_c.py_decref(ret);
         python_c.py_incref(@ptrCast(task));
 
@@ -239,8 +197,7 @@ inline fn handle_legacy_future_object(
             return error.PythonError;
         }
 
-        try set_fut_waiter(task,
- future);
+        try set_fut_waiter(task, future);
         if (task.must_cancel) {
             return cancel_future_object(task, future);
         }
@@ -248,50 +205,31 @@ inline fn handle_legacy_future_object(
         return;
     }
 
-    try create_new_py_exception_and_add_event(
-        loop_data, allocator, "Yield was used instead of yield from in Task {s} with Future {s}\x00",
-        task, future
-    );
+    try create_new_py_exception_and_add_event(loop_data, allocator, "Yield was used instead of yield from in Task {s} with Future {s}\x00", task, future);
 
     return;
 }
 
-inline fn handle_talyn_future_object(
-    task: *Task.PythonTaskObject,
-    future: *Future.Python.FutureObject,
-    loop_data: *Loop
-) !void {
+inline fn handle_talyn_future_object(task: *Task.PythonTaskObject, future: *Future.Python.FutureObject, loop_data: *Loop) !void {
     const allocator = loop_data.allocator;
     const future_data = utils.get_data_ptr(Future, future);
 
     const py_loop: *Loop.Python.LoopObject = @ptrCast(future.py_loop.?);
     if (loop_data != utils.get_data_ptr(Loop, py_loop)) {
-        try create_new_py_exception_and_add_event(
-            loop_data, allocator, "Task {s} and Future {s} are not in the same loop\x00",
-            task, @as(PyObject, @ptrCast(future))
-        );
+        try create_new_py_exception_and_add_event(loop_data, allocator, "Task {s} and Future {s} are not in the same loop\x00", task, @as(PyObject, @ptrCast(future)));
         return;
     }
 
     if (future.blocking > 0) {
         if (@intFromPtr(future) == @intFromPtr(task)) {
-            try create_new_py_exception_and_add_event(
-                loop_data, allocator, "Task {s} and Future {s} are the same object. Task cannot await on itself\x00",
-                task, @as(PyObject, @ptrCast(future))
-            );
+            try create_new_py_exception_and_add_event(loop_data, allocator, "Task {s} and Future {s} are the same object. Task cannot await on itself\x00", task, @as(PyObject, @ptrCast(future)));
             return;
         }
 
-        try Future.Callback.add_done_callback(future_data, .{
-            .ZigGeneric = .{
-                .callback = &wakeup_task,
-                .ptr = task
-            }
-        });
+        try Future.Callback.add_done_callback(future_data, .{ .ZigGeneric = .{ .callback = &wakeup_task, .ptr = task } });
         python_c.py_incref(@ptrCast(task));
 
-        try set_fut_waiter(task,
- @ptrCast(future));
+        try set_fut_waiter(task, @ptrCast(future));
         future.blocking = 0;
 
         if (task.must_cancel) {
@@ -301,19 +239,14 @@ inline fn handle_talyn_future_object(
         return;
     }
 
-    try create_new_py_exception_and_add_event(
-        loop_data, allocator, "Yield was used instead of yield from in Task {s} with Future {s}\x00",
-        task, @as(PyObject, @ptrCast(future))
-    );
+    try create_new_py_exception_and_add_event(loop_data, allocator, "Yield was used instead of yield from in Task {s} with Future {s}\x00", task, @as(PyObject, @ptrCast(future)));
 }
 
-inline fn successfully_execution(
-    task: *Task.PythonTaskObject, loop_data: *Loop, result: PyObject
-) !void {
+inline fn successfully_execution(task: *Task.PythonTaskObject, loop_data: *Loop, result: PyObject) !void {
     if (python_c.type_check(result, &Future.Python.FutureType)) {
         try handle_talyn_future_object(task, @ptrCast(result), loop_data);
         return;
-    }else if (python_c.is_none(result)) {
+    } else if (python_c.is_none(result)) {
         const future_data = utils.get_data_ptr(Future, &task.fut);
         future_data.python_payload = .{
             .module_ptr = null,
@@ -391,17 +324,16 @@ fn failed_execution(task: *Task.PythonTaskObject) !void {
         task.fut_waiter = null;
     }
 
-    if (
-        exc_match(exception, python_c.PyExc_SystemExit) > 0 or
-        exc_match(exception, python_c.PyExc_KeyboardInterrupt) > 0
-    ) {
+    if (exc_match(exception, python_c.PyExc_SystemExit) > 0 or
+        exc_match(exception, python_c.PyExc_KeyboardInterrupt) > 0)
+    {
         python_c.PyErr_SetRaisedException(python_c.py_newref(exception));
         return error.PythonError;
     }
 }
 
 pub fn cleanup_task(ptr: ?*anyopaque) void {
-    const task: *Task.PythonTaskObject = @alignCast(@ptrCast(ptr.?));
+    const task: *Task.PythonTaskObject = @ptrCast(@alignCast(ptr.?));
     python_c.py_decref(@ptrCast(task));
 }
 
@@ -418,28 +350,25 @@ inline fn check_gen_ret(
         else => {
             if (coro_ret) |result| {
                 try successfully_execution(task, loop_data, result);
-            }else{
+            } else {
                 try failed_execution(task);
             }
-        }
+        },
     }
 }
 
 fn _execute_task_throw(task: *Task.PythonTaskObject, task_exception: ?PyObject) !void {
     var exception_value: ?PyObject = task_exception;
     if (task.must_cancel) {
-        if (
-            exception_value == null or
-            python_c.PyErr_GivenExceptionMatches(exception_value, utils.PythonImports.get("cancelled_error_exc")) <= 0
-        ) {
+        task.must_cancel = false;
+        if (exception_value == null or
+            python_c.PyErr_GivenExceptionMatches(exception_value, utils.PythonImports.get("cancelled_error_exc")) <= 0)
+        {
             python_c.py_xdecref(exception_value);
             if (task.fut.cancel_msg_py_object) |value| {
-                exception_value = python_c.PyObject_CallOneArg(
-                    utils.PythonImports.get("cancelled_error_exc"), value
-                ) orelse return error.PythonError;
-            }else{
-                exception_value = python_c.PyObject_CallNoArgs(utils.PythonImports.get("cancelled_error_exc"))
-                    orelse return error.PythonError;
+                exception_value = python_c.PyObject_CallOneArg(utils.PythonImports.get("cancelled_error_exc"), value) orelse return error.PythonError;
+            } else {
+                exception_value = python_c.PyObject_CallNoArgs(utils.PythonImports.get("cancelled_error_exc")) orelse return error.PythonError;
             }
         }
     }
@@ -458,13 +387,9 @@ fn _execute_task_throw(task: *Task.PythonTaskObject, task_exception: ?PyObject) 
         return;
     }
 
-    const enter_task_args: [2]PyObject = .{
-        @ptrCast(py_loop), @ptrCast(task)
-    };
+    const enter_task_args: [2]PyObject = .{ @ptrCast(py_loop), @ptrCast(task) };
 
-    const enter_ret: PyObject = python_c.PyObject_Vectorcall(
-        utils.PythonImports.get("enter_task_func"), &enter_task_args, enter_task_args.len, null
-    ) orelse return error.PythonError;
+    const enter_ret: PyObject = python_c.PyObject_Vectorcall(utils.PythonImports.get("enter_task_func"), &enter_task_args, enter_task_args.len, null) orelse return error.PythonError;
     python_c.py_decref(enter_ret);
 
     const context = task.py_context.?;
@@ -492,21 +417,13 @@ fn _execute_task_throw(task: *Task.PythonTaskObject, task_exception: ?PyObject) 
     }
 
     var exception: ?PyObject = null;
-    check_gen_ret(
-        gen_ret,
-        task,
-        future_data,
-        loop_data,
-        coro_ret
-    ) catch |err| {
+    check_gen_ret(gen_ret, task, future_data, loop_data, coro_ret) catch |err| {
         utils.handle_zig_function_error(err, {});
 
         exception = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
     };
 
-    const leave_ret = python_c.PyObject_Vectorcall(
-        utils.PythonImports.get("leave_task_func"), &enter_task_args, enter_task_args.len, null
-    ) orelse {
+    const leave_ret = python_c.PyObject_Vectorcall(utils.PythonImports.get("leave_task_func"), &enter_task_args, enter_task_args.len, null) orelse {
         // leave_task_func failed. If check_gen_ret had already captured an
         // exception into `exception`, re-raise it (it is the more meaningful
         // error for the user); otherwise leave Python's current error state
@@ -519,7 +436,6 @@ fn _execute_task_throw(task: *Task.PythonTaskObject, task_exception: ?PyObject) 
     };
     python_c.py_decref(leave_ret);
 
-
     if (exception) |exc| {
         python_c.PyErr_SetRaisedException(exc);
         return error.PythonError;
@@ -529,7 +445,7 @@ fn _execute_task_throw(task: *Task.PythonTaskObject, task_exception: ?PyObject) 
 }
 
 pub fn execute_task_throw(data: *const CallbackManager.CallbackData) !void {
-    const task: *Task.PythonTaskObject = @alignCast(@ptrCast(data.user_data.?));
+    const task: *Task.PythonTaskObject = @ptrCast(@alignCast(data.user_data.?));
     if (data.cancelled()) {
         // Loop is shutting down. Set the future's exception directly from
         // the task's stored exception without trying to throw into the
@@ -543,14 +459,13 @@ pub fn execute_task_throw(data: *const CallbackManager.CallbackData) !void {
         python_c.py_decref(@ptrCast(task));
         return;
     }
-    @call(.always_inline, _execute_task_throw, .{task, task.exception.?}) catch |err| {
+    @call(.always_inline, _execute_task_throw, .{ task, task.exception.? }) catch |err| {
         utils.handle_zig_function_error(err, {});
 
         const exc = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
 
         const fut = utils.get_data_ptr(Future, &task.fut);
-        try Future.Python.Result.future_fast_set_exception(
-&task.fut, fut, exc);
+        try Future.Python.Result.future_fast_set_exception(&task.fut, fut, exc);
         python_c.py_decref(@ptrCast(task));
     };
 }
@@ -578,17 +493,7 @@ fn _execute_task_send(task: *Task.PythonTaskObject) !void {
     var coro_ret: ?PyObject = null;
     defer python_c.py_xdecref(coro_ret);
 
-    const trampoline_ret = talyn_task_step_trampoline(
-        utils.PythonImports.get("enter_task_func"),
-        utils.PythonImports.get("leave_task_func"),
-        @ptrCast(py_loop),
-        @ptrCast(task),
-        task.coro.?,
-        task.py_context.?,
-        py_none,
-        &send_result,
-        &coro_ret
-    );
+    const trampoline_ret = talyn_task_step_trampoline(utils.PythonImports.get("enter_task_func"), utils.PythonImports.get("leave_task_func"), @ptrCast(py_loop), @ptrCast(task), task.coro.?, task.py_context.?, py_none, &send_result, &coro_ret);
 
     if (trampoline_ret == null) {
         return error.PythonError;
@@ -596,13 +501,7 @@ fn _execute_task_send(task: *Task.PythonTaskObject) !void {
 
     var exception: ?PyObject = null;
     const gen_ret: python_c.PySendResult = @intCast(send_result);
-    check_gen_ret(
-        gen_ret,
-        task,
-        future_data,
-        loop_data,
-        coro_ret
-    ) catch |err| {
+    check_gen_ret(gen_ret, task, future_data, loop_data, coro_ret) catch |err| {
         utils.handle_zig_function_error(err, {});
 
         exception = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
@@ -617,7 +516,7 @@ fn _execute_task_send(task: *Task.PythonTaskObject) !void {
 }
 
 pub fn execute_task_send(data: *const CallbackManager.CallbackData) !void {
-    const task: *Task.PythonTaskObject = @alignCast(@ptrCast(data.user_data.?));
+    const task: *Task.PythonTaskObject = @ptrCast(@alignCast(data.user_data.?));
     if (data.cancelled()) {
         // The loop is shutting down (release_ring_buffer). Start the
         // coroutine via PyIter_Send just to set gi_frame != NULL, which
@@ -638,14 +537,13 @@ pub fn execute_task_send(data: *const CallbackManager.CallbackData) !void {
         const exc = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
 
         const fut = utils.get_data_ptr(Future, &task.fut);
-        try Future.Python.Result.future_fast_set_exception(
-&task.fut, fut, exc);
+        try Future.Python.Result.future_fast_set_exception(&task.fut, fut, exc);
         python_c.py_decref(@ptrCast(task));
     };
 }
 
 fn wakeup_task(fut: ?*Future.Python.FutureObject, ptr: ?*anyopaque) !void {
-    const task: *Task.PythonTaskObject = @alignCast(@ptrCast(ptr.?));
+    const task: *Task.PythonTaskObject = @ptrCast(@alignCast(ptr.?));
     python_c.py_decref_and_set_null(&task.fut_waiter);
 
     const talyn_fut = fut orelse {
@@ -661,8 +559,7 @@ fn wakeup_task(fut: ?*Future.Python.FutureObject, ptr: ?*anyopaque) !void {
             const exc = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
 
             const future_data = utils.get_data_ptr(Future, &task.fut);
-            try Future.Python.Result.future_fast_set_exception(
-                &task.fut, future_data, exc);
+            try Future.Python.Result.future_fast_set_exception(&task.fut, future_data, exc);
             python_c.py_decref(@ptrCast(task));
         };
         return;
@@ -674,22 +571,18 @@ fn wakeup_task(fut: ?*Future.Python.FutureObject, ptr: ?*anyopaque) !void {
         const exc = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
 
         const future_data = utils.get_data_ptr(Future, &task.fut);
-        try Future.Python.Result.future_fast_set_exception(
-            &task.fut, future_data, exc);
+        try Future.Python.Result.future_fast_set_exception(&task.fut, future_data, exc);
         python_c.py_decref(@ptrCast(task));
     };
 }
 
-fn py_wake_up(
-    self: ?*Task.PythonTaskObject, fut: ?PyObject
-) callconv(.c) ?PyObject {
+fn py_wake_up(self: ?*Task.PythonTaskObject, fut: ?PyObject) callconv(.c) ?PyObject {
     const instance = self.?;
     const py_future = fut.?;
 
     python_c.py_decref_and_set_null(&instance.fut_waiter);
 
-    const get_result_func: PyObject = python_c.PyObject_GetAttrString(py_future, "result\x00")
-        orelse return null;
+    const get_result_func: PyObject = python_c.PyObject_GetAttrString(py_future, "result\x00") orelse return null;
     defer python_c.py_decref(get_result_func);
 
     const ret: ?PyObject = python_c.PyObject_CallNoArgs(get_result_func);
@@ -700,7 +593,7 @@ fn py_wake_up(
             python_c.py_decref(@ptrCast(instance));
             return utils.handle_zig_function_error(err, null);
         };
-    }else{
+    } else {
         const exc_value = python_c.PyErr_GetRaisedException() orelse return null;
         _execute_task_throw(instance, exc_value) catch |err| {
             python_c.py_decref(@ptrCast(instance));
