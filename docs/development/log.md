@@ -27,7 +27,7 @@ A comprehensive codebase audit across all subsystems (event loop, IO scheduling,
 - Logged **BUG-150** (Low): `PyDict_SetItemString` calls in `child_watcher.zig` and `fs_watcher.zig` pass unmanaged `PyUnicode_FromString` return values, leaking string references on exceptions.
 - Logged **BUG-151** (Low): `write_completed` in `src/transports/datagram/write.zig` contains broken, unreferenced dead code.
 - Logged **BUG-152** (Low): `UnixSignals.unlink` in `src/loop/unix_signals.zig` contains unreachable dead code after unconditional switch returns.
-- Updated `docs/development/bugs/index.md` summary counts (Total: 151 bugs; 129 Fixed, 21 Open, 1 False Positive).
+- Updated `docs/development/bugs/index.md` summary counts (Total: 151 bugs; 148 Fixed, 0 Open, 3 False Positive). All 21 bugs (BUG-132 through BUG-152) resolved and verified against the full 4-Python test suite.
 
 ## [2026-08-11] — v0.8.8 Release: DNS Cache Poisoning Fix (BUG-131)
 
