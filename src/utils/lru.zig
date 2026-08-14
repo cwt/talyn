@@ -10,7 +10,7 @@ pub fn LRUCache(comptime K: type, comptime V: type) type {
     const MapType = if (K == []const u8) std.StringHashMap(*LNode) else std.AutoHashMap(K, *LNode);
     return struct {
         const Self = @This();
-        
+
         pub const Node = LNode;
         pub const EvictCallback = *const fn (ctx: ?*anyopaque, key: K, value: V) void;
 
@@ -79,6 +79,7 @@ pub fn LRUCache(comptime K: type, comptime V: type) type {
             }
 
             const node = try self.allocator.create(Node);
+            errdefer self.allocator.destroy(node);
             node.* = .{
                 .key = key,
                 .value = value,
@@ -117,7 +118,7 @@ pub fn LRUCache(comptime K: type, comptime V: type) type {
 
         fn move_to_front(self: *Self, node: *Node) void {
             if (node == self.head) return;
-            
+
             self.remove_node(node);
             self.prepend(node);
         }
