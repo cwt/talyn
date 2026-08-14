@@ -24,7 +24,7 @@ fn cleanup_sendto(ptr: ?*anyopaque) void {
 }
 
 fn sendto_completed(data: *const CallbackManager.CallbackData) !void {
-    const sd: *SendToData = @alignCast(@ptrCast(data.user_data.?));
+    const sd: *SendToData = @ptrCast(@alignCast(data.user_data.?));
     defer cleanup_sendto(@ptrCast(@alignCast(sd)));
 
     const self = sd.transport;
@@ -32,9 +32,7 @@ fn sendto_completed(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
     if (io_uring_err != .SUCCESS) {
         if (self.protocol_error_received) |er| {
-            const exc = python_c.PyObject_CallFunction(
-                python_c.PyExc_OSError, "Ls", @as(c_long, @intFromEnum(io_uring_err)), "Sendto error"
-            ) orelse return error.PythonError;
+            const exc = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "Ls", @as(c_long, @intFromEnum(io_uring_err)), "Sendto error") orelse return error.PythonError;
             defer python_c.py_decref(exc);
             const r = python_c.PyObject_CallOneArg(er, exc) orelse return error.PythonError;
             python_c.py_decref(r);
@@ -165,39 +163,6 @@ pub fn z_datagram_sendto(self: *DatagramTransport.DatagramTransportObject, args:
 
     try buffer_watermark_check(self, len);
     return python_c.get_py_none();
-}
-
-fn write_completed(data: *const CallbackManager.CallbackData) !void {
-    const self: *DatagramTransport.DatagramTransportObject = @alignCast(@ptrCast(data.user_data.?));
-    if (data.cancelled or self.closed) return;
-    if (data.io_uring_err != .SUCCESS) {
-        if (self.protocol_error_received) |er| {
-            const exc = python_c.PyObject_CallFunction(
-                python_c.PyExc_OSError, "Ls", @as(c_long, @intFromEnum(data.io_uring_err)), "Write error"
-            ) orelse return error.PythonError;
-            defer python_c.py_decref(exc);
-            const r = python_c.PyObject_CallOneArg(er, exc) orelse return error.PythonError;
-            python_c.py_decref(r);
-        }
-        return;
-    }
-
-    const written: usize = @intCast(@max(data.io_uring_res, 0));
-    if (self.buffer_size >= written) {
-        self.buffer_size -= written;
-    } else {
-        self.buffer_size = 0;
-    }
-
-    if (!self.is_writing and self.buffer_size <= self.writing_low_water_mark) {
-        self.is_writing = true;
-        if (self.protocol) |proto| {
-            const rw = python_c.PyObject_GetAttrString(proto, "resume_writing") orelse return error.PythonError;
-            defer python_c.py_decref(rw);
-            const r = python_c.PyObject_CallNoArgs(rw) orelse return error.PythonError;
-            python_c.py_decref(r);
-        }
-    }
 }
 
 pub fn z_datagram_set_write_buffer_limits(self: *DatagramTransport.DatagramTransportObject, args: []?PyObject) !?PyObject {
