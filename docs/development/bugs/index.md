@@ -29,8 +29,8 @@ Sorted by bug number. See individual bug files for details.
 | Status | Count |
 |---|---:|
 | Fixed | 143 |
-| Open | 6 |
-| False Positive | 2 |
+| Open | 5 |
+| False Positive | 3 |
 | **Total** | **151** |
 
 ## All Bugs
@@ -182,7 +182,7 @@ Sorted by bug number. See individual bug files for details.
 | [144](144.md) | Reference leak of coroutine, context, and name in `create_task` with custom `task_factory` | High | Fixed |
 | [145](145.md) | Double decref and use-after-free of `loop` in `create_server` with custom socket | Critical | Fixed |
 | [146](146.md) | `OSError` reference leak on single connection failure in `create_connection` | Medium-High | Fixed |
-| [147](147.md) | `FDWatcher` struct and `handle` PyObject leak on Loop release with active watchers | Medium-High | Open |
+| [147](147.md) | `FDWatcher` struct and `handle` PyObject leak on Loop release with active watchers | Medium-High | False Positive |
 | [148](148.md) | Memory leak in `LRUCache.put` on `map.put` allocation failure | Medium-Low | Open |
 | [149](149.md) | `PyObject` reference leak via `get_py_none()` default in task stack keyword argument parsing | Low | Open |
 | [150](150.md) | Leaked `PyUnicode` strings in child watcher and FS watcher exception dictionaries | Low | Open |

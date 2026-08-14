@@ -248,7 +248,7 @@ test "loop hooks" {
     const Mock = struct {
         called_count: usize = 0,
         fn callback(data: *const CallbackManager.CallbackData) !void {
-            const self: *@This() = @alignCast(@ptrCast(data.user_data.?));
+            const self: *@This() = @ptrCast(@alignCast(data.user_data.?));
             self.called_count += 1;
         }
     };
@@ -295,7 +295,7 @@ test "syscall optimization" {
 
     // Verify initially the SQ queue has 2 infrastructure SQEs (eventfd & signalfd)
     try std.testing.expectEqual(@as(u32, 2), loop.io.ring.sq_ready());
-    
+
     // First flush should submit both and return 2
     const submitted1 = try loop.io.flush_pending_sqes();
     try std.testing.expectEqual(@as(u32, 2), submitted1);
@@ -393,5 +393,3 @@ test "BUG-117: registered-buffer fallback when io_uring buffer registration fail
 }
 
 const Loop = @This();
-
-
