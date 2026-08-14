@@ -7,12 +7,22 @@ import struct
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from logging import getLogger
-from typing import Any, AsyncGenerator, Awaitable, Callable, NotRequired, TypedDict
+from typing import (
+    Any,
+    AsyncGenerator,
+    Awaitable,
+    Callable,
+    NotRequired,
+    TypeVar,
+    TypedDict,
+)
 
 from .server import Server
 from .talyn_zig import Loop as _Loop
 
 logger = getLogger(__package__)
+
+_T = TypeVar("_T")
 
 # Keep Popen objects alive to prevent __del__ from reaping processes before our exit watcher
 _subprocess_popens: dict[int, Any] = {}
@@ -471,7 +481,7 @@ class Loop(_Loop):
         loop = future.get_loop()
         loop.stop()
 
-    def run_until_complete[T](self, future: Awaitable[T]) -> T:
+    def run_until_complete(self, future: Awaitable[_T]) -> _T:
         if self.is_closed() or self.is_running():
             raise RuntimeError("Event loop is closed or already running")
 
@@ -492,9 +502,9 @@ class Loop(_Loop):
 
         return new_future.result()
 
-    def run_in_executor[T, *Ts](
-        self, executor: Any, func: Callable[[*Ts], T], *args: *Ts
-    ) -> asyncio.Future[T]:
+    def run_in_executor(
+        self, executor: Any, func: Callable[..., _T], *args: Any
+    ) -> asyncio.Future[_T]:
         if self.is_closed():
             raise RuntimeError("Event loop is closed")
         if executor is None and (executor := self._default_executor) is None:

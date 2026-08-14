@@ -1,10 +1,12 @@
 import asyncio
 from logging import getLogger
-from typing import Any, Coroutine
+from typing import Any, Coroutine, TypeVar
 
 from .loop import Loop
 
 logger = getLogger(__package__)
+
+_T = TypeVar("_T")
 
 
 class Runner:
@@ -24,7 +26,7 @@ class Runner:
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         self.close()
 
-    def run[T](self, coro: Coroutine[Any, Any, T], *, context: Any = None) -> T:
+    def run(self, coro: Coroutine[Any, Any, _T], *, context: Any = None) -> _T:
         return self._loop.run_until_complete(
             asyncio.ensure_future(coro, loop=self._loop)
         )
@@ -41,5 +43,5 @@ class Runner:
         self._loop.close()
 
 
-def run[T](coro_or_future: Coroutine[Any, Any, T]) -> T:
+def run(coro_or_future: Coroutine[Any, Any, _T]) -> _T:
     return asyncio.run(coro_or_future, loop_factory=Loop)

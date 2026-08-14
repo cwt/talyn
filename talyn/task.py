@@ -1,13 +1,15 @@
 import asyncio
-from typing import Any, Coroutine
+from typing import Any, Coroutine, Generic, TypeVar
 
 from .talyn_zig import Task as _Task
 
+_T = TypeVar("_T")
 
-class Task[T](_Task):
+
+class Task(_Task, Generic[_T]):
     def __init__(
         self,
-        coro: Coroutine[Any, Any, T],
+        coro: Coroutine[Any, Any, _T],
         *,
         loop: asyncio.AbstractEventLoop | None = None,
         name: Any | None = None,
