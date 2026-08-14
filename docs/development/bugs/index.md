@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 131 |
-| Open | 19 |
+| Fixed | 132 |
+| Open | 18 |
 | False Positive | 1 |
 | **Total** | **151** |
 
@@ -169,7 +169,7 @@ Sorted by bug number. See individual bug files for details.
 | [131](131.md) | DNS cache stores empty/failed lookup results with infinite TTL (cache poisoning) | High | Fixed |
 | [132](132.md) | `py_warn` parameter type mismatch passes `PyObject*` instead of `const char*` | Critical | Fixed |
 | [133](133.md) | Inverted `errdefer` in `Future.add_done_callback` pops empty exceptions queue | High | Fixed |
-| [134](134.md) | NULL pointer passed to `PyObject_CallOneArg` in `cancel_future_waiter` | Critical | Open |
+| [134](134.md) | NULL pointer passed to `PyObject_CallOneArg` in `cancel_future_waiter` | Critical | Fixed |
 | [135](135.md) | Task cancellation request count skipped when task is awaiting a future | Medium-High | Open |
 | [136](136.md) | `WriteTransport.queue_eof` silently drops EOF request when write buffer is non-empty | High | Open |
 | [137](137.md) | Stream write raises `RuntimeError` on paused transport instead of buffering | Medium-High | Open |

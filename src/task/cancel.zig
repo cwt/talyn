@@ -13,20 +13,19 @@ fn cancel_future_waiter(future: PyObject, cancel_msg_py_object: ?PyObject) anyer
         const task: *PythonTaskObject = @ptrCast(future);
         const ret = try fast_task_cancel(task, utils.get_data_ptr(Future, &task.fut), cancel_msg_py_object);
         return ret;
-    }else if (python_c.type_check(future, &Future.Python.FutureType)) {
+    } else if (python_c.type_check(future, &Future.Python.FutureType)) {
         const fut: *Future.Python.FutureObject = @ptrCast(future);
-        const ret = try Future.Python.Cancel.future_fast_cancel(
-            fut, utils.get_data_ptr(Future, fut), cancel_msg_py_object
-        );
+        const ret = try Future.Python.Cancel.future_fast_cancel(fut, utils.get_data_ptr(Future, fut), cancel_msg_py_object);
         return ret;
     }
 
-    const cancel_function: PyObject = python_c.PyObject_GetAttrString(future, "cancel\x00")
-        orelse return error.PythonError;
+    const cancel_function: PyObject = python_c.PyObject_GetAttrString(future, "cancel\x00") orelse return error.PythonError;
     defer python_c.py_decref(cancel_function);
 
-    const ret: PyObject = python_c.PyObject_CallOneArg(cancel_function, cancel_msg_py_object)
-        orelse return error.PythonError;
+    const ret: PyObject = if (cancel_msg_py_object) |msg|
+        python_c.PyObject_CallOneArg(cancel_function, msg) orelse return error.PythonError
+    else
+        python_c.PyObject_CallNoArgs(cancel_function) orelse return error.PythonError;
     defer python_c.py_decref(ret);
 
     return (python_c.PyObject_IsTrue(ret) != 0);
@@ -59,7 +58,7 @@ pub fn task_cancel(self: ?*PythonTaskObject, args: ?PyObject, kwargs: ?PyObject)
     const future_data = utils.get_data_ptr(Future, &instance.fut);
 
     switch (future_data.status) {
-        .finished,.canceled => return python_c.get_py_false(),
+        .finished, .canceled => return python_c.get_py_false(),
         .pending => {},
     }
 
@@ -69,11 +68,7 @@ pub fn task_cancel(self: ?*PythonTaskObject, args: ?PyObject, kwargs: ?PyObject)
 
     var cancel_msg_py_object: ?PyObject = null;
 
-    if (
-        python_c.PyArg_ParseTupleAndKeywords(
-            args, kwargs, "|O:msg\x00", @ptrCast(&kwlist), &cancel_msg_py_object
-        ) < 0
-    ) {
+    if (python_c.PyArg_ParseTupleAndKeywords(args, kwargs, "|O:msg\x00", @ptrCast(&kwlist), &cancel_msg_py_object) < 0) {
         return null;
     }
 
@@ -96,7 +91,7 @@ pub fn task_cancelling(self: ?*PythonTaskObject) callconv(.c) ?PyObject {
 
     const future_data = utils.get_data_ptr(Future, &instance.fut);
     return switch (future_data.status) {
-        .canceled,.finished => python_c.PyLong_FromUnsignedLongLong(0),
-        else => python_c.PyLong_FromUnsignedLongLong(@intCast(instance.cancel_requests))
+        .canceled, .finished => python_c.PyLong_FromUnsignedLongLong(0),
+        else => python_c.PyLong_FromUnsignedLongLong(@intCast(instance.cancel_requests)),
     };
 }
