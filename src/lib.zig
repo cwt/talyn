@@ -11,46 +11,15 @@ const handle = talyn.Handle;
 const timer_handle = talyn.TimerHandle;
 const transports = talyn.Transports;
 
+const static_talyn_types = .{ &future.Python.FutureType, &task.PythonTaskType, &handle.PythonHandleType, &timer_handle.PythonTimerHandleType, &utils.PseudoSocket.PseudoSocketType };
 
-const static_talyn_types = .{
-    &future.Python.FutureType,
-    &task.PythonTaskType,
-    &handle.PythonHandleType,
-    &timer_handle.PythonTimerHandleType,
-    &utils.PseudoSocket.PseudoSocketType
-};
+const static_talyn_modules_name = .{ "Future\x00", "Task\x00", "Handle\x00", "TimerHandle\x00", "PseudoSocket\x00" };
 
-const static_talyn_modules_name = .{
-    "Future\x00",
-    "Task\x00",
-    "Handle\x00",
-    "TimerHandle\x00",
-    "PseudoSocket\x00"
-};
+const dynamic_talyn_modules_init_fns = .{ loop.Python.create_type, transports.Stream.create_type, transports.StreamServer.create_type, transports.Datagram.create_type, transports.Subprocess.create_type };
 
-const dynamic_talyn_modules_init_fns = .{
-    loop.Python.create_type,
-    transports.Stream.create_type,
-    transports.StreamServer.create_type,
-    transports.Datagram.create_type,
-    transports.Subprocess.create_type
-};
+const dynamic_talyn_types_ptrs = .{ &loop.Python.LoopType, &transports.Stream.StreamType, &transports.StreamServer.StreamServerType, &transports.Datagram.DatagramTransportType, &transports.Subprocess.SubprocessType };
 
-const dynamic_talyn_types_ptrs = .{
-    &loop.Python.LoopType,
-    &transports.Stream.StreamType,
-    &transports.StreamServer.StreamServerType,
-    &transports.Datagram.DatagramTransportType,
-    &transports.Subprocess.SubprocessType
-};
-
-const dynamic_talyn_modules_names = .{
-    "Loop\x00",
-    "StreamTransport\x00",
-    "StreamServer\x00",
-    "DatagramTransport\x00",
-    "SubprocessTransport\x00"
-};
+const dynamic_talyn_modules_names = .{ "Loop\x00", "StreamTransport\x00", "StreamServer\x00", "DatagramTransport\x00", "SubprocessTransport\x00" };
 
 fn module_cleanup(_: *python_c.PyObject) callconv(.c) void {
     // Skip Python object cleanup in free-threading mode to avoid
@@ -66,12 +35,7 @@ fn module_cleanup(_: *python_c.PyObject) callconv(.c) void {
     _ = utils.gpa.deinit();
 }
 
-var talyn_module = python_c.PyModuleDef{
-    .m_name = "talyn_zig\x00",
-    .m_doc = "Talyn: A lightning-fast Zig-powered event loop for Python's asyncio.\x00",
-    .m_size = -1,
-    .m_free = @ptrCast(&module_cleanup)
-};
+var talyn_module = python_c.PyModuleDef{ .m_name = "talyn_zig\x00", .m_doc = "Talyn: A lightning-fast Zig-powered event loop for Python's asyncio.\x00", .m_size = -1, .m_free = @ptrCast(&module_cleanup) };
 
 const std = @import("std");
 
@@ -122,30 +86,14 @@ fn initialize_python_module() !*python_c.PyObject {
         }
     }
 
-    if (
-        python_c.PyModule_AddObject(
-            module, "Loop\x00", @as(*python_c.PyObject, @ptrCast(loop.Python.LoopType))
-        ) < 0
-    ) {
-        return error.PythonError;
-    }
-
     inline for (dynamic_talyn_modules_names, dynamic_talyn_types_ptrs) |name, obj| {
-        if (
-            python_c.PyModule_AddObject(
-                module, name, @as(*python_c.PyObject, @ptrCast(obj.*))
-            ) < 0
-        ) {
+        if (python_c.PyModule_AddObject(module, name, @as(*python_c.PyObject, @ptrCast(obj.*))) < 0) {
             return error.PythonError;
         }
     }
 
     inline for (static_talyn_modules_name, static_talyn_types) |name, obj| {
-        if (
-            python_c.PyModule_AddObject(
-                module, name, @as(*python_c.PyObject, @ptrCast(obj))
-            ) < 0
-        ) {
+        if (python_c.PyModule_AddObject(module, name, @as(*python_c.PyObject, @ptrCast(obj))) < 0) {
             return error.PythonError;
         }
     }
@@ -170,4 +118,3 @@ export fn PyInit_talyn_zig() ?*python_c.PyObject {
         return null;
     }
 }
- 
