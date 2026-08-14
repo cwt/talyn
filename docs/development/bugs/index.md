@@ -1,8 +1,8 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 130 bugs discovered across 9 audit passes."
-timestamp: "2026-08-14T00:00:00Z"
+description: "Individual bug entries for talyn, one file per bug. 151 bugs discovered across 10 audit passes."
+timestamp: "2026-08-15T00:08:00Z"
 ---
 
 # Bugs — talyn
@@ -15,23 +15,23 @@ Sorted by bug number. See individual bug files for details.
 
 | Severity | Count |
 |---|---:|
-| High | 35 |
-| Low | 32 |
-| Critical | 17 |
-| Medium-Low | 13 |
-| Medium-High | 12 |
+| High | 41 |
+| Low | 36 |
+| Critical | 21 |
+| Medium-High | 17 |
+| Medium-Low | 14 |
 | Medium-Mid | 11 |
-| Medium | 10 |
-| **Total** | **130** |
+| Medium | 11 |
+| **Total** | **151** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
 | Fixed | 129 |
-| Open | 0 |
+| Open | 21 |
 | False Positive | 1 |
-| **Total** | **130** |
+| **Total** | **151** |
 
 ## All Bugs
 
@@ -167,3 +167,24 @@ Sorted by bug number. See individual bug files for details.
 | [129](129.md) | `py_xdecref` still has the `0xFFFF` heuristic (partial BUG-67 regression) | Medium | Fixed |
 | [130](130.md) | `@constCast` on visit-proc pointer in GC traverse paths | Low | Fixed |
 | [131](131.md) | DNS cache stores empty/failed lookup results with infinite TTL (cache poisoning) | High | Fixed |
+| [132](132.md) | `py_warn` parameter type mismatch passes `PyObject*` instead of `const char*` | Critical | Open |
+| [133](133.md) | Inverted `errdefer` in `Future.add_done_callback` pops empty exceptions queue | High | Open |
+| [134](134.md) | NULL pointer passed to `PyObject_CallOneArg` in `cancel_future_waiter` | Critical | Open |
+| [135](135.md) | Task cancellation request count skipped when task is awaiting a future | Medium-High | Open |
+| [136](136.md) | `WriteTransport.queue_eof` silently drops EOF request when write buffer is non-empty | High | Open |
+| [137](137.md) | Stream write raises `RuntimeError` on paused transport instead of buffering | Medium-High | Open |
+| [138](138.md) | DNS `validate_hostname` erroneously rejects consecutive hyphens (IDN/Punycode rejection) | High | Open |
+| [139](139.md) | Argument order mismatch in `create_unix_server` constructor call (`backlog` passed as `family`) | Medium-High | Open |
+| [140](140.md) | Inverted condition in `Server._detach` causes `Server.wait_closed()` to hang indefinitely | High | Open |
+| [141](141.md) | PEP 695 generic syntax in `task.py` and `runner.py` incompatible with Python 3.8–3.11 | Medium | Open |
+| [142](142.md) | Double-add of `Loop` type object in `src/lib.zig` causes reference count underflow | Critical | Open |
+| [143](143.md) | Parent transport reference leak on I/O read error in `ReadTransport` | High | Open |
+| [144](144.md) | Reference leak of coroutine, context, and name in `create_task` with custom `task_factory` | High | Open |
+| [145](145.md) | Double decref and use-after-free of `loop` in `create_server` with custom socket | Critical | Open |
+| [146](146.md) | `OSError` reference leak on single connection failure in `create_connection` | Medium-High | Open |
+| [147](147.md) | `FDWatcher` struct and `handle` PyObject leak on Loop release with active watchers | Medium-High | Open |
+| [148](148.md) | Memory leak in `LRUCache.put` on `map.put` allocation failure | Medium-Low | Open |
+| [149](149.md) | `PyObject` reference leak via `get_py_none()` default in task stack keyword argument parsing | Low | Open |
+| [150](150.md) | Leaked `PyUnicode` strings in child watcher and FS watcher exception dictionaries | Low | Open |
+| [151](151.md) | Broken / uncalled dead code `write_completed` in datagram transport | Low | Open |
+| [152](152.md) | Unreachable dead code in `UnixSignals.unlink` | Low | Open |

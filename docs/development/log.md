@@ -2,6 +2,33 @@
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
 
+## [2026-08-15] — Comprehensive Deep Codebase Audit (BUG-132 through BUG-152)
+
+A comprehensive codebase audit across all subsystems (event loop, IO scheduling, stream/datagram/subprocess transports, futures, tasks, DNS parser, watchers, memory management, and Python wrapper layers) discovered 21 concrete bugs and memory safety issues:
+
+- Logged **BUG-132** (Critical): `py_warn` in `src/python_c.zig` passes `*Python.PyObject` into `PyErr_WarnEx` which expects `const char *`, causing memory corruption or crash when ResourceWarning triggers.
+- Logged **BUG-133** (High): `Future.add_done_callback` in `src/future/callback.zig` has an inverted `errdefer` that pops `exceptions_queue` instead of `callbacks_queue` on allocation failure, causing panics.
+- Logged **BUG-134** (Critical): `cancel_future_waiter` in `src/task/cancel.zig` passes NULL to `PyObject_CallOneArg` when cancelling a task awaiting a non-Talyn future without a message.
+- Logged **BUG-135** (Medium-High): `fast_task_cancel` in `src/task/cancel.zig` returns early on awaited futures without incrementing `cancel_requests`, breaking PEP 678 cancellation tracking.
+- Logged **BUG-136** (High): `WriteTransport.queue_eof` in `src/transports/write_transport.zig` silently returns when write buffer is non-empty without scheduling EOF, losing EOF requests.
+- Logged **BUG-137** (Medium-High): `src/transports/stream/write.zig` raises `RuntimeError` when transport writing is paused, violating asyncio flow-control contracts.
+- Logged **BUG-138** (High): `validate_hostname` in `src/loop/dns/parsers.zig` rejects consecutive hyphens, breaking all IDN/Punycode domains (`xn--...`) and valid cloud hostnames.
+- Logged **BUG-139** (Medium-High): `z_loop_create_unix_server` in `src/loop/python/io/pipe/unix.zig` passes arguments in wrong order to `StreamServer.__init__`, setting `family = backlog` (100) instead of `AF_UNIX`.
+- Logged **BUG-140** (High): `Server._detach` in `talyn/server.py` checks `self._servers is not None` to wake up waiters, but `close()` sets `_servers` to None, causing `wait_closed()` to hang indefinitely.
+- Logged **BUG-141** (Medium): PEP 695 type parameter syntax `[T]` in `talyn/task.py` and `talyn/runner.py` causes `SyntaxError` on target Python versions 3.8–3.11.
+- Logged **BUG-142** (Critical): `LoopType` is registered twice in `src/lib.zig` via `PyModule_AddObject` (which steals references on Python 3.10+), causing reference count underflow.
+- Logged **BUG-143** (High): `ReadTransport.read_operation_completed` in `src/transports/read_transport.zig` returns `void` on read errors without decreffing `parent_transport`, leaking a strong reference per error.
+- Logged **BUG-144** (High): `z_loop_create_task` in `src/loop/python/utils/task.zig` leaks references to `coro`, `context`, and `name` when a custom `task_factory` is configured.
+- Logged **BUG-145** (Critical): `z_loop_create_server` in `src/loop/python/io/server/create_server.zig` prematurely decrefs `loop`, leading to use-after-free and double decref on custom sockets.
+- Logged **BUG-146** (Medium-High): `socket_connected_callback` in `src/loop/python/io/client/create_connection.zig` leaks `OSError` instances on single connection attempt failures.
+- Logged **BUG-147** (Medium-High): `Loop.release` in `src/loop/main.zig` pops `FDWatcher` structs without destroying them or decreffing their Python `Handle` objects.
+- Logged **BUG-148** (Medium-Low): `LRUCache.put` in `src/utils/lru.zig` lacks `errdefer allocator.destroy(node)` before `map.put`, leaking node memory on OOM.
+- Logged **BUG-149** (Low): `task_get_stack` and `task_print_stack` in `src/task/utils.zig` leak `None` singleton references by initializing with `get_py_none()` before `PyArg_ParseTupleAndKeywords`.
+- Logged **BUG-150** (Low): `PyDict_SetItemString` calls in `child_watcher.zig` and `fs_watcher.zig` pass unmanaged `PyUnicode_FromString` return values, leaking string references on exceptions.
+- Logged **BUG-151** (Low): `write_completed` in `src/transports/datagram/write.zig` contains broken, unreferenced dead code.
+- Logged **BUG-152** (Low): `UnixSignals.unlink` in `src/loop/unix_signals.zig` contains unreachable dead code after unconditional switch returns.
+- Updated `docs/development/bugs/index.md` summary counts (Total: 151 bugs; 129 Fixed, 21 Open, 1 False Positive).
+
 ## [2026-08-11] — v0.8.8 Release: DNS Cache Poisoning Fix (BUG-131)
 
 This patch release fixes a high-severity DNS cache poisoning bug that caused long-running asyncio web proxies to fail DNS resolution after extended operation.
