@@ -10,15 +10,9 @@ const StreamTransportObject = Stream.StreamTransportObject;
 
 const WriteTransport = @import("../write_transport.zig");
 
-
 const Lifecyle = @import("lifecycle.zig");
 
-
-pub fn write_operation_completed(
-    write_transport: *WriteTransport,
-    data_written: usize, remaining_data: usize,
-    err: std.os.linux.E
-) !void {
+pub fn write_operation_completed(write_transport: *WriteTransport, data_written: usize, remaining_data: usize, err: std.os.linux.E) !void {
     const instance: *StreamTransportObject = @ptrCast(write_transport.parent_transport);
     defer Lifecyle.maybe_close_fd(instance);
 
@@ -35,8 +29,7 @@ pub fn write_operation_completed(
             instance.is_writing = true;
 
             if (instance.protocol_resume_writing) |cb| {
-                const ret = python_c.PyObject_CallNoArgs(cb)
-                    orelse return error.PythonError;
+                const ret = python_c.PyObject_CallNoArgs(cb) orelse return error.PythonError;
                 python_c.py_decref(ret);
             }
         }
@@ -73,21 +66,16 @@ pub fn transport_get_write_buffer_size(self: ?*StreamTransportObject) callconv(.
 pub fn transport_get_write_buffer_limits(self: ?*StreamTransportObject, _: ?PyObject) callconv(.c) ?PyObject {
     const instance = self.?;
 
-    const low_water_mark = python_c.PyLong_FromUnsignedLongLong(@intCast(instance.writing_low_water_mark))
-        orelse return null;
+    const low_water_mark = python_c.PyLong_FromUnsignedLongLong(@intCast(instance.writing_low_water_mark)) orelse return null;
     defer python_c.py_decref(low_water_mark);
 
-    const high_water_mark = python_c.PyLong_FromUnsignedLongLong(@intCast(instance.writing_high_water_mark))
-        orelse return null;
+    const high_water_mark = python_c.PyLong_FromUnsignedLongLong(@intCast(instance.writing_high_water_mark)) orelse return null;
     defer python_c.py_decref(high_water_mark);
 
     return python_c.PyTuple_Pack(2, low_water_mark, high_water_mark);
 }
 
-inline fn z_transport_set_write_buffer_limits(
-    self: *StreamTransportObject, args: []?PyObject,
-    knames: ?PyObject
-) !PyObject {
+inline fn z_transport_set_write_buffer_limits(self: *StreamTransportObject, args: []?PyObject, knames: ?PyObject) !PyObject {
     if (args.len > 2) {
         python_c.raise_python_value_error("Invalid number of arguments\x00");
         return error.PythonError;
@@ -104,11 +92,7 @@ inline fn z_transport_set_write_buffer_limits(
         py_low_water_mark = args[1].?;
     }
 
-    try python_c.parse_vector_call_kwargs(
-        knames, args.ptr + args.len,
-        &.{"high\x00", "low\x00"},
-        &.{&py_high_water_mark, &py_low_water_mark}
-    );
+    try python_c.parse_vector_call_kwargs(knames, args.ptr + args.len, &.{ "high\x00", "low\x00" }, &.{ &py_high_water_mark, &py_low_water_mark });
     defer {
         python_c.py_xdecref(py_high_water_mark);
         python_c.py_xdecref(py_low_water_mark);
@@ -139,12 +123,8 @@ inline fn z_transport_set_write_buffer_limits(
     return python_c.get_py_none();
 }
 
-pub fn transport_set_write_buffer_limits(
-    self: ?*StreamTransportObject, args: ?[*]?PyObject, nargs: isize, knames: ?PyObject
-) callconv(.c) ?PyObject {
-    return utils.execute_zig_function(z_transport_set_write_buffer_limits, .{
-        self.?, args.?[0..@as(usize, @intCast(nargs))], knames
-    });
+pub fn transport_set_write_buffer_limits(self: ?*StreamTransportObject, args: ?[*]?PyObject, nargs: isize, knames: ?PyObject) callconv(.c) ?PyObject {
+    return utils.execute_zig_function(z_transport_set_write_buffer_limits, .{ self.?, args.?[0..@as(usize, @intCast(nargs))], knames });
 }
 
 pub fn transport_write(self: ?*StreamTransportObject, py_buffer: ?PyObject) callconv(.c) ?PyObject {
@@ -155,22 +135,18 @@ pub fn transport_write(self: ?*StreamTransportObject, py_buffer: ?PyObject) call
         return python_c.get_py_none();
     }
 
-    if (!instance.is_writing) {
-        python_c.raise_python_runtime_error("Writing operations are paused\x00");
-        return null;
-    }
-
     const new_buffer_size = write_transport.append_new_buffer_to_write(py_buffer.?) catch |err| {
         return utils.handle_zig_function_error(err, null);
     };
 
     if (new_buffer_size >= instance.writing_high_water_mark) {
-        instance.is_writing = false;
+        if (instance.is_writing) {
+            instance.is_writing = false;
 
-        if (instance.protocol_pause_writing) |cb| {
-            const ret = python_c.PyObject_CallNoArgs(cb)
-                orelse return null;
-            python_c.py_decref(ret);
+            if (instance.protocol_pause_writing) |cb| {
+                const ret = python_c.PyObject_CallNoArgs(cb) orelse return null;
+                python_c.py_decref(ret);
+            }
         }
     }
 
@@ -183,11 +159,6 @@ pub fn transport_write_lines(self: ?*StreamTransportObject, py_buffers: ?PyObjec
     const write_transport = utils.get_data_ptr2(WriteTransport, "write_transport", instance);
     if (write_transport.is_closing) {
         return python_c.get_py_none();
-    }
-
-    if (!instance.is_writing) {
-        python_c.raise_python_runtime_error("Writing operations are paused\x00");
-        return null;
     }
 
     const iter: PyObject = python_c.PyObject_GetIter(py_buffers.?) orelse return null;
@@ -204,12 +175,13 @@ pub fn transport_write_lines(self: ?*StreamTransportObject, py_buffers: ?PyObjec
     }
 
     if (new_buffer_size >= instance.writing_high_water_mark) {
-        instance.is_writing = false;
+        if (instance.is_writing) {
+            instance.is_writing = false;
 
-        if (instance.protocol_pause_writing) |cb| {
-            const ret = python_c.PyObject_CallNoArgs(cb)
-                orelse return null;
-            python_c.py_decref(ret);
+            if (instance.protocol_pause_writing) |cb| {
+                const ret = python_c.PyObject_CallNoArgs(cb) orelse return null;
+                python_c.py_decref(ret);
+            }
         }
     }
 
