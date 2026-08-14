@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 140 |
-| Open | 9 |
+| Fixed | 141 |
+| Open | 8 |
 | False Positive | 2 |
 | **Total** | **151** |
 
@@ -179,7 +179,7 @@ Sorted by bug number. See individual bug files for details.
 | [141](141.md) | PEP 695 generic syntax in `task.py` and `runner.py` incompatible with Python 3.8–3.11 | Medium | Fixed |
 | [142](142.md) | Double-add of `Loop` type object in `src/lib.zig` causes reference count underflow | Critical | Fixed |
 | [143](143.md) | Parent transport reference leak on I/O read error in `ReadTransport` | High | Fixed |
-| [144](144.md) | Reference leak of coroutine, context, and name in `create_task` with custom `task_factory` | High | Open |
+| [144](144.md) | Reference leak of coroutine, context, and name in `create_task` with custom `task_factory` | High | Fixed |
 | [145](145.md) | Double decref and use-after-free of `loop` in `create_server` with custom socket | Critical | Open |
 | [146](146.md) | `OSError` reference leak on single connection failure in `create_connection` | Medium-High | Open |
 | [147](147.md) | `FDWatcher` struct and `handle` PyObject leak on Loop release with active watchers | Medium-High | Open |

@@ -207,7 +207,7 @@ run_std_tests() {
         fi
 
         if ( PYTHONPATH=. $cmd -c \
-            "import talyn; talyn.install(); import unittest; from test.test_asyncio import $mod; unittest.main(module=$mod, exit=False, argv=['-q'])"; exit $? ) \
+            "import talyn; talyn.install(); import unittest; from test.test_asyncio import $mod; unittest.main(module=$mod, exit=False, argv=['unittest', '-q'])"; exit $? ) \
             > /dev/null 2>&1; then
             printf "  ${GREEN}%s: PASS${NC}\n" "$mod"
         else
