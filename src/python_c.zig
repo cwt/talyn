@@ -95,7 +95,9 @@ pub extern var PyExc_BaseExceptionGroup: ?*PyObject;
 pub extern var PyExc_ResourceWarning: ?*PyObject;
 
 pub inline fn py_warn(category: *Python.PyObject, message: *Python.PyObject, stack_level: isize) void {
-    _ = _c.PyErr_WarnEx(category, @ptrCast(message), stack_level);
+    if (_c.PyUnicode_AsUTF8(message)) |utf8| {
+        _ = _c.PyErr_WarnEx(category, utf8, stack_level);
+    }
 }
 
 pub const PyBool_FromLong = _c.PyBool_FromLong;

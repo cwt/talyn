@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 129 |
-| Open | 21 |
+| Fixed | 130 |
+| Open | 20 |
 | False Positive | 1 |
 | **Total** | **151** |
 
@@ -167,7 +167,7 @@ Sorted by bug number. See individual bug files for details.
 | [129](129.md) | `py_xdecref` still has the `0xFFFF` heuristic (partial BUG-67 regression) | Medium | Fixed |
 | [130](130.md) | `@constCast` on visit-proc pointer in GC traverse paths | Low | Fixed |
 | [131](131.md) | DNS cache stores empty/failed lookup results with infinite TTL (cache poisoning) | High | Fixed |
-| [132](132.md) | `py_warn` parameter type mismatch passes `PyObject*` instead of `const char*` | Critical | Open |
+| [132](132.md) | `py_warn` parameter type mismatch passes `PyObject*` instead of `const char*` | Critical | Fixed |
 | [133](133.md) | Inverted `errdefer` in `Future.add_done_callback` pops empty exceptions queue | High | Open |
 | [134](134.md) | NULL pointer passed to `PyObject_CallOneArg` in `cancel_future_waiter` | Critical | Open |
 | [135](135.md) | Task cancellation request count skipped when task is awaiting a future | Medium-High | Open |
