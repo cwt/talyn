@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 139 |
-| Open | 10 |
+| Fixed | 140 |
+| Open | 9 |
 | False Positive | 2 |
 | **Total** | **151** |
 
@@ -178,7 +178,7 @@ Sorted by bug number. See individual bug files for details.
 | [140](140.md) | Inverted condition in `Server._detach` causes `Server.wait_closed()` to hang indefinitely | High | Fixed |
 | [141](141.md) | PEP 695 generic syntax in `task.py` and `runner.py` incompatible with Python 3.8–3.11 | Medium | Fixed |
 | [142](142.md) | Double-add of `Loop` type object in `src/lib.zig` causes reference count underflow | Critical | Fixed |
-| [143](143.md) | Parent transport reference leak on I/O read error in `ReadTransport` | High | Open |
+| [143](143.md) | Parent transport reference leak on I/O read error in `ReadTransport` | High | Fixed |
 | [144](144.md) | Reference leak of coroutine, context, and name in `create_task` with custom `task_factory` | High | Open |
 | [145](145.md) | Double decref and use-after-free of `loop` in `create_server` with custom socket | Critical | Open |
 | [146](146.md) | `OSError` reference leak on single connection failure in `create_connection` | Medium-High | Open |

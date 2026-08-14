@@ -32,21 +32,16 @@ fd: std.posix.fd_t,
 
 blocking_task_id: usize = 0,
 
-    zero_copying: bool,
-    closed: bool = false,
-    is_closing: bool = false,
-    cancelling: bool = false,
-    initialized: bool = false,
-    batch_dispatched: bool = false,
-    fixed_file_index: ?u16 = null,
-    fixed_buffer_index: ?u16 = null,
+zero_copying: bool,
+closed: bool = false,
+is_closing: bool = false,
+cancelling: bool = false,
+initialized: bool = false,
+batch_dispatched: bool = false,
+fixed_file_index: ?u16 = null,
+fixed_buffer_index: ?u16 = null,
 
-pub fn init(
-    self: *ReadTransport, loop: *Loop, fd: std.posix.fd_t, callback: ReadCompletedCallback,
-    parent_transport: PyObject, exception_handler: PyObject,
-    connection_lost_callback: ConnectionLostCallback,
-    zero_copying: bool
-) !void {
+pub fn init(self: *ReadTransport, loop: *Loop, fd: std.posix.fd_t, callback: ReadCompletedCallback, parent_transport: PyObject, exception_handler: PyObject, connection_lost_callback: ConnectionLostCallback, zero_copying: bool) !void {
     const allocator = loop.allocator;
 
     var fixed_buffer_index: ?u16 = null;
@@ -65,23 +60,7 @@ pub fn init(
         }
     }
 
-    self.* = .{
-        .loop = loop,
-        .parent_transport = parent_transport,
-        .exception_handler = exception_handler,
-
-        .connection_lost_callback = connection_lost_callback,
-
-        .read_completed_callback = callback,
-        .buffer = buffer,
-        .fixed_buffer_index = fixed_buffer_index,
-        .buffer_to_read = undefined,
-
-        .zero_copying = zero_copying,
-
-        .fd = fd,
-        .initialized = true
-    };
+    self.* = .{ .loop = loop, .parent_transport = parent_transport, .exception_handler = exception_handler, .connection_lost_callback = connection_lost_callback, .read_completed_callback = callback, .buffer = buffer, .fixed_buffer_index = fixed_buffer_index, .buffer_to_read = undefined, .zero_copying = zero_copying, .fd = fd, .initialized = true };
 }
 
 pub fn close(self: *ReadTransport) !void {
@@ -96,11 +75,7 @@ pub fn close(self: *ReadTransport) !void {
         return;
     }
 
-    _ = try self.loop.io.queue(
-        .{
-            .Cancel = blocking_task_id
-        }
-    );
+    _ = try self.loop.io.queue(.{ .Cancel = blocking_task_id });
     self.is_closing = true;
     self.connection_lost_callback = null;
 }
@@ -130,7 +105,7 @@ pub fn deinit(self: *ReadTransport) void {
 }
 
 fn cleanup_resources_callback(ptr: ?*anyopaque) void {
-    const self: *ReadTransport = @alignCast(@ptrCast(ptr.?));
+    const self: *ReadTransport = @ptrCast(@alignCast(ptr.?));
     const parent_transport = self.parent_transport;
 
     self.blocking_task_id = 0;
@@ -151,7 +126,7 @@ pub fn read_operation_completed(data: *const CallbackManager.CallbackData) !void
         cleanup_resources_callback(data.user_data);
         return;
     }
-    const self: *ReadTransport = @alignCast(@ptrCast(data.user_data.?));
+    const self: *ReadTransport = @ptrCast(@alignCast(data.user_data.?));
     const io_uring_err = data.io_uring_err();
     const io_uring_res = data.io_uring_res();
 
@@ -181,9 +156,10 @@ pub fn read_operation_completed(data: *const CallbackManager.CallbackData) !void
             return;
         }
 
-        const exception = python_c.PyObject_CallFunction(
-            python_c.PyExc_OSError, "Ls\x00", @as(c_long, @intFromEnum(io_uring_err)), "Read operation failed\x00"
-        ) orelse return error.PythonError;
+        const exception = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "Ls\x00", @as(c_long, @intFromEnum(io_uring_err)), "Read operation failed\x00") orelse {
+            python_c.py_decref(parent_transport);
+            return error.PythonError;
+        };
         defer python_c.py_decref(exception);
 
         self.is_closing = true;
@@ -192,14 +168,19 @@ pub fn read_operation_completed(data: *const CallbackManager.CallbackData) !void
         if (self.connection_lost_callback) |callback| {
             try callback(parent_transport, exception);
         }
+        python_c.py_decref(parent_transport);
         return;
     } else |err| {
         utils.handle_zig_function_error(err, {});
-        const exception = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
+        const exception = python_c.PyErr_GetRaisedException() orelse {
+            python_c.py_decref(parent_transport);
+            return error.PythonError;
+        };
 
         defer {
             self.is_closing = true;
             self.closed = true;
+            python_c.py_decref(parent_transport);
             python_c.PyErr_SetRaisedException(exception);
         }
 
@@ -215,26 +196,9 @@ pub inline fn perform(self: *ReadTransport, buffer: ?[]u8) !void {
     const buffer_to_read = buffer orelse self.buffer;
     const fixed_buffer_idx = if (buffer == null) self.fixed_buffer_index else null;
 
-    self.blocking_task_id = try self.loop.io.queue(
-        .{
-            .PerformRead = .{
-                .callback = .{
-                    .func = &read_operation_completed,
-                    .cleanup = &cleanup_resources_callback,
-                    .data = .{
-                        .user_data = self,
-                    }
-                },
-                .fd = self.fd,
-                .fixed_file_index = self.fixed_file_index,
-                .fixed_buffer_index = fixed_buffer_idx,
-                .data = .{
-                    .buffer = buffer_to_read
-                },
-                .zero_copy = self.zero_copying
-            }
-        }
-    );
+    self.blocking_task_id = try self.loop.io.queue(.{ .PerformRead = .{ .callback = .{ .func = &read_operation_completed, .cleanup = &cleanup_resources_callback, .data = .{
+        .user_data = self,
+    } }, .fd = self.fd, .fixed_file_index = self.fixed_file_index, .fixed_buffer_index = fixed_buffer_idx, .data = .{ .buffer = buffer_to_read }, .zero_copy = self.zero_copying } });
 
     self.buffer_to_read = buffer_to_read;
     python_c.py_incref(self.parent_transport);
@@ -246,11 +210,7 @@ pub inline fn cancel(self: *ReadTransport) !void {
         return;
     }
 
-    _ = try self.loop.io.queue(
-        .{
-            .Cancel = blocking_task_id
-        }
-    );
+    _ = try self.loop.io.queue(.{ .Cancel = blocking_task_id });
 
     self.cancelling = true;
 }
