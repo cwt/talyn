@@ -8,10 +8,7 @@ const Loop = @import("../loop/main.zig");
 
 const std = @import("std");
 
-
-pub fn task_not_implemented_method(
-    _: ?*Task.PythonTaskObject, _: ?PyObject, _: ?PyObject
-) callconv(.c) ?PyObject {
+pub fn task_not_implemented_method(_: ?*Task.PythonTaskObject, _: ?PyObject, _: ?PyObject) callconv(.c) ?PyObject {
     python_c.PyErr_SetString(python_c.PyExc_NotImplementedError.?, "This method is not supported for tasks\x00");
     return null;
 }
@@ -39,7 +36,7 @@ pub fn task_get_name(self: ?*Task.PythonTaskObject) callconv(.c) ?PyObject {
     const loop: *Loop.Python.LoopObject = @ptrCast(instance.fut.py_loop.?);
     const loop_data = utils.get_data_ptr(Loop, loop);
     const allocator = loop_data.allocator;
-    
+
     const task_id = @atomicRmw(u64, &loop.task_name_counter, .Add, 1, .monotonic);
     // BUG-65: Don't include the null terminator in the format string.
     // The previous `"\x00"` was a C-string convention, but
@@ -51,8 +48,7 @@ pub fn task_get_name(self: ?*Task.PythonTaskObject) callconv(.c) ?PyObject {
     };
     defer allocator.free(random_str);
 
-    const py_name: PyObject = python_c.PyUnicode_FromStringAndSize(random_str.ptr, @intCast(random_str.len))
-        orelse return null;
+    const py_name: PyObject = python_c.PyUnicode_FromStringAndSize(random_str.ptr, @intCast(random_str.len)) orelse return null;
     instance.name = py_name;
 
     return python_c.py_newref(py_name);
@@ -79,24 +75,21 @@ pub fn task_get_stack(self: ?*Task.PythonTaskObject, args: ?PyObject, kwargs: ?P
     kwlist[0] = @constCast("limit\x00");
     kwlist[1] = null;
 
-    var limit: ?PyObject = python_c.get_py_none();
+    var limit: ?PyObject = python_c.get_py_none_without_incref();
 
     if (python_c.PyArg_ParseTupleAndKeywords(args, kwargs, "|$O\x00", @ptrCast(&kwlist), &limit) < 0) {
         return null;
     }
 
     const asyncio_module = utils.PythonImports.get("asyncio_module");
-    
-    const base_tasks_module: PyObject = python_c.PyObject_GetAttrString(asyncio_module, "base_tasks\x00")
-        orelse return null;
+
+    const base_tasks_module: PyObject = python_c.PyObject_GetAttrString(asyncio_module, "base_tasks\x00") orelse return null;
     defer python_c.py_decref(base_tasks_module);
 
-    const get_stack_func: PyObject = python_c.PyObject_GetAttrString(base_tasks_module, "_task_get_stack\x00")
-        orelse return null;
+    const get_stack_func: PyObject = python_c.PyObject_GetAttrString(base_tasks_module, "_task_get_stack\x00") orelse return null;
     defer python_c.py_decref(get_stack_func);
 
-    const stack: PyObject = python_c.PyObject_CallFunctionObjArgs(get_stack_func, instance, limit, @as(?PyObject, null))
-        orelse return null;
+    const stack: PyObject = python_c.PyObject_CallFunctionObjArgs(get_stack_func, instance, limit, @as(?PyObject, null)) orelse return null;
 
     return stack;
 }
@@ -109,25 +102,21 @@ pub fn task_print_stack(self: ?*Task.PythonTaskObject, args: ?PyObject, kwargs: 
     kwlist[1] = @constCast("file\x00");
     kwlist[2] = null;
 
-    var limit: ?PyObject = python_c.get_py_none();
-    var file: ?PyObject = python_c.get_py_none();
+    var limit: ?PyObject = python_c.get_py_none_without_incref();
+    var file: ?PyObject = python_c.get_py_none_without_incref();
 
     if (python_c.PyArg_ParseTupleAndKeywords(args, kwargs, "|$OO\x00", @ptrCast(&kwlist), &limit, &file) < 0) {
         return null;
     }
 
     const asyncio_module = utils.PythonImports.get("asyncio_module");
-    
-    const base_tasks_module: PyObject = python_c.PyObject_GetAttrString(asyncio_module, "base_tasks\x00")
-        orelse return null;
+
+    const base_tasks_module: PyObject = python_c.PyObject_GetAttrString(asyncio_module, "base_tasks\x00") orelse return null;
     defer python_c.py_decref(base_tasks_module);
 
-    const print_stack_func: PyObject = python_c.PyObject_GetAttrString(base_tasks_module, "_task_print_stack\x00")
-        orelse return null;
+    const print_stack_func: PyObject = python_c.PyObject_GetAttrString(base_tasks_module, "_task_print_stack\x00") orelse return null;
     defer python_c.py_decref(print_stack_func);
 
-    const result: ?PyObject = python_c.PyObject_CallFunctionObjArgs(
-        print_stack_func, instance, limit, file, @as(?PyObject, null)
-    );
+    const result: ?PyObject = python_c.PyObject_CallFunctionObjArgs(print_stack_func, instance, limit, file, @as(?PyObject, null));
     return result;
 }
