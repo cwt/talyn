@@ -26,32 +26,25 @@ const PythonGenericData = struct {
     context: PyObject,
 };
 
-const ZigGenericData = struct {
-    callback: *const fn (?*Future.Python.FutureObject, ?*anyopaque) anyerror!void,
-    ptr: ?*anyopaque
-};
+const ZigGenericData = struct { callback: *const fn (?*Future.Python.FutureObject, ?*anyopaque) anyerror!void, ptr: ?*anyopaque };
 
 pub const Data = union(enum) {
     PythonGeneric: PythonGenericData,
     ZigGeneric: ZigGenericData,
 };
 
-pub const Callback = struct {
-    data: Data,
-    cancelled: bool = false,
-    executed: bool = false
-};
+pub const Callback = struct { data: Data, cancelled: bool = false, executed: bool = false };
 
 pub const CallbacksSetData = std.ArrayList(Callback);
 
 fn release_python_future_data(data: ?*anyopaque) void {
-    const future: *Future = @alignCast(@ptrCast(data.?));
+    const future: *Future = @ptrCast(@alignCast(data.?));
     const py_future = utils.get_parent_ptr(Future.Python.FutureObject, future);
     python_c.py_decref(@ptrCast(py_future));
 }
 
 fn traverse_python_future_data(ptr: ?*anyopaque, visit_ptr: ?*anyopaque, arg: ?*anyopaque) c_int {
-    const future: *Future = @alignCast(@ptrCast(ptr.?));
+    const future: *Future = @ptrCast(@alignCast(ptr.?));
     const py_future = utils.get_parent_ptr(Future.Python.FutureObject, future);
     const visit: python_c.visitproc = @ptrCast(@alignCast(visit_ptr.?));
     return visit.?(@ptrCast(py_future), arg);
@@ -72,13 +65,13 @@ fn execute_python_callback(context: PyObject, callback: PyObject, future: PyObje
 
     if (result) |v| {
         python_c.py_decref(v);
-    }else{
+    } else {
         return error.PythonError;
     }
 }
 
 fn run_python_future_set_callbacks(data: *const CallbackManager.CallbackData) !void {
-    const future: *Future = @alignCast(@ptrCast(data.user_data.?));
+    const future: *Future = @ptrCast(@alignCast(data.user_data.?));
     const py_future = utils.get_parent_ptr(Future.Python.FutureObject, future);
 
     if (data.cancelled()) {
@@ -121,7 +114,7 @@ fn run_python_future_set_callbacks(data: *const CallbackManager.CallbackData) !v
                         python_c.py_decref(exc);
                     };
                 };
-            }
+            },
         }
     }
 
@@ -138,20 +131,18 @@ fn run_python_future_set_callbacks(data: *const CallbackManager.CallbackData) !v
             exc.* = null;
         }
 
-        const exception_message = python_c.PyUnicode_FromString("Multiple exceptions occurred while executing future callbacks\x00")
-            orelse return error.PythonError;
+        const exception_message = python_c.PyUnicode_FromString("Multiple exceptions occurred while executing future callbacks\x00") orelse return error.PythonError;
         defer python_c.py_decref(exception_message);
 
         var args: [2]PyObject = undefined;
         args[0] = exception_message;
         args[1] = exc_tuple;
 
-        const exc = python_c.PyObject_Vectorcall(python_c.PyExc_BaseExceptionGroup, &args, 2, null)
-            orelse return error.PythonError;
+        const exc = python_c.PyObject_Vectorcall(python_c.PyExc_BaseExceptionGroup, &args, 2, null) orelse return error.PythonError;
         python_c.PyErr_SetRaisedException(exc);
-        
+
         return error.PythonError;
-    } 
+    }
 
     python_c.py_decref(@ptrCast(py_future));
 }
@@ -170,10 +161,10 @@ pub fn traverse_callbacks_queue(queue: *const CallbacksSetData, visit: python_c.
                 // data.ptr is always a PythonTaskObject (Task) in Talyn.
                 // Traverse it so GC can see Task -> Future -> Task cycles.
                 if (data.ptr) |ptr| {
-                    const vret = visit.?(@alignCast(@ptrCast(ptr)), arg);
+                    const vret = visit.?(@ptrCast(@alignCast(ptr)), arg);
                     if (vret != 0) return vret;
                 }
-            }
+            },
         }
     }
     return 0;
@@ -192,7 +183,7 @@ pub fn release_callbacks_queue(queue: *CallbacksSetData) void {
                 data.callback(null, data.ptr) catch |err| {
                     std.log.err("Error while releasing future callback: {s}", .{@errorName(err)});
                 };
-            }
+            },
         }
     }
 }
@@ -201,9 +192,9 @@ pub inline fn add_done_callback(self: *Future, callback_data: Data) !void {
     if (self.status != .pending) return;
 
     try self.callbacks_queue.append(self.loop.allocator, .{
-        .data = callback_data
+        .data = callback_data,
     });
-    errdefer _ = self.exceptions_queue.pop();
+    errdefer _ = self.callbacks_queue.pop();
 
     try self.exceptions_queue.ensureTotalCapacity(self.loop.allocator, self.callbacks_queue.items.len);
 }
@@ -225,7 +216,7 @@ pub fn remove_done_callback(self: *Future, callback_id: u64) usize {
                     callback.cancelled = true;
                     removed_count += 1;
                 }
-            }
+            },
         }
     }
 
