@@ -60,7 +60,7 @@ const SocketCreationData = struct {
     pub fn traverse(ptr: ?*anyopaque, visit_ptr: ?*anyopaque, arg: ?*anyopaque) c_int {
         const visit: python_c.visitproc = @ptrCast(@alignCast(visit_ptr));
         if (ptr) |p| {
-            const self: *SocketCreationData = @alignCast(@ptrCast(p));
+            const self: *SocketCreationData = @ptrCast(@alignCast(p));
             return python_c.py_visit(self, visit, arg);
         }
         return 0;
@@ -85,7 +85,7 @@ const TransportCreationData = struct {
     pub fn traverse(ptr: ?*anyopaque, visit_ptr: ?*anyopaque, arg: ?*anyopaque) c_int {
         const visit: python_c.visitproc = @ptrCast(@alignCast(visit_ptr));
         if (ptr) |p| {
-            const self: *TransportCreationData = @alignCast(@ptrCast(p));
+            const self: *TransportCreationData = @ptrCast(@alignCast(p));
             var vret = visit.?(@ptrCast(self.protocol_factory), arg);
             if (vret != 0) return vret;
             vret = visit.?(@ptrCast(self.future), arg);
@@ -106,15 +106,13 @@ fn set_future_exception(err: anyerror, future: *FutureObject) !void {
     try Future.Python.Result.future_fast_set_exception(future, future_data, exc);
 }
 
-inline fn z_loop_create_connection(
-    self: *LoopObject, args: []?PyObject, knames: ?PyObject
-) !*FutureObject {
+inline fn z_loop_create_connection(self: *LoopObject, args: []?PyObject, knames: ?PyObject) !*FutureObject {
     if (Loop.Python.check_forked(self)) return error.PythonError;
     if (Loop.Python.check_thread(self)) return error.PythonError;
     if (args.len < 1) {
         python_c.raise_python_value_error("Invalid number of arguments\x00");
         return error.PythonError;
-    } 
+    }
 
     const protocol_factory: PyObject = args[0].?;
     var py_sock: ?PyObject = null;
@@ -130,44 +128,15 @@ inline fn z_loop_create_connection(
     }
 
     try python_c.parse_vector_call_kwargs(
-        knames, args.ptr + args.len,
-        &.{
-            "host\x00",
-            "port\x00",
-            "ssl\x00",
-            "family\x00",
-            "proto\x00",
-            "sock\x00",
-            "local_addr\x00",
-            "server_hostname\x00",
-            "ssl_handshake_timeout\x00",
-            "ssl_shutdown_timeout\x00",
-            "happy_eyeballs_delay\x00",
-            "interleave\x00",
-            "all_errors\x00",
-            "dns_timeout\x00"
-        },
-        &.{
-            &creation_data.py_host,
-            &creation_data.py_port,
-            &creation_data.py_ssl,
-            &creation_data.py_family,
-            &creation_data.py_proto,
-            &py_sock,
-            &creation_data.py_local_addr,
-            &creation_data.py_server_hostname,
-            &creation_data.py_ssl_handshake_timeout,
-            &creation_data.py_ssl_shutdown_timeout,
-            &creation_data.py_happy_eyeballs_delay,
-            &creation_data.py_interleave,
-            &creation_data.py_all_errors,
-            &creation_data.py_dns_timeout
-        },
+        knames,
+        args.ptr + args.len,
+        &.{ "host\x00", "port\x00", "ssl\x00", "family\x00", "proto\x00", "sock\x00", "local_addr\x00", "server_hostname\x00", "ssl_handshake_timeout\x00", "ssl_shutdown_timeout\x00", "happy_eyeballs_delay\x00", "interleave\x00", "all_errors\x00", "dns_timeout\x00" },
+        &.{ &creation_data.py_host, &creation_data.py_port, &creation_data.py_ssl, &creation_data.py_family, &creation_data.py_proto, &py_sock, &creation_data.py_local_addr, &creation_data.py_server_hostname, &creation_data.py_ssl_handshake_timeout, &creation_data.py_ssl_shutdown_timeout, &creation_data.py_happy_eyeballs_delay, &creation_data.py_interleave, &creation_data.py_all_errors, &creation_data.py_dns_timeout },
     );
     defer {
         python_c.py_xdecref(py_sock);
     }
-    errdefer python_c.deinitialize_object_fields(&creation_data, &.{"future", "protocol_factory"});
+    errdefer python_c.deinitialize_object_fields(&creation_data, &.{ "future", "protocol_factory" });
 
     if (python_c.PyCallable_Check(protocol_factory) <= 0) {
         python_c.raise_python_value_error("Invalid protocol_factory. It must be a callable");
@@ -186,12 +155,10 @@ inline fn z_loop_create_connection(
             return error.PythonError;
         }
 
-        const fileno_func = python_c.PyObject_GetAttrString(v, "fileno\x00")
-            orelse return error.PythonError;
+        const fileno_func = python_c.PyObject_GetAttrString(v, "fileno\x00") orelse return error.PythonError;
         defer python_c.py_decref(fileno_func);
 
-        const py_fd = python_c.PyObject_CallNoArgs(fileno_func)
-            orelse return error.PythonError;
+        const py_fd = python_c.PyObject_CallNoArgs(fileno_func) orelse return error.PythonError;
         defer python_c.py_decref(py_fd);
 
         const fd = python_c.PyLong_AsLongLong(py_fd);
@@ -222,13 +189,13 @@ inline fn z_loop_create_connection(
             .socket_fd = @intCast(fd),
             .zero_copying = false, // Caller owns the fd (e.g. accept()'d socket).
             .fd_created = false, // Caller owns the fd (e.g. accept()'d socket).
-            .owns_fd = false,     // Don't close the fd on transport close.
+            .owns_fd = false, // Don't close the fd on transport close.
             .dns_timeout = dns_timeout_val,
             .python_payload = .{
                 .module_ptr = @ptrCast(self),
                 .callback_ptr = @ptrCast(fut),
                 .traverse = &TransportCreationData.traverse,
-            }
+            },
         };
         errdefer python_c.py_decref(@ptrCast(self));
 
@@ -239,7 +206,7 @@ inline fn z_loop_create_connection(
         };
         try Loop.Scheduling.Soon.dispatch(loop_data, &callback);
 
-        python_c.deinitialize_object_fields(&creation_data, &.{"future", "protocol_factory"});
+        python_c.deinitialize_object_fields(&creation_data, &.{ "future", "protocol_factory" });
         return fut;
     }
 
@@ -263,14 +230,10 @@ inline fn z_loop_create_connection(
     return fut;
 }
 
-pub fn loop_create_connection(
-    self: ?*LoopObject, args: ?[*]?PyObject, nargs: isize, knames: ?PyObject
-) callconv(.c) ?*FutureObject {
-    return utils.execute_zig_function(
-        z_loop_create_connection, .{
-            self.?, args.?[0..@as(usize, @intCast(nargs))], knames,
-        }
-    );
+pub fn loop_create_connection(self: ?*LoopObject, args: ?[*]?PyObject, nargs: isize, knames: ?PyObject) callconv(.c) ?*FutureObject {
+    return utils.execute_zig_function(z_loop_create_connection, .{
+        self.?, args.?[0..@as(usize, @intCast(nargs))], knames,
+    });
 }
 
 // -----------------------------------------------------------------
@@ -311,7 +274,7 @@ const SocketConnectionData = struct {
 
     pub fn traverse(ptr: ?*anyopaque, visit_ptr: ?*anyopaque, arg: ?*anyopaque) c_int {
         if (ptr) |p| {
-            const self: *SocketConnectionData = @alignCast(@ptrCast(p));
+            const self: *SocketConnectionData = @ptrCast(@alignCast(p));
             return SocketCreationData.traverse(self.creation_data, visit_ptr, arg);
         }
         return 0;
@@ -330,12 +293,10 @@ fn get_host_slice(data: *SocketCreationData) ![]const u8 {
     }
 
     var host_ptr_lenght: python_c.Py_ssize_t = undefined;
-    const host_ptr = python_c.PyUnicode_AsUTF8AndSize(py_host, &host_ptr_lenght)
-        orelse return error.PythonError;
+    const host_ptr = python_c.PyUnicode_AsUTF8AndSize(py_host, &host_ptr_lenght) orelse return error.PythonError;
 
     return host_ptr[0..@intCast(host_ptr_lenght)];
 }
-
 
 fn z_try_resolv_host(creation_data: *SocketCreationData) !void {
     const hostname = try get_host_slice(creation_data);
@@ -377,7 +338,7 @@ fn z_try_resolv_host(creation_data: *SocketCreationData) !void {
 }
 
 fn try_resolv_host(data: *const CallbackManager.CallbackData) !void {
-    const socket_creation_data_ptr: *SocketCreationData = @alignCast(@ptrCast(data.user_data.?));
+    const socket_creation_data_ptr: *SocketCreationData = @ptrCast(@alignCast(data.user_data.?));
     errdefer python_c.deinitialize_object_fields(socket_creation_data_ptr, &.{});
 
     if (data.cancelled()) {
@@ -414,7 +375,7 @@ fn z_host_resolved_callback(connection_data: *SocketConnectionData) !void {
 }
 
 fn host_resolved_callback(data: *const CallbackManager.CallbackData) !void {
-    const connection_data: *SocketConnectionData = @alignCast(@ptrCast(data.user_data.?));
+    const connection_data: *SocketConnectionData = @ptrCast(@alignCast(data.user_data.?));
     errdefer connection_data.deinit();
 
     if (data.cancelled()) {
@@ -450,7 +411,7 @@ fn interleave_address_list(allocator: std.mem.Allocator, address_list: []utils.A
                 tmp_list[address_list.len + ipv6_addresses] = address.*;
                 ipv6_addresses += 1;
             },
-            else => return error.InvalidOperation
+            else => return error.InvalidOperation,
         }
     }
 
@@ -491,26 +452,16 @@ const MultiConnectState = struct {
     python_payload: CallbackManager.PythonPayload = .{},
 
     comptime {
-        python_c.verify_gc_coverage(@This(), &.{ "connection_data" });
+        python_c.verify_gc_coverage(@This(), &.{"connection_data"});
     }
 
     pub fn init(allocator: std.mem.Allocator, connection_data: *SocketConnectionData, all_errors: bool) !*MultiConnectState {
         const self = try allocator.create(MultiConnectState);
-        self.* = .{
-            .connection_data = connection_data,
-            .pending = 0,
-            .succeeded = false,
-            .timer_scheduled = false,
-            .timer_fired = false,
-            .failed_count = 0,
-            .task_ids = .empty,
-            .all_errors = all_errors,
-            .python_payload = .{
-                .module_ptr = @ptrCast(connection_data.creation_data.loop.?),
-                .callback_ptr = @ptrCast(connection_data.creation_data.future.?),
-                .traverse = &MultiConnectState.traverse_raw,
-            }
-        };
+        self.* = .{ .connection_data = connection_data, .pending = 0, .succeeded = false, .timer_scheduled = false, .timer_fired = false, .failed_count = 0, .task_ids = .empty, .all_errors = all_errors, .python_payload = .{
+            .module_ptr = @ptrCast(connection_data.creation_data.loop.?),
+            .callback_ptr = @ptrCast(connection_data.creation_data.future.?),
+            .traverse = &MultiConnectState.traverse_raw,
+        } };
         if (all_errors) {
             self.exceptions = python_c.PyList_New(0) orelse return error.PythonError;
         }
@@ -534,7 +485,7 @@ const MultiConnectState = struct {
     pub fn traverse_raw(ptr: ?*anyopaque, visit_ptr: ?*anyopaque, arg: ?*anyopaque) c_int {
         const visit: python_c.visitproc = @ptrCast(@alignCast(visit_ptr));
         if (ptr) |p| {
-            const self: *MultiConnectState = @alignCast(@ptrCast(p));
+            const self: *MultiConnectState = @ptrCast(@alignCast(p));
             if (self.exceptions) |e| {
                 const vret = visit.?(@ptrCast(e), arg);
                 if (vret != 0) return vret;
@@ -569,42 +520,34 @@ fn create_socket_and_submit_connect_req(address: *const utils.Address, data: *So
     data.socket_fd = socket_fd;
     errdefer data.socket_fd = -1;
 
-    const task_id = try Loop.Scheduling.IO.queue(
-        &loop.io, .{
-            .SocketConnect = .{
-                .addr = &address.any,
-                .len = address.getOsSockLen(),
-                .socket_fd = socket_fd,
-                .callback = .{
-                    .func = &socket_connected_callback,
-                    .cleanup = null,
-                    .data = CallbackManager.CallbackData.init_python(data, &data.python_payload),
-                },
+    const task_id = try Loop.Scheduling.IO.queue(&loop.io, .{
+        .SocketConnect = .{
+            .addr = &address.any,
+            .len = address.getOsSockLen(),
+            .socket_fd = socket_fd,
+            .callback = .{
+                .func = &socket_connected_callback,
+                .cleanup = null,
+                .data = CallbackManager.CallbackData.init_python(data, &data.python_payload),
             },
-        }
-    );
+        },
+    });
 
     return task_id;
 }
 
-fn submit_connect_for_address(
-    mcs: *MultiConnectState, address: *const utils.Address, allocator: std.mem.Allocator, loop: *Loop
-) !void {
+fn submit_connect_for_address(mcs: *MultiConnectState, address: *const utils.Address, allocator: std.mem.Allocator, loop: *Loop) !void {
     const socket_data = try allocator.create(SocketData);
     // Single owner of socket_data on the error path. errdefer frees it exactly
     // once on any error return (including the later task_ids.append failure).
     // The success path transfers ownership to the io_uring callback chain, so
     // it must NOT be freed here.
     errdefer allocator.destroy(socket_data);
-    socket_data.* = .{
-        .multi_state = mcs,
-        .socket_fd = -1,
-        .python_payload = .{
-            .module_ptr = @ptrCast(mcs.connection_data.creation_data.loop.?),
-            .callback_ptr = @ptrCast(mcs.connection_data.creation_data.future.?),
-            .traverse = &SocketData.traverse,
-        }
-    };
+    socket_data.* = .{ .multi_state = mcs, .socket_fd = -1, .python_payload = .{
+        .module_ptr = @ptrCast(mcs.connection_data.creation_data.loop.?),
+        .callback_ptr = @ptrCast(mcs.connection_data.creation_data.future.?),
+        .traverse = &SocketData.traverse,
+    } };
 
     const task_id = create_socket_and_submit_connect_req(address, socket_data, loop) catch |err| {
         // Do NOT free socket_data here: the errdefer at the top of this
@@ -617,7 +560,7 @@ fn submit_connect_for_address(
 }
 
 fn schedule_remaining_connects_callback(data: *const CallbackManager.CallbackData) !void {
-    const mcs: *MultiConnectState = @alignCast(@ptrCast(data.user_data.?));
+    const mcs: *MultiConnectState = @ptrCast(@alignCast(data.user_data.?));
     // When a happy-eyeballs timer is scheduled, this callback owns `mcs`
     // teardown (BUG-120). The connect callbacks defer to us while
     // `timer_scheduled and !timer_fired`, because cancelling the timer still
@@ -766,7 +709,7 @@ fn z_create_socket_connection(data: *SocketConnectionData) !void {
 }
 
 fn create_socket_connection(data: *const CallbackManager.CallbackData) !void {
-    const socket_creation_data: *SocketConnectionData = @alignCast(@ptrCast(data.user_data.?));
+    const socket_creation_data: *SocketConnectionData = @ptrCast(@alignCast(data.user_data.?));
     // Capture the future handle up front: any failure path below may free
     // `connection_data` (and the `creation_data` it embeds), so we must not read
     // `socket_creation_data.creation_data.future` after such a free.
@@ -798,12 +741,12 @@ const SocketData = struct {
     python_payload: CallbackManager.PythonPayload = .{},
 
     comptime {
-        python_c.verify_gc_coverage(@This(), &.{ "multi_state" });
+        python_c.verify_gc_coverage(@This(), &.{"multi_state"});
     }
 
     pub fn traverse(ptr: ?*anyopaque, visit_ptr: ?*anyopaque, arg: ?*anyopaque) c_int {
         if (ptr) |p| {
-            const self: *SocketData = @alignCast(@ptrCast(p));
+            const self: *SocketData = @ptrCast(@alignCast(p));
             return MultiConnectState.traverse_raw(self.multi_state, visit_ptr, arg);
         }
         return 0;
@@ -811,7 +754,7 @@ const SocketData = struct {
 };
 
 fn socket_connected_callback(data: *const CallbackManager.CallbackData) !void {
-    const socket_data: *SocketData = @alignCast(@ptrCast(data.user_data.?));
+    const socket_data: *SocketData = @ptrCast(@alignCast(data.user_data.?));
     const mcs = socket_data.multi_state;
     const fd = socket_data.socket_fd;
 
@@ -835,11 +778,7 @@ fn socket_connected_callback(data: *const CallbackManager.CallbackData) !void {
     if (io_uring_err != .SUCCESS or io_uring_res < 0) {
         if (mcs.all_errors) {
             const errno_val = if (io_uring_res < 0) -io_uring_res else @intFromEnum(io_uring_err);
-            const exc = python_c.PyObject_CallFunction(
-                python_c.PyExc_OSError, "is\x00",
-                @as(c_int, @intCast(errno_val)),
-                "Connect call failed\x00"
-            ) orelse return error.PythonError;
+            const exc = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "is\x00", @as(c_int, @intCast(errno_val)), "Connect call failed\x00") orelse return error.PythonError;
             defer python_c.py_decref(exc);
             if (python_c.PyList_Append(mcs.exceptions.?, exc) != 0) return error.PythonError;
         }
@@ -864,27 +803,29 @@ fn socket_connected_callback(data: *const CallbackManager.CallbackData) !void {
                 const msg = python_c.PyUnicode_FromString("Multiple connection failures\x00") orelse return error.PythonError;
                 defer python_c.py_decref(msg);
 
-                const exc_group = python_c.PyObject_CallFunctionObjArgs(exc_group_cls, msg, mcs.exceptions.?, @as(?*python_c.PyObject, null))
-                    orelse return error.PythonError;
+                const exc_group = python_c.PyObject_CallFunctionObjArgs(exc_group_cls, msg, mcs.exceptions.?, @as(?*python_c.PyObject, null)) orelse return error.PythonError;
                 defer python_c.py_decref(exc_group);
 
                 try Future.Python.Result.future_fast_set_exception(@ptrCast(future), future_data, exc_group);
             } else {
                 const errno_val = if (io_uring_res < 0) -io_uring_res else @intFromEnum(io_uring_err);
                 const exc = python_c.PyObject_CallFunction(
-                    python_c.PyExc_OSError, "is\x00",
+                    python_c.PyExc_OSError,
+                    "is\x00",
                     @as(c_int, @intCast(errno_val)),
-                    "Connect call failed\x00"
+                    "Connect call failed\x00",
                 ) orelse {
                     const exc = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
                     defer python_c.py_decref(exc);
                     try Future.Python.Result.future_fast_set_exception(
-                        @ptrCast(future), future_data,
-                        exc
+                        @ptrCast(future),
+                        future_data,
+                        exc,
                     );
                     mcs.deinit();
                     return error.PythonError;
                 };
+                defer python_c.py_decref(exc);
                 try Future.Python.Result.future_fast_set_exception(@ptrCast(future), future_data, exc);
             }
 
@@ -930,21 +871,16 @@ fn z_create_transport_and_set_future_result(data: *const TransportCreationData) 
     const protocol = python_c.PyObject_CallNoArgs(data.protocol_factory) orelse return error.PythonError;
     errdefer python_c.py_decref(protocol);
 
-    const transport = try Stream.Constructors.new_stream_transport_with_owns_fd(
-        protocol, data.loop, data.socket_fd, data.zero_copying, data.owns_fd
-    );
+    const transport = try Stream.Constructors.new_stream_transport_with_owns_fd(protocol, data.loop, data.socket_fd, data.zero_copying, data.owns_fd);
     errdefer python_c.py_decref(@ptrCast(transport));
 
-    const connection_made_func = python_c.PyObject_GetAttrString(protocol, "connection_made\x00")
-        orelse return error.PythonError;
+    const connection_made_func = python_c.PyObject_GetAttrString(protocol, "connection_made\x00") orelse return error.PythonError;
     defer python_c.py_decref(connection_made_func);
 
-    const ret = python_c.PyObject_CallOneArg(connection_made_func, @ptrCast(transport))
-        orelse return error.PythonError;
+    const ret = python_c.PyObject_CallOneArg(connection_made_func, @ptrCast(transport)) orelse return error.PythonError;
     defer python_c.py_decref(ret);
 
-    const result_tuple = python_c.PyTuple_Pack(2, @as(PyObject, @ptrCast(transport)), protocol)
-        orelse return error.PythonError;
+    const result_tuple = python_c.PyTuple_Pack(2, @as(PyObject, @ptrCast(transport)), protocol) orelse return error.PythonError;
     defer python_c.py_decref(result_tuple);
 
     // Decref local references as PyTuple_Pack increments them
@@ -955,10 +891,8 @@ fn z_create_transport_and_set_future_result(data: *const TransportCreationData) 
     try Future.Python.Result.future_fast_set_result(future_data, result_tuple);
 }
 
-fn create_transport_and_set_future_result(
-    data: *const CallbackManager.CallbackData
-) !void {
-    const transport_creation_data_ptr: *TransportCreationData = @alignCast(@ptrCast(data.user_data.?));
+fn create_transport_and_set_future_result(data: *const CallbackManager.CallbackData) !void {
+    const transport_creation_data_ptr: *TransportCreationData = @ptrCast(@alignCast(data.user_data.?));
 
     const loop = transport_creation_data_ptr.loop;
     const loop_data = utils.get_data_ptr(Loop, loop);
