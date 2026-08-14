@@ -29,8 +29,8 @@ Sorted by bug number. See individual bug files for details.
 | Status | Count |
 |---|---:|
 | Fixed | 133 |
-| Open | 17 |
-| False Positive | 1 |
+| Open | 16 |
+| False Positive | 2 |
 | **Total** | **151** |
 
 ## All Bugs
@@ -171,7 +171,7 @@ Sorted by bug number. See individual bug files for details.
 | [133](133.md) | Inverted `errdefer` in `Future.add_done_callback` pops empty exceptions queue | High | Fixed |
 | [134](134.md) | NULL pointer passed to `PyObject_CallOneArg` in `cancel_future_waiter` | Critical | Fixed |
 | [135](135.md) | Task cancellation request count skipped when task is awaiting a future | Medium-High | Fixed |
-| [136](136.md) | `WriteTransport.queue_eof` silently drops EOF request when write buffer is non-empty | High | Open |
+| [136](136.md) | `WriteTransport.queue_eof` silently drops EOF request when write buffer is non-empty | High | False Positive |
 | [137](137.md) | Stream write raises `RuntimeError` on paused transport instead of buffering | Medium-High | Open |
 | [138](138.md) | DNS `validate_hostname` erroneously rejects consecutive hyphens (IDN/Punycode rejection) | High | Open |
 | [139](139.md) | Argument order mismatch in `create_unix_server` constructor call (`backlog` passed as `family`) | Medium-High | Open |
