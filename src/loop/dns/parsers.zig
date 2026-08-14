@@ -32,15 +32,11 @@ pub fn validate_hostname(hostname: []const u8) bool {
             return false;
         }
 
-        var has_hyphen = false;
         for (label) |c| {
-            const hyphen = (c == '-');
-            if (hyphen and has_hyphen) return false;
-            has_hyphen = hyphen;
-
             if (!((c >= 'a' and c <= 'z') or
+                (c >= 'A' and c <= 'Z') or
                 (c >= '0' and c <= '9') or
-                hyphen))
+                (c == '-')))
             {
                 return false;
             }
@@ -76,7 +72,7 @@ pub fn build_reverse_name(address: utils.Address, buf: []u8) ![]u8 {
 pub fn parse_name(full_data: []const u8, initial_offset: usize, allocator: std.mem.Allocator) ![]u8 {
     var result: std.ArrayList(u8) = .empty;
     errdefer result.deinit(allocator);
-    
+
     var offset = initial_offset;
     var jump_offset: ?usize = null;
     var visited_pointers: usize = 0;
@@ -96,13 +92,13 @@ pub fn parse_name(full_data: []const u8, initial_offset: usize, allocator: std.m
             offset = (@as(usize, byte & 0x3F) << 8) | full_data[offset + 1];
             continue;
         }
-        
+
         if (offset + 1 + byte > full_data.len) return error.MalformedDnsResponse;
         if (result.items.len > 0) try result.append(allocator, '.');
         try result.appendSlice(allocator, full_data[offset + 1 .. offset + 1 + byte]);
         offset += @as(usize, byte) + 1;
     }
-    
+
     return try result.toOwnedSlice(allocator);
 }
 
@@ -190,9 +186,9 @@ pub fn parse_resolv_configuration(allocator: std.mem.Allocator, content: []const
 
             switch (address.any.family) {
                 std.posix.AF.INET, std.posix.AF.INET6 => {},
-                else => unreachable
+                else => unreachable,
             }
-            
+
             try servers.append(allocator, address);
         } else if (std.mem.eql(u8, first_word, "search")) {
             while (words_iter.next()) |word| {
@@ -325,7 +321,7 @@ test "parse resolv.conf with invalid nameserver" {
     const allocator = arena.allocator();
 
     try std.testing.expectError(
-        error.InvalidCharacter, 
+        error.InvalidCharacter,
         parse_resolv_configuration(allocator, content),
     );
 }
@@ -333,7 +329,7 @@ test "parse resolv.conf with invalid nameserver" {
 test "parse resolv.conf with invalid search domain" {
     const content =
         \\nameserver 8.8.8.8
-        \\search invalid--domain
+        \\search -invalid-domain
     ;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -341,7 +337,7 @@ test "parse resolv.conf with invalid search domain" {
     const allocator = arena.allocator();
 
     try std.testing.expectError(
-        error.InvalidConfiguration, 
+        error.InvalidConfiguration,
         parse_resolv_configuration(allocator, content),
     );
 }
@@ -361,11 +357,11 @@ test "parse empty resolv.conf" {
 
     try std.testing.expectEqual(@as(usize, 1), config.servers.len);
     try std.testing.expectEqual(@as(usize, 0), config.search.len);
-    
+
     // Verify default DNS server
     const default_dns = config.servers[0];
     try std.testing.expectEqual(std.posix.AF.INET, default_dns.any.family);
-    
+
     const ip_bytes: [4]u8 = @bitCast(default_dns.in.sa.addr);
     try std.testing.expectEqual(@as(u8, 1), ip_bytes[0]);
     try std.testing.expectEqual(@as(u8, 1), ip_bytes[1]);
@@ -402,7 +398,7 @@ test "parse resolv.conf with IPv6 nameservers" {
     try std.testing.expectEqual(@as(u8, 0x01), first_ipv6_bytes[1]);
     try std.testing.expectEqual(@as(u8, 0x48), first_ipv6_bytes[2]);
     try std.testing.expectEqual(@as(u8, 0x60), first_ipv6_bytes[3]);
-    
+
     // Verify second IPv6 nameserver details
     const second_server = config.servers[1];
     try std.testing.expectEqual(std.posix.AF.INET6, second_server.any.family);
@@ -479,6 +475,8 @@ test "validate_hostname valid domains" {
         "sub.example.com",
         "test-domain.co.uk",
         "my-domain.org",
+        "example--test.com",
+        "xn--ls8h.la",
         "a.b.c.d",
         "x1.y2.z3",
     };
@@ -490,13 +488,12 @@ test "validate_hostname valid domains" {
 
 test "validate_hostname invalid domains" {
     const invalid_domains = [_][]const u8{
-        "-example.com",     // Starts with hyphen
-        "example-.com",     // Ends with hyphen
-        "example--test.com", // Consecutive hyphens
-        "exam!ple.com",     // Invalid characters
-        "exam ple.com",     // Space in domain
-        ".example.com",     // Starts with dot
-        "example.com.",     // Ends with dot
+        "-example.com", // Starts with hyphen
+        "example-.com", // Ends with hyphen
+        "exam!ple.com", // Invalid characters
+        "exam ple.com", // Space in domain
+        ".example.com", // Starts with dot
+        "example.com.", // Ends with dot
     };
 
     for (invalid_domains) |domain| {
@@ -506,8 +503,8 @@ test "validate_hostname invalid domains" {
 
 test "validate_hostname edge cases" {
     const edge_cases = [_]struct { domain: []const u8, expected: bool }{
-        .{ .domain = "a.com", .expected = true },           // Minimum valid length
-        .{ .domain = "a-1.com", .expected = true },          // Hyphen with number
+        .{ .domain = "a.com", .expected = true }, // Minimum valid length
+        .{ .domain = "a-1.com", .expected = true }, // Hyphen with number
         .{ .domain = "a" ** 63 ++ ".com", .expected = true }, // Maximum label length
         .{ .domain = "a" ** 64 ++ ".com", .expected = false }, // Exceeds maximum label length
     };
@@ -552,7 +549,7 @@ test "resolve_address IPv6" {
 
 test "resolve_address invalid hostname" {
     var out: [2]utils.Address = undefined;
-    const result = resolve_address("invalid--domain", false, &out);
+    const result = resolve_address("-invalid-domain", false, &out);
     try std.testing.expectError(error.InvalidHostname, result);
 }
 
@@ -587,8 +584,9 @@ test "parse_name simple uncompressed name" {
 
 test "parse_name compression pointer" {
     const data = [_]u8{
-        3, 'c', 'o', 'm', 0,
-        7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 0xC0, 0,
+        3,   'c', 'o', 'm',  0,
+        7,   'e', 'x', 'a',  'm',
+        'p', 'l', 'e', 0xC0, 0,
     };
     const name = try parse_name(&data, 5, std.testing.allocator);
     defer std.testing.allocator.free(name);
@@ -596,7 +594,7 @@ test "parse_name compression pointer" {
 }
 
 test "parse_name compression pointer at last byte is out-of-bounds" {
-    const data = [_]u8{ 0xC0 };
+    const data = [_]u8{0xC0};
     try std.testing.expectError(error.MalformedDnsResponse, parse_name(&data, 0, std.testing.allocator));
 }
 
