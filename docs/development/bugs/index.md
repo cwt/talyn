@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 136 |
-| Open | 13 |
+| Fixed | 137 |
+| Open | 12 |
 | False Positive | 2 |
 | **Total** | **151** |
 
@@ -175,7 +175,7 @@ Sorted by bug number. See individual bug files for details.
 | [137](137.md) | Stream write raises `RuntimeError` on paused transport instead of buffering | Medium-High | Fixed |
 | [138](138.md) | DNS `validate_hostname` erroneously rejects consecutive hyphens (IDN/Punycode rejection) | High | Fixed |
 | [139](139.md) | Argument order mismatch in `create_unix_server` constructor call (`backlog` passed as `family`) | Medium-High | Fixed |
-| [140](140.md) | Inverted condition in `Server._detach` causes `Server.wait_closed()` to hang indefinitely | High | Open |
+| [140](140.md) | Inverted condition in `Server._detach` causes `Server.wait_closed()` to hang indefinitely | High | Fixed |
 | [141](141.md) | PEP 695 generic syntax in `task.py` and `runner.py` incompatible with Python 3.8–3.11 | Medium | Open |
 | [142](142.md) | Double-add of `Loop` type object in `src/lib.zig` causes reference count underflow | Critical | Open |
 | [143](143.md) | Parent transport reference leak on I/O read error in `ReadTransport` | High | Open |
