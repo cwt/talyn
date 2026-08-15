@@ -46,13 +46,7 @@ initialized: bool = false,
 fixed_file_index: ?u16 = null,
 blocking_task_id: usize = 0,
 
-
-pub fn init(
-    self: *WriteTransport, loop: *Loop, fd: std.posix.fd_t,
-    callback: WriteCompletedCallback, parent_transport: PyObject,
-    exception_handler: PyObject, connection_lost_callback: ConnectionLostCallback,
-    zero_copying: bool
-) !void {
+pub fn init(self: *WriteTransport, loop: *Loop, fd: std.posix.fd_t, callback: WriteCompletedCallback, parent_transport: PyObject, exception_handler: PyObject, connection_lost_callback: ConnectionLostCallback, zero_copying: bool) !void {
     const allocator = loop.allocator;
 
     const pending_buffers = try allocator.create(BuffersArrayList);
@@ -91,7 +85,7 @@ pub fn init(
 
 fn flush_buffered_writes(data: *const CallbackManager.CallbackData) !void {
     if (data.cancelled()) return;
-    const self: *WriteTransport = @alignCast(@ptrCast(data.user_data.?));
+    const self: *WriteTransport = @ptrCast(@alignCast(data.user_data.?));
     if (!self.write_in_flight and self.buffer_size > 0) {
         try self.submit_next_chunk();
     }
@@ -167,10 +161,7 @@ fn submit_next_chunk(self: *WriteTransport) !void {
         // write). Now we surface it as a hard error so it can be detected
         // and the connection torn down.
         if (self.buffer_size > 0) {
-            std.log.err(
-                "submit_next_chunk: index overflow with buffer_size={d}, items.len={d}",
-                .{ self.buffer_size, self.pending_buffers.items.len }
-            );
+            std.log.err("submit_next_chunk: index overflow with buffer_size={d}, items.len={d}", .{ self.buffer_size, self.pending_buffers.items.len });
             return error.WriteBufferIndexOverflow;
         }
         self.write_in_flight = false;
@@ -232,19 +223,17 @@ fn submit_next_chunk(self: *WriteTransport) !void {
 }
 
 fn cleanup_resources_callback(ptr: ?*anyopaque) void {
-    const self: *WriteTransport = @alignCast(@ptrCast(ptr.?));
+    const self: *WriteTransport = @ptrCast(@alignCast(ptr.?));
     python_c.py_decref(self.parent_transport);
 }
 
 fn write_operation_completed(data: *const CallbackManager.CallbackData) !void {
-    const self: *WriteTransport = @alignCast(@ptrCast(data.user_data.?));
+    const self: *WriteTransport = @ptrCast(@alignCast(data.user_data.?));
     self.blocking_task_id = 0;
 
-    var success = false;
-    defer if (success) python_c.py_decref(self.parent_transport);
+    defer python_c.py_decref(self.parent_transport);
 
     if (data.cancelled()) {
-        success = true;
         return;
     }
 
@@ -278,10 +267,7 @@ fn write_operation_completed(data: *const CallbackManager.CallbackData) !void {
         // Real error — report via connection_lost
         if (!self.is_closing) {
             var exception: PyObject = undefined;
-            exception = python_c.PyObject_CallFunction(
-                python_c.PyExc_OSError, "Ls\x00", @as(c_long, @intFromEnum(io_uring_err)),
-                "Write operation failed\x00"
-            ) orelse return error.PythonError;
+            exception = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "Ls\x00", @as(c_long, @intFromEnum(io_uring_err)), "Write operation failed\x00") orelse return error.PythonError;
 
             defer {
                 self.is_closing = true;
@@ -294,17 +280,14 @@ fn write_operation_completed(data: *const CallbackManager.CallbackData) !void {
             if (self.connection_lost_callback) |callback| {
                 try callback(self.parent_transport, exception);
             }
-            success = true;
             return;
         }
-        success = true;
         return;
     }
 
     // Check if more data needs to be written
     if (self.buffer_size > 0) {
         try self.submit_next_chunk();
-        success = true;
     } else {
         // All data written — clean up consumed buffers
         // Release any remaining Py_buffers (at the current index and beyond)
@@ -326,8 +309,7 @@ fn write_operation_completed(data: *const CallbackManager.CallbackData) !void {
         self.total_bytes_written = 0;
         _ = self.write_completed_callback(self, bw, 0, .SUCCESS) catch |err| {
             utils.handle_zig_function_error(err, {});
-            const exception = python_c.PyErr_GetRaisedException()
-                orelse return error.PythonError;
+            const exception = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
 
             defer {
                 self.is_closing = true;
@@ -342,7 +324,6 @@ fn write_operation_completed(data: *const CallbackManager.CallbackData) !void {
             }
             return error.PythonError;
         };
-        success = true;
     }
 }
 
@@ -368,10 +349,7 @@ pub fn append_new_buffer_to_write(self: *WriteTransport, py_object: PyObject) !u
         try self.pending_py_buffers.append(self.loop.allocator, pbuffer);
         errdefer _ = self.pending_py_buffers.pop();
 
-        try self.pending_buffers.append(self.loop.allocator, .{
-            .base = @ptrCast(pbuffer.buf.?),
-            .len = buffer_len
-        });
+        try self.pending_buffers.append(self.loop.allocator, .{ .base = @ptrCast(pbuffer.buf.?), .len = buffer_len });
 
         break :blk self.buffer_size + buffer_len;
     };
@@ -385,12 +363,7 @@ pub fn queue_eof(self: *WriteTransport) !void {
 
     try self.close();
 
-    _ = try self.loop.io.queue(.{
-        .SocketShutdown = .{
-            .socket_fd = self.fd,
-            .how = std.os.linux.SHUT.WR
-        }
-    });
+    _ = try self.loop.io.queue(.{ .SocketShutdown = .{ .socket_fd = self.fd, .how = std.os.linux.SHUT.WR } });
 }
 
 const WriteTransport = @This();

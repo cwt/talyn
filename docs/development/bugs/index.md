@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 164 |
-| Open | 8 |
+| Fixed | 165 |
+| Open | 7 |
 | False Positive | 3 |
 | **Total** | **175** |
 
@@ -204,7 +204,7 @@ Sorted by bug number. See individual bug files for details.
 | [166](166.md) | Heap memory leak on synchronous DNS lookups in `DNS.lookup` | High | Fixed |
 | [167](167.md) | Socket file descriptor leak on Python object allocation failure in `sock_accept_callback` | High | Fixed |
 | [168](168.md) | File descriptor leak on `tp_alloc` failure in `pseudosocket_dup` | High | Fixed |
-| [169](169.md) | Leaked `parent_transport` Python reference on error in `write_operation_completed` | High | Open |
+| [169](169.md) | Leaked `parent_transport` Python reference on error in `write_operation_completed` | High | Fixed |
 | [170](170.md) | Memory and Python handle leak on unhandled exception in `loop_watcher_python_wrapper_callback` | High | Open |
 | [171](171.md) | Missing port bounds check causing integer overflow panic in `Address.fromPyAddr` | Medium | Open |
 | [172](172.md) | Memory and reference leaks on failure paths in `z_loop_add_hook` and `z_loop_add_path_watcher` | Medium | Open |
