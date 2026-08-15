@@ -94,12 +94,16 @@ fn pseudosocket_setsockopt(self: ?*PseudoSocketObject, args: ?PyObject) callconv
         python_c.raise_python_type_error("setsockopt() requires (level, optname, value)\x00");
         return null;
     }
-    const level: i32 = @intCast(python_c.PyLong_AsLong(python_c.PyTuple_GetItem(arg_tuple, 0)));
-    const optname: u32 = @intCast(python_c.PyLong_AsLong(python_c.PyTuple_GetItem(arg_tuple, 1)));
-    if (level < 0 or optname < 0) {
+    const raw_level = python_c.PyLong_AsLong(python_c.PyTuple_GetItem(arg_tuple, 0));
+    if (python_c.PyErr_Occurred() != null) return null;
+    const raw_optname = python_c.PyLong_AsLong(python_c.PyTuple_GetItem(arg_tuple, 1));
+    if (python_c.PyErr_Occurred() != null) return null;
+    if (raw_level < 0 or raw_optname < 0) {
         python_c.raise_python_value_error("setsockopt() invalid level/optname\x00");
         return null;
     }
+    const level: i32 = @intCast(raw_level);
+    const optname: u32 = @intCast(raw_optname);
     const value_obj = python_c.PyTuple_GetItem(arg_tuple, 2);
     // Value may be an int or a bytes/bytearray buffer. Try int first;
     // if it is not a convertible integer, fall back to a bytes buffer.
@@ -134,12 +138,16 @@ fn pseudosocket_getsockopt(self: ?*PseudoSocketObject, args: ?PyObject) callconv
         python_c.raise_python_type_error("getsockopt() requires (level, optname[, buflen])\x00");
         return null;
     }
-    const level: i32 = @intCast(python_c.PyLong_AsLong(python_c.PyTuple_GetItem(arg_tuple, 0)));
-    const optname: u32 = @intCast(python_c.PyLong_AsLong(python_c.PyTuple_GetItem(arg_tuple, 1)));
-    if (level < 0 or optname < 0) {
+    const raw_level = python_c.PyLong_AsLong(python_c.PyTuple_GetItem(arg_tuple, 0));
+    if (python_c.PyErr_Occurred() != null) return null;
+    const raw_optname = python_c.PyLong_AsLong(python_c.PyTuple_GetItem(arg_tuple, 1));
+    if (python_c.PyErr_Occurred() != null) return null;
+    if (raw_level < 0 or raw_optname < 0) {
         python_c.raise_python_value_error("getsockopt() invalid level/optname\x00");
         return null;
     }
+    const level: i32 = @intCast(raw_level);
+    const optname: u32 = @intCast(raw_optname);
     var buf: [256]u8 = undefined;
     var buflen: std.c.socklen_t = 256;
     if (argc >= 3) {
@@ -147,7 +155,7 @@ fn pseudosocket_getsockopt(self: ?*PseudoSocketObject, args: ?PyObject) callconv
         if (bl >= 0 and bl <= buf.len) buflen = @intCast(bl);
     }
     const rc = std.os.linux.getsockopt(instance.fd, level, optname, &buf, &buflen);
-    if (rc != 0) {
+    if (@as(isize, @bitCast(rc)) != 0) {
         python_c.raise_python_value_error("getsockopt() failed\x00");
         return null;
     }
@@ -181,7 +189,7 @@ fn pseudosocket_getblocking(self: ?*PseudoSocketObject, _: ?PyObject) callconv(.
 fn pseudosocket_dup(self: ?*PseudoSocketObject, _: ?PyObject) callconv(.c) ?PyObject {
     const instance = self.?;
     const new_fd = std.os.linux.dup(instance.fd);
-    if (new_fd == @as(usize, @bitCast(@as(isize, -1)))) {
+    if (@as(isize, @bitCast(new_fd)) < 0) {
         python_c.raise_python_value_error("dup() failed\x00");
         return null;
     }
