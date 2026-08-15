@@ -301,6 +301,8 @@ fn skip_name(data: []const u8, initial_offset: usize) ?usize {
 }
 
 fn parse_individual_dns_result(full_data: []const u8, initial_offset: usize, result: *utils.Address, ptr_name: *?[]u8, ttl: *u32, allocator: std.mem.Allocator) ?usize {
+    result.* = .{ .any = .{ .family = 0, .data = .{0} ** 14 } };
+    ptr_name.* = null;
     var offset = skip_name(full_data, initial_offset) orelse return null;
 
     if ((offset + 10) > full_data.len) return null;
@@ -483,7 +485,7 @@ fn process_dns_response(data: *const CallbackManager.CallbackData) !void {
                 // Parse answer records.
                 var answers_left: u16 = ancount;
                 while (answers_left > 0) {
-                    var result: utils.Address = undefined;
+                    var result: utils.Address = .{ .any = .{ .family = 0, .data = .{0} ** 14 } };
                     var ptr_name: ?[]u8 = null;
                     var ttl: u32 = std.math.maxInt(u32);
 
