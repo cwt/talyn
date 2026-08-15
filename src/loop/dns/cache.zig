@@ -28,7 +28,7 @@ pub const Record = struct {
             .pending => null,
             .resolved => |d| d,
             .ptr => null,
-            .none => null
+            .none => null,
         };
     }
 
@@ -43,17 +43,13 @@ pub const Record = struct {
     pub inline fn set_resolved_data(self: *Record, address_list: []utils.Address, ttl: u32) void {
         const effective_ttl: i64 = if (ttl < std.math.maxInt(u32)) @intCast(ttl) else 60;
         self.expire_at = timestamp() + effective_ttl;
-        self.state = .{
-            .resolved = address_list
-        };
+        self.state = .{ .resolved = address_list };
     }
 
     pub inline fn set_ptr_data(self: *Record, hostname: []u8, ttl: u32) void {
         const effective_ttl: i64 = if (ttl < std.math.maxInt(u32)) @intCast(ttl) else 60;
         self.expire_at = timestamp() + effective_ttl;
-        self.state = .{
-            .ptr = hostname
-        };
+        self.state = .{ .ptr = hostname };
     }
 
     pub inline fn discard(self: *Record) void {
@@ -65,7 +61,7 @@ pub const Record = struct {
 const RecordCache = utils.LRUCache([]const u8, *Record);
 
 fn evict_record(ctx: ?*anyopaque, key: []const u8, record: *Record) void {
-    const self: *Cache = @alignCast(@ptrCast(ctx.?));
+    const self: *Cache = @ptrCast(@alignCast(ctx.?));
     self.allocator.free(key);
     switch (record.state) {
         .pending => |control_data| {
@@ -100,14 +96,8 @@ pub fn create_new_record(self: *Cache, hostname: []const u8, control_data: *Reso
 
     const record = try allocator.create(Record);
     errdefer allocator.destroy(record);
-    
-    record.* = Record{
-        .hostname = new_hostname,
-        .expire_at = std.math.maxInt(i64),
-        .state = .{
-            .pending = control_data
-        }
-    };
+
+    record.* = Record{ .hostname = new_hostname, .expire_at = std.math.maxInt(i64), .state = .{ .pending = control_data } };
 
     try self.cache.put(new_hostname, record);
     return record;
@@ -123,25 +113,13 @@ pub fn create_new_record_from_resolved(
     const new_hostname = try allocator.dupe(u8, hostname);
     errdefer allocator.free(new_hostname);
 
-    var expire_at: i64 = std.math.maxInt(i64);
-    if (ttl < std.math.maxInt(u32)) {
-        var ts: std.os.linux.timespec = undefined;
-        const rc = std.os.linux.clock_gettime(.REALTIME, &ts);
-        if (@as(i32, @intCast(rc)) >= 0) {
-            expire_at = @as(i64, @intCast(ts.sec)) + @as(i64, @intCast(ttl));
-        }
-    }
+    const effective_ttl: i64 = if (ttl < std.math.maxInt(u32)) @intCast(ttl) else 60;
+    const expire_at: i64 = timestamp() + effective_ttl;
 
     const record = try allocator.create(Record);
     errdefer allocator.destroy(record);
 
-    record.* = Record{
-        .hostname = new_hostname,
-        .expire_at = expire_at,
-        .state = .{
-            .resolved = address_list
-        }
-    };
+    record.* = Record{ .hostname = new_hostname, .expire_at = expire_at, .state = .{ .resolved = address_list } };
 
     try self.cache.put(new_hostname, record);
     return record;
@@ -213,8 +191,8 @@ test "set_resolved_data" {
     const record = try cache.create_new_record("example.com", control_data);
 
     const addresses = try testing.allocator.alloc(utils.Address, 2);
-    addresses[0] = utils.Address.initIp4(.{8, 8, 8, 8}, 53);
-    addresses[1] = utils.Address.initIp4(.{1, 1, 1, 1}, 53);
+    addresses[0] = utils.Address.initIp4(.{ 8, 8, 8, 8 }, 53);
+    addresses[1] = utils.Address.initIp4(.{ 1, 1, 1, 1 }, 53);
 
     record.set_resolved_data(addresses, 300);
 
@@ -249,8 +227,8 @@ test "get record from cache" {
     const record = try cache.create_new_record("example.com", control_data);
 
     const addresses = try testing.allocator.alloc(utils.Address, 2);
-    addresses[0] = utils.Address.initIp4(.{8, 8, 8, 8}, 53);
-    addresses[1] = utils.Address.initIp4(.{1, 1, 1, 1}, 53);
+    addresses[0] = utils.Address.initIp4(.{ 8, 8, 8, 8 }, 53);
+    addresses[1] = utils.Address.initIp4(.{ 1, 1, 1, 1 }, 53);
 
     record.set_resolved_data(addresses, 300);
 
@@ -284,11 +262,11 @@ test "get expired record" {
     const record = try cache.create_new_record("example.com", control_data);
 
     const addresses = try testing.allocator.alloc(utils.Address, 2);
-    addresses[0] = utils.Address.initIp4(.{8, 8, 8, 8}, 53);
-    addresses[1] = utils.Address.initIp4(.{1, 1, 1, 1}, 53);
+    addresses[0] = utils.Address.initIp4(.{ 8, 8, 8, 8 }, 53);
+    addresses[1] = utils.Address.initIp4(.{ 1, 1, 1, 1 }, 53);
 
-    record.set_resolved_data(addresses, 0);  // Immediately expire
-    record.expire_at = 0;  // Force expiration
+    record.set_resolved_data(addresses, 0); // Immediately expire
+    record.expire_at = 0; // Force expiration
 
     const retrieved_record = cache.get("example.com");
     try testing.expect(retrieved_record == null);
@@ -331,4 +309,20 @@ test "evict pending record sets record_evicted flag" {
     cache.deinit();
     control_data.arena.deinit();
     testing.allocator.destroy(control_data);
+}
+
+test "create_new_record_from_resolved with maxInt TTL caps at 60s" {
+    var cache: Cache = undefined;
+    cache.init(testing.allocator);
+    defer cache.deinit();
+
+    const addresses = try testing.allocator.alloc(utils.Address, 1);
+    addresses[0] = utils.Address.initIp4(.{ 127, 0, 0, 1 }, 80);
+
+    const now = timestamp();
+    const record = try cache.create_new_record_from_resolved("localhost", addresses, std.math.maxInt(u32));
+
+    try testing.expect(record.state == .resolved);
+    try testing.expect(record.expire_at <= now + 65);
+    try testing.expect(record.expire_at >= now + 55);
 }
