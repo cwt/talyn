@@ -1,8 +1,8 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 151 bugs discovered across 10 audit passes."
-timestamp: "2026-08-15T00:08:00Z"
+description: "Individual bug entries for talyn, one file per bug. 160 bugs discovered across 11 audit passes."
+timestamp: "2026-08-15T08:40:00Z"
 ---
 
 # Bugs — talyn
@@ -15,23 +15,23 @@ Sorted by bug number. See individual bug files for details.
 
 | Severity | Count |
 |---|---:|
-| High | 41 |
-| Low | 36 |
-| Critical | 21 |
+| High | 44 |
+| Low | 38 |
+| Critical | 23 |
 | Medium-High | 17 |
 | Medium-Low | 14 |
+| Medium | 13 |
 | Medium-Mid | 11 |
-| Medium | 11 |
-| **Total** | **151** |
+| **Total** | **160** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
 | Fixed | 148 |
-| Open | 0 |
+| Open | 9 |
 | False Positive | 3 |
-| **Total** | **151** |
+| **Total** | **160** |
 
 ## All Bugs
 
@@ -188,3 +188,13 @@ Sorted by bug number. See individual bug files for details.
 | [150](150.md) | Leaked `PyUnicode` strings in child watcher and FS watcher exception dictionaries | Low | Fixed |
 | [151](151.md) | Broken / uncalled dead code `write_completed` in datagram transport | Low | Fixed |
 | [152](152.md) | Unreachable dead code in `UnixSignals.unlink` | Low | Fixed |
+| [153](153.md) | `Py_IncRef` called on native `*Loop` pointer in `signal_handler` on default SIGINT disposition | Critical | Open |
+| [154](154.md) | Uninitialized atomic module pointer storage in `release_python_imports` triggers invalid pointer decref | Critical | Open |
+| [155](155.md) | `TimerHandle` missing GC payload initialization and `Py_TPFLAGS_HAVE_GC` flag | High | Open |
+| [156](156.md) | Use-after-free and double-free in `HookHandle.cancel()` | High | Open |
+| [157](157.md) | `ChildWatcher.on_child_exit` leaks `pidfd`, heap handler, and Python callback on callback exception | High | Open |
+| [158](158.md) | `BTree.get_min_value_ptr` returns `?Value` instead of `?*Value` | Medium | Open |
+| [159](159.md) | `pseudosocket_dup` checks `new_fd == -1` instead of `< 0`, missing Linux negative errno syscall failures | Medium | Open |
+| [160](160.md) | Tautological unsigned comparison and missing error check in `pseudosocket_setsockopt` | Low | Open |
+| [161](161.md) | Prohibited `lambda` function in `talyn/loop.py` `_TransportWrapper.get_extra_info` | Low | Open |
+

@@ -2,6 +2,21 @@
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
 
+## [2026-08-15] — Codebase Audit Round 11 (BUG-153 through BUG-161)
+
+A comprehensive codebase audit across all subsystems (event loop, signals, child watcher, futures, tasks, pseudo-socket, btree, and python imports) identified 9 new bugs and safety issues:
+
+- Logged **BUG-153** (Critical): `Py_IncRef` called on native `*Loop` pointer in `signal_handler` on default SIGINT disposition in `src/loop/unix_signals.zig`.
+- Logged **BUG-154** (Critical): Uninitialized atomic module pointer storage in `release_python_imports` in `src/utils/python_imports.zig` triggers invalid pointer decref on partial import failure.
+- Logged **BUG-155** (High): `TimerHandle` in `src/timer_handle.zig` fails to populate `python_payload`, leaving `.traverse` uninitialized and missing `Py_TPFLAGS_HAVE_GC`, causing GC cycles to leak timer handles.
+- Logged **BUG-156** (High): `HookHandle.cancel()` in `src/loop/python/control.zig` lacks a cancellation guard, causing use-after-free and double-free on repeated cancellation.
+- Logged **BUG-157** (High): `ChildWatcher.on_child_exit` in `src/loop/child_watcher.zig` leaks `pidfd`, heap handler, and Python callback on callback exception.
+- Logged **BUG-158** (Medium): `BTree.get_min_value_ptr` in `src/utils/btree.zig` declared return type as `?Value` instead of `?*Value`.
+- Logged **BUG-159** (Medium): `pseudosocket_dup` in `src/utils/pseudosocket.zig` checks `new_fd == -1` instead of `< 0`, missing Linux negative errno syscall return codes.
+- Logged **BUG-160** (Low): Tautological unsigned comparison `optname < 0` and missing conversion error check in `pseudosocket_setsockopt` in `src/utils/pseudosocket.zig`.
+- Logged **BUG-161** (Low): Prohibited `lambda` expression in `talyn/loop.py` `_TransportWrapper.get_extra_info`.
+- Updated `docs/development/bugs/index.md` summary counts (Total: 160 bugs; 148 Fixed, 9 Open, 3 False Positive).
+
 ## [2026-08-15] — Comprehensive Deep Codebase Audit (BUG-132 through BUG-152)
 
 A comprehensive codebase audit across all subsystems (event loop, IO scheduling, stream/datagram/subprocess transports, futures, tasks, DNS parser, watchers, memory management, and Python wrapper layers) discovered 21 concrete bugs and memory safety issues:
