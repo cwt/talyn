@@ -14,8 +14,8 @@ A comprehensive codebase audit across all subsystems (event loop, signals, child
 - Logged **BUG-158** (Medium): `BTree.get_min_value_ptr` in `src/utils/btree.zig` declared return type as `?Value` instead of `?*Value`.
 - Logged **BUG-159** (Medium): `pseudosocket_dup` in `src/utils/pseudosocket.zig` checks `new_fd == -1` instead of `< 0`, missing Linux negative errno syscall return codes.
 - Logged **BUG-160** (Low): Tautological unsigned comparison `optname < 0` and missing conversion error check in `pseudosocket_setsockopt` in `src/utils/pseudosocket.zig`.
-- Logged **BUG-161** (Low): Prohibited `lambda` expression in `talyn/loop.py` `_TransportWrapper.get_extra_info`.
-- Updated `docs/development/bugs/index.md` summary counts (Total: 160 bugs; 148 Fixed, 9 Open, 3 False Positive).
+- Updated `docs/development/bugs/index.md` summary counts (Total: 160 bugs; 157 Fixed, 0 Open, 3 False Positive). All 9 bugs (BUG-153 through BUG-161) resolved and verified.
+
 
 ## [2026-08-15] — Comprehensive Deep Codebase Audit (BUG-132 through BUG-152)
 

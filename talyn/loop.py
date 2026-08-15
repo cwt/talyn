@@ -1987,9 +1987,11 @@ class Loop(_Loop):
                 def get_extra_info(self, name, default=None):
                     if name == "subprocess":
                         return popen
-                    return getattr(
-                        self._transport, "get_extra_info", lambda *a, **k: default
-                    )(name, default)
+                    getter = getattr(self._transport, "get_extra_info", None)
+                    if getter is not None:
+                        return getter(name, default)
+                    return default
+
 
                 def get_pipe_transport(self, fd):
                     if hasattr(self, "_pipes") and fd in self._pipes:

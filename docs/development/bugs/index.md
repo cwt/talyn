@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 156 |
-| Open | 1 |
+| Fixed | 157 |
+| Open | 0 |
 | False Positive | 3 |
 | **Total** | **160** |
 
@@ -196,6 +196,7 @@ Sorted by bug number. See individual bug files for details.
 | [158](158.md) | `BTree.get_min_value_ptr` returns `?Value` instead of `?*Value` | Medium | Fixed |
 | [159](159.md) | `pseudosocket_dup` checks `new_fd == -1` instead of `< 0`, missing Linux negative errno syscall failures | Medium | Fixed |
 | [160](160.md) | Tautological unsigned comparison and missing error check in `pseudosocket_setsockopt` | Low | Fixed |
-| [161](161.md) | Prohibited `lambda` function in `talyn/loop.py` `_TransportWrapper.get_extra_info` | Low | Open |
+| [161](161.md) | Prohibited `lambda` function in `talyn/loop.py` `_TransportWrapper.get_extra_info` | Low | Fixed |
+
 
 
