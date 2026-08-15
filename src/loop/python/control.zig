@@ -204,6 +204,10 @@ fn z_loop_add_hook(self: *LoopObject, args: []const ?PyObject) !PyObject {
     handle.hook_type = hook_type_int;
     handle.callback = python_c.py_newref(py_callback);
     handle.cancelled = false;
+    errdefer {
+        python_c.py_decref(handle.callback);
+        HookHandleType.tp_free.?(@ptrCast(handle));
+    }
 
     handle.node = try handle.loop_data.add_hook(hook_type, .{
         .func = &hook_callback,
@@ -276,6 +280,7 @@ fn z_loop_add_path_watcher(self: *LoopObject, args: []const ?PyObject) !PyObject
 
     const loop_data = utils.get_data_ptr(Loop, self);
     const wd = try loop_data.fs_watcher.add_watch(path_z, mask, py_callback);
+    errdefer loop_data.fs_watcher.remove_watch(wd, py_callback);
 
     if (python_c.PyType_Ready(&PathWatcherHandleType) < 0) return error.PythonError;
     const handle: *PathWatcherHandle = @ptrCast(PathWatcherHandleType.tp_alloc.?(&PathWatcherHandleType, 0) orelse return error.PythonError);

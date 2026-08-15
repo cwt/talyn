@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 167 |
-| Open | 5 |
+| Fixed | 168 |
+| Open | 4 |
 | False Positive | 3 |
 | **Total** | **175** |
 
@@ -207,7 +207,7 @@ Sorted by bug number. See individual bug files for details.
 | [169](169.md) | Leaked `parent_transport` Python reference on error in `write_operation_completed` | High | Fixed |
 | [170](170.md) | Memory and Python handle leak on unhandled exception in `loop_watcher_python_wrapper_callback` | High | Fixed |
 | [171](171.md) | Missing port bounds check causing integer overflow panic in `Address.fromPyAddr` | Medium | Fixed |
-| [172](172.md) | Memory and reference leaks on failure paths in `z_loop_add_hook` and `z_loop_add_path_watcher` | Medium | Open |
+| [172](172.md) | Memory and reference leaks on failure paths in `z_loop_add_hook` and `z_loop_add_path_watcher` | Medium | Fixed |
 | [173](173.md) | Nested GC traversal bug skipping `callback_ptr` when `module_ptr` is null in `UnixSignals` | Medium | Open |
 | [174](174.md) | Leaked task Python reference on error in `py_wake_up` | Medium | Open |
 | [175](175.md) | Missing `.cleanup` function pointer on IO queues leading to leaks during loop shutdown | Medium | Open |
