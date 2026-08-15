@@ -151,7 +151,7 @@ pub fn z_datagram_sendto(self: *DatagramTransport.DatagramTransportObject, args:
             .msg = &sd.msg,
             .callback = .{
                 .func = &sendto_completed,
-                .cleanup = null,
+                .cleanup = &cleanup_sendto,
                 .data = .{
                     .user_data = sd,
                 },

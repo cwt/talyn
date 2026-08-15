@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 170 |
-| Open | 2 |
+| Fixed | 171 |
+| Open | 1 |
 | False Positive | 3 |
 | **Total** | **175** |
 
@@ -210,5 +210,5 @@ Sorted by bug number. See individual bug files for details.
 | [172](172.md) | Memory and reference leaks on failure paths in `z_loop_add_hook` and `z_loop_add_path_watcher` | Medium | Fixed |
 | [173](173.md) | Nested GC traversal bug skipping `callback_ptr` when `module_ptr` is null in `UnixSignals` | Medium | Fixed |
 | [174](174.md) | Leaked task Python reference on error in `py_wake_up` | Medium | Fixed |
-| [175](175.md) | Missing `.cleanup` function pointer on IO queues leading to leaks during loop shutdown | Medium | Open |
+| [175](175.md) | Missing `.cleanup` function pointer on IO queues leading to leaks during loop shutdown | Medium | Fixed |
 | [176](176.md) | Infinite DNS TTL when `ttl == maxInt(u32)` in cache violating TTL capping mandate | Medium | Open |

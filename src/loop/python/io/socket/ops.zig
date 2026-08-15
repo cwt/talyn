@@ -35,15 +35,18 @@ const AcceptData = struct {
     addrlen: std.posix.socklen_t = @sizeOf(std.posix.sockaddr.storage),
 };
 
+fn cleanup_accept(ptr: ?*anyopaque) void {
+    const ad: *AcceptData = @ptrCast(@alignCast(ptr.?));
+    python_c.py_decref(@ptrCast(ad.future));
+    python_c.py_decref(@ptrCast(ad.loop));
+    ad.allocator.destroy(ad);
+}
+
 fn sock_accept_callback(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
     const io_uring_res = data.io_uring_res();
     const ad: *AcceptData = @ptrCast(@alignCast(data.user_data.?));
-    defer {
-        python_c.py_decref(@ptrCast(ad.future));
-        python_c.py_decref(@ptrCast(ad.loop));
-        ad.allocator.destroy(ad);
-    }
+    defer cleanup_accept(@ptrCast(ad));
 
     if (data.cancelled()) return;
 
@@ -159,7 +162,7 @@ fn z_loop_sock_accept(self: *LoopObject, args: []const ?PyObject) !*FutureObject
         .addrlen = &ad.addrlen,
         .callback = .{
             .func = &sock_accept_callback,
-            .cleanup = null,
+            .cleanup = &cleanup_accept,
             .data = .{ .user_data = ad },
         },
     } });
@@ -178,15 +181,18 @@ const SockConnectData = struct {
     addr: utils.Address,
 };
 
+fn cleanup_connect(ptr: ?*anyopaque) void {
+    const scd: *SockConnectData = @ptrCast(@alignCast(ptr.?));
+    python_c.py_decref(@ptrCast(scd.future));
+    python_c.py_decref(@ptrCast(scd.loop));
+    scd.allocator.destroy(scd);
+}
+
 fn sock_connect_callback(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
     const io_uring_res = data.io_uring_res();
     const scd: *SockConnectData = @ptrCast(@alignCast(data.user_data.?));
-    defer {
-        python_c.py_decref(@ptrCast(scd.future));
-        python_c.py_decref(@ptrCast(scd.loop));
-        scd.allocator.destroy(scd);
-    }
+    defer cleanup_connect(@ptrCast(scd));
 
     if (data.cancelled()) return;
 
@@ -254,7 +260,7 @@ fn z_loop_sock_connect(self: *LoopObject, args: []const ?PyObject) !*FutureObjec
         .len = scd.addr.getOsSockLen(),
         .callback = .{
             .func = &sock_connect_callback,
-            .cleanup = null,
+            .cleanup = &cleanup_connect,
             .data = .{ .user_data = scd },
         },
     } });
@@ -273,16 +279,19 @@ const SockRecvData = struct {
     buf: []u8,
 };
 
+fn cleanup_recv(ptr: ?*anyopaque) void {
+    const rd: *SockRecvData = @ptrCast(@alignCast(ptr.?));
+    python_c.py_decref(@ptrCast(rd.future));
+    python_c.py_decref(@ptrCast(rd.loop));
+    rd.allocator.free(rd.buf);
+    rd.allocator.destroy(rd);
+}
+
 fn sock_recv_callback(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
     const io_uring_res = data.io_uring_res();
     const rd: *SockRecvData = @ptrCast(@alignCast(data.user_data.?));
-    defer {
-        python_c.py_decref(@ptrCast(rd.future));
-        python_c.py_decref(@ptrCast(rd.loop));
-        rd.allocator.free(rd.buf);
-        rd.allocator.destroy(rd);
-    }
+    defer cleanup_recv(@ptrCast(rd));
 
     if (data.cancelled()) return;
 
@@ -351,7 +360,7 @@ fn z_loop_sock_recv(self: *LoopObject, args: []const ?PyObject) !*FutureObject {
         .data = .{ .buffer = buf },
         .callback = .{
             .func = &sock_recv_callback,
-            .cleanup = null,
+            .cleanup = &cleanup_recv,
             .data = .{ .user_data = rd },
         },
     } });
@@ -372,26 +381,26 @@ const SockSendAllData = struct {
     offset: usize = 0,
 };
 
+fn cleanup_sendall(ptr: ?*anyopaque) void {
+    const sd: *SockSendAllData = @ptrCast(@alignCast(ptr.?));
+    python_c.py_decref(@ptrCast(sd.future));
+    python_c.py_decref(@ptrCast(sd.loop));
+    sd.allocator.free(sd.data);
+    sd.allocator.destroy(sd);
+}
+
 fn sock_sendall_callback(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
     const io_uring_res = data.io_uring_res();
     const sd: *SockSendAllData = @ptrCast(@alignCast(data.user_data.?));
 
     if (data.cancelled()) {
-        python_c.py_decref(@ptrCast(sd.future));
-        python_c.py_decref(@ptrCast(sd.loop));
-        sd.allocator.free(sd.data);
-        sd.allocator.destroy(sd);
+        cleanup_sendall(@ptrCast(sd));
         return;
     }
 
     if (io_uring_err != .SUCCESS) {
-        defer {
-            python_c.py_decref(@ptrCast(sd.future));
-            python_c.py_decref(@ptrCast(sd.loop));
-            sd.allocator.free(sd.data);
-            sd.allocator.destroy(sd);
-        }
+        defer cleanup_sendall(@ptrCast(sd));
         const errno_val = @intFromEnum(io_uring_err);
         const exc = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "is\x00", @as(c_int, @intCast(errno_val)), "Sendall call failed\x00") orelse return set_future_exception(error.PythonError, sd.future);
         defer python_c.py_decref(exc);
@@ -412,7 +421,7 @@ fn sock_sendall_callback(data: *const CallbackManager.CallbackData) !void {
             .data = sd.data[sd.offset..],
             .callback = .{
                 .func = &sock_sendall_callback,
-                .cleanup = null,
+                .cleanup = &cleanup_sendall,
                 .data = .{ .user_data = sd },
             },
         } });
@@ -420,12 +429,7 @@ fn sock_sendall_callback(data: *const CallbackManager.CallbackData) !void {
     }
 
     // Success
-    defer {
-        python_c.py_decref(@ptrCast(sd.future));
-        python_c.py_decref(@ptrCast(sd.loop));
-        sd.allocator.free(sd.data);
-        sd.allocator.destroy(sd);
-    }
+    defer cleanup_sendall(@ptrCast(sd));
     const future_data = utils.get_data_ptr(Future, sd.future);
     try Future.Python.Result.future_fast_set_result(future_data, python_c.get_py_none());
 }
@@ -484,7 +488,7 @@ fn z_loop_sock_sendall(self: *LoopObject, args: []const ?PyObject) !*FutureObjec
         .data = data_buf,
         .callback = .{
             .func = &sock_sendall_callback,
-            .cleanup = null,
+            .cleanup = &cleanup_sendall,
             .data = .{ .user_data = sd },
         },
     } });
@@ -506,16 +510,19 @@ const SockRecvFromData = struct {
     addr: std.posix.sockaddr.storage = undefined,
 };
 
+fn cleanup_recvfrom(ptr: ?*anyopaque) void {
+    const rd: *SockRecvFromData = @ptrCast(@alignCast(ptr.?));
+    python_c.py_decref(@ptrCast(rd.future));
+    python_c.py_decref(@ptrCast(rd.loop));
+    rd.allocator.free(rd.buf);
+    rd.allocator.destroy(rd);
+}
+
 fn sock_recvfrom_callback(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
     const io_uring_res = data.io_uring_res();
     const rd: *SockRecvFromData = @ptrCast(@alignCast(data.user_data.?));
-    defer {
-        python_c.py_decref(@ptrCast(rd.future));
-        python_c.py_decref(@ptrCast(rd.loop));
-        rd.allocator.free(rd.buf);
-        rd.allocator.destroy(rd);
-    }
+    defer cleanup_recvfrom(@ptrCast(rd));
 
     if (data.cancelled()) return;
 
@@ -601,7 +608,7 @@ fn z_loop_sock_recvfrom(self: *LoopObject, args: []const ?PyObject) !*FutureObje
         .msg = &rd.msg,
         .callback = .{
             .func = &sock_recvfrom_callback,
-            .cleanup = null,
+            .cleanup = &cleanup_recvfrom,
             .data = .{ .user_data = rd },
         },
     } });
@@ -623,16 +630,19 @@ const SockSendToData = struct {
     addr: utils.Address,
 };
 
+fn cleanup_sendto(ptr: ?*anyopaque) void {
+    const sd: *SockSendToData = @ptrCast(@alignCast(ptr.?));
+    python_c.py_decref(@ptrCast(sd.future));
+    python_c.py_decref(@ptrCast(sd.loop));
+    sd.allocator.free(sd.buf);
+    sd.allocator.destroy(sd);
+}
+
 fn sock_sendto_callback(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
     const io_uring_res = data.io_uring_res();
     const sd: *SockSendToData = @ptrCast(@alignCast(data.user_data.?));
-    defer {
-        python_c.py_decref(@ptrCast(sd.future));
-        python_c.py_decref(@ptrCast(sd.loop));
-        sd.allocator.free(sd.buf);
-        sd.allocator.destroy(sd);
-    }
+    defer cleanup_sendto(@ptrCast(sd));
 
     if (data.cancelled()) return;
 
@@ -728,7 +738,7 @@ fn z_loop_sock_sendto(self: *LoopObject, args: []const ?PyObject) !*FutureObject
         .msg = &sd.msg,
         .callback = .{
             .func = &sock_sendto_callback,
-            .cleanup = null,
+            .cleanup = &cleanup_sendto,
             .data = .{ .user_data = sd },
         },
     } });
@@ -829,7 +839,7 @@ fn z_loop_sock_recv_into(self: *LoopObject, args: []const ?PyObject) !*FutureObj
         .data = .{ .buffer = @as([*]u8, @ptrCast(pbuf.buf))[0..@intCast(pbuf.len)] },
         .callback = .{
             .func = &sock_recv_into_callback_with_buf,
-            .cleanup = null,
+            .cleanup = &cleanup_recv_into_with_buf,
             .data = .{ .user_data = rd },
         },
     } });
@@ -842,16 +852,19 @@ const SockRecvIntoDataWithBuf = struct {
     pbuf: python_c.Py_buffer,
 };
 
+fn cleanup_recv_into_with_buf(ptr: ?*anyopaque) void {
+    const rd: *SockRecvIntoDataWithBuf = @ptrCast(@alignCast(ptr.?));
+    python_c.PyBuffer_Release(&rd.pbuf);
+    python_c.py_decref(@ptrCast(rd.base.future));
+    python_c.py_decref(@ptrCast(rd.base.loop));
+    rd.base.allocator.destroy(rd);
+}
+
 fn sock_recv_into_callback_with_buf(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
     const io_uring_res = data.io_uring_res();
     const rd: *SockRecvIntoDataWithBuf = @ptrCast(@alignCast(data.user_data.?));
-    defer {
-        python_c.PyBuffer_Release(&rd.pbuf);
-        python_c.py_decref(@ptrCast(rd.base.future));
-        python_c.py_decref(@ptrCast(rd.base.loop));
-        rd.base.allocator.destroy(rd);
-    }
+    defer cleanup_recv_into_with_buf(@ptrCast(rd));
 
     if (data.cancelled()) return;
 

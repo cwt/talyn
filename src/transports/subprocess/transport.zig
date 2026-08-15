@@ -25,7 +25,7 @@ fn subprocess_dealloc(self: ?*SubprocessTransportObject) callconv(.c) void {
     python_c.PyObject_GC_UnTrack(@ptrCast(instance));
     if (!instance.closed) {
         if (instance.loop) |loop| {
-            const loop_obj: *LoopObject = @alignCast(@ptrCast(loop));
+            const loop_obj: *LoopObject = @ptrCast(@alignCast(loop));
             if (loop_obj.debug) {
                 const msg = python_c.PyUnicode_FromFormat("unclosed transport <SubprocessTransport pid=%d>\x00", instance.pid);
                 if (msg) |m| {
@@ -226,18 +226,16 @@ pub var SubprocessType: ?*python_c.PyTypeObject = null;
 
 pub fn create_type() !void {
     if (SubprocessType != null) return;
-    SubprocessType = @ptrCast(python_c.PyType_FromSpecWithBases(
-        @constCast(&subprocess_spec), null
-    ) orelse return error.PythonError);
+    SubprocessType = @ptrCast(python_c.PyType_FromSpecWithBases(@constCast(&subprocess_spec), null) orelse return error.PythonError);
 }
 
 fn cleanup_pidfd(ptr: ?*anyopaque) void {
-    const transport: *SubprocessTransportObject = @alignCast(@ptrCast(ptr.?));
+    const transport: *SubprocessTransportObject = @ptrCast(@alignCast(ptr.?));
     python_c.py_decref(@ptrCast(transport));
 }
 
 fn pidfd_exit_callback(data: *const CallbackManager.CallbackData) !void {
-    const transport: *SubprocessTransportObject = @alignCast(@ptrCast(data.user_data.?));
+    const transport: *SubprocessTransportObject = @ptrCast(@alignCast(data.user_data.?));
     defer python_c.py_decref(@ptrCast(transport));
 
     if (data.cancelled() or transport.closed) return;
@@ -327,7 +325,7 @@ fn pidfd_exit_callback(data: *const CallbackManager.CallbackData) !void {
                 .fd = transport.pidfd,
                 .callback = .{
                     .func = &pidfd_exit_callback,
-                    .cleanup = null,
+                    .cleanup = &cleanup_pidfd,
                     .data = .{
                         .user_data = transport,
                     },
@@ -384,7 +382,7 @@ pub fn start_exit_watcher(transport: *SubprocessTransportObject, loop: *LoopObje
             .fd = pidfd,
             .callback = .{
                 .func = &pidfd_exit_callback,
-                .cleanup = null,
+                .cleanup = &cleanup_pidfd,
                 .data = .{
                     .user_data = transport,
                 },
@@ -393,12 +391,8 @@ pub fn start_exit_watcher(transport: *SubprocessTransportObject, loop: *LoopObje
     });
 }
 
-pub fn new_with_pid(
-    protocol: PyObject, loop: *LoopObject, pid: std.posix.pid_t
-) !*SubprocessTransportObject {
-    const self: *SubprocessTransportObject = @ptrCast(
-        SubprocessType.?.tp_alloc.?(SubprocessType.?, 0) orelse return error.PythonError
-    );
+pub fn new_with_pid(protocol: PyObject, loop: *LoopObject, pid: std.posix.pid_t) !*SubprocessTransportObject {
+    const self: *SubprocessTransportObject = @ptrCast(SubprocessType.?.tp_alloc.?(SubprocessType.?, 0) orelse return error.PythonError);
     self.loop = python_c.py_newref(@as(*python_c.PyObject, @ptrCast(loop)));
     self.protocol = python_c.py_newref(protocol);
     self.pid = pid;
