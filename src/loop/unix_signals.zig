@@ -75,7 +75,14 @@ fn signal_handler(data: *const CallbackManager.CallbackData) !void {
         });
         return;
     };
-    python_c.py_incref(@ptrCast(@alignCast(callback_ptr.data.user_data.?)));
+
+    // BUG-153: Only incref user_data if it is a Python-managed handle
+    // (indicated by a non-null cleanup function). For internal native callbacks
+    // (such as the default SIGINT handler where user_data is *Loop), user_data
+    // is a native Zig pointer and must NOT be increffed with Py_IncRef.
+    if (callback_ptr.cleanup != null) {
+        python_c.py_incref(@ptrCast(@alignCast(callback_ptr.data.user_data.?)));
+    }
 
     try Loop.Scheduling.Soon.dispatch(loop, callback_ptr);
 

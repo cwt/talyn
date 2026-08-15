@@ -81,15 +81,35 @@ pub fn build(b: *std.Build) void {
         }
     }
 
+    var dummy_code: u8 = 0;
+    const detected_include_dir = if (b.runAllowFail(&.{ "python3", "-c", "import sysconfig; print(sysconfig.get_path('include'), end='')" }, &dummy_code, .ignore)) |stdout| blk: {
+        const trimmed = std.mem.trim(u8, stdout, " \t\r\n");
+        break :blk if (trimmed.len > 0) trimmed else "/usr/include/python3.14";
+    } else |_| "/usr/include/python3.14";
+
     const python_include_dir = b.option([]const u8, "python-include-dir", "Path to python include directory")
-        orelse "/usr/include/python3.13";
+        orelse detected_include_dir;
+
+    const detected_lib = if (b.runAllowFail(&.{ "python3", "-c", "import sysconfig, os; d = sysconfig.get_config_var('LIBDIR'); f = sysconfig.get_config_var('INSTSONAME'); print(os.path.join(d, f) if d and f else '', end='')" }, &dummy_code, .ignore)) |stdout| blk: {
+        const trimmed = std.mem.trim(u8, stdout, " \t\r\n");
+        break :blk if (trimmed.len > 0) trimmed else null;
+    } else |_| null;
 
     const python_lib_dir = b.option([]const u8, "python-lib-dir", "Path to python library directory");
 
-    const python_lib = b.option([]const u8, "python-lib", "Path to the python shared library");
+    const builtin = @import("builtin");
+    const python_lib = b.option([]const u8, "python-lib", "Path to the python shared library")
+        orelse (if (target.result.cpu.arch == builtin.cpu.arch) detected_lib else null);
+
+    const detected_gil_disabled = if (b.runAllowFail(&.{ "python3", "-c", "import sys; print(not sys._is_gil_enabled() if hasattr(sys, '_is_gil_enabled') else False, end='')" }, &dummy_code, .ignore)) |stdout| blk: {
+        const trimmed = std.mem.trim(u8, stdout, " \t\r\n");
+        break :blk std.mem.eql(u8, trimmed, "True");
+    } else |_| false;
 
     const python_is_gil_disabled = b.option(bool, "python-gil-disabled", "Is GIL disabled")
-        orelse false;
+        orelse detected_gil_disabled;
+
+
 
     // BUG-123: Use addTranslateC for signal.h instead of @cImport in unix_signals.zig.
 
