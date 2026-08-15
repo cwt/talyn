@@ -227,10 +227,11 @@ fn traverse_btree_node(node: anytype, visit: python_c.visitproc, arg: ?*anyopaqu
         if (cb.data.module_ptr()) |mp| {
             const vret = visit.?(@ptrCast(mp), arg);
             if (vret != 0) return vret;
-            if (cb.data.callback_ptr()) |cp| {
-                const vret2 = visit.?(@ptrCast(cp), arg);
-                if (vret2 != 0) return vret2;
-            }
+        }
+
+        if (cb.data.callback_ptr()) |cp| {
+            const vret = visit.?(@ptrCast(cp), arg);
+            if (vret != 0) return vret;
         }
     }
     for (node.childs[0 .. nkeys + 1]) |maybe_child| {

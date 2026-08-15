@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 168 |
-| Open | 4 |
+| Fixed | 169 |
+| Open | 3 |
 | False Positive | 3 |
 | **Total** | **175** |
 
@@ -208,7 +208,7 @@ Sorted by bug number. See individual bug files for details.
 | [170](170.md) | Memory and Python handle leak on unhandled exception in `loop_watcher_python_wrapper_callback` | High | Fixed |
 | [171](171.md) | Missing port bounds check causing integer overflow panic in `Address.fromPyAddr` | Medium | Fixed |
 | [172](172.md) | Memory and reference leaks on failure paths in `z_loop_add_hook` and `z_loop_add_path_watcher` | Medium | Fixed |
-| [173](173.md) | Nested GC traversal bug skipping `callback_ptr` when `module_ptr` is null in `UnixSignals` | Medium | Open |
+| [173](173.md) | Nested GC traversal bug skipping `callback_ptr` when `module_ptr` is null in `UnixSignals` | Medium | Fixed |
 | [174](174.md) | Leaked task Python reference on error in `py_wake_up` | Medium | Open |
 | [175](175.md) | Missing `.cleanup` function pointer on IO queues leading to leaks during loop shutdown | Medium | Open |
 | [176](176.md) | Infinite DNS TTL when `ttl == maxInt(u32)` in cache violating TTL capping mandate | Medium | Open |
