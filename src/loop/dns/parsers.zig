@@ -63,7 +63,8 @@ pub fn build_reverse_name(address: utils.Address, buf: []u8) ![]u8 {
                 const low = byte & 0x0F;
                 offset += (try std.fmt.bufPrint(buf[offset..], "{x:1}.{x:1}.", .{ low, high })).len;
             }
-            return try std.fmt.bufPrint(buf[offset..], "ip6.arpa", .{});
+            offset += (try std.fmt.bufPrint(buf[offset..], "ip6.arpa", .{})).len;
+            return buf[0..offset];
         },
         else => return error.UnsupportedAddressFamily,
     }
@@ -610,4 +611,18 @@ test "parse_name too many compression pointers" {
         data[i * 2 + 1] = @intCast((i + 1) * 2);
     }
     try std.testing.expectError(error.MalformedDnsResponse, parse_name(&data, 0, std.testing.allocator));
+}
+
+test "build_reverse_name ipv4 and ipv6" {
+    var buf: [256]u8 = undefined;
+
+    // IPv4: 192.0.2.1 -> 1.2.0.192.in-addr.arpa
+    const addr4 = try utils.Address.parseIp4("192.0.2.1", 53);
+    const rev4 = try build_reverse_name(addr4, &buf);
+    try std.testing.expectEqualStrings("1.2.0.192.in-addr.arpa", rev4);
+
+    // IPv6: ::1 -> 1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.ip6.arpa
+    const addr6 = try utils.Address.parseIp6("::1", 53);
+    const rev6 = try build_reverse_name(addr6, &buf);
+    try std.testing.expectEqualStrings("1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.ip6.arpa", rev6);
 }

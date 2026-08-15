@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 174 |
-| Open | 16 |
+| Fixed | 175 |
+| Open | 15 |
 | False Positive | 3 |
 | **Total** | **193** |
 
@@ -214,7 +214,7 @@ Sorted by bug number. See individual bug files for details.
 | [176](176.md) | Infinite DNS TTL when `ttl == maxInt(u32)` in cache violating TTL capping mandate | Medium | Fixed |
 | [177](177.md) | Systemic double-free and double-decref on error in DynamicRingBuffer completion callbacks | Critical | Fixed |
 | [178](178.md) | Allocator mismatch / invalid free in ServerQueryData.release | Critical | Fixed |
-| [179](179.md) | Truncated IPv6 reverse DNS return slice in build_reverse_name | High | Open |
+| [179](179.md) | Truncated IPv6 reverse DNS return slice in build_reverse_name | High | Fixed |
 | [180](180.md) | CancelledError(None) vs standard CancelledError() argument mismatch on future cancellation | High | Open |
 | [181](181.md) | Uninitialized stack memory read in DNS answer parsing yielding corrupt resolved addresses | High | Open |
 | [182](182.md) | Use-after-free in ChildWatcher.on_child_exit on cancelled CQE dereferencing destroyed handler | Critical | Open |
