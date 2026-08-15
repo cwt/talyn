@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 162 |
-| Open | 10 |
+| Fixed | 163 |
+| Open | 9 |
 | False Positive | 3 |
 | **Total** | **175** |
 
@@ -202,7 +202,7 @@ Sorted by bug number. See individual bug files for details.
 | [164](164.md) | Tautological `ret >= 0` comparison on unsigned `usize` in `IO.wakeup_eventfd` | High | Fixed |
 | [165](165.md) | Unsafe `@as(i32, @intCast(syscall_ret)) < 0` errno check pattern in syscall return handling | High | Fixed |
 | [166](166.md) | Heap memory leak on synchronous DNS lookups in `DNS.lookup` | High | Fixed |
-| [167](167.md) | Socket file descriptor leak on Python object allocation failure in `sock_accept_callback` | High | Open |
+| [167](167.md) | Socket file descriptor leak on Python object allocation failure in `sock_accept_callback` | High | Fixed |
 | [168](168.md) | File descriptor leak on `tp_alloc` failure in `pseudosocket_dup` | High | Open |
 | [169](169.md) | Leaked `parent_transport` Python reference on error in `write_operation_completed` | High | Open |
 | [170](170.md) | Memory and Python handle leak on unhandled exception in `loop_watcher_python_wrapper_callback` | High | Open |
