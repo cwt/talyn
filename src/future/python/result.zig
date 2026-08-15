@@ -6,17 +6,18 @@ const PythonFutureObject = Future.Python.FutureObject;
 
 const utils = @import("utils");
 
-
 inline fn raise_cancel_exception(self: *PythonFutureObject) void {
     if (self.cancelled_exc) |exc| {
         python_c.PyErr_SetRaisedException(python_c.py_newref(exc));
         return;
     }
     if (self.cancel_msg_py_object) |cancel_msg_py_object| {
-        python_c.PyErr_SetObject(utils.PythonImports.get("cancelled_error_exc"), cancel_msg_py_object);
-    }else{
-        python_c.PyErr_SetNone(utils.PythonImports.get("cancelled_error_exc"));
+        if (!python_c.is_none(cancel_msg_py_object)) {
+            python_c.PyErr_SetObject(utils.PythonImports.get("cancelled_error_exc"), cancel_msg_py_object);
+            return;
+        }
     }
+    python_c.PyErr_SetNone(utils.PythonImports.get("cancelled_error_exc"));
 }
 
 pub inline fn get_result(self: *PythonFutureObject) ?PyObject {
@@ -31,12 +32,12 @@ pub inline fn get_result(self: *PythonFutureObject) ?PyObject {
                 python_c.PyErr_SetRaisedException(python_c.py_newref(exc));
                 break :blk null;
             }
-            break :blk @as(PyObject, @alignCast(@ptrCast(future_data.result.?)));
+            break :blk @as(PyObject, @ptrCast(@alignCast(future_data.result.?)));
         },
         .canceled => blk: {
             raise_cancel_exception(self);
             break :blk null;
-        }
+        },
     };
 }
 
@@ -65,7 +66,7 @@ pub fn future_exception(self: ?*PythonFutureObject, _: ?PyObject) callconv(.c) ?
         .canceled => blk: {
             raise_cancel_exception(instance);
             break :blk null;
-        }
+        },
     };
 }
 
@@ -95,7 +96,7 @@ inline fn z_future_set_exception(self: *PythonFutureObject, exception: PyObject)
 }
 
 pub fn future_set_exception(self: ?*PythonFutureObject, exception: ?PyObject) callconv(.c) ?PyObject {
-    return utils.execute_zig_function(z_future_set_exception, .{self.?, exception.?});
+    return utils.execute_zig_function(z_future_set_exception, .{ self.?, exception.? });
 }
 
 pub inline fn future_fast_set_result(obj: *Future, result: PyObject) !void {
@@ -107,7 +108,7 @@ inline fn z_future_set_result(self: *PythonFutureObject, result: PyObject) !PyOb
     const future_data = utils.get_data_ptr(Future, self);
 
     switch (future_data.status) {
-        .finished,.canceled => {
+        .finished, .canceled => {
             python_c.PyErr_SetString(utils.PythonImports.get("invalid_state_exc"), "Result already setted\x00");
             return error.PythonError;
         },
@@ -119,13 +120,13 @@ inline fn z_future_set_result(self: *PythonFutureObject, result: PyObject) !PyOb
 }
 
 pub fn future_set_result(self: ?*PythonFutureObject, result: ?PyObject) callconv(.c) ?PyObject {
-    return utils.execute_zig_function(z_future_set_result, .{self.?, result.?});
+    return utils.execute_zig_function(z_future_set_result, .{ self.?, result.? });
 }
 
 pub fn future_done(self: ?*PythonFutureObject, _: ?PyObject) callconv(.c) ?PyObject {
     const future_data = utils.get_data_ptr(Future, self.?);
     return switch (future_data.status) {
-        .finished,.canceled => python_c.get_py_true(),
-        else => python_c.get_py_false()
+        .finished, .canceled => python_c.get_py_true(),
+        else => python_c.get_py_false(),
     };
 }

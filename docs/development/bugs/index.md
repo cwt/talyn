@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 175 |
-| Open | 15 |
+| Fixed | 176 |
+| Open | 14 |
 | False Positive | 3 |
 | **Total** | **193** |
 
@@ -215,7 +215,7 @@ Sorted by bug number. See individual bug files for details.
 | [177](177.md) | Systemic double-free and double-decref on error in DynamicRingBuffer completion callbacks | Critical | Fixed |
 | [178](178.md) | Allocator mismatch / invalid free in ServerQueryData.release | Critical | Fixed |
 | [179](179.md) | Truncated IPv6 reverse DNS return slice in build_reverse_name | High | Fixed |
-| [180](180.md) | CancelledError(None) vs standard CancelledError() argument mismatch on future cancellation | High | Open |
+| [180](180.md) | CancelledError(None) vs standard CancelledError() argument mismatch on future cancellation | High | Fixed |
 | [181](181.md) | Uninitialized stack memory read in DNS answer parsing yielding corrupt resolved addresses | High | Open |
 | [182](182.md) | Use-after-free in ChildWatcher.on_child_exit on cancelled CQE dereferencing destroyed handler | Critical | Open |
 | [183](183.md) | Use-after-free and dangling pointer in loop.add_hook due to missing refcount hold | Critical | Open |

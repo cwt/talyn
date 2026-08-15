@@ -507,3 +507,34 @@ def test_future_cancel_msg_no_reference_leak() -> None:
         )
     finally:
         loop.close()
+
+
+def test_future_cancelled_error_args() -> None:
+    loop = Loop()
+    try:
+        future = Future(loop=loop)
+        future.cancel()
+        assert future.cancelled()
+        try:
+            future.result()
+            assert False, "result() should raise CancelledError"
+        except asyncio.CancelledError as exc:
+            assert exc.args == ()
+    finally:
+        loop.close()
+
+
+def test_future_cancelled_error_with_msg_args() -> None:
+    loop = Loop()
+    try:
+        future = Future(loop=loop)
+        future.cancel(msg="operation aborted")
+        assert future.cancelled()
+        try:
+            future.result()
+            assert False, "result() should raise CancelledError"
+        except asyncio.CancelledError as exc:
+            assert exc.args == ("operation aborted",)
+    finally:
+        loop.close()
+

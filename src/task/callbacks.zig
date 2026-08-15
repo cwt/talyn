@@ -366,7 +366,11 @@ fn _execute_task_throw(task: *Task.PythonTaskObject, task_exception: ?PyObject) 
         {
             python_c.py_xdecref(exception_value);
             if (task.fut.cancel_msg_py_object) |value| {
-                exception_value = python_c.PyObject_CallOneArg(utils.PythonImports.get("cancelled_error_exc"), value) orelse return error.PythonError;
+                if (!python_c.is_none(value)) {
+                    exception_value = python_c.PyObject_CallOneArg(utils.PythonImports.get("cancelled_error_exc"), value) orelse return error.PythonError;
+                } else {
+                    exception_value = python_c.PyObject_CallNoArgs(utils.PythonImports.get("cancelled_error_exc")) orelse return error.PythonError;
+                }
             } else {
                 exception_value = python_c.PyObject_CallNoArgs(utils.PythonImports.get("cancelled_error_exc")) orelse return error.PythonError;
             }

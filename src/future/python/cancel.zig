@@ -21,9 +21,7 @@ pub inline fn future_fast_cancel(instance: *PythonFutureObject, data: *Future, c
     return true;
 }
 
-pub fn future_cancel(
-    self: ?*PythonFutureObject, args: ?[*]?PyObject, nargs: isize, knames: ?PyObject
-) callconv(.c) ?PyObject {
+pub fn future_cancel(self: ?*PythonFutureObject, args: ?[*]?PyObject, nargs: isize, knames: ?PyObject) callconv(.c) ?PyObject {
     const instance = self.?;
 
     const future_data = utils.get_data_ptr(Future, instance);
@@ -39,7 +37,8 @@ pub fn future_cancel(
 
     const kwargs_start: usize = if (nargs > 0) @intCast(nargs) else 0;
     python_c.parse_vector_call_kwargs(
-        knames, args.? + kwargs_start,
+        knames,
+        args.? + kwargs_start,
         &.{"msg\x00"},
         &.{&cancel_msg_py_object},
     ) catch |err| {
@@ -60,7 +59,7 @@ pub fn future_cancelled(self: ?*PythonFutureObject, _: ?PyObject) callconv(.c) ?
     const future_data = utils.get_data_ptr(Future, self.?);
     return switch (future_data.status) {
         .canceled => python_c.get_py_true(),
-        else => python_c.get_py_false()
+        else => python_c.get_py_false(),
     };
 }
 
@@ -71,7 +70,9 @@ pub fn future_make_cancelled_error(self: ?*PythonFutureObject, _: ?PyObject) cal
     }
     const exc_class = utils.PythonImports.get("cancelled_error_exc");
     if (instance.cancel_msg_py_object) |m| {
-        return python_c.PyObject_CallFunctionObjArgs(exc_class, m, @as(?*python_c.PyObject, null));
+        if (!python_c.is_none(m)) {
+            return python_c.PyObject_CallFunctionObjArgs(exc_class, m, @as(?*python_c.PyObject, null));
+        }
     }
     return python_c.PyObject_CallFunctionObjArgs(exc_class, @as(?*python_c.PyObject, null));
 }
