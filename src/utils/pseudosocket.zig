@@ -193,7 +193,9 @@ fn pseudosocket_dup(self: ?*PseudoSocketObject, _: ?PyObject) callconv(.c) ?PyOb
         python_c.raise_python_value_error("dup() failed\x00");
         return null;
     }
-    return @ptrCast(fast_new_pseudosocket(@intCast(new_fd), instance.family, instance.type, instance.proto) catch {
+    const fd: std.posix.fd_t = @intCast(new_fd);
+    return @ptrCast(fast_new_pseudosocket(fd, instance.family, instance.type, instance.proto) catch {
+        _ = std.os.linux.close(fd);
         python_c.raise_python_value_error("dup() failed\x00");
         return null;
     });
