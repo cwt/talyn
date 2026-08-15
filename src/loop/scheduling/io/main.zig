@@ -1,7 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const utils =  @import("utils");
+const utils = @import("utils");
 const python_c = @import("python_c");
 
 const CallbackManager = @import("callback_manager");
@@ -69,9 +69,7 @@ pub const BlockingTask = struct {
 
     inline fn reset(self: *BlockingTask) *BlockingTasksSet {
         const pool_start = @intFromPtr(self) - @as(usize, self.index) * @sizeOf(BlockingTask);
-        const set: *BlockingTasksSet = @ptrFromInt(
-            pool_start - @offsetOf(BlockingTasksSet, "task_data_pool")
-        );
+        const set: *BlockingTasksSet = @ptrFromInt(pool_start - @offsetOf(BlockingTasksSet, "task_data_pool"));
 
         self.data = .none;
         self.operation = undefined;
@@ -125,9 +123,7 @@ pub const BlockingTask = struct {
             .PerformWriteV, .PerformWrite, .PerformSendMsg => {
                 switch (result) {
                     .SUCCESS => {},
-                    .CANCELED, .BADF, .FBIG, .INTR, .IO, .NOSPC, .INVAL, .CONNRESET,
-                    .PIPE, .NOBUFS, .NXIO, .ACCES, .NETDOWN, .NETUNREACH,
-                    .SPIPE => {},
+                    .CANCELED, .BADF, .FBIG, .INTR, .IO, .NOSPC, .INVAL, .CONNRESET, .PIPE, .NOBUFS, .NXIO, .ACCES, .NETDOWN, .NETUNREACH, .SPIPE => {},
                     .AGAIN => {},
                     else => std.log.warn("PerformWriteV/Write/SendMsg: unexpected io_uring result {s}", .{@tagName(result)}),
                 }
@@ -135,9 +131,7 @@ pub const BlockingTask = struct {
             .PerformRead, .PerformRecvMsg => {
                 switch (result) {
                     .SUCCESS => {},
-                    .CANCELED, .BADF, .BADMSG, .INTR, .INVAL, .IO, .ISDIR,
-                    .OVERFLOW, .SPIPE, .CONNRESET, .NOTCONN, .TIMEDOUT,
-                    .NOBUFS, .NOMEM, .NXIO => {},
+                    .CANCELED, .BADF, .BADMSG, .INTR, .INVAL, .IO, .ISDIR, .OVERFLOW, .SPIPE, .CONNRESET, .NOTCONN, .TIMEDOUT, .NOBUFS, .NOMEM, .NXIO => {},
                     .AGAIN => {},
                     else => std.log.warn("PerformRead/RecvMsg: unexpected io_uring result {s}", .{@tagName(result)}),
                 }
@@ -153,9 +147,7 @@ pub const BlockingTask = struct {
             .SocketConnect, .SocketAccept => {
                 switch (result) {
                     .SUCCESS => {},
-                    .ACCES, .PERM, .ADDRINUSE, .ADDRNOTAVAIL, .AFNOSUPPORT, .ALREADY,
-                    .BADF, .CONNREFUSED, .FAULT, .INPROGRESS, .INTR, .ISCONN,
-                    .NETUNREACH, .NOTSOCK, .PROTOTYPE, .TIMEDOUT => {},
+                    .ACCES, .PERM, .ADDRINUSE, .ADDRNOTAVAIL, .AFNOSUPPORT, .ALREADY, .BADF, .CONNREFUSED, .FAULT, .INPROGRESS, .INTR, .ISCONN, .NETUNREACH, .NOTSOCK, .PROTOTYPE, .TIMEDOUT => {},
                     .AGAIN => {},
                     else => std.log.warn("SocketConnect/Accept: unexpected io_uring result {s}", .{@tagName(result)}),
                 }
@@ -166,7 +158,7 @@ pub const BlockingTask = struct {
                     .CANCELED, .BADF, .INTR => {},
                     else => std.log.warn("Generic: unexpected io_uring result {s}", .{@tagName(result)}),
                 }
-            }
+            },
         }
     }
 };
@@ -174,7 +166,7 @@ pub const BlockingTask = struct {
 fn eventfd_callback(data: *const CallbackManager.CallbackData) !void {
     if (data.cancelled()) return;
 
-    const io: *IO = @alignCast(@ptrCast(data.user_data.?));
+    const io: *IO = @ptrCast(@alignCast(data.user_data.?));
     try io.register_eventfd_callback();
 }
 
@@ -196,11 +188,7 @@ pub const BlockingTasksSet = struct {
 
     pub fn init(self: *BlockingTasksSet, node: BlockingTasksSetLinkedList.Node, list: *BlockingTasksSetLinkedList, loop: *Loop) void {
         for (&self.task_data_pool, 0..) |*task, index| {
-            task.* = .{
-                .data = .none,
-                .operation = undefined,
-                .index = @intCast(index)
-            };
+            task.* = .{ .data = .none, .operation = undefined, .index = @intCast(index) };
         }
 
         self.index = 0;
@@ -213,7 +201,7 @@ pub const BlockingTasksSet = struct {
         self.node = node;
     }
 
-    pub fn deinit(self: *BlockingTasksSet) void { 
+    pub fn deinit(self: *BlockingTasksSet) void {
         if (self.disattached) {
             self.list.unlink_node(self.node) catch |err| std.log.warn("unlink_node failed: {s}", .{@errorName(err)});
         }
@@ -228,7 +216,7 @@ pub const BlockingTasksSet = struct {
                     data.data.set_cancelled(true);
                     try Loop.Scheduling.Soon.dispatch_guaranteed_nonthreadsafe(loop, data);
                 },
-                .none => {}
+                .none => {},
             }
         }
     }
@@ -239,11 +227,7 @@ pub const BlockingTasksSet = struct {
         self.free_count = 0;
     }
 
-    pub fn push(
-        self: *BlockingTasksSet,
-        operation: BlockingOperation,
-        callback: ?*const CallbackManager.Callback
-    ) !*BlockingTask {
+    pub fn push(self: *BlockingTasksSet, operation: BlockingOperation, callback: ?*const CallbackManager.Callback) !*BlockingTask {
         try self.loop.reserve_slots(1);
 
         var slot_idx: u16 = undefined;
@@ -258,11 +242,11 @@ pub const BlockingTasksSet = struct {
         }
 
         const data_slot = &self.task_data_pool[slot_idx];
-        
+
         // GC Safety: Initialize data BEFORE incrementing active_tasks
         data_slot.data = if (callback) |v| .{ .callback = v.* } else .none;
         data_slot.operation = operation;
-        
+
         self.active_tasks += 1;
 
         return data_slot;
@@ -308,7 +292,7 @@ pub const BlockingTasksSet = struct {
             switch (task.data) {
                 .callback => |*cb| {
                     if (cb.data.traverse()) |t| {
-                        const vret = t(cb.data.user_data, @constCast(@ptrCast(visit)), arg);
+                        const vret = t(cb.data.user_data, @ptrCast(@constCast(visit)), arg);
                         if (vret != 0) return vret;
                     }
 
@@ -321,19 +305,14 @@ pub const BlockingTasksSet = struct {
                         }
                     }
                 },
-                .none => {}
+                .none => {},
             }
         }
         return 0;
     }
 };
 
-pub const WaitData = struct {
-    callback: CallbackManager.Callback,
-    fd: std.os.linux.fd_t,
-    fixed_file_index: ?u16 = null,
-    timeout: ?std.os.linux.kernel_timespec = null
-};
+pub const WaitData = struct { callback: CallbackManager.Callback, fd: std.os.linux.fd_t, fixed_file_index: ?u16 = null, timeout: ?std.os.linux.kernel_timespec = null };
 
 pub const BlockingOperationData = union(BlockingOperation) {
     WaitReadable: WaitData,
@@ -353,7 +332,7 @@ pub const BlockingOperationData = union(BlockingOperation) {
 
 pub const RegisteredBufferPool = struct {
     pub const SlotSize = 65536; // 64KB
-    pub const SlotCount = 16;   // 16 slots -> 1MB (fits under host MEMLOCK limits)
+    pub const SlotCount = 16; // 16 slots -> 1MB (fits under host MEMLOCK limits)
 
     pub const LeaseResult = struct {
         index: u16,
@@ -614,7 +593,7 @@ pub fn register_fixed_file(self: *IO, fd: std.posix.fd_t) !u16 {
     // on failure.
     self.fixed_file_table[index] = fd;
     errdefer self.fixed_file_free.append(self.loop.allocator, index) catch |err| std.log.warn("append failed: {s}", .{@errorName(err)});
-    try self.ring.register_files_update(index, self.fixed_file_table[index..index + 1]);
+    try self.ring.register_files_update(index, self.fixed_file_table[index .. index + 1]);
     return index;
 }
 
@@ -627,7 +606,7 @@ pub fn unregister_fixed_file(self: *IO, index: u16) void {
     std.debug.assert(index < self.fixed_file_table.len); // HARD-05
     self.fixed_file_table[index] = -1;
     if (self.ring.fd >= 0) {
-        self.ring.register_files_update(index, self.fixed_file_table[index..index + 1]) catch |err| std.log.warn("register_files_update failed: {s}", .{@errorName(err)});
+        self.ring.register_files_update(index, self.fixed_file_table[index .. index + 1]) catch |err| std.log.warn("register_files_update failed: {s}", .{@errorName(err)});
     }
     // BUG-27: If the append fails (OOM), the slot index is
     // permanently lost. Previously this was a silent `catch {}`.
@@ -661,35 +640,23 @@ pub fn release_buffer(self: *IO, index: u16) void {
 
 pub fn register_eventfd_callback(self: *IO) !void {
     if (self.fixed_files_enabled) {
-        _ = try self.queue(.{
-            .PerformRead = .{
-                .fd = 0,
-                .fixed_file_index = 0,
-                .callback = .{
-                    .func = &eventfd_callback,
-                    .cleanup = null,
-                    .data = .{
-                        .user_data = self,
-                    }
-                },
-                .data = .{ .buffer = @as([*]u8, @ptrCast(&self.eventfd_val))[0..@sizeOf(u64)] },
-            }
-        });
+        _ = try self.queue(.{ .PerformRead = .{
+            .fd = 0,
+            .fixed_file_index = 0,
+            .callback = .{ .func = &eventfd_callback, .cleanup = null, .data = .{
+                .user_data = self,
+            } },
+            .data = .{ .buffer = @as([*]u8, @ptrCast(&self.eventfd_val))[0..@sizeOf(u64)] },
+        } });
     } else {
-        _ = try self.queue(.{
-            .PerformRead = .{
-                .fd = self.eventfd,
-                .fixed_file_index = null,
-                .callback = .{
-                    .func = &eventfd_callback,
-                    .cleanup = null,
-                    .data = .{
-                        .user_data = self,
-                    }
-                },
-                .data = .{ .buffer = @as([*]u8, @ptrCast(&self.eventfd_val))[0..@sizeOf(u64)] },
-            }
-        });
+        _ = try self.queue(.{ .PerformRead = .{
+            .fd = self.eventfd,
+            .fixed_file_index = null,
+            .callback = .{ .func = &eventfd_callback, .cleanup = null, .data = .{
+                .user_data = self,
+            } },
+            .data = .{ .buffer = @as([*]u8, @ptrCast(&self.eventfd_val))[0..@sizeOf(u64)] },
+        } });
     }
 }
 
@@ -697,14 +664,11 @@ pub fn wakeup_eventfd(self: *IO) !void {
     const val: u64 = 1;
     while (true) {
         const ret = std.os.linux.write(self.eventfd, @as([*]const u8, @ptrCast(&val)), @sizeOf(u64));
-        if (ret >= 0) return;
-        switch (std.os.errno(ret)) {
-            .INTR => continue,
-            else => {
-                std.log.warn("eventfd write failed: {s}", .{@tagName(std.os.errno(ret))});
-                return;
-            },
-        }
+        const err = utils.getSyscallErrno(ret);
+        if (err == .SUCCESS) return;
+        if (err == .INTR) continue;
+        std.log.warn("eventfd write failed: {s}", .{@tagName(err)});
+        return;
     }
 }
 
@@ -732,7 +696,7 @@ pub fn deinit(self: *IO) void {
         set.cancel_all(self.loop) catch |err| std.log.warn("cancel_all failed: {s}", .{@errorName(err)});
         set.deinit();
     }
-    
+
     self.ring.unregister_buffers() catch |err| std.log.warn("unregister_buffers failed: {s}", .{@errorName(err)});
     self.buffer_pool.deinit(self.busy_sets.allocator);
     @atomicStore([*]u8, &self.buffer_pool.buffer_memory.ptr, @ptrFromInt(0xDEADBEEF), .seq_cst); // HARD-04
@@ -804,7 +768,7 @@ pub fn queue_unlocked(self: *IO, event: BlockingOperationData) !usize {
         .Cancel => |data| Cancel.perform(&self.ring, data),
         .CancelByFd => |fd| Cancel.perform_by_fd(&self.ring, fd),
         .SocketConnect => |data| Socket.connect(&self.ring, set, data),
-        .SocketAccept => |data| Socket.accept(&self.ring, set, data)
+        .SocketAccept => |data| Socket.accept(&self.ring, set, data),
     };
 
     if (event == .Cancel or event == .CancelByFd or (event != .Cancel and event != .CancelByFd and self.ring.sq_ready() >= TotalTasksItems - 2)) {
@@ -839,20 +803,20 @@ pub fn submit_guaranteed(ring: *std.os.linux.IoUring) !u32 {
 fn checkKernelVersion() !std.SemanticVersion {
     const uname = std.posix.uname();
     const release = std.mem.sliceTo(&uname.release, 0);
-    
+
     var it = std.mem.splitScalar(u8, release, '.');
     const major_str = it.next() orelse return error.InvalidVersion;
     const minor_str = it.next() orelse return error.InvalidVersion;
-    
+
     const patch_str_raw = it.next() orelse "0";
     var patch_len: usize = 0;
     while (patch_len < patch_str_raw.len and std.ascii.isDigit(patch_str_raw[patch_len])) : (patch_len += 1) {}
     const patch_str = patch_str_raw[0..patch_len];
-    
+
     const major = try std.fmt.parseInt(usize, major_str, 10);
     const minor = try std.fmt.parseInt(usize, minor_str, 10);
     const patch = if (patch_str.len > 0) try std.fmt.parseInt(usize, patch_str, 10) else 0;
-    
+
     return std.SemanticVersion{ .major = major, .minor = minor, .patch = patch };
 }
 
