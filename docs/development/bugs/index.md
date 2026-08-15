@@ -1,8 +1,8 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 175 bugs discovered across 12 audit passes."
-timestamp: "2026-08-16T00:45:00Z"
+description: "Individual bug entries for talyn, one file per bug. 193 bugs discovered across 13 audit passes."
+timestamp: "2026-08-16T03:25:00Z"
 ---
 
 # Bugs — talyn
@@ -15,23 +15,23 @@ Sorted by bug number. See individual bug files for details.
 
 | Severity | Count |
 |---|---:|
-| High | 51 |
+| High | 58 |
 | Low | 38 |
-| Critical | 25 |
-| Medium | 19 |
+| Critical | 30 |
+| Medium | 25 |
 | Medium-High | 17 |
 | Medium-Low | 14 |
 | Medium-Mid | 11 |
-| **Total** | **175** |
+| **Total** | **193** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
 | Fixed | 172 |
-| Open | 0 |
+| Open | 18 |
 | False Positive | 3 |
-| **Total** | **175** |
+| **Total** | **193** |
 
 ## All Bugs
 
@@ -39,7 +39,7 @@ Sorted by bug number. See individual bug files for details.
 |---|---|---|---|
 | [1](001.md) | BTree `split_nodes` hardcodes `nkeys=1` after non-root split | Critical | Fixed |
 | [2](002.md) | SQE use-after-free on `link_timeout` failure | Critical | Fixed |
-| [3](003.md) | `get_extra_info( | Critical | Fixed |
+| [3](003.md) | `get_extra_info(` transport reference leak | Critical | Fixed |
 | [4](004.md) | Double-free of `data_buf` in datagram `sendto` error path | Critical | Fixed |
 | [5](005.md) | Context leak on callback execution error | Critical | Fixed |
 | [6](006.md) | DNS transaction IDs are predictable (not random) | High | Fixed |
@@ -212,3 +212,21 @@ Sorted by bug number. See individual bug files for details.
 | [174](174.md) | Leaked task Python reference on error in `py_wake_up` | Medium | Fixed |
 | [175](175.md) | Missing `.cleanup` function pointer on IO queues leading to leaks during loop shutdown | Medium | Fixed |
 | [176](176.md) | Infinite DNS TTL when `ttl == maxInt(u32)` in cache violating TTL capping mandate | Medium | Fixed |
+| [177](177.md) | Systemic double-free and double-decref on error in DynamicRingBuffer completion callbacks | Critical | Open |
+| [178](178.md) | Allocator mismatch / invalid free in ServerQueryData.release | Critical | Open |
+| [179](179.md) | Truncated IPv6 reverse DNS return slice in build_reverse_name | High | Open |
+| [180](180.md) | CancelledError(None) vs standard CancelledError() argument mismatch on future cancellation | High | Open |
+| [181](181.md) | Uninitialized stack memory read in DNS answer parsing yielding corrupt resolved addresses | High | Open |
+| [182](182.md) | Use-after-free in ChildWatcher.on_child_exit on cancelled CQE dereferencing destroyed handler | Critical | Open |
+| [183](183.md) | Use-after-free and dangling pointer in loop.add_hook due to missing refcount hold | Critical | Open |
+| [184](184.md) | Premature decref / refcount underflow on positional arguments in set_write_buffer_limits | Critical | Open |
+| [185](185.md) | Kernel -EINVAL from unnormalized nanoseconds in loop.call_later | High | Open |
+| [186](186.md) | Double-close of socket file descriptors on connection_made exception in StreamServer, create_connection, and create_endpoint | High | Open |
+| [187](187.md) | Hanging futures on error in create_datagram_endpoint and subprocess_exec | High | Open |
+| [188](188.md) | Unbounded hostname slice length panic in DNS IO path violating Mandate 1 | High | Open |
+| [189](189.md) | Systemic keyword argument reference leaks across multiple loop APIs | Medium | Open |
+| [190](190.md) | Unchecked syscall return value in pseudosocket_getsockname yielding garbage memory | Medium | Open |
+| [191](191.md) | Use-after-free / double-release hazard in LRUCache.pop_tail with eviction callback | Medium | Open |
+| [192](192.md) | Nested GC traversal bug in DNS resolver ControlData.traverse skipping callback_ptr | Medium | Open |
+| [193](193.md) | Missing tp_clear on GC heap types HookHandleType and PathWatcherHandleType | Medium | Open |
+| [194](194.md) | Unsafe @enumFromInt on unchecked signal integers causing enum cast panics | Medium | Open |

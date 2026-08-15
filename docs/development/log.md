@@ -2,6 +2,30 @@
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
 
+## [2026-08-16] — Codebase Audit Round 13 (BUG-177 through BUG-194)
+
+A comprehensive codebase audit across all subsystems (`src/`, `talyn/`, C-API bindings, transports, socket operations, DNS subsystem, subprocess, scheduling, memory lifecycle, and GC traversal) identified 18 new bugs:
+
+- Logged **BUG-177** (Critical): Systemic double-free and double-decref on error in `DynamicRingBuffer` completion callbacks (`ops.zig`, `datagram/write.zig`, `subprocess/transport.zig`, `write_transport.zig`, `read_transport.zig`).
+- Logged **BUG-178** (Critical): Allocator mismatch / invalid `c_allocator.free` on arena pointers in `ServerQueryData.release` (`src/loop/dns/resolv.zig`).
+- Logged **BUG-179** (High): Truncated IPv6 reverse DNS return slice in `build_reverse_name` returning only `"ip6.arpa"` (`src/loop/dns/parsers.zig`).
+- Logged **BUG-180** (High): `CancelledError(None)` vs standard `CancelledError()` argument mismatch on future cancellation (`src/future/python/result.zig`).
+- Logged **BUG-181** (High): Uninitialized stack memory read in DNS answer parsing yielding corrupt resolved addresses (`src/loop/dns/resolv.zig`).
+- Logged **BUG-182** (Critical): Use-after-free in `ChildWatcher.on_child_exit` on cancelled CQE dereferencing destroyed handler (`src/loop/child_watcher.zig`).
+- Logged **BUG-183** (Critical): Use-after-free and dangling pointer in `loop.add_hook` due to missing refcount hold (`src/loop/python/control.zig`).
+- Logged **BUG-184** (Critical): Premature decref / refcount underflow on positional arguments in `set_write_buffer_limits` (`src/transports/stream/write.zig`).
+- Logged **BUG-185** (High): Kernel `-EINVAL` from unnormalized nanoseconds in `loop.call_later` (`src/loop/python/scheduling.zig`).
+- Logged **BUG-186** (High): Double-close of socket file descriptors on `connection_made` exception in `StreamServer`, `create_connection`, and `create_endpoint`.
+- Logged **BUG-187** (High): Hanging futures on error in `create_datagram_endpoint` and `subprocess_exec` (`create_endpoint.zig`, `exec.zig`).
+- Logged **BUG-188** (High): Unbounded hostname slice length panic in DNS IO path violating Mandate 1 (`dns/main.zig`, `dns/parsers.zig`).
+- Logged **BUG-189** (Medium): Systemic keyword argument reference leaks across multiple loop APIs (`create_endpoint.zig`, `getaddrinfo.zig`, `unix.zig`, `exec.zig`, `extra_info.zig`).
+- Logged **BUG-190** (Medium): Unchecked syscall return value in `pseudosocket_getsockname` yielding garbage memory (`src/utils/pseudosocket.zig`).
+- Logged **BUG-191** (Medium): Use-after-free / double-release hazard in `LRUCache.pop_tail` with eviction callback (`src/utils/lru.zig`).
+- Logged **BUG-192** (Medium): Nested GC traversal bug in DNS resolver `ControlData.traverse` skipping `callback_ptr` (`src/loop/dns/resolv.zig`).
+- Logged **BUG-193** (Medium): Missing `tp_clear` on GC heap types `HookHandleType` and `PathWatcherHandleType` (`src/loop/python/control.zig`).
+- Logged **BUG-194** (Medium): Unsafe `@enumFromInt` on unchecked signal integers causing enum cast panics (`subprocess/transport.zig`, `unix_signals.zig`).
+- Updated `docs/development/bugs/index.md` summary counts (Total: 193 bugs; 172 Fixed, 18 Open, 3 False Positive).
+
 ## [2026-08-16] — Codebase Audit Round 12 (BUG-162 through BUG-176)
 
 A comprehensive deep codebase audit across all subsystems (event loop batch runner, child watcher, eventfd signaling, DNS subsystem, socket operations, transports, and Python bindings) identified 15 new bugs and safety issues:
