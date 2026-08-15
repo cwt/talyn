@@ -1,8 +1,8 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 160 bugs discovered across 11 audit passes."
-timestamp: "2026-08-15T08:40:00Z"
+description: "Individual bug entries for talyn, one file per bug. 175 bugs discovered across 12 audit passes."
+timestamp: "2026-08-16T00:45:00Z"
 ---
 
 # Bugs — talyn
@@ -15,23 +15,23 @@ Sorted by bug number. See individual bug files for details.
 
 | Severity | Count |
 |---|---:|
-| High | 44 |
+| High | 51 |
 | Low | 38 |
-| Critical | 23 |
+| Critical | 25 |
+| Medium | 19 |
 | Medium-High | 17 |
 | Medium-Low | 14 |
-| Medium | 13 |
 | Medium-Mid | 11 |
-| **Total** | **160** |
+| **Total** | **175** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
 | Fixed | 157 |
-| Open | 0 |
+| Open | 15 |
 | False Positive | 3 |
-| **Total** | **160** |
+| **Total** | **175** |
 
 ## All Bugs
 
@@ -197,6 +197,18 @@ Sorted by bug number. See individual bug files for details.
 | [159](159.md) | `pseudosocket_dup` checks `new_fd == -1` instead of `< 0`, missing Linux negative errno syscall failures | Medium | Fixed |
 | [160](160.md) | Tautological unsigned comparison and missing error check in `pseudosocket_setsockopt` | Low | Fixed |
 | [161](161.md) | Prohibited `lambda` function in `talyn/loop.py` `_TransportWrapper.get_extra_info` | Low | Fixed |
-
-
-
+| [162](162.md) | PyObject reference leak on every batch protocol read in `dispatch_completion_batch` | Critical | Open |
+| [163](163.md) | Use-After-Free and refcount leak on OOM in `ChildWatcher.add_child_handler` | Critical | Open |
+| [164](164.md) | Tautological `ret >= 0` comparison on unsigned `usize` in `IO.wakeup_eventfd` | High | Open |
+| [165](165.md) | Unsafe `@as(i32, @intCast(syscall_ret)) < 0` errno check pattern in syscall return handling | High | Open |
+| [166](166.md) | Heap memory leak on synchronous DNS lookups in `DNS.lookup` | High | Open |
+| [167](167.md) | Socket file descriptor leak on Python object allocation failure in `sock_accept_callback` | High | Open |
+| [168](168.md) | File descriptor leak on `tp_alloc` failure in `pseudosocket_dup` | High | Open |
+| [169](169.md) | Leaked `parent_transport` Python reference on error in `write_operation_completed` | High | Open |
+| [170](170.md) | Memory and Python handle leak on unhandled exception in `loop_watcher_python_wrapper_callback` | High | Open |
+| [171](171.md) | Missing port bounds check causing integer overflow panic in `Address.fromPyAddr` | Medium | Open |
+| [172](172.md) | Memory and reference leaks on failure paths in `z_loop_add_hook` and `z_loop_add_path_watcher` | Medium | Open |
+| [173](173.md) | Nested GC traversal bug skipping `callback_ptr` when `module_ptr` is null in `UnixSignals` | Medium | Open |
+| [174](174.md) | Leaked task Python reference on error in `py_wake_up` | Medium | Open |
+| [175](175.md) | Missing `.cleanup` function pointer on IO queues leading to leaks during loop shutdown | Medium | Open |
+| [176](176.md) | Infinite DNS TTL when `ttl == maxInt(u32)` in cache violating TTL capping mandate | Medium | Open |

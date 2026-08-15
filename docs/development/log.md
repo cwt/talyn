@@ -2,6 +2,27 @@
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
 
+## [2026-08-16] — Codebase Audit Round 12 (BUG-162 through BUG-176)
+
+A comprehensive deep codebase audit across all subsystems (event loop batch runner, child watcher, eventfd signaling, DNS subsystem, socket operations, transports, and Python bindings) identified 15 new bugs and safety issues:
+
+- Logged **BUG-162** (Critical): `PyObject` reference leak on every batch protocol read in `src/loop/runner.zig` (`dispatch_completion_batch`).
+- Logged **BUG-163** (Critical): Use-After-Free & refcount leak on OOM in `src/loop/child_watcher.zig` (`add_child_handler`).
+- Logged **BUG-164** (High): Tautological `ret >= 0` comparison on unsigned `usize` in `src/loop/scheduling/io/main.zig` (`IO.wakeup_eventfd`).
+- Logged **BUG-165** (High): Unsafe `@as(i32, @intCast(syscall_ret)) < 0` errno check pattern across syscall wrappers (`fs_watcher.zig`, `dns/main.zig`, `scheduling/io/main.zig`, `create_server.zig`).
+- Logged **BUG-166** (High): Heap memory leak on synchronous DNS resolutions in `src/loop/dns/main.zig` (`DNS.lookup`).
+- Logged **BUG-167** (High): Socket file descriptor leak on Python object allocation failure in `src/loop/python/io/socket/ops.zig` (`sock_accept_callback`).
+- Logged **BUG-168** (High): File descriptor leak on `tp_alloc` failure in `src/utils/pseudosocket.zig` (`pseudosocket_dup`).
+- Logged **BUG-169** (High): Leaked `parent_transport` Python reference on error in `src/transports/write_transport.zig` (`write_operation_completed`).
+- Logged **BUG-170** (High): Memory and Python handle leak on unhandled exception in `src/loop/python/io/watchers.zig` (`loop_watcher_python_wrapper_callback`).
+- Logged **BUG-171** (Medium): Missing port bounds check causing integer overflow panic in `src/utils/address.zig` (`Address.fromPyAddr`).
+- Logged **BUG-172** (Medium): Memory and reference leaks on failure paths in `src/loop/python/control.zig` (`z_loop_add_hook` and `z_loop_add_path_watcher`).
+- Logged **BUG-173** (Medium): Nested GC traversal bug skipping `callback_ptr` when `module_ptr` is null in `src/loop/unix_signals.zig` (`traverse_btree_node`).
+- Logged **BUG-174** (Medium): Leaked task Python reference on error in `src/task/callbacks.zig` (`py_wake_up`).
+- Logged **BUG-175** (Medium): Missing `.cleanup` function pointer on IO queues leading to leaks during loop shutdown (`datagram/write.zig`, `subprocess/transport.zig`, `socket/ops.zig`).
+- Logged **BUG-176** (Medium): Infinite DNS TTL when `ttl == maxInt(u32)` in cache violating TTL capping mandate in `src/loop/dns/cache.zig`.
+- Updated `docs/development/bugs/index.md` summary counts (Total: 175 bugs; 157 Fixed, 15 Open, 3 False Positive).
+
 ## [2026-08-15] — Codebase Audit Round 11 (BUG-153 through BUG-161)
 
 A comprehensive codebase audit across all subsystems (event loop, signals, child watcher, futures, tasks, pseudo-socket, btree, and python imports) identified 9 new bugs and safety issues:
