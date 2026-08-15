@@ -85,7 +85,6 @@ const QuerySlot = struct {
     id: u16 = 0,
 };
 
-
 const ServerQueryData = struct {
     loop: *Loop,
 
@@ -127,15 +126,6 @@ const ServerQueryData = struct {
         self.cancel();
 
         const control_data = self.control_data;
-        for (self.ptr_results.items) |v| {
-            control_data.allocator.free(v);
-        }
-        self.ptr_results.deinit(control_data.allocator);
-
-        if (self.queries.len > 0) {
-            control_data.allocator.free(self.queries);
-        }
-
         control_data.tasks_finished += 1;
 
         const finalized = (control_data.tasks_finished == control_data.queries_data.len);
@@ -207,7 +197,7 @@ pub const ControlData = struct {
 };
 
 fn cleanup_server_query_data(ptr: ?*anyopaque) void {
-    const server_data: *ServerQueryData = @alignCast(@ptrCast(ptr.?));
+    const server_data: *ServerQueryData = @ptrCast(@alignCast(ptr.?));
     server_data.release();
 }
 
@@ -247,7 +237,7 @@ fn queue_next_response_read(server_data: *ServerQueryData) !void {
                 .cleanup = &cleanup_server_query_data,
                 .data = .{ .user_data = server_data },
             },
-                .data = .{ .buffer = &server_data.recv_buf },
+            .data = .{ .buffer = &server_data.recv_buf },
             .fd = server_data.socket_fd,
             .zero_copy = true,
             .timeout = if (server_data.dns_timeout) |t| dns_timeout_to_kernel_timespec(t) else DEFAULT_TIMEOUT,
@@ -260,7 +250,7 @@ fn queue_next_response_read(server_data: *ServerQueryData) !void {
 fn on_query_sent(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
 
-    const server_data: *ServerQueryData = @alignCast(@ptrCast(data.user_data.?));
+    const server_data: *ServerQueryData = @ptrCast(@alignCast(data.user_data.?));
     const control_data = server_data.control_data;
 
     if (io_uring_err != .SUCCESS or control_data.resolved or data.cancelled()) {
@@ -357,7 +347,7 @@ fn process_dns_response(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
     const io_uring_res = data.io_uring_res();
 
-    const server_data: *ServerQueryData = @alignCast(@ptrCast(data.user_data.?));
+    const server_data: *ServerQueryData = @ptrCast(@alignCast(data.user_data.?));
     const control_data = server_data.control_data;
 
     if (data.cancelled() or control_data.resolved) {
@@ -705,19 +695,19 @@ fn prepare_data(
     // compile error, preventing the class of bug fixed in this commit
     // (record_evicted left uninitialized → garbage bool → silent wrong behaviour).
     control_data.* = ControlData{
-        .allocator      = allocator,
-        .arena          = std.heap.ArenaAllocator.init(allocator),
-        .loop           = loop,
+        .allocator = allocator,
+        .arena = std.heap.ArenaAllocator.init(allocator),
+        .loop = loop,
         .user_callbacks = .empty,
         // .record and .queries_data are filled in just below; use undefined
         // only for fields that are unconditionally assigned before any use.
-        .record         = undefined,
-        .queries_data   = undefined,
+        .record = undefined,
+        .queries_data = undefined,
         .tasks_finished = 0,
-        .resolved       = false,
+        .resolved = false,
         .record_evicted = false,
         // .node is set by create_new_node / append_node below.
-        .node           = undefined,
+        .node = undefined,
     };
     const arena_allocator = control_data.arena.allocator();
 
@@ -870,11 +860,11 @@ test "skip_name: malformed" {
     // Length exceeds data
     const data1 = "\x05goog";
     try std.testing.expectEqual(@as(?usize, null), skip_name(data1, 0));
-    
+
     // Unterminated
     const data2 = "\x06google";
     try std.testing.expectEqual(@as(?usize, null), skip_name(data2, 0));
-    
+
     // Truncated compression pointer
     const data3 = "\xC0";
     try std.testing.expectEqual(@as(?usize, null), skip_name(data3, 0));
@@ -885,7 +875,7 @@ test "parse_individual_dns_result: truncated record" {
     var res: utils.Address = undefined;
     var ptr_name: ?[]u8 = null;
     var ttl: u32 = 0;
-    
+
     try std.testing.expectEqual(@as(?usize, null), parse_individual_dns_result(data, 0, &res, &ptr_name, &ttl, std.testing.allocator));
 }
 
@@ -894,7 +884,7 @@ test "parse_individual_dns_result: skip non-IN class" {
     var res: utils.Address = undefined;
     var ptr_name: ?[]u8 = null;
     var ttl: u32 = 0;
-    
+
     const next_offset = parse_individual_dns_result(data, 0, &res, &ptr_name, &ttl, std.testing.allocator).?;
     try std.testing.expectEqual(@as(usize, 16), next_offset);
     try std.testing.expect(ptr_name == null);
@@ -906,7 +896,7 @@ test "parse_individual_dns_result: ignore CNAME" {
     var res: utils.Address = undefined;
     var ptr_name: ?[]u8 = null;
     var ttl: u32 = 0;
-    
+
     const next_offset = parse_individual_dns_result(data, 0, &res, &ptr_name, &ttl, std.testing.allocator).?;
     try std.testing.expectEqual(@as(usize, 14), next_offset);
     try std.testing.expect(ptr_name == null);
@@ -963,16 +953,16 @@ test "ControlData.record_evicted is false after struct-literal init (regression:
 
     // Mimic exactly what prepare_data now does: struct-literal assignment.
     control_data.* = ControlData{
-        .allocator      = std.testing.allocator,
-        .arena          = std.heap.ArenaAllocator.init(std.testing.allocator),
-        .loop           = undefined,
+        .allocator = std.testing.allocator,
+        .arena = std.heap.ArenaAllocator.init(std.testing.allocator),
+        .loop = undefined,
         .user_callbacks = .empty,
-        .record         = undefined,
-        .queries_data   = undefined,
+        .record = undefined,
+        .queries_data = undefined,
         .tasks_finished = 0,
-        .resolved       = false,
+        .resolved = false,
         .record_evicted = false,
-        .node           = undefined,
+        .node = undefined,
     };
     defer control_data.arena.deinit();
 
@@ -1045,4 +1035,3 @@ test "each QuerySlot is a complete standalone DNS message" {
         }
     }
 }
-
