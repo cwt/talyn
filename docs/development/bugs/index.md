@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 149 |
-| Open | 8 |
+| Fixed | 150 |
+| Open | 7 |
 | False Positive | 3 |
 | **Total** | **160** |
 
@@ -189,7 +189,7 @@ Sorted by bug number. See individual bug files for details.
 | [151](151.md) | Broken / uncalled dead code `write_completed` in datagram transport | Low | Fixed |
 | [152](152.md) | Unreachable dead code in `UnixSignals.unlink` | Low | Fixed |
 | [153](153.md) | `Py_IncRef` called on native `*Loop` pointer in `signal_handler` on default SIGINT disposition | Critical | Fixed |
-| [154](154.md) | Uninitialized atomic module pointer storage in `release_python_imports` triggers invalid pointer decref | Critical | Open |
+| [154](154.md) | Uninitialized atomic module pointer storage in `release_python_imports` triggers invalid pointer decref | Critical | Fixed |
 | [155](155.md) | `TimerHandle` missing GC payload initialization and `Py_TPFLAGS_HAVE_GC` flag | High | Open |
 | [156](156.md) | Use-after-free and double-free in `HookHandle.cancel()` | High | Open |
 | [157](157.md) | `ChildWatcher.on_child_exit` leaks `pidfd`, heap handler, and Python callback on callback exception | High | Open |
