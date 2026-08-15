@@ -107,7 +107,11 @@ pub fn lookup(
         const n = try Parsers.resolve_address(parsed_hostname, ipv6_supported, &resolved_buf);
         if (n > 0) {
             const slice = self.loop.allocator.dupe(utils.Address, resolved_buf[0..n]) catch return null;
-            return slice;
+            const new_rec = cache_slot.create_new_record_from_resolved(parsed_hostname, slice, 60) catch {
+                self.loop.allocator.free(slice);
+                return null;
+            };
+            return new_rec.get_address_list();
         }
 
         // Use native asynchronous resolver
