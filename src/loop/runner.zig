@@ -17,7 +17,7 @@ const ReadTransport = @import("../transports/read_transport.zig");
 const Stream = @import("../transports/stream/main.zig");
 
 fn slow_callback_warning_handler(duration: f64, module_ptr: ?*python_c.PyObject, data: ?*anyopaque) void {
-    const loop_obj: *Loop.Python.LoopObject = @alignCast(@ptrCast(data.?));
+    const loop_obj: *Loop.Python.LoopObject = @ptrCast(@alignCast(data.?));
     const loop_data = utils.get_data_ptr(Loop, loop_obj);
 
     const msg = std.fmt.allocPrint(loop_data.allocator, "Executing callback took {d:.6} seconds\x00", .{duration}) catch return;
@@ -37,7 +37,8 @@ fn slow_callback_warning_handler(duration: f64, module_ptr: ?*python_c.PyObject,
     const ret = python_c.PyObject_CallMethod(@ptrCast(loop_obj), "call_exception_handler\x00", "O\x00", context_dict) orelse {
         if (python_c.PyErr_Occurred()) |exc| {
             if (python_c.PyErr_GivenExceptionMatches(exc, python_c.PyExc_KeyboardInterrupt.?) != 0 or
-                python_c.PyErr_GivenExceptionMatches(exc, python_c.PyExc_SystemExit.?) != 0) {
+                python_c.PyErr_GivenExceptionMatches(exc, python_c.PyExc_SystemExit.?) != 0)
+            {
                 return;
             }
         }
@@ -48,8 +49,8 @@ fn slow_callback_warning_handler(duration: f64, module_ptr: ?*python_c.PyObject,
 }
 
 fn exception_handler(err: anyerror, data: ?*anyopaque, module_ptr: ?*python_c.PyObject, callback_ptr: ?PyObject) !void {
-    const loop_obj: *Loop.Python.LoopObject = @alignCast(@ptrCast(data.?));
-    
+    const loop_obj: *Loop.Python.LoopObject = @ptrCast(@alignCast(data.?));
+
     const context_dict = python_c.PyDict_New() orelse return error.PythonError;
     defer python_c.py_decref(context_dict);
 
@@ -84,7 +85,8 @@ fn exception_handler(err: anyerror, data: ?*anyopaque, module_ptr: ?*python_c.Py
     const ret = python_c.PyObject_CallMethod(@ptrCast(loop_obj), "call_exception_handler\x00", "O\x00", context_dict) orelse {
         if (python_c.PyErr_Occurred()) |exc| {
             if (python_c.PyErr_GivenExceptionMatches(exc, python_c.PyExc_KeyboardInterrupt.?) != 0 or
-                python_c.PyErr_GivenExceptionMatches(exc, python_c.PyExc_SystemExit.?) != 0) {
+                python_c.PyErr_GivenExceptionMatches(exc, python_c.PyExc_SystemExit.?) != 0)
+            {
                 return error.PythonError;
             }
         }
@@ -94,31 +96,13 @@ fn exception_handler(err: anyerror, data: ?*anyopaque, module_ptr: ?*python_c.Py
     python_c.py_decref(ret);
 }
 
-pub inline fn call_once(
-    ready_queue: *CallbackManager.DynamicRingBuffer,
-    _: usize,
-    loop_obj: *Loop.Python.LoopObject
-) !usize {
+pub inline fn call_once(ready_queue: *CallbackManager.DynamicRingBuffer, _: usize, loop_obj: *Loop.Python.LoopObject) !usize {
     const debug_state = CallbackManager.DebugState{ .slow_callback_duration = loop_obj.slow_callback_duration };
- 
+
     const callbacks_executed = if (loop_obj.debug)
-        try CallbackManager.execute_dynamic_ring_buffer(
-            ready_queue,
-            if (builtin.is_test) null else &exception_handler,
-            loop_obj,
-            true,
-            &slow_callback_warning_handler,
-            &debug_state
-        )
+        try CallbackManager.execute_dynamic_ring_buffer(ready_queue, if (builtin.is_test) null else &exception_handler, loop_obj, true, &slow_callback_warning_handler, &debug_state)
     else
-        try CallbackManager.execute_dynamic_ring_buffer(
-            ready_queue,
-            if (builtin.is_test) null else &exception_handler,
-            loop_obj,
-            false,
-            null,
-            null
-        );
+        try CallbackManager.execute_dynamic_ring_buffer(ready_queue, if (builtin.is_test) null else &exception_handler, loop_obj, false, null, null);
     if (callbacks_executed == 0) {
         ready_queue.reset();
     }
@@ -138,7 +122,7 @@ fn dispatch_completion_batch(
     var had_error = false;
 
     for (records) |*record| {
-        const transport: *Stream.StreamTransportObject = @alignCast(@ptrCast(record.stream_transport orelse continue));
+        const transport: *Stream.StreamTransportObject = @ptrCast(@alignCast(record.stream_transport orelse continue));
 
         // BUG-32: Verify the transport hasn't been closed between push and dispatch.
         // If `dispatch_generation` was bumped (e.g., `transport_close` or
@@ -155,7 +139,10 @@ fn dispatch_completion_batch(
                     continue;
                 };
                 defer python_c.py_decref(py_bytes);
-                if (python_c.PyObject_CallOneArg(transport.protocol_data_received.?, py_bytes) == null) {
+                const ret = python_c.PyObject_CallOneArg(transport.protocol_data_received.?, py_bytes);
+                if (ret) |r| {
+                    python_c.py_decref(r);
+                } else {
                     had_error = true;
                     continue;
                 }
@@ -166,7 +153,10 @@ fn dispatch_completion_batch(
                     continue;
                 };
                 defer python_c.py_decref(nbytes_obj);
-                if (python_c.PyObject_CallOneArg(transport.protocol_buffer_updated.?, nbytes_obj) == null) {
+                const ret = python_c.PyObject_CallOneArg(transport.protocol_buffer_updated.?, nbytes_obj);
+                if (ret) |r| {
+                    python_c.py_decref(r);
+                } else {
                     had_error = true;
                     continue;
                 }
@@ -205,11 +195,7 @@ fn execute_hooks(hooks: *Loop.HooksList) !void {
     }
 }
 
-fn fetch_completed_tasks(
-    self: *Loop,
-    blocking_ready_tasks: []std.os.linux.io_uring_cqe,
-    ready_queue: *CallbackManager.DynamicRingBuffer
-) !void {
+fn fetch_completed_tasks(self: *Loop, blocking_ready_tasks: []std.os.linux.io_uring_cqe, ready_queue: *CallbackManager.DynamicRingBuffer) !void {
     for (blocking_ready_tasks) |cqe| {
         const user_data = cqe.user_data;
         if (user_data == 0) continue; // Timeout and cancel operations
@@ -225,7 +211,7 @@ fn fetch_completed_tasks(
                 // Uses raw Zig pointers (no PyObject*), so GC never touches the batch.
                 // Dispatch creates PyBytes on the fly from the raw buffer pointer.
                 if (v.func == &ReadTransport.read_operation_completed and err == .SUCCESS and cqe.res > 0) {
-                    const read_transport: *ReadTransport = @alignCast(@ptrCast(v.data.user_data.?));
+                    const read_transport: *ReadTransport = @ptrCast(@alignCast(v.data.user_data.?));
                     const bytes_read: usize = @intCast(cqe.res);
 
                     const stream_transport: *Stream.StreamTransportObject = @ptrCast(read_transport.parent_transport);
@@ -256,7 +242,7 @@ fn fetch_completed_tasks(
                 blocking_task.check_result(err);
                 if (!ready_queue.try_push(v.*)) return error.Overflow;
             },
-            .none => {}
+            .none => {},
         }
 
         self.reserved_slots -= 1;
@@ -264,12 +250,7 @@ fn fetch_completed_tasks(
     }
 }
 
-fn poll_blocking_events(
-    self: *Loop,
-    mutex: *lock.Mutex,
-    wait: bool,
-    ready_queue: *CallbackManager.DynamicRingBuffer
-) !void {
+fn poll_blocking_events(self: *Loop, mutex: *lock.Mutex, wait: bool, ready_queue: *CallbackManager.DynamicRingBuffer) !void {
     const blocking_ready_tasks = self.io.blocking_ready_tasks;
 
     // If nothing is in-flight, there's nothing to wait for.
@@ -388,11 +369,7 @@ pub fn start(self: *Loop, loop_obj: *Loop.Python.LoopObject) !void {
 
         if (self.check_hooks.len != 0) try execute_hooks(&self.check_hooks);
 
-        const callbacks_executed = try call_once(
-            ready_tasks_queue,
-            ready_tasks_queue_max_capacity,
-            loop_obj
-        );
+        const callbacks_executed = try call_once(ready_tasks_queue, ready_tasks_queue_max_capacity, loop_obj);
 
         if (self.idle_hooks.len != 0) try execute_hooks(&self.idle_hooks);
         if (self.prepare_hooks.len != 0) try execute_hooks(&self.prepare_hooks);

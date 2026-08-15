@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 157 |
-| Open | 15 |
+| Fixed | 158 |
+| Open | 14 |
 | False Positive | 3 |
 | **Total** | **175** |
 
@@ -197,7 +197,7 @@ Sorted by bug number. See individual bug files for details.
 | [159](159.md) | `pseudosocket_dup` checks `new_fd == -1` instead of `< 0`, missing Linux negative errno syscall failures | Medium | Fixed |
 | [160](160.md) | Tautological unsigned comparison and missing error check in `pseudosocket_setsockopt` | Low | Fixed |
 | [161](161.md) | Prohibited `lambda` function in `talyn/loop.py` `_TransportWrapper.get_extra_info` | Low | Fixed |
-| [162](162.md) | PyObject reference leak on every batch protocol read in `dispatch_completion_batch` | Critical | Open |
+| [162](162.md) | PyObject reference leak on every batch protocol read in `dispatch_completion_batch` | Critical | Fixed |
 | [163](163.md) | Use-After-Free and refcount leak on OOM in `ChildWatcher.add_child_handler` | Critical | Open |
 | [164](164.md) | Tautological `ret >= 0` comparison on unsigned `usize` in `IO.wakeup_eventfd` | High | Open |
 | [165](165.md) | Unsafe `@as(i32, @intCast(syscall_ret)) < 0` errno check pattern in syscall return handling | High | Open |
