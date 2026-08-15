@@ -69,3 +69,19 @@ def test_idle_prevents_blocking():
         h_idle.cancel()
 
     talyn.run(main())
+
+
+def test_hook_multiple_cancel_no_crash():
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        def dummy():
+            pass
+
+        h = loop._add_hook(0, dummy)
+        h.cancel()
+        h.cancel()
+        h.cancel()
+
+    talyn.run(main())
+
