@@ -157,30 +157,31 @@ fn on_child_exit(data: *const CallbackManager.CallbackData) !void {
     const py_args = python_c.PyTuple_Pack(2, py_pid, py_rc) orelse return error.PythonError;
     defer python_c.py_decref(py_args);
 
-    const py_res = python_c.PyObject_Call(handler.callback, py_args, null) orelse {
-        const exc = python_c.PyErr_GetRaisedException() orelse return;
-        defer python_c.py_decref(exc);
-        const ctx = python_c.PyDict_New() orelse return;
-        defer python_c.py_decref(ctx);
-        const msg = python_c.PyUnicode_FromString("Exception in child handler callback\x00") orelse return;
-        defer python_c.py_decref(msg);
-        _ = python_c.PyDict_SetItemString(ctx, "message\x00", msg);
-        _ = python_c.PyDict_SetItemString(ctx, "exception\x00", exc);
-        const loop_obj = utils.get_parent_ptr(Loop.Python.LoopObject, self.loop);
-        const ret = python_c.PyObject_CallMethod(@ptrCast(loop_obj), "call_exception_handler\x00", "O\x00", ctx) orelse {
-            python_c.PyErr_Clear();
-            return;
-        };
-        python_c.py_decref(ret);
-        return;
-    };
-    python_c.py_decref(py_res);
+    if (python_c.PyObject_Call(handler.callback, py_args, null)) |py_res| {
+        python_c.py_decref(py_res);
+    } else {
+        if (python_c.PyErr_GetRaisedException()) |exc| {
+            defer python_c.py_decref(exc);
+            if (python_c.PyDict_New()) |ctx| {
+                defer python_c.py_decref(ctx);
+                if (python_c.PyUnicode_FromString("Exception in child handler callback\x00")) |msg| {
+                    defer python_c.py_decref(msg);
+                    _ = python_c.PyDict_SetItemString(ctx, "message\x00", msg);
+                    _ = python_c.PyDict_SetItemString(ctx, "exception\x00", exc);
+                    const loop_obj = utils.get_parent_ptr(Loop.Python.LoopObject, self.loop);
+                    if (python_c.PyObject_CallMethod(@ptrCast(loop_obj), "call_exception_handler\x00", "O\x00", ctx)) |ret| {
+                        python_c.py_decref(ret);
+                    } else {
+                        python_c.PyErr_Clear();
+                    }
+                }
+            }
+        }
+    }
 
-    // BUG-77: Check if the Python callback removed this handler
-    // from the map (e.g., by calling remove_child_handler). If
-    // so, the handler has already been freed and closed — don't
-    // double-free. Use fetchRemove to atomically check-and-remove
-    // in a single operation.
+    // BUG-77 & BUG-157: Check if the Python callback removed this handler
+    // from the map (e.g., by calling remove_child_handler). If not,
+    // ensure pidfd, callback PyObject, and handler heap struct are cleaned up.
     if (self.handlers.fetchRemove(handler.pid)) |entry| {
         const removed_handler = entry.value;
         // Sanity: the entry we just removed should be the same

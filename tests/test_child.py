@@ -60,3 +60,34 @@ def test_child_handler_killed():
         proc.wait()
 
     talyn.run(main())
+
+
+def test_child_handler_exception_cleanup():
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        errors = []
+
+        def custom_exception_handler(l, context):
+            errors.append(context)
+
+        loop.set_exception_handler(custom_exception_handler)
+
+        proc = subprocess.Popen(["sleep", "0.05"])
+        pid = proc.pid
+
+        def failing_callback(p, returncode):
+            raise ValueError("boom in child handler")
+
+        loop.add_child_handler(pid, failing_callback)
+
+        start_time = time.time()
+        while not errors and time.time() - start_time < 2.0:
+            await asyncio.sleep(0.01)
+
+        assert len(errors) == 1
+        assert "boom in child handler" in str(errors[0]["exception"])
+        proc.wait()
+
+    talyn.run(main())
+

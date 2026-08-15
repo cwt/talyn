@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 152 |
-| Open | 5 |
+| Fixed | 153 |
+| Open | 4 |
 | False Positive | 3 |
 | **Total** | **160** |
 
@@ -192,7 +192,7 @@ Sorted by bug number. See individual bug files for details.
 | [154](154.md) | Uninitialized atomic module pointer storage in `release_python_imports` triggers invalid pointer decref | Critical | Fixed |
 | [155](155.md) | `TimerHandle` missing GC payload initialization and `Py_TPFLAGS_HAVE_GC` flag | High | Fixed |
 | [156](156.md) | Use-after-free and double-free in `HookHandle.cancel()` | High | Fixed |
-| [157](157.md) | `ChildWatcher.on_child_exit` leaks `pidfd`, heap handler, and Python callback on callback exception | High | Open |
+| [157](157.md) | `ChildWatcher.on_child_exit` leaks `pidfd`, heap handler, and Python callback on callback exception | High | Fixed |
 | [158](158.md) | `BTree.get_min_value_ptr` returns `?Value` instead of `?*Value` | Medium | Open |
 | [159](159.md) | `pseudosocket_dup` checks `new_fd == -1` instead of `< 0`, missing Linux negative errno syscall failures | Medium | Open |
 | [160](160.md) | Tautological unsigned comparison and missing error check in `pseudosocket_setsockopt` | Low | Open |
