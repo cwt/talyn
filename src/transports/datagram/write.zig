@@ -25,10 +25,14 @@ fn cleanup_sendto(ptr: ?*anyopaque) void {
 
 fn sendto_completed(data: *const CallbackManager.CallbackData) !void {
     const sd: *SendToData = @ptrCast(@alignCast(data.user_data.?));
-    defer cleanup_sendto(@ptrCast(@alignCast(sd)));
+    var success = false;
+    defer if (success) cleanup_sendto(@ptrCast(@alignCast(sd)));
 
     const self = sd.transport;
-    if (data.cancelled() or self.closed) return;
+    if (data.cancelled() or self.closed) {
+        success = true;
+        return;
+    }
     const io_uring_err = data.io_uring_err();
     if (io_uring_err != .SUCCESS) {
         if (self.protocol_error_received) |er| {
@@ -37,6 +41,7 @@ fn sendto_completed(data: *const CallbackManager.CallbackData) !void {
             const r = python_c.PyObject_CallOneArg(er, exc) orelse return error.PythonError;
             python_c.py_decref(r);
         }
+        success = true;
         return;
     }
 
@@ -56,6 +61,7 @@ fn sendto_completed(data: *const CallbackManager.CallbackData) !void {
             python_c.py_decref(r);
         }
     }
+    success = true;
 }
 
 fn buffer_watermark_check(self: *DatagramTransport.DatagramTransportObject, len: usize) !void {

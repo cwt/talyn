@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 172 |
-| Open | 18 |
+| Fixed | 173 |
+| Open | 17 |
 | False Positive | 3 |
 | **Total** | **193** |
 
@@ -212,7 +212,7 @@ Sorted by bug number. See individual bug files for details.
 | [174](174.md) | Leaked task Python reference on error in `py_wake_up` | Medium | Fixed |
 | [175](175.md) | Missing `.cleanup` function pointer on IO queues leading to leaks during loop shutdown | Medium | Fixed |
 | [176](176.md) | Infinite DNS TTL when `ttl == maxInt(u32)` in cache violating TTL capping mandate | Medium | Fixed |
-| [177](177.md) | Systemic double-free and double-decref on error in DynamicRingBuffer completion callbacks | Critical | Open |
+| [177](177.md) | Systemic double-free and double-decref on error in DynamicRingBuffer completion callbacks | Critical | Fixed |
 | [178](178.md) | Allocator mismatch / invalid free in ServerQueryData.release | Critical | Open |
 | [179](179.md) | Truncated IPv6 reverse DNS return slice in build_reverse_name | High | Open |
 | [180](180.md) | CancelledError(None) vs standard CancelledError() argument mismatch on future cancellation | High | Open |

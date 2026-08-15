@@ -46,9 +46,13 @@ fn sock_accept_callback(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
     const io_uring_res = data.io_uring_res();
     const ad: *AcceptData = @ptrCast(@alignCast(data.user_data.?));
-    defer cleanup_accept(@ptrCast(ad));
+    var success = false;
+    defer if (success) cleanup_accept(@ptrCast(ad));
 
-    if (data.cancelled()) return;
+    if (data.cancelled()) {
+        success = true;
+        return;
+    }
 
     if (io_uring_err != .SUCCESS or io_uring_res < 0) {
         const errno_val = if (io_uring_res < 0) -io_uring_res else @intFromEnum(io_uring_err);
@@ -57,6 +61,7 @@ fn sock_accept_callback(data: *const CallbackManager.CallbackData) !void {
 
         const future_data = utils.get_data_ptr(Future, ad.future);
         try Future.Python.Result.future_fast_set_exception(ad.future, future_data, exc);
+        success = true;
         return;
     }
 
@@ -108,6 +113,7 @@ fn sock_accept_callback(data: *const CallbackManager.CallbackData) !void {
 
     const future_data = utils.get_data_ptr(Future, ad.future);
     try Future.Python.Result.future_fast_set_result(future_data, result_tuple);
+    success = true;
 }
 
 pub fn loop_sock_accept(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t) callconv(.c) ?*FutureObject {
@@ -128,17 +134,12 @@ fn z_loop_sock_accept(self: *LoopObject, args: []const ?PyObject) !*FutureObject
     const py_fd = python_c.PyObject_CallNoArgs(fileno_attr) orelse return error.PythonError;
     defer python_c.py_decref(py_fd);
     const fd_long = python_c.PyLong_AsLong(py_fd);
-    // BUG-73: Check for PyErr_Occurred() after PyLong_AsLong.
-    // If the Python value is not an integer (or doesn't fit
-    // in a C long), PyLong_AsLong returns -1 and sets a
-    // Python exception. Without this check, we'd continue
-    // with a garbage -1 value and a pending exception.
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
     const fd: std.posix.fd_t = @intCast(fd_long);
 
-    const py_family = python_c.PyObject_GetAttrString(py_sock, "family\x00") orelse return error.PythonError;
-    defer python_c.py_decref(py_family);
-    const family_long = python_c.PyLong_AsLong(py_family);
+    const family_attr = python_c.PyObject_GetAttrString(py_sock, "family\x00") orelse return error.PythonError;
+    defer python_c.py_decref(family_attr);
+    const family_long = python_c.PyLong_AsLong(family_attr);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
     const family: i32 = @intCast(family_long);
 
@@ -160,6 +161,7 @@ fn z_loop_sock_accept(self: *LoopObject, args: []const ?PyObject) !*FutureObject
         .socket_fd = fd,
         .addr = @ptrCast(&ad.addr),
         .addrlen = &ad.addrlen,
+        .flags = @as(u32, @intCast(std.posix.SOCK.NONBLOCK | std.posix.SOCK.CLOEXEC)),
         .callback = .{
             .func = &sock_accept_callback,
             .cleanup = &cleanup_accept,
@@ -192,9 +194,13 @@ fn sock_connect_callback(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
     const io_uring_res = data.io_uring_res();
     const scd: *SockConnectData = @ptrCast(@alignCast(data.user_data.?));
-    defer cleanup_connect(@ptrCast(scd));
+    var success = false;
+    defer if (success) cleanup_connect(@ptrCast(scd));
 
-    if (data.cancelled()) return;
+    if (data.cancelled()) {
+        success = true;
+        return;
+    }
 
     if (io_uring_err != .SUCCESS and io_uring_err != .ALREADY) {
         const errno_val = if (io_uring_res < 0) -io_uring_res else @intFromEnum(io_uring_err);
@@ -203,11 +209,13 @@ fn sock_connect_callback(data: *const CallbackManager.CallbackData) !void {
 
         const future_data = utils.get_data_ptr(Future, scd.future);
         try Future.Python.Result.future_fast_set_exception(scd.future, future_data, exc);
+        success = true;
         return;
     }
 
     const future_data = utils.get_data_ptr(Future, scd.future);
     try Future.Python.Result.future_fast_set_result(future_data, python_c.get_py_none());
+    success = true;
 }
 
 pub fn loop_sock_connect(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t) callconv(.c) ?*FutureObject {
@@ -291,9 +299,13 @@ fn sock_recv_callback(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
     const io_uring_res = data.io_uring_res();
     const rd: *SockRecvData = @ptrCast(@alignCast(data.user_data.?));
-    defer cleanup_recv(@ptrCast(rd));
+    var success = false;
+    defer if (success) cleanup_recv(@ptrCast(rd));
 
-    if (data.cancelled()) return;
+    if (data.cancelled()) {
+        success = true;
+        return;
+    }
 
     if (io_uring_err != .SUCCESS) {
         const errno_val = @intFromEnum(io_uring_err);
@@ -302,6 +314,7 @@ fn sock_recv_callback(data: *const CallbackManager.CallbackData) !void {
 
         const future_data = utils.get_data_ptr(Future, rd.future);
         try Future.Python.Result.future_fast_set_exception(rd.future, future_data, exc);
+        success = true;
         return;
     }
 
@@ -311,6 +324,7 @@ fn sock_recv_callback(data: *const CallbackManager.CallbackData) !void {
 
     const future_data = utils.get_data_ptr(Future, rd.future);
     try Future.Python.Result.future_fast_set_result(future_data, py_data);
+    success = true;
 }
 
 pub fn loop_sock_recv(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t) callconv(.c) ?*FutureObject {
@@ -393,20 +407,22 @@ fn sock_sendall_callback(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
     const io_uring_res = data.io_uring_res();
     const sd: *SockSendAllData = @ptrCast(@alignCast(data.user_data.?));
+    var success = false;
+    defer if (success) cleanup_sendall(@ptrCast(sd));
 
     if (data.cancelled()) {
-        cleanup_sendall(@ptrCast(sd));
+        success = true;
         return;
     }
 
     if (io_uring_err != .SUCCESS) {
-        defer cleanup_sendall(@ptrCast(sd));
         const errno_val = @intFromEnum(io_uring_err);
         const exc = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "is\x00", @as(c_int, @intCast(errno_val)), "Sendall call failed\x00") orelse return set_future_exception(error.PythonError, sd.future);
         defer python_c.py_decref(exc);
 
         const future_data = utils.get_data_ptr(Future, sd.future);
         try Future.Python.Result.future_fast_set_exception(sd.future, future_data, exc);
+        success = true;
         return;
     }
 
@@ -414,7 +430,7 @@ fn sock_sendall_callback(data: *const CallbackManager.CallbackData) !void {
     sd.offset += nwritten;
 
     if (sd.offset < sd.data.len) {
-        // Re-queue remaining data
+        // Re-queue remaining data - NOT finished, do not cleanup sd!
         const loop_data = utils.get_data_ptr(Loop, sd.loop);
         _ = try loop_data.io.queue(.{ .PerformWrite = .{
             .fd = sd.fd,
@@ -429,9 +445,9 @@ fn sock_sendall_callback(data: *const CallbackManager.CallbackData) !void {
     }
 
     // Success
-    defer cleanup_sendall(@ptrCast(sd));
     const future_data = utils.get_data_ptr(Future, sd.future);
     try Future.Python.Result.future_fast_set_result(future_data, python_c.get_py_none());
+    success = true;
 }
 
 pub fn loop_sock_sendall(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t) callconv(.c) ?*FutureObject {
@@ -522,9 +538,13 @@ fn sock_recvfrom_callback(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
     const io_uring_res = data.io_uring_res();
     const rd: *SockRecvFromData = @ptrCast(@alignCast(data.user_data.?));
-    defer cleanup_recvfrom(@ptrCast(rd));
+    var success = false;
+    defer if (success) cleanup_recvfrom(@ptrCast(rd));
 
-    if (data.cancelled()) return;
+    if (data.cancelled()) {
+        success = true;
+        return;
+    }
 
     if (io_uring_err != .SUCCESS) {
         const errno_val = @intFromEnum(io_uring_err);
@@ -533,6 +553,7 @@ fn sock_recvfrom_callback(data: *const CallbackManager.CallbackData) !void {
 
         const future_data = utils.get_data_ptr(Future, rd.future);
         try Future.Python.Result.future_fast_set_exception(rd.future, future_data, exc);
+        success = true;
         return;
     }
 
@@ -548,6 +569,7 @@ fn sock_recvfrom_callback(data: *const CallbackManager.CallbackData) !void {
 
     const future_data = utils.get_data_ptr(Future, rd.future);
     try Future.Python.Result.future_fast_set_result(future_data, result_tuple);
+    success = true;
 }
 
 pub fn loop_sock_recvfrom(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t) callconv(.c) ?*FutureObject {
@@ -642,9 +664,13 @@ fn sock_sendto_callback(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
     const io_uring_res = data.io_uring_res();
     const sd: *SockSendToData = @ptrCast(@alignCast(data.user_data.?));
-    defer cleanup_sendto(@ptrCast(sd));
+    var success = false;
+    defer if (success) cleanup_sendto(@ptrCast(sd));
 
-    if (data.cancelled()) return;
+    if (data.cancelled()) {
+        success = true;
+        return;
+    }
 
     if (io_uring_err != .SUCCESS) {
         const errno_val = @intFromEnum(io_uring_err);
@@ -653,6 +679,7 @@ fn sock_sendto_callback(data: *const CallbackManager.CallbackData) !void {
 
         const future_data = utils.get_data_ptr(Future, sd.future);
         try Future.Python.Result.future_fast_set_exception(sd.future, future_data, exc);
+        success = true;
         return;
     }
 
@@ -663,6 +690,7 @@ fn sock_sendto_callback(data: *const CallbackManager.CallbackData) !void {
     const py_res = python_c.PyLong_FromLong(@intCast(io_uring_res)) orelse
         return set_future_exception(error.PythonError, sd.future);
     try Future.Python.Result.future_fast_set_result(future_data, py_res);
+    success = true;
 }
 
 pub fn loop_sock_sendto(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t) callconv(.c) ?*FutureObject {
@@ -760,13 +788,17 @@ fn sock_recv_into_callback(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
     const io_uring_res = data.io_uring_res();
     const rd: *SockRecvIntoData = @ptrCast(@alignCast(data.user_data.?));
-    defer {
+    var success = false;
+    defer if (success) {
         python_c.py_decref(@ptrCast(rd.future));
         python_c.py_decref(@ptrCast(rd.loop));
         rd.allocator.destroy(rd);
-    }
+    };
 
-    if (data.cancelled()) return;
+    if (data.cancelled()) {
+        success = true;
+        return;
+    }
 
     if (io_uring_err != .SUCCESS) {
         const errno_val = @intFromEnum(io_uring_err);
@@ -775,6 +807,7 @@ fn sock_recv_into_callback(data: *const CallbackManager.CallbackData) !void {
 
         const future_data = utils.get_data_ptr(Future, rd.future);
         try Future.Python.Result.future_fast_set_exception(rd.future, future_data, exc);
+        success = true;
         return;
     }
 
@@ -786,6 +819,7 @@ fn sock_recv_into_callback(data: *const CallbackManager.CallbackData) !void {
     const py_nread = python_c.PyLong_FromLong(@intCast(nread)) orelse
         return set_future_exception(error.PythonError, rd.future);
     try Future.Python.Result.future_fast_set_result(future_data, py_nread);
+    success = true;
 }
 
 pub fn loop_sock_recv_into(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t) callconv(.c) ?*FutureObject {
@@ -864,9 +898,13 @@ fn sock_recv_into_callback_with_buf(data: *const CallbackManager.CallbackData) !
     const io_uring_err = data.io_uring_err();
     const io_uring_res = data.io_uring_res();
     const rd: *SockRecvIntoDataWithBuf = @ptrCast(@alignCast(data.user_data.?));
-    defer cleanup_recv_into_with_buf(@ptrCast(rd));
+    var success = false;
+    defer if (success) cleanup_recv_into_with_buf(@ptrCast(rd));
 
-    if (data.cancelled()) return;
+    if (data.cancelled()) {
+        success = true;
+        return;
+    }
 
     if (io_uring_err != .SUCCESS) {
         const errno_val = @intFromEnum(io_uring_err);
@@ -875,6 +913,7 @@ fn sock_recv_into_callback_with_buf(data: *const CallbackManager.CallbackData) !
 
         const future_data = utils.get_data_ptr(Future, rd.base.future);
         try Future.Python.Result.future_fast_set_exception(rd.base.future, future_data, exc);
+        success = true;
         return;
     }
 
@@ -886,4 +925,5 @@ fn sock_recv_into_callback_with_buf(data: *const CallbackManager.CallbackData) !
     const py_nread = python_c.PyLong_FromLong(@intCast(nread)) orelse
         return set_future_exception(error.PythonError, rd.base.future);
     try Future.Python.Result.future_fast_set_result(future_data, py_nread);
+    success = true;
 }

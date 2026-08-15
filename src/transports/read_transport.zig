@@ -157,7 +157,6 @@ pub fn read_operation_completed(data: *const CallbackManager.CallbackData) !void
         }
 
         const exception = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "Ls\x00", @as(c_long, @intFromEnum(io_uring_err)), "Read operation failed\x00") orelse {
-            python_c.py_decref(parent_transport);
             return error.PythonError;
         };
         defer python_c.py_decref(exception);
@@ -173,14 +172,12 @@ pub fn read_operation_completed(data: *const CallbackManager.CallbackData) !void
     } else |err| {
         utils.handle_zig_function_error(err, {});
         const exception = python_c.PyErr_GetRaisedException() orelse {
-            python_c.py_decref(parent_transport);
             return error.PythonError;
         };
 
         defer {
             self.is_closing = true;
             self.closed = true;
-            python_c.py_decref(parent_transport);
             python_c.PyErr_SetRaisedException(exception);
         }
 

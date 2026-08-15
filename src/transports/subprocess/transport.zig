@@ -236,9 +236,13 @@ fn cleanup_pidfd(ptr: ?*anyopaque) void {
 
 fn pidfd_exit_callback(data: *const CallbackManager.CallbackData) !void {
     const transport: *SubprocessTransportObject = @ptrCast(@alignCast(data.user_data.?));
-    defer python_c.py_decref(@ptrCast(transport));
+    var success = false;
+    defer if (success) python_c.py_decref(@ptrCast(transport));
 
-    if (data.cancelled() or transport.closed) return;
+    if (data.cancelled() or transport.closed) {
+        success = true;
+        return;
+    }
 
     var siginfo: std.os.linux.siginfo_t = undefined;
     const res = res: {
@@ -316,6 +320,7 @@ fn pidfd_exit_callback(data: *const CallbackManager.CallbackData) !void {
             transport.pidfd_task_id = 0;
             python_c.py_xdecref(transport.popen);
             transport.popen = null;
+            success = true;
             return;
         }
         const loop = utils.get_data_ptr(Loop, @as(*LoopObject, @ptrCast(transport.loop.?)));
@@ -332,6 +337,7 @@ fn pidfd_exit_callback(data: *const CallbackManager.CallbackData) !void {
                 },
             },
         });
+        success = true;
         return;
     }
 
@@ -364,6 +370,7 @@ fn pidfd_exit_callback(data: *const CallbackManager.CallbackData) !void {
     transport.pidfd_task_id = 0;
     python_c.py_xdecref(transport.popen);
     transport.popen = null;
+    success = true;
 }
 
 pub fn start_exit_watcher(transport: *SubprocessTransportObject, loop: *LoopObject) !void {
