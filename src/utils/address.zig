@@ -34,20 +34,20 @@ pub const Address = extern union {
     }
 
     pub fn initPosix(sa_ptr: *const anyopaque) Address {
-        const sa: *const std.posix.sockaddr = @alignCast(@ptrCast(sa_ptr));
+        const sa: *const std.posix.sockaddr = @ptrCast(@alignCast(sa_ptr));
         return switch (sa.family) {
             std.posix.AF.INET => .{
                 .in = .{
-                    .sa = @as(*const std.posix.sockaddr.in, @alignCast(@ptrCast(sa_ptr))).*,
+                    .sa = @as(*const std.posix.sockaddr.in, @ptrCast(@alignCast(sa_ptr))).*,
                 },
             },
             std.posix.AF.INET6 => .{
                 .in6 = .{
-                    .sa = @as(*const std.posix.sockaddr.in6, @alignCast(@ptrCast(sa_ptr))).*,
+                    .sa = @as(*const std.posix.sockaddr.in6, @ptrCast(@alignCast(sa_ptr))).*,
                 },
             },
             std.posix.AF.UNIX => .{
-                .un = @as(*const std.posix.sockaddr.un, @alignCast(@ptrCast(sa_ptr))).*,
+                .un = @as(*const std.posix.sockaddr.un, @ptrCast(@alignCast(sa_ptr))).*,
             },
             else => .{ .any = sa.* },
         };
@@ -325,6 +325,10 @@ pub const Address = extern union {
         const host = host_ptr[0..@intCast(host_size)];
         const port_val = python_c.PyLong_AsInt(py_port);
         if (port_val == -1 and python_c.PyErr_Occurred() != null) return error.PythonError;
+        if (port_val < 0 or port_val > 65535) {
+            python_c.raise_python_value_error("port must be 0-65535\x00");
+            return error.PythonError;
+        }
         const port: u16 = @intCast(port_val);
 
         if (py_size == 2) {
