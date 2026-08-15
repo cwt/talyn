@@ -45,7 +45,7 @@ pub fn init(self: *DNS, loop: *Loop) !void {
 
     // TODO: Figure out if there is a better way
     const ret = std.os.linux.socket(std.posix.AF.INET6, @as(u32, @intCast(std.posix.SOCK.STREAM)), 0);
-    if (@as(i32, @intCast(ret)) >= 0) {
+    if (utils.getSyscallErrno(ret) == .SUCCESS) {
         self.ipv6_supported = true;
         _ = std.os.linux.close(@intCast(ret));
     } else {
@@ -57,20 +57,20 @@ pub fn init(self: *DNS, loop: *Loop) !void {
 
 fn load_configuration(self: *DNS, allocator: std.mem.Allocator) !void {
     const fd_ret = std.os.linux.open("/etc/resolv.conf", .{}, 0);
-    if (@as(i32, @intCast(fd_ret)) < 0) return error.Unexpected;
+    if (utils.getSyscallErrno(fd_ret) != .SUCCESS) return error.Unexpected;
     const fd: std.posix.fd_t = @intCast(fd_ret);
     defer _ = std.os.linux.close(fd);
 
     var statx_buf: std.os.linux.Statx = undefined;
     const statx_ret = std.os.linux.statx(fd, "", @as(u32, @intCast(std.os.linux.AT.EMPTY_PATH)), std.os.linux.STATX{ .SIZE = true }, &statx_buf);
-    if (@as(i32, @intCast(statx_ret)) < 0) return error.Unexpected;
+    if (utils.getSyscallErrno(statx_ret) != .SUCCESS) return error.Unexpected;
     const size: usize = @intCast(statx_buf.size);
 
     const content = try allocator.alloc(u8, size);
     defer allocator.free(content);
 
     const read_ret = std.os.linux.read(fd, content.ptr, content.len);
-    if (@as(i32, @intCast(read_ret)) < 0) return error.Unexpected;
+    if (utils.getSyscallErrno(read_ret) != .SUCCESS) return error.Unexpected;
 
     self.configuration = try Parsers.parse_resolv_configuration(allocator, content);
 }

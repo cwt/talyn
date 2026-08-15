@@ -517,7 +517,7 @@ pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
     _ = std.os.linux.fcntl(self.ring.fd, std.posix.F.SETFD, @intCast(std.posix.FD_CLOEXEC));
 
     const eventfd_ret = std.os.linux.eventfd(0, std.os.linux.EFD.NONBLOCK | std.os.linux.EFD.CLOEXEC);
-    if (@as(i32, @intCast(eventfd_ret)) < 0) return error.SystemResources;
+    if (utils.getSyscallErrno(eventfd_ret) != .SUCCESS) return error.SystemResources;
     self.eventfd = @intCast(eventfd_ret);
     errdefer _ = std.os.linux.close(self.eventfd);
 

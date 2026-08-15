@@ -46,7 +46,7 @@ fn ensure_inotify(self: *FSWatcher) !void {
     if (self.inotify_fd >= 0) return;
 
     const ret = std.os.linux.inotify_init1(std.os.linux.IN.NONBLOCK | std.os.linux.IN.CLOEXEC);
-    if (@as(i32, @intCast(ret)) < 0) return error.SystemResources;
+    if (utils.getSyscallErrno(ret) != .SUCCESS) return error.SystemResources;
     const fd: std.posix.fd_t = @intCast(ret);
     errdefer _ = std.os.linux.close(fd);
 
@@ -138,7 +138,7 @@ pub fn add_watch(self: *FSWatcher, path: [:0]const u8, mask: u32, callback: PyOb
     try self.ensure_inotify();
 
     const wd_ret = std.os.linux.inotify_add_watch(self.inotify_fd, path, mask);
-    if (@as(i32, @intCast(wd_ret)) < 0) return error.SystemResources;
+    if (utils.getSyscallErrno(wd_ret) != .SUCCESS) return error.SystemResources;
     const wd: i32 = @intCast(wd_ret);
 
     const watcher = try self.loop.allocator.create(Watcher);

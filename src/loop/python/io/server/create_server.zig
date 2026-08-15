@@ -197,7 +197,7 @@ inline fn z_loop_create_server(self: *LoopObject, args: []?PyObject, knames: ?Py
         // Duplicate the fd so the StreamServer owns its own copy
         // The original fd is owned by the Python socket object which may be GC'd
         const dup_fd = std.os.linux.dup(@intCast(fd));
-        if (@as(i32, @intCast(dup_fd)) < 0) {
+        if (utils.getSyscallErrno(dup_fd) != .SUCCESS) {
             return error.SystemResources;
         }
         server_data.socket_fd = @intCast(dup_fd);
