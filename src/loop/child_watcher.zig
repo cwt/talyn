@@ -51,6 +51,7 @@ pub fn add_child_handler(self: *ChildWatcher, pid: i32, callback: PyObject) !voi
     const pidfd: std.posix.fd_t = @intCast(rc);
     _ = std.os.linux.fcntl(pidfd, std.posix.F.SETFD, @intCast(std.posix.FD_CLOEXEC));
     errdefer _ = std.os.linux.close(pidfd);
+    try self.handlers.ensureUnusedCapacity(self.loop.allocator, 1);
 
     const handler = try self.loop.allocator.create(ChildHandler);
     errdefer self.loop.allocator.destroy(handler);
@@ -61,6 +62,7 @@ pub fn add_child_handler(self: *ChildWatcher, pid: i32, callback: PyObject) !voi
         .callback = python_c.py_newref(callback),
         .watcher = self,
     };
+    errdefer python_c.py_decref(handler.callback);
 
     handler.task_id = try self.loop.io.queue(.{ .WaitReadable = .{
         .fd = pidfd,
@@ -71,7 +73,7 @@ pub fn add_child_handler(self: *ChildWatcher, pid: i32, callback: PyObject) !voi
         },
     } });
 
-    try self.handlers.put(self.loop.allocator, pid, handler);
+    self.handlers.putAssumeCapacity(pid, handler);
 }
 
 pub fn remove_child_handler(self: *ChildWatcher, pid: i32) bool {
