@@ -1,13 +1,9 @@
 const std = @import("std");
 
-pub fn BTree(
-    comptime Key: type,
-    comptime Value: type,
-    comptime Degree: usize
-) type {
+pub fn BTree(comptime Key: type, comptime Value: type, comptime Degree: usize) type {
     if (Degree == 1) {
         @compileError("Degree must be greater than 1");
-    }else if (Degree&@as(usize, 1) == 0) {
+    } else if (Degree & @as(usize, 1) == 0) {
         @compileError("Degree must be a odd number");
     }
 
@@ -26,10 +22,7 @@ pub fn BTree(
         parent: *Node,
 
         pub fn init(allocator: std.mem.Allocator) !@This() {
-            return .{
-                .allocator = allocator,
-                .parent = try create_node(allocator)
-            };
+            return .{ .allocator = allocator, .parent = try create_node(allocator) };
         }
 
         pub fn deinit(self: *@This()) !void {
@@ -60,28 +53,22 @@ pub fn BTree(
 
                 if (@typeInfo(Key) == .float) {
                     const eps = std.math.floatEps(Key);
-                    for (
-                        current_node.keys[0..nkeys], current_node.values[0..nkeys],
-                        current_node.childs[0..nkeys]
-                    ) |k, *v, ch| {
+                    for (current_node.keys[0..nkeys], current_node.values[0..nkeys], current_node.childs[0..nkeys]) |k, *v, ch| {
                         const diff = k - key;
                         if (@abs(diff) <= eps) {
                             value = v;
                             break :loop;
-                        }else if (diff > eps) {
+                        } else if (diff > eps) {
                             current_node = ch orelse break :loop;
                             continue :loop;
                         }
                     }
-                }else{
-                    for (
-                        current_node.keys[0..nkeys], current_node.values[0..nkeys],
-                        current_node.childs[0..nkeys]
-                    ) |k, *v, ch| {
+                } else {
+                    for (current_node.keys[0..nkeys], current_node.values[0..nkeys], current_node.childs[0..nkeys]) |k, *v, ch| {
                         if (k == key) {
                             value = v;
                             break :loop;
-                        }else if (k > key) {
+                        } else if (k > key) {
                             current_node = ch orelse break :loop;
                             continue :loop;
                         }
@@ -98,8 +85,7 @@ pub fn BTree(
         }
 
         pub inline fn get_value(self: *@This(), key: Key, node: ?**Node) ?Value {
-            const value_ptr = self.get_value_ptr(key, node)
-                orelse return null;
+            const value_ptr = self.get_value_ptr(key, node) orelse return null;
             return value_ptr.*;
         }
 
@@ -127,8 +113,7 @@ pub fn BTree(
         }
 
         pub inline fn get_max_value(self: *@This(), key: ?*Key, node: ?**Node) ?Value {
-            const value_ptr = self.get_max_value_ptr(key, node)
-                orelse return null;
+            const value_ptr = self.get_max_value_ptr(key, node) orelse return null;
             return value_ptr.*;
         }
 
@@ -147,13 +132,12 @@ pub fn BTree(
             return &current_node.values[0];
         }
 
-        pub fn get_min_value_ptr(self: *@This(), key: ?*Key, node: ?**Node) ?Value {
+        pub fn get_min_value_ptr(self: *@This(), key: ?*Key, node: ?**Node) ?*Value {
             return find_min_from_node(self.parent, key, node);
         }
 
         pub inline fn get_min_value(self: *@This(), key: ?*Key, node: ?**Node) ?Value {
-            const value_ptr = self.get_min_value_ptr(key, node)
-                orelse return null;
+            const value_ptr = self.get_min_value_ptr(key, node) orelse return null;
             return value_ptr.*;
         }
 
@@ -201,7 +185,7 @@ pub fn BTree(
                         return;
                     }
                 }
-            }else{
+            } else {
                 for (0..nkeys) |index| {
                     if (key < keys[index]) {
                         var i: usize = nkeys;
@@ -232,12 +216,8 @@ pub fn BTree(
             }
         }
 
-        inline fn split_root_node(
-            keys: []Key, values: []Value, childs: []?*Node,
-            child_node1: *Node, child_node2: *Node
-        ) !void {
-
-            const middle_index = (Degree - 1)/2;
+        inline fn split_root_node(keys: []Key, values: []Value, childs: []?*Node, child_node1: *Node, child_node2: *Node) !void {
+            const middle_index = (Degree - 1) / 2;
             const middle_index_plus_one = middle_index + 1;
 
             try insert_in_empty_node(child_node1, keys[0..middle_index], values[0..middle_index]);
@@ -257,12 +237,8 @@ pub fn BTree(
             @memset(childs[2..], null);
         }
 
-        inline fn split_node(
-            keys: []Key, values: []Value, childs: []?*Node,
-            parent: *Node, new_child: *Node
-        ) !void {
-
-            const middle_index = (Degree - 1)/2;
+        inline fn split_node(keys: []Key, values: []Value, childs: []?*Node, parent: *Node, new_child: *Node) !void {
+            const middle_index = (Degree - 1) / 2;
             const middle_index_plus_one = middle_index + 1;
 
             try insert_in_empty_node(new_child, keys[middle_index_plus_one..], values[middle_index_plus_one..]);
@@ -318,9 +294,9 @@ pub fn BTree(
 
             insert_in_node(allocator, node, key, value) catch return false;
             return true;
-            }
+        }
 
-            pub fn replace(self: *@This(), key: Key, value: Value) ?Value {
+        pub fn replace(self: *@This(), key: Key, value: Value) ?Value {
             const allocator = self.allocator;
 
             var node: *Node = self.parent;
@@ -335,8 +311,7 @@ pub fn BTree(
 
             insert_in_node(allocator, node, key, value) catch return null;
             return null;
-            }
-
+        }
 
         inline fn delete_from_left(allocator: std.mem.Allocator, node: *?*Node, key: *Key, value: *Value) void {
             var node_with_bigger_value: *Node = undefined;
@@ -349,7 +324,7 @@ pub fn BTree(
                 const rem_child = node_with_bigger_value.childs[0];
                 if (p_last_node.* == node_with_bigger_value) {
                     p_last_node.* = rem_child;
-                }else{
+                } else {
                     node.* = rem_child;
                 }
                 if (rem_child) |child| child.parent = p_node;
@@ -371,13 +346,13 @@ pub fn BTree(
                 const rem_child = node_with_smaller_value.childs[1];
                 if (p_first_node.* == node_with_smaller_value) {
                     p_first_node.* = rem_child;
-                }else{
+                } else {
                     node.* = rem_child;
                 }
                 if (rem_child) |child| child.parent = p_node;
 
                 allocator.destroy(node_with_smaller_value);
-            }else{
+            } else {
                 const keys = &node_with_smaller_value.keys;
                 const values = &node_with_smaller_value.values;
                 const childs = &node_with_smaller_value.childs;
@@ -390,10 +365,7 @@ pub fn BTree(
             }
         }
 
-        inline fn perform_delete(
-            allocator: std.mem.Allocator, node: *?*Node, func: anytype,
-            keys: []Key, values: []Value, index: usize
-        ) void {
+        inline fn perform_delete(allocator: std.mem.Allocator, node: *?*Node, func: anytype, keys: []Key, values: []Value, index: usize) void {
             var key: Key = undefined;
             var value: Value = undefined;
             func(allocator, node, &key, &value);
@@ -402,16 +374,13 @@ pub fn BTree(
             values[index] = value;
         }
 
-        inline fn delete_key_from_node(
-            allocator: std.mem.Allocator, node: *Node, keys: []Key,
-            values: []Value, childs: []?*Node, index: usize
-        ) void {
+        inline fn delete_key_from_node(allocator: std.mem.Allocator, node: *Node, keys: []Key, values: []Value, childs: []?*Node, index: usize) void {
             const left_child = &childs[index];
             const right_child = &childs[index + 1];
             if (left_child.* != null) {
                 perform_delete(allocator, left_child, delete_from_left, keys, values, index);
                 return;
-            }else if (right_child.* != null) {
+            } else if (right_child.* != null) {
                 perform_delete(allocator, right_child, delete_from_right, keys, values, index);
                 return;
             }
@@ -429,7 +398,7 @@ pub fn BTree(
                         break;
                     }
                 }
-            }else{
+            } else {
                 for (index..nkeys) |i| {
                     keys[i] = keys[i + 1];
                     values[i] = values[i + 1];
@@ -441,8 +410,7 @@ pub fn BTree(
 
         pub fn delete(self: *@This(), key: Key) ?Value {
             var node: *Node = undefined;
-            const value = get_value(self, key, &node)
-                orelse return null;
+            const value = get_value(self, key, &node) orelse return null;
 
             const keys = &node.keys;
             const values = &node.values;
@@ -458,7 +426,7 @@ pub fn BTree(
                         break;
                     }
                 }
-            }else{
+            } else {
                 for (0..nkeys) |i| {
                     if (key == keys[i]) {
                         delete_key_from_node(self.allocator, node, keys, values, childs, i);
@@ -472,8 +440,7 @@ pub fn BTree(
 
         pub fn pop(self: *@This(), key: ?*Key) ?Value {
             var node: *Node = undefined;
-            const value = get_max_value(self, key, &node)
-                orelse return null;
+            const value = get_max_value(self, key, &node) orelse return null;
 
             const keys = &node.keys;
             const values = &node.values;
@@ -689,3 +656,27 @@ test "BTree: Random order insertion and deletion with Degree 11" {
     }
 }
 
+test "BTree: get_min_value_ptr and get_max_value_ptr with non-pointer values" {
+    var tree = try BTree(i32, [4]u8, 3).init(std.testing.allocator);
+    defer tree.deinit() catch unreachable;
+
+    _ = tree.insert(10, [4]u8{ 1, 0, 0, 0 });
+    _ = tree.insert(5, [4]u8{ 2, 0, 0, 0 });
+    _ = tree.insert(20, [4]u8{ 3, 0, 0, 0 });
+
+    var min_key: i32 = 0;
+    const min_ptr = tree.get_min_value_ptr(&min_key, null);
+    try std.testing.expect(min_ptr != null);
+    try std.testing.expectEqual(@as(i32, 5), min_key);
+    try std.testing.expectEqual([4]u8{ 2, 0, 0, 0 }, min_ptr.?.*);
+
+    var max_key: i32 = 0;
+    const max_ptr = tree.get_max_value_ptr(&max_key, null);
+    try std.testing.expect(max_ptr != null);
+    try std.testing.expectEqual(@as(i32, 20), max_key);
+    try std.testing.expectEqual([4]u8{ 3, 0, 0, 0 }, max_ptr.?.*);
+
+    _ = tree.delete(5);
+    _ = tree.delete(10);
+    _ = tree.delete(20);
+}
