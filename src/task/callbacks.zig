@@ -582,7 +582,10 @@ fn py_wake_up(self: ?*Task.PythonTaskObject, fut: ?PyObject) callconv(.c) ?PyObj
 
     python_c.py_decref_and_set_null(&instance.fut_waiter);
 
-    const get_result_func: PyObject = python_c.PyObject_GetAttrString(py_future, "result\x00") orelse return null;
+    const get_result_func: PyObject = python_c.PyObject_GetAttrString(py_future, "result\x00") orelse {
+        python_c.py_decref(@ptrCast(instance));
+        return null;
+    };
     defer python_c.py_decref(get_result_func);
 
     const ret: ?PyObject = python_c.PyObject_CallNoArgs(get_result_func);
@@ -594,7 +597,10 @@ fn py_wake_up(self: ?*Task.PythonTaskObject, fut: ?PyObject) callconv(.c) ?PyObj
             return utils.handle_zig_function_error(err, null);
         };
     } else {
-        const exc_value = python_c.PyErr_GetRaisedException() orelse return null;
+        const exc_value = python_c.PyErr_GetRaisedException() orelse {
+            python_c.py_decref(@ptrCast(instance));
+            return null;
+        };
         _execute_task_throw(instance, exc_value) catch |err| {
             python_c.py_decref(@ptrCast(instance));
             return utils.handle_zig_function_error(err, null);
