@@ -26,17 +26,17 @@ pub const ExceptionMessage: [:0]const u8 = "An error ocurred while executing pyt
 pub const ModuleName: [:0]const u8 = "handle";
 
 pub fn release_python_generic_callback(ptr: ?*anyopaque) void {
-    const handle: *PythonHandleObject = @alignCast(@ptrCast(ptr.?));
+    const handle: *PythonHandleObject = @ptrCast(@alignCast(ptr.?));
 
     python_c.py_decref(@ptrCast(handle));
 }
 
 pub fn callback_for_python_generic_callbacks(data: *const CallbackManager.CallbackData) !void {
-    const handle: *PythonHandleObject = @alignCast(@ptrCast(data.user_data.?));
+    const handle: *PythonHandleObject = @ptrCast(@alignCast(data.user_data.?));
     const thread_safe = handle.thread_safe;
     if (thread_safe) {
         @atomicStore(bool, &handle.finished, true, .release);
-    }else{
+    } else {
         handle.finished = true;
     }
 
@@ -51,7 +51,7 @@ pub fn callback_for_python_generic_callbacks(data: *const CallbackManager.Callba
         if (thread_safe) {
             const cmpxchg = @cmpxchgStrong(bool, &handle.cancelled, false, true, .acq_rel, .acquire);
             cancelled = cmpxchg != null;
-        }else{
+        } else {
             if (handle.cancelled) {
                 cancelled = true;
             } else {
@@ -92,7 +92,7 @@ pub fn callback_for_python_generic_callbacks(data: *const CallbackManager.Callba
         }
 
         result = python_c.PyObject_Call(handle.py_callback.?, args_tuple, null);
-    }else{
+    } else {
         result = python_c.PyObject_CallNoArgs(handle.py_callback.?);
     }
 
@@ -104,13 +104,8 @@ pub fn callback_for_python_generic_callbacks(data: *const CallbackManager.Callba
     }
 }
 
-pub inline fn fast_new_handle(
-    contextvars: PyObject, loop_data: *Loop, py_callback: PyObject, args: ?[]PyObject,
-    thread_safe: bool
-) !*PythonHandleObject {
-    const instance: *PythonHandleObject = @ptrCast(
-        PythonHandleType.tp_alloc.?(&PythonHandleType, 0) orelse return error.PythonError
-    );
+pub inline fn fast_new_handle(contextvars: PyObject, loop_data: *Loop, py_callback: PyObject, args: ?[]PyObject, thread_safe: bool) !*PythonHandleObject {
+    const instance: *PythonHandleObject = @ptrCast(PythonHandleType.tp_alloc.?(&PythonHandleType, 0) orelse return error.PythonError);
 
     instance.contextvars = contextvars;
     instance.loop_data = loop_data;
@@ -135,12 +130,12 @@ pub inline fn fast_new_handle(
 }
 
 pub fn traverse_python_generic_callback(ptr: ?*anyopaque, visit_ptr: ?*anyopaque, arg: ?*anyopaque) c_int {
-    const handle: *PythonHandleObject = @alignCast(@ptrCast(ptr.?));
+    const handle: *PythonHandleObject = @ptrCast(@alignCast(ptr.?));
     const visit: python_c.visitproc = @ptrCast(@alignCast(visit_ptr.?));
     return visit.?(@ptrCast(handle), arg);
 }
 
-fn handle_traverse(self: ?*PythonHandleObject, visit: python_c.visitproc, arg: ?*anyopaque) callconv(.c) c_int {
+pub fn handle_traverse(self: ?*PythonHandleObject, visit: python_c.visitproc, arg: ?*anyopaque) callconv(.c) c_int {
     const instance = self.?;
 
     const vret = python_c.py_visit(instance, visit, arg);
@@ -156,7 +151,7 @@ fn handle_traverse(self: ?*PythonHandleObject, visit: python_c.visitproc, arg: ?
     return 0;
 }
 
-fn handle_clear(self: ?*PythonHandleObject) callconv(.c) c_int {
+pub fn handle_clear(self: ?*PythonHandleObject) callconv(.c) c_int {
     const instance = self.?;
     python_c.py_decref_and_set_null(&instance.contextvars);
     python_c.py_decref_and_set_null(&instance.py_callback);
@@ -175,7 +170,7 @@ fn handle_clear(self: ?*PythonHandleObject) callconv(.c) c_int {
     return 0;
 }
 
-fn handle_dealloc(self: ?*PythonHandleObject) callconv(.c) void {
+pub fn handle_dealloc(self: ?*PythonHandleObject) callconv(.c) void {
     const instance = self.?;
     python_c.PyObject_GC_UnTrack(instance);
 
@@ -185,21 +180,17 @@ fn handle_dealloc(self: ?*PythonHandleObject) callconv(.c) void {
     @"type".tp_free.?(@ptrCast(instance));
 }
 
-inline fn z_handle_init(
-    self: *PythonHandleObject, args: ?PyObject, kwargs: ?PyObject
-) !c_int {
+inline fn z_handle_init(self: *PythonHandleObject, args: ?PyObject, kwargs: ?PyObject) !c_int {
     var kwlist: [2][*c]u8 = undefined;
     kwlist[0] = @constCast("context\x00");
     kwlist[1] = null;
 
     var py_context: ?PyObject = null;
 
-    if (python_c.PyArg_ParseTupleAndKeywords(
-            args, kwargs, "O\x00", @ptrCast(&kwlist), &py_context
-    ) < 0) {
+    if (python_c.PyArg_ParseTupleAndKeywords(args, kwargs, "O\x00", @ptrCast(&kwlist), &py_context) < 0) {
         return error.PythonError;
     }
-    
+
     if (py_context) |ctx| {
         if (python_c.is_none(ctx)) {
             python_c.raise_python_type_error("context cannot be None\x00");
@@ -215,7 +206,7 @@ inline fn z_handle_init(
 }
 
 fn handle_init(self: ?*PythonHandleObject, args: ?PyObject, kwargs: ?PyObject) callconv(.c) c_int {
-    return utils.execute_zig_function(z_handle_init, .{self.?, args, kwargs});
+    return utils.execute_zig_function(z_handle_init, .{ self.?, args, kwargs });
 }
 
 fn handle_get_context(self: ?*PythonHandleObject, _: ?PyObject) callconv(.c) ?PyObject {
@@ -226,7 +217,7 @@ pub inline fn fast_handle_cancel(self: *PythonHandleObject) !void {
     const thread_safe = self.thread_safe;
     const finished = switch (thread_safe) {
         false => self.finished,
-        true => @atomicLoad(bool, &self.finished, .acquire)
+        true => @atomicLoad(bool, &self.finished, .acquire),
     };
     if (finished) {
         return;
@@ -264,9 +255,7 @@ pub inline fn fast_handle_cancel(self: *PythonHandleObject) !void {
         mutex.lock();
         defer mutex.unlock();
 
-        _ = try loop_data.io.queue_unlocked(.{
-            .Cancel = blocking_task_id
-        });
+        _ = try loop_data.io.queue_unlocked(.{ .Cancel = blocking_task_id });
     }
 }
 
@@ -282,48 +271,12 @@ fn handle_cancelled(self: ?*PythonHandleObject, _: ?PyObject) callconv(.c) ?PyOb
     const instance = self.?;
     const cancelled = switch (instance.thread_safe) {
         false => instance.cancelled,
-        true => @atomicLoad(bool, &instance.cancelled, .acquire)
+        true => @atomicLoad(bool, &instance.cancelled, .acquire),
     };
 
     return python_c.PyBool_FromLong(@intCast(@intFromBool(cancelled)));
 }
 
-const PythonhandleMethods: []const python_c.PyMethodDef = &[_]python_c.PyMethodDef{
-    python_c.PyMethodDef{
-        .ml_name = "cancel\x00",
-        .ml_meth = @ptrCast(&handle_cancel),
-        .ml_doc = "Cancel the callback. If the callback has already been canceled or executed, this method has no effect.\x00",
-        .ml_flags = python_c.METH_NOARGS
-    },
-    python_c.PyMethodDef{
-        .ml_name = "cancelled\x00",
-        .ml_meth = @ptrCast(&handle_cancelled),
-        .ml_doc = "Return True if the callback was cancelled.\x00",
-        .ml_flags = python_c.METH_NOARGS
-    },
-    python_c.PyMethodDef{
-        .ml_name = "get_context\x00",
-        .ml_meth = @ptrCast(&handle_get_context),
-        .ml_doc = "Return the contextvars.Context object associated with the handle.\x00",
-        .ml_flags = python_c.METH_NOARGS
-    },
-    python_c.PyMethodDef{
-        .ml_name = null, .ml_meth = null, .ml_doc = null, .ml_flags = 0
-    }
-};
+const PythonhandleMethods: []const python_c.PyMethodDef = &[_]python_c.PyMethodDef{ python_c.PyMethodDef{ .ml_name = "cancel\x00", .ml_meth = @ptrCast(&handle_cancel), .ml_doc = "Cancel the callback. If the callback has already been canceled or executed, this method has no effect.\x00", .ml_flags = python_c.METH_NOARGS }, python_c.PyMethodDef{ .ml_name = "cancelled\x00", .ml_meth = @ptrCast(&handle_cancelled), .ml_doc = "Return True if the callback was cancelled.\x00", .ml_flags = python_c.METH_NOARGS }, python_c.PyMethodDef{ .ml_name = "get_context\x00", .ml_meth = @ptrCast(&handle_get_context), .ml_doc = "Return the contextvars.Context object associated with the handle.\x00", .ml_flags = python_c.METH_NOARGS }, python_c.PyMethodDef{ .ml_name = null, .ml_meth = null, .ml_doc = null, .ml_flags = 0 } };
 
-pub var PythonHandleType = python_c.PyTypeObject{
-    .tp_name = "talyn.Handle\x00",
-    .tp_doc = "Talyn's handle class\x00",
-    .tp_basicsize = @sizeOf(PythonHandleObject),
-    .tp_itemsize = 0,
-    .tp_flags = python_c.Py_TPFLAGS_DEFAULT | python_c.Py_TPFLAGS_BASETYPE | python_c.Py_TPFLAGS_HAVE_GC,
-    .tp_new = &python_c.PyType_GenericNew,
-    .tp_init = @ptrCast(&handle_init),
-    .tp_dealloc = @ptrCast(&handle_dealloc),
-    .tp_traverse = @ptrCast(&handle_traverse),
-    .tp_clear = @ptrCast(&handle_clear),
-    .tp_methods = @constCast(PythonhandleMethods.ptr),
-    .tp_members = null
-};
-
+pub var PythonHandleType = python_c.PyTypeObject{ .tp_name = "talyn.Handle\x00", .tp_doc = "Talyn's handle class\x00", .tp_basicsize = @sizeOf(PythonHandleObject), .tp_itemsize = 0, .tp_flags = python_c.Py_TPFLAGS_DEFAULT | python_c.Py_TPFLAGS_BASETYPE | python_c.Py_TPFLAGS_HAVE_GC, .tp_new = &python_c.PyType_GenericNew, .tp_init = @ptrCast(&handle_init), .tp_dealloc = @ptrCast(&handle_dealloc), .tp_traverse = @ptrCast(&handle_traverse), .tp_clear = @ptrCast(&handle_clear), .tp_methods = @constCast(PythonhandleMethods.ptr), .tp_members = null };
