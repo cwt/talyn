@@ -356,3 +356,15 @@ def test_create_connection_nan_inf_safety() -> None:
     finally:
         stop.set()
 
+
+def test_create_connection_invalid_dns_timeout() -> None:
+    async def main() -> None:
+        loop = asyncio.get_running_loop()
+        with pytest.raises(TypeError):
+            await loop.create_connection(
+                EchoProtocol, "127.0.0.1", 80, dns_timeout="invalid"
+            )
+
+    talyn.run(main())
+
+

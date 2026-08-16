@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 233 |
-| Open | 6 |
+| Fixed | 234 |
+| Open | 5 |
 | False Positive | 13 |
 | **Total** | **252** |
 
@@ -283,7 +283,7 @@ Sorted by bug number. See individual bug files for details.
 | [245](245.md) | Float cast safety violation on `float("nan")` and `float("inf")` in `timeout_from_secs` and `create_connection` | Medium-High | Fixed |
 | [246](246.md) | Broken unit test in `streamserver/main.zig` crashes with optional null unwrap panic | Low | Fixed |
 | [247](247.md) | Documentation link formatting and severity summary math desync in bug tracker | Low | Fixed |
-| [248](248.md) | `SocketCreationData.dns_timeout` is never populated in hostname connect path of `create_connection` | High | Open |
+| [248](248.md) | `SocketCreationData.dns_timeout` is never populated in hostname connect path of `create_connection` | High | Fixed |
 | [249](249.md) | Struct literal `dns_timeout` evaluation in `getaddrinfo.zig` leaks references and memory on error | Medium | Open |
 | [250](250.md) | Double-decref on `exception_handler` during failed `loop_init` in `constructors.zig` | High | Open |
 | [251](251.md) | Zig float cast panics on NaN, Inf, and large floats in `scheduling.zig`, `timer_handle.zig`, and `timeout_from_secs` | High | Open |

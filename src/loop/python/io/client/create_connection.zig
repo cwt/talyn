@@ -138,6 +138,14 @@ inline fn z_loop_create_connection(self: *LoopObject, args: []?PyObject, knames:
     }
     errdefer python_c.deinitialize_object_fields(&creation_data, &.{ "future", "protocol_factory" });
 
+    var dns_timeout: ?Resolv.DnsTimeout = null;
+    if (creation_data.py_dns_timeout) |py_dns_timeout| {
+        const timeout_val = python_c.PyFloat_AsDouble(py_dns_timeout);
+        if (python_c.PyErr_Occurred() != null) return error.PythonError;
+        dns_timeout = Resolv.timeout_from_secs(timeout_val);
+    }
+    creation_data.dns_timeout = dns_timeout;
+
     if (python_c.PyCallable_Check(protocol_factory) <= 0) {
         python_c.raise_python_value_error("Invalid protocol_factory. It must be a callable");
         return error.PythonError;
@@ -174,15 +182,6 @@ inline fn z_loop_create_connection(self: *LoopObject, args: []?PyObject, knames:
         const transport_creation_data = try allocator.create(TransportCreationData);
         errdefer allocator.destroy(transport_creation_data);
 
-        const dns_timeout_val = blk: {
-            if (creation_data.py_dns_timeout) |py_dns_timeout| {
-                const timeout_val = python_c.PyFloat_AsDouble(py_dns_timeout);
-                if (python_c.PyErr_Occurred() != null) return error.PythonError;
-                const result = Resolv.timeout_from_secs(timeout_val);
-                break :blk result;
-            } else break :blk null;
-        };
-
         transport_creation_data.* = .{
             .protocol_factory = protocol_factory,
             .future = python_c.py_newref(fut),
@@ -191,7 +190,7 @@ inline fn z_loop_create_connection(self: *LoopObject, args: []?PyObject, knames:
             .zero_copying = false, // Caller owns the fd (e.g. accept()'d socket).
             .fd_created = false, // Caller owns the fd (e.g. accept()'d socket).
             .owns_fd = false, // Don't close the fd on transport close.
-            .dns_timeout = dns_timeout_val,
+            .dns_timeout = dns_timeout,
             .python_payload = .{
                 .module_ptr = @ptrCast(self),
                 .callback_ptr = @ptrCast(fut),
