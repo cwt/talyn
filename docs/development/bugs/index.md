@@ -241,3 +241,13 @@ Sorted by bug number. See individual bug files for details.
 | [203](203.md) | Leaked Python `FutureObject` and pre-init resource leaks in `z_loop_create_unix_connection` and `z_loop_create_unix_server` | Medium | Fixed |
 | [204](204.md) | Uninitialized `popen` struct field in `SubprocessTransport.new_with_pid` | Medium | Fixed |
 | [205](205.md) | Unhandled `dns_timeout` keyword argument and `PyObject` reference leak in `DatagramCreationData` | Low | Fixed |
+| [206](206.md) | `deinitialize_object_fields` refcount leak on `ob_base` structs (`?*FutureObject`, `?*LoopObject`) | High | Open |
+| [207](207.md) | PyObject reference and struct leak on error path in `z_loop_create_server` | High | Open |
+| [208](208.md) | Leaked heap structs, buffers, and PyObjects on error path in `src/loop/python/io/socket/ops.zig` | High | Open |
+| [209](209.md) | Leaked `PythonHandleObject` on callback exception in `callback_for_python_generic_callbacks` | Medium | Open |
+| [210](210.md) | Datagram `SendToData` buffer and transport reference leak on protocol exception | Medium | Open |
+| [211](211.md) | Datagram `ReadData` and transport reference leak on task cancellation | Medium | Open |
+| [212](212.md) | Out-of-bounds uninitialized read and dropped addresses in `interleave_address_list` | High | Open |
+| [213](213.md) | Panic risk from unchecked `.?` unwrapping on nullable callbacks in `dispatch_completion_batch` | Medium | Open |
+| [214](214.md) | Invalid pointer comparison and redundant UTF-8 decode in `z_loop_add_path_watcher` | Medium | Open |
+| [215](215.md) | Context argument dropped in `Runner.run` | Low | Open |
