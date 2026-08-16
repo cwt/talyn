@@ -339,6 +339,7 @@ fn pidfd_exit_callback(data: *const CallbackManager.CallbackData) !void {
         }
         const loop = utils.get_data_ptr(Loop, @as(*LoopObject, @ptrCast(transport.loop.?)));
         python_c.py_incref(@ptrCast(transport));
+        errdefer python_c.py_decref(@ptrCast(transport));
         transport.pidfd_task_id = try loop.io.queue(.{
             .WaitReadable = .{
                 .fd = transport.pidfd,
