@@ -66,6 +66,7 @@ fn unix_connect_callback(data: *const CallbackManager.CallbackData) !void {
     if (io_uring_err != .SUCCESS or io_uring_res < 0) {
         const errno_val = if (io_uring_res < 0) -io_uring_res else @intFromEnum(io_uring_err);
         const exc = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "is\x00", @as(c_int, @intCast(errno_val)), "Connect call failed\x00") orelse return set_future_exception(error.PythonError, ucd.future);
+        defer python_c.py_decref(exc);
 
         const future_data = utils.get_data_ptr(Future, ucd.future);
         try Future.Python.Result.future_fast_set_exception(ucd.future, future_data, exc);
@@ -118,15 +119,17 @@ inline fn z_loop_create_unix_connection(self: *LoopObject, args: []?PyObject, kn
 
     const loop_data = utils.get_data_ptr(Loop, self);
     const fut = try Future.Python.Constructors.fast_new_future(self);
+    errdefer python_c.py_decref(@ptrCast(fut));
 
     const ucd = try loop_data.allocator.create(UnixConnectData);
     errdefer loop_data.allocator.destroy(ucd);
+    const addr = try utils.Address.fromPyAddr(py_path, std.posix.AF.UNIX);
     ucd.* = .{
         .future = @ptrCast(python_c.py_newref(@as(PyObject, @ptrCast(fut)))),
         .loop = python_c.py_newref(self),
         .protocol_factory = python_c.py_newref(protocol_factory),
         .allocator = loop_data.allocator,
-        .addr = (try utils.Address.fromPyAddr(py_path, std.posix.AF.UNIX)).un,
+        .addr = addr.un,
     };
     errdefer {
         python_c.py_decref(@as(PyObject, @ptrCast(ucd.future)));
@@ -189,6 +192,7 @@ inline fn z_loop_create_unix_server(self: *LoopObject, args: []?PyObject, knames
         return error.PythonError;
     }
     const fut = try Future.Python.Constructors.fast_new_future(self);
+    errdefer python_c.py_decref(@ptrCast(fut));
 
     const backlog: c_int = if (py_backlog) |b| blk: {
         const b_val = python_c.PyLong_AsInt(b);
