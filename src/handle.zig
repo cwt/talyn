@@ -114,6 +114,9 @@ pub inline fn fast_new_handle(contextvars: PyObject, loop_data: *Loop, py_callba
     if (args) |v| {
         instance.py_callback_args = v.ptr;
         instance.py_callback_len = v.len;
+    } else {
+        instance.py_callback_args = null;
+        instance.py_callback_len = 0;
     }
 
     instance.blocking_task_id = 0;

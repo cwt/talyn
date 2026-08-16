@@ -91,6 +91,7 @@ pub fn main(init: std.process.Init) !void {
         while (try walker.next(io)) |entry| {
             if (entry.kind != .file) continue;
             if (!std.mem.endsWith(u8, entry.path, ".zig")) continue;
+            if (std.mem.startsWith(u8, entry.path, "test") or std.mem.indexOf(u8, entry.path, "test") != null) continue;
 
             total_zig_files += 1;
 

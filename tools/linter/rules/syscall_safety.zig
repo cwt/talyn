@@ -21,10 +21,19 @@ pub fn check(
             const lhs_text = ast.tokenSlice(lhs_token);
 
             if (std.mem.eql(u8, lhs_text, "_")) {
-                const rhs_token = ast.nodes.items(.main_token)[@intFromEnum(rhs_node)];
-                const rhs_tag = ast.nodes.items(.tag)[@intFromEnum(rhs_node)];
-                if (rhs_tag == .call or rhs_tag == .call_one or rhs_tag == .call_one_comma or rhs_tag == .call_comma) {
-                    const call_name = ast.tokenSlice(rhs_token);
+                var call_buffer: [1]std.zig.Ast.Node.Index = undefined;
+                if (ast.fullCall(&call_buffer, rhs_node)) |call| {
+                    const fn_expr = call.ast.fn_expr;
+                    const fn_tag = ast.nodes.items(.tag)[@intFromEnum(fn_expr)];
+                    var call_name: []const u8 = "";
+                    if (fn_tag == .field_access) {
+                        const field_tok = ast.nodes.items(.data)[@intFromEnum(fn_expr)].node_and_token[1];
+                        call_name = ast.tokenSlice(field_tok);
+                    } else {
+                        const fn_tok = ast.nodes.items(.main_token)[@intFromEnum(fn_expr)];
+                        call_name = ast.tokenSlice(fn_tok);
+                    }
+
                     if (std.mem.eql(u8, call_name, "getsockname") or
                         std.mem.eql(u8, call_name, "getpeername"))
                     {

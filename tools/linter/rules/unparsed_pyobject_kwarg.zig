@@ -36,35 +36,44 @@ pub fn check(
             const trimmed = std.mem.trim(u8, line, " \t");
 
             if (!in_struct) {
-                if (std.mem.startsWith(u8, trimmed, "const ") and
-                    std.mem.indexOf(u8, trimmed, "= struct {") != null)
-                {
-                    const eq_idx = std.mem.indexOfScalar(u8, trimmed, '=') orelse continue;
-                    const name_part = trimmed[6..eq_idx];
-                    const name_trimmed = std.mem.trim(u8, name_part, " ");
-                    if (name_trimmed.len > 0) {
-                        in_struct = true;
-                        struct_name = name_trimmed;
-                        brace_depth = 1; // skip the opening brace
+                var decl_idx: ?usize = null;
+                if (std.mem.indexOf(u8, trimmed, "const ") != null and std.mem.indexOf(u8, trimmed, "= struct {") != null) {
+                    decl_idx = std.mem.indexOf(u8, trimmed, "const ").? + 6;
+                }
+                if (decl_idx) |d_idx| {
+                    const eq_idx = std.mem.indexOfScalar(u8, trimmed, '=') orelse {
+                        prev_nl = pos + 1;
+                        pos += 1;
+                        continue;
+                    };
+                    if (eq_idx > d_idx) {
+                        const name_part = trimmed[d_idx..eq_idx];
+                        const name_trimmed = std.mem.trim(u8, name_part, " ");
+                        if (name_trimmed.len > 0) {
+                            in_struct = true;
+                            struct_name = name_trimmed;
+                            brace_depth = 1;
+                            try structs.append(gpa, .{
+                                .name = struct_name,
+                                .fields = .empty,
+                            });
+                        }
                     }
                 }
             } else {
-                var lc: usize = 0;
-                while (lc < line.len) : (lc += 1) {
-                    if (line[lc] == '{') brace_depth += 1;
-                    if (line[lc] == '}') brace_depth -= 1;
+                for (line) |ch| {
+                    if (ch == '{') brace_depth += 1;
+                    if (ch == '}') brace_depth -= 1;
                 }
 
                 if (std.mem.startsWith(u8, trimmed, "py_") and
-                    std.mem.indexOf(u8, trimmed, ": ?PyObject") != null)
+                    (std.mem.indexOf(u8, trimmed, "PyObject") != null))
                 {
                     var end: usize = 0;
                     while (end < trimmed.len and trimmed[end] != ':') end += 1;
                     const fname = trimmed[0..end];
-                    for (structs.items) |*s| {
-                        if (std.mem.eql(u8, s.name, struct_name)) {
-                            try s.fields.append(gpa, fname);
-                        }
+                    if (structs.items.len > 0) {
+                        try structs.items[structs.items.len - 1].fields.append(gpa, fname);
                     }
                 }
 
@@ -90,18 +99,21 @@ pub fn check(
         var search_pos: usize = 0;
         while (search_pos < content.len) {
             const pvc_idx = std.mem.indexOfPos(u8, content, search_pos, "parse_vector_call_kwargs") orelse break;
-            const ctx_start = if (pvc_idx > 2000) pvc_idx - 2000 else 0;
-            const ctx_end = if (pvc_idx + 2000 < content.len) pvc_idx + 2000 else content.len;
-            const ctx = content[ctx_start..ctx_end];
+            const open_paren = std.mem.indexOfScalarPos(u8, content, pvc_idx, '(') orelse break;
+            var depth: usize = 1;
+            var cp = open_paren + 1;
+            while (cp < content.len and depth > 0) : (cp += 1) {
+                if (content[cp] == '(') depth += 1;
+                if (content[cp] == ')') depth -= 1;
+            }
+            const call_args = content[open_paren..cp];
 
             for (st.fields.items) |fname| {
-                const ref_pattern = std.fmt.allocPrint(gpa, "&{s}", .{fname}) catch continue;
-                defer gpa.free(ref_pattern);
-                if (std.mem.indexOf(u8, ctx, ref_pattern) != null) {
+                if (std.mem.indexOf(u8, call_args, fname) != null) {
                     try parsed_fields.append(gpa, fname);
                 }
             }
-            search_pos = pvc_idx + 1;
+            search_pos = cp;
         }
 
         for (st.fields.items) |fname| {
@@ -110,6 +122,32 @@ pub fn check(
                 if (std.mem.eql(u8, pf, fname)) {
                     found = true;
                     break;
+                }
+            }
+            if (!found) {
+                // Check if the field is assigned elsewhere in the file (e.g. positional arg assignment)
+                var search_assign: usize = 0;
+                while (search_assign < content.len) {
+                    const assign_idx = std.mem.indexOfPos(u8, content, search_assign, fname) orelse break;
+                    const after = assign_idx + fname.len;
+                    if (after < content.len) {
+                        const trimmed = std.mem.trimStart(u8, content[after..], " \t");
+                        if (std.mem.startsWith(u8, trimmed, "=")) {
+                            // Verify it's not a const/var definition
+                            if (assign_idx > 0) {
+                                const before = content[0..assign_idx];
+                                const last_nl = std.mem.lastIndexOfScalar(u8, before, '\n') orelse 0;
+                                const line_before = std.mem.trim(u8, before[last_nl..], " \t");
+                                if (!std.mem.startsWith(u8, line_before, "const ") and
+                                    !std.mem.startsWith(u8, line_before, "var "))
+                                {
+                                    found = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    search_assign = after;
                 }
             }
             if (!found) {

@@ -11,93 +11,67 @@ pub fn check(
     if (std.mem.endsWith(u8, file_path, "future/python/constructors.zig")) return;
     if (std.mem.indexOf(u8, file_path, "/tests/") != null) return;
 
-    // Build a flat list of (node_index, line, token_text)
-    var nodes: std.ArrayList(struct {
-        node_idx: usize,
-        line: usize,
-        text: []const u8,
-    }) = .empty;
-    defer nodes.deinit(gpa);
+    var tok_idx: usize = 0;
+    while (tok_idx < ast.tokens.len) : (tok_idx += 1) {
+        const text = ast.tokenSlice(@intCast(tok_idx));
+        if (!std.mem.eql(u8, text, "fast_new_future")) continue;
 
-    var ni: usize = 0;
-    while (ni < ast.nodes.len) : (ni += 1) {
-        const mtok = ast.nodes.items(.main_token)[ni];
-        const loc = ast.tokenLocation(0, mtok);
-        try nodes.append(gpa, .{
-            .node_idx = ni,
-            .line = @intCast(loc.line),
-            .text = ast.tokenSlice(mtok),
-        });
-    }
-
-    // Scan for fast_new_future calls (not the function definition itself)
-    var scan: usize = 0;
-    while (scan < nodes.items.len) : (scan += 1) {
-        const node = nodes.items[scan];
-        if (!std.mem.eql(u8, node.text, "fast_new_future")) continue;
-
-        // Skip if this is part of a function definition
-        var prev: usize = if (scan > 15) scan - 15 else 0;
-        var is_def: bool = false;
-        while (prev < scan) : (prev += 1) {
-            if (std.mem.eql(u8, nodes.items[prev].text, "fn")) {
-                is_def = true;
+        // Skip if this is part of a function definition: fn fast_new_future(...)
+        var is_fn_def = false;
+        var bk: usize = if (tok_idx > 5) tok_idx - 5 else 0;
+        while (bk < tok_idx) : (bk += 1) {
+            if (std.mem.eql(u8, ast.tokenSlice(@intCast(bk)), "fn")) {
+                is_fn_def = true;
                 break;
             }
         }
-        if (is_def) continue;
+        if (is_fn_def) continue;
 
-        // Find the variable name from the preceding const/var declaration
+        // Find the variable name from the preceding const/var declaration: const fut = try fast_new_future
         var var_name: ?[]const u8 = null;
-        prev = if (scan > 8) scan - 8 else 0;
-        while (prev < scan) : (prev += 1) {
-            const t = nodes.items[prev].text;
+        bk = if (tok_idx > 10) tok_idx - 10 else 0;
+        while (bk < tok_idx) : (bk += 1) {
+            const t = ast.tokenSlice(@intCast(bk));
             if (std.mem.eql(u8, t, "const") or std.mem.eql(u8, t, "var")) {
-                var m: usize = prev + 1;
-                while (m < scan) : (m += 1) {
-                    const mt = nodes.items[m].text;
-                    if (mt.len > 0 and mt[0] != ' ' and mt[0] != '\n') {
-                        var_name = mt;
-                        break;
-                    }
+                if (bk + 1 < tok_idx and ast.tokens.items(.tag)[@intCast(bk + 1)] == .identifier) {
+                    var_name = ast.tokenSlice(@intCast(bk + 1));
                 }
                 break;
             }
         }
         if (var_name == null) continue;
 
-        // Look forward for errdefer py_decref(var_name)
-        var found: bool = false;
-        var ej: usize = scan + 1;
-        while (ej < nodes.items.len and ej < scan + 12) : (ej += 1) {
-            const en = nodes.items[ej];
-            if (std.mem.eql(u8, en.text, "errdefer")) {
-                var ek: usize = ej + 1;
-                while (ek < nodes.items.len and ek < ej + 15) : (ek += 1) {
-                    const et = nodes.items[ek].text;
-                    if (std.mem.eql(u8, et, ";")) break;
-                    if (std.mem.eql(u8, et, "py_decref")) {
-                        var em: usize = ek + 1;
-                        while (em < nodes.items.len and em < ek + 10) : (em += 1) {
-                            const mt2 = nodes.items[em].text;
-                            if (std.mem.eql(u8, mt2, ")")) break;
-                            if (std.mem.eql(u8, mt2, var_name.?)) {
-                                found = true;
-                                break;
-                            }
-                        }
-                        break;
+        // Look forward for errdefer ... py_decref (or release) on var_name
+        var found = false;
+        var fwd = tok_idx + 1;
+        const max_fwd = @min(ast.tokens.len, tok_idx + 40);
+        while (fwd < max_fwd) : (fwd += 1) {
+            const ft = ast.tokenSlice(@intCast(fwd));
+            if (std.mem.eql(u8, ft, "fn")) break; // hit another function
+            if (std.mem.eql(u8, ft, "errdefer")) {
+                const search_end = @min(ast.tokens.len, fwd + 20);
+                var has_decref = false;
+                var has_var = false;
+                var si = fwd + 1;
+                while (si < search_end) : (si += 1) {
+                    const st = ast.tokenSlice(@intCast(si));
+                    if (std.mem.eql(u8, st, ";")) break;
+                    if (std.mem.eql(u8, st, "py_decref") or std.mem.eql(u8, st, "release")) {
+                        has_decref = true;
+                    }
+                    if (std.mem.eql(u8, st, var_name.?)) {
+                        has_var = true;
                     }
                 }
-            }
-            // Stop at next top-level const/var declaration
-            if (std.mem.eql(u8, en.text, "const") or std.mem.eql(u8, en.text, "var")) {
-                break;
+                if (has_decref and has_var) {
+                    found = true;
+                    break;
+                }
             }
         }
 
         if (!found) {
-            const loc = ast.tokenLocation(0, ast.nodes.items(.main_token)[node.node_idx]);
+            const loc = ast.tokenLocation(0, @intCast(tok_idx));
             try diagnostics.append(gpa, .{
                 .file_path = file_path,
                 .line = loc.line + 1,
