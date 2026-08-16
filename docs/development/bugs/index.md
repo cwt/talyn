@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 228 |
-| Open | 5 |
+| Fixed | 229 |
+| Open | 4 |
 | False Positive | 13 |
 | **Total** | **246** |
 
@@ -281,5 +281,5 @@ Sorted by bug number. See individual bug files for details.
 | [243](243.md) | `loop.reserved_slots` counter permanent leak on DNS query registration and callback attachment | High | Open |
 | [244](244.md) | `PyErr_Occurred` check stripped in `create_endpoint` and `create_server` DNS timeout parsing causing Python `SystemError` | High | Open |
 | [245](245.md) | Float cast safety violation on `float("nan")` and `float("inf")` in `timeout_from_secs` and `create_connection` | Medium-High | Open |
-| [246](246.md) | Broken unit test in `streamserver/main.zig` crashes with optional null unwrap panic | Low | Open |
+| [246](246.md) | Broken unit test in `streamserver/main.zig` crashes with optional null unwrap panic | Low | Fixed |
 | [247](247.md) | Documentation link formatting and severity summary math desync in bug tracker | Low | Open |

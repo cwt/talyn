@@ -7,4 +7,5 @@ pub const Transports = @import("transports/main.zig");
 
 test {
     _ = Loop;
+    _ = Transports;
 }

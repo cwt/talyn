@@ -438,7 +438,9 @@ pub fn start_serving(server: *StreamServerObject) !void {
     // BUG-33: Clear the pause flag when (re)starting serving so a previously
     // paused server (e.g., from EMFILE/ENFILE) can resume accepting.
     server.accept_paused = false;
-    try enqueue_accept(server);
+    if (server.loop != null and !server.closed and server.server_fd >= 0) {
+        try enqueue_accept(server);
+    }
 }
 
 const testing = std.testing;
