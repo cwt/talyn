@@ -1,7 +1,7 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 242 bugs discovered across 16 audit passes."
+description: "Individual bug entries for talyn, one file per bug. 241 bugs discovered across 16 audit passes."
 timestamp: "2026-08-17T00:00:00Z"
 ---
 
@@ -27,10 +27,10 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 208 |
-| Open | 13 |
-| False Positive | 7 |
-| **Total** | **228** |
+| Fixed | 228 |
+| Open | 0 |
+| False Positive | 13 |
+| **Total** | **241** |
 
 ## All Bugs
 
