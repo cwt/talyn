@@ -11,9 +11,7 @@ const LoopObject = Loop.Python.LoopObject;
 
 const Scheduling = @import("scheduling.zig");
 
-inline fn z_loop_add_signal_handler(
-    self: *LoopObject, args: []?PyObject
-) !PyObject {
+inline fn z_loop_add_signal_handler(self: *LoopObject, args: []?PyObject) !PyObject {
     if (args.len < 2) {
         python_c.raise_python_value_error("Invalid number of arguments\x00");
         return error.PythonError;
@@ -28,7 +26,7 @@ inline fn z_loop_add_signal_handler(
 
     const sig = python_c.PyLong_AsLong(py_sig);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
-    if (sig < 0) {
+    if (sig <= 0 or sig > 64) {
         python_c.raise_python_value_error("Invalid signal\x00");
         return error.PythonError;
     }
@@ -37,8 +35,7 @@ inline fn z_loop_add_signal_handler(
     var py_callback: PyObject = undefined;
     var py_handle: *Handle.PythonHandleObject = undefined;
     {
-        context = python_c.PyContext_CopyCurrent()
-            orelse return error.PythonError;
+        context = python_c.PyContext_CopyCurrent() orelse return error.PythonError;
         errdefer python_c.py_decref(context);
 
         const allocator = loop_data.allocator;
@@ -59,9 +56,7 @@ inline fn z_loop_add_signal_handler(
             python_c.raise_python_runtime_error("Invalid callback\x00");
             return error.PythonError;
         }
-        py_handle = try Handle.fast_new_handle(
-            context, loop_data, py_callback, callback_info, false
-        );
+        py_handle = try Handle.fast_new_handle(context, loop_data, py_callback, callback_info, false);
     }
     errdefer python_c.py_decref(@ptrCast(py_handle));
 
@@ -82,24 +77,22 @@ inline fn z_loop_add_signal_handler(
     return python_c.get_py_none();
 }
 
-pub fn loop_add_signal_handler(
-    self: ?*LoopObject, args: ?[*]?PyObject, nargs: isize
-) callconv(.c) ?PyObject {
-    return utils.execute_zig_function(z_loop_add_signal_handler, .{
-        self.?, args.?[0..@as(usize, @intCast(nargs))]
-    });
+pub fn loop_add_signal_handler(self: ?*LoopObject, args: ?[*]?PyObject, nargs: isize) callconv(.c) ?PyObject {
+    return utils.execute_zig_function(z_loop_add_signal_handler, .{ self.?, args.?[0..@as(usize, @intCast(nargs))] });
 }
 
-pub fn loop_remove_signal_handler(
-    self: ?*LoopObject, py_sig: ?PyObject
-) callconv(.c) ?PyObject {
+pub fn loop_remove_signal_handler(self: ?*LoopObject, py_sig: ?PyObject) callconv(.c) ?PyObject {
     if (!python_c.long_check(py_sig.?)) {
         python_c.raise_python_type_error("Invalid signal\x00");
         return null;
     }
 
-    const sig = python_c.PyLong_AsUnsignedLong(py_sig.?);
+    const sig = python_c.PyLong_AsLong(py_sig.?);
     if (python_c.PyErr_Occurred() != null) return null;
+    if (sig <= 0 or sig > 64) {
+        python_c.raise_python_value_error("Invalid signal\x00");
+        return null;
+    }
 
     const loop_data = utils.get_data_ptr(Loop, self.?);
     const mutex = &loop_data.mutex;

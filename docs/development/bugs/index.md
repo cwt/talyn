@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 189 |
-| Open | 1 |
+| Fixed | 190 |
+| Open | 0 |
 | False Positive | 3 |
 | **Total** | **193** |
 
@@ -229,4 +229,4 @@ Sorted by bug number. See individual bug files for details.
 | [191](191.md) | Use-after-free / double-release hazard in LRUCache.pop_tail with eviction callback | Medium | Fixed |
 | [192](192.md) | Nested GC traversal bug in DNS resolver ControlData.traverse skipping callback_ptr | Medium | Fixed |
 | [193](193.md) | Missing tp_clear on GC heap types HookHandleType and PathWatcherHandleType | Medium | Fixed |
-| [194](194.md) | Unsafe @enumFromInt on unchecked signal integers causing enum cast panics | Medium | Open |
+| [194](194.md) | Unsafe @enumFromInt on unchecked signal integers causing enum cast panics | Medium | Fixed |
