@@ -240,16 +240,12 @@ fn remote_addr_resolved_callback(data: *const CallbackManager.CallbackData) !voi
     try Loop.Scheduling.Soon.dispatch(loop_data, &callback);
 }
 
-fn create_endpoint(data: *const CallbackManager.CallbackData) !void {
-    const dcd: *DatagramCreationData = @ptrCast(@alignCast(data.user_data.?));
-    defer dcd.deinit();
-    if (data.cancelled()) return;
-
+fn z_create_endpoint(dcd: *DatagramCreationData) !void {
     // Pick family
     var family: u32 = std.posix.AF.INET;
     if (dcd.py_family) |f| {
         const f_val = python_c.PyLong_AsLong(f);
-        if (python_c.PyErr_Occurred() != null) return;
+        if (python_c.PyErr_Occurred() != null) return error.PythonError;
         family = @intCast(f_val);
     } else if (dcd.remote_addresses) |addrs| {
         family = addrs[0].any.family;
@@ -290,7 +286,7 @@ fn create_endpoint(data: *const CallbackManager.CallbackData) !void {
                 break;
             }
         }
-        if (!bound) return set_future_exception(error.SystemResources, dcd.future);
+        if (!bound) return error.SystemResources;
     }
 
     if (dcd.remote_addresses) |addrs| {
@@ -304,31 +300,37 @@ fn create_endpoint(data: *const CallbackManager.CallbackData) !void {
                 break;
             }
         }
-        if (!connected) return set_future_exception(error.SystemResources, dcd.future);
+        if (!connected) return error.SystemResources;
     }
 
     const protocol = python_c.PyObject_CallNoArgs(dcd.protocol_factory) orelse return error.PythonError;
-    errdefer python_c.py_decref(protocol);
+    defer python_c.py_decref(protocol);
 
     const transport = try DatagramTransport.Constructors.new_datagram_transport(protocol, dcd.loop, fd);
     owns_fd = false;
-    errdefer python_c.py_decref(@ptrCast(transport));
+    defer python_c.py_decref(@ptrCast(transport));
 
     const connection_made = python_c.PyObject_GetAttrString(protocol, "connection_made\x00") orelse return error.PythonError;
     defer python_c.py_decref(connection_made);
     const ret = python_c.PyObject_CallOneArg(connection_made, @ptrCast(transport)) orelse return error.PythonError;
-    python_c.py_decref(ret);
+    defer python_c.py_decref(ret);
 
     try DatagramTransport.ReadTransport.queue_read(transport);
     const result_tuple = python_c.PyTuple_Pack(2, @as(PyObject, @ptrCast(transport)), protocol) orelse return error.PythonError;
     defer python_c.py_decref(result_tuple);
 
-    // Decref local references as PyTuple_Pack increments them
-    python_c.py_decref(@ptrCast(transport));
-    python_c.py_decref(protocol);
-
     const future_data = utils.get_data_ptr(Future, dcd.future);
     try Future.Python.Result.future_fast_set_result(future_data, result_tuple);
+}
+
+fn create_endpoint(data: *const CallbackManager.CallbackData) !void {
+    const dcd: *DatagramCreationData = @ptrCast(@alignCast(data.user_data.?));
+    defer dcd.deinit();
+    if (data.cancelled()) return;
+
+    z_create_endpoint(dcd) catch |err| {
+        return set_future_exception(err, dcd.future);
+    };
 }
 
 pub fn loop_create_datagram_endpoint(self: ?*LoopObject, args: ?[*]?PyObject, nargs: isize, knames: ?PyObject) callconv(.c) ?*FutureObject {
