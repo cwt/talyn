@@ -2,6 +2,17 @@
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
 
+## [2026-08-16] — Codebase Audit Round 14 (BUG-195 through BUG-199)
+
+A targeted codebase audit across the future state machine, task coroutine execution, subprocess transports, and datagram transports identified 5 new bugs and safety issues:
+
+- Logged **BUG-195** (High): `remove_done_callback` recounts already-cancelled or executed callbacks on repeat calls (`src/future/callback.zig`).
+- Logged **BUG-196** (High): `SubprocessTransport` protocol callback failure leaks `pidfd` descriptor and `PyObject` reference (`src/transports/subprocess/transport.zig`).
+- Logged **BUG-197** (High): Coroutine throw error paths bypass `_leave_task` leaving corrupted `asyncio.current_task` state (`src/task/callbacks.zig`).
+- Logged **BUG-198** (Medium): `execute_task_send` leaks `PythonTaskObject` reference if `future_fast_set_exception` errors (`src/task/callbacks.zig`).
+- Logged **BUG-199** (Medium): Unchecked `getsockname` syscall return in `DatagramTransport.z_datagram_sendto` reads uninitialized memory (`src/transports/datagram/write.zig`).
+- Updated `docs/development/bugs/index.md` summary counts (Total: 198 bugs; 190 Fixed, 5 Open, 3 False Positive).
+
 ## [2026-08-16] — Codebase Audit Round 13 (BUG-177 through BUG-194)
 
 A comprehensive codebase audit across all subsystems (`src/`, `talyn/`, C-API bindings, transports, socket operations, DNS subsystem, subprocess, scheduling, memory lifecycle, and GC traversal) identified 18 new bugs:

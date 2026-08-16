@@ -1,8 +1,8 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 193 bugs discovered across 13 audit passes."
-timestamp: "2026-08-16T03:25:00Z"
+description: "Individual bug entries for talyn, one file per bug. 198 bugs discovered across 14 audit passes."
+timestamp: "2026-08-16T04:30:00Z"
 ---
 
 # Bugs — talyn
@@ -15,23 +15,23 @@ Sorted by bug number. See individual bug files for details.
 
 | Severity | Count |
 |---|---:|
-| High | 58 |
+| High | 61 |
 | Low | 38 |
 | Critical | 30 |
-| Medium | 25 |
+| Medium | 27 |
 | Medium-High | 17 |
 | Medium-Low | 14 |
 | Medium-Mid | 11 |
-| **Total** | **193** |
+| **Total** | **198** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
 | Fixed | 190 |
-| Open | 0 |
+| Open | 5 |
 | False Positive | 3 |
-| **Total** | **193** |
+| **Total** | **198** |
 
 ## All Bugs
 
@@ -230,3 +230,8 @@ Sorted by bug number. See individual bug files for details.
 | [192](192.md) | Nested GC traversal bug in DNS resolver ControlData.traverse skipping callback_ptr | Medium | Fixed |
 | [193](193.md) | Missing tp_clear on GC heap types HookHandleType and PathWatcherHandleType | Medium | Fixed |
 | [194](194.md) | Unsafe @enumFromInt on unchecked signal integers causing enum cast panics | Medium | Fixed |
+| [195](195.md) | `remove_done_callback` recounts already-cancelled or executed callbacks on repeat calls | High | Open |
+| [196](196.md) | `SubprocessTransport` protocol callback failure leaks pidfd descriptor and PyObject reference | High | Open |
+| [197](197.md) | Coroutine throw error paths bypass `_leave_task` leaving corrupted `asyncio.current_task` state | High | Open |
+| [198](198.md) | `execute_task_send` leaks `PythonTaskObject` reference if `future_fast_set_exception` errors | Medium | Open |
+| [199](199.md) | Unchecked `getsockname` syscall return in `DatagramTransport.z_datagram_sendto` reads uninitialized memory | Medium | Open |
