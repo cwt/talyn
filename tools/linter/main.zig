@@ -10,6 +10,9 @@ const no_bare_switch_else = @import("rules/no_bare_switch_else.zig");
 const syscall_safety = @import("rules/syscall_safety.zig");
 const no_spinlock_yield = @import("rules/no_spinlock_yield.zig");
 const gc_type_clear = @import("rules/gc_type_clear.zig");
+const missing_errdefer_after_future = @import("rules/missing_errdefer_after_future.zig");
+const missing_tp_alloc_pyobject_init = @import("rules/missing_tp_alloc_pyobject_init.zig");
+const unparsed_pyobject_kwarg = @import("rules/unparsed_pyobject_kwarg.zig");
 
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
@@ -68,6 +71,9 @@ pub fn main(init: std.process.Init) !void {
             try syscall_safety.check(&ast, full_path, arena, &diagnostics);
             try no_spinlock_yield.check(&ast, full_path, arena, &diagnostics);
             try gc_type_clear.check(&ast, full_path, arena, &diagnostics);
+            try missing_errdefer_after_future.check(&ast, full_path, arena, &diagnostics);
+            try missing_tp_alloc_pyobject_init.check(&ast, full_path, arena, &diagnostics);
+            try unparsed_pyobject_kwarg.check(&ast, full_path, arena, &diagnostics);
         }
     } else |err| {
         try w.print("Failed to open 'src' directory: {t}\n", .{err});
