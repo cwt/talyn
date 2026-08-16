@@ -80,6 +80,51 @@ pub fn main(init: std.process.Init) !void {
         try w.flush();
     }
 
+    // Also scan the linter's own source to practice what it preaches
+    if (std.Io.Dir.cwd().openDir(io, "tools/linter", .{ .iterate = true })) |linter_dir_val| {
+        var linter_dir = linter_dir_val;
+        defer linter_dir.close(io);
+
+        var walker = try linter_dir.walk(gpa);
+        defer walker.deinit();
+
+        while (try walker.next(io)) |entry| {
+            if (entry.kind != .file) continue;
+            if (!std.mem.endsWith(u8, entry.path, ".zig")) continue;
+
+            total_zig_files += 1;
+
+            const full_path = try std.fmt.allocPrint(arena, "tools/linter/{s}", .{entry.path});
+
+            const content = try linter_dir.readFileAlloc(io, entry.path, gpa, .limited(10 * 1024 * 1024));
+            defer gpa.free(content);
+
+            const null_terminated = try gpa.allocSentinel(u8, content.len, 0);
+            defer gpa.free(null_terminated);
+            @memcpy(null_terminated, content);
+
+            var ast = try std.zig.Ast.parse(gpa, null_terminated, .zig);
+            defer ast.deinit(gpa);
+
+            total_ast_nodes += ast.nodes.len;
+
+            try no_cimport.check(&ast, full_path, arena, &diagnostics);
+            try no_panic_in_io.check(&ast, full_path, arena, &diagnostics);
+            try no_empty_catch.check(&ast, full_path, arena, &diagnostics);
+            try unmanaged_containers.check(&ast, full_path, arena, &diagnostics);
+            try no_bare_switch_else.check(&ast, full_path, arena, &diagnostics);
+            try syscall_safety.check(&ast, full_path, arena, &diagnostics);
+            try no_spinlock_yield.check(&ast, full_path, arena, &diagnostics);
+            try gc_type_clear.check(&ast, full_path, arena, &diagnostics);
+            try missing_errdefer_after_future.check(&ast, full_path, arena, &diagnostics);
+            try missing_tp_alloc_pyobject_init.check(&ast, full_path, arena, &diagnostics);
+            try unparsed_pyobject_kwarg.check(&ast, full_path, arena, &diagnostics);
+        }
+    } else |err| {
+        try w.print("Failed to open 'tools/linter' directory: {t}\n", .{err});
+        try w.flush();
+    }
+
     // Print Zig AST diagnostics
     for (diagnostics.items) |diag| {
         try diag.print(io, gpa);

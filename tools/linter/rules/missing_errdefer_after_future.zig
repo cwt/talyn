@@ -18,8 +18,6 @@ pub fn check(
         text: []const u8,
     }) = .empty;
     defer nodes.deinit(gpa);
-    _ = nodes.appendNTimes(gpa, .{ .node_idx = 0, .line = 0, .text = "" }, ast.nodes.len) catch {};
-    nodes.items.len = 0;
 
     var ni: usize = 0;
     while (ni < ast.nodes.len) : (ni += 1) {

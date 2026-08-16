@@ -20,40 +20,42 @@ pub fn check(
         const tag = ast.nodes.items(.tag)[i];
         const main_token = ast.nodes.items(.main_token)[i];
 
-        switch (tag) {
-            .builtin_call_two, .builtin_call, .builtin_call_comma => {
-                const token_bytes = ast.tokenSlice(main_token);
-                if (std.mem.eql(u8, token_bytes, "@panic")) {
-                    const loc = ast.tokenLocation(0, main_token);
-                    try diagnostics.append(gpa, .{
-                        .file_path = file_path,
-                        .line = loc.line + 1,
-                        .column = loc.column + 1,
-                        .rule_id = "TALYN-002/NO_PANIC_IN_IO",
-                        .bug_ref = "Mandate 1, BUG-105, BUG-188",
-                        .message = "Use of '@panic' inside loop or transport IO execution path.",
-                        .risk = "Unconditionally crashes the Python process instead of cleanly raising an asyncio exception.",
-                        .fix = "Convert Zig errors via 'utils.handle_zig_function_error' or return error unions.",
-                    });
-                }
-            },
-            .call, .call_one, .call_one_comma, .call_comma => {
-                const token_bytes = ast.tokenSlice(main_token);
-                if (std.mem.eql(u8, token_bytes, "panic")) {
-                    const loc = ast.tokenLocation(0, main_token);
-                    try diagnostics.append(gpa, .{
-                        .file_path = file_path,
-                        .line = loc.line + 1,
-                        .column = loc.column + 1,
-                        .rule_id = "TALYN-002/NO_PANIC_IN_IO",
-                        .bug_ref = "Mandate 1, BUG-105, BUG-188",
-                        .message = "Call to panic function inside IO path.",
-                        .risk = "Terminates the host runtime without propagating error state to Python asyncio callers.",
-                        .fix = "Propagate errors with 'try' or handle gracefully with error reporting.",
-                    });
-                }
-            },
-            else => {},
+        // Check builtin_call nodes for @panic
+        const is_builtin_call = tag == .builtin_call_two or tag == .builtin_call or tag == .builtin_call_comma;
+        if (is_builtin_call) {
+            const token_bytes = ast.tokenSlice(main_token);
+            if (std.mem.eql(u8, token_bytes, "@panic")) {
+                const loc = ast.tokenLocation(0, main_token);
+                try diagnostics.append(gpa, .{
+                    .file_path = file_path,
+                    .line = loc.line + 1,
+                    .column = loc.column + 1,
+                    .rule_id = "TALYN-002/NO_PANIC_IN_IO",
+                    .bug_ref = "Mandate 1, BUG-105, BUG-188",
+                    .message = "Use of '@panic' inside loop or transport IO execution path.",
+                    .risk = "Unconditionally crashes the Python process instead of cleanly raising an asyncio exception.",
+                    .fix = "Convert Zig errors via 'utils.handle_zig_function_error' or return error unions.",
+                });
+            }
+        }
+
+        // Check call nodes for panic function invocation
+        const is_call = tag == .call or tag == .call_one or tag == .call_one_comma or tag == .call_comma;
+        if (is_call) {
+            const token_bytes = ast.tokenSlice(main_token);
+            if (std.mem.eql(u8, token_bytes, "panic")) {
+                const loc = ast.tokenLocation(0, main_token);
+                try diagnostics.append(gpa, .{
+                    .file_path = file_path,
+                    .line = loc.line + 1,
+                    .column = loc.column + 1,
+                    .rule_id = "TALYN-002/NO_PANIC_IN_IO",
+                    .bug_ref = "Mandate 1, BUG-105, BUG-188",
+                    .message = "Call to panic function inside IO path.",
+                    .risk = "Terminates the host runtime without propagating error state to Python asyncio callers.",
+                    .fix = "Propagate errors with 'try' or handle gracefully with error reporting.",
+                });
+            }
         }
     }
 }

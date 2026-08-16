@@ -14,24 +14,23 @@ pub fn check(
         const tag = ast.nodes.items(.tag)[i];
         const main_token = ast.nodes.items(.main_token)[i];
 
-        switch (tag) {
-            .builtin_call_two, .builtin_call, .builtin_call_comma => {
-                const token_bytes = ast.tokenSlice(main_token);
-                if (std.mem.eql(u8, token_bytes, "@cImport")) {
-                    const loc = ast.tokenLocation(0, main_token);
-                    try diagnostics.append(gpa, .{
-                        .file_path = file_path,
-                        .line = loc.line + 1,
-                        .column = loc.column + 1,
-                        .rule_id = "TALYN-001/NO_CIMPORT",
-                        .bug_ref = "BUG-123, Mandate: Pure Zig",
-                        .message = "Use of '@cImport' builtin is prohibited in source modules.",
-                        .risk = "Causes build friction and C ABI incompatibility across cross-compilation targets.",
-                        .fix = "Use 'addTranslateC' in build.zig or declare inline extern functions.",
-                    });
-                }
-            },
-            else => {},
+        // Only check builtin_call nodes that invoke @cImport
+        const is_builtin_call = tag == .builtin_call_two or tag == .builtin_call or tag == .builtin_call_comma;
+        if (!is_builtin_call) continue;
+
+        const token_bytes = ast.tokenSlice(main_token);
+        if (std.mem.eql(u8, token_bytes, "@cImport")) {
+            const loc = ast.tokenLocation(0, main_token);
+            try diagnostics.append(gpa, .{
+                .file_path = file_path,
+                .line = loc.line + 1,
+                .column = loc.column + 1,
+                .rule_id = "TALYN-001/NO_CIMPORT",
+                .bug_ref = "BUG-123, Mandate: Pure Zig",
+                .message = "Use of '@cImport' builtin is prohibited in source modules.",
+                .risk = "Causes build friction and C ABI incompatibility across cross-compilation targets.",
+                .fix = "Use 'addTranslateC' in build.zig or declare inline extern functions.",
+            });
         }
     }
 }
