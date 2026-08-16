@@ -1,8 +1,8 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 239 bugs discovered across 15 audit passes."
-timestamp: "2026-08-16T19:45:00Z"
+description: "Individual bug entries for talyn, one file per bug. 242 bugs discovered across 16 audit passes."
+timestamp: "2026-08-17T00:00:00Z"
 ---
 
 # Bugs — talyn
@@ -15,25 +15,22 @@ Sorted by bug number. See individual bug files for details.
 
 | Severity | Count |
 |---|---:|
-| High | 62 |
-| Low | 41 |
 | Critical | 30 |
-| High | 65 |
-| Medium-High | 20 |
-| Medium | 30 |
+| High | 67 |
+| Medium-High | 22 |
+| Medium | 33 |
 | Medium-Low | 15 |
-| Medium-Mid | 11 |
-| Low | 44 |
-| **Total** | **215** |
+| Low | 45 |
+| **Total** | **228** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
-| Fixed | 201 |
-| Open | 13 |
-| False Positive | 3 |
-| **Total** | **217** |
+| Fixed | 205 |
+| Open | 16 |
+| False Positive | 7 |
+| **Total** | **228** |
 
 ## All Bugs
 
@@ -264,16 +261,19 @@ Sorted by bug number. See individual bug files for details.
 | [224](224.md) | Unused legacy `SockRecvIntoData` and `sock_recv_into_callback` dead code in socket operations | Low | Fixed |
 | [225](225.md) | Abandoned skeleton transport modules and empty utility files | Low | Fixed |
 | [226](226.md) | Unchecked `u64` to `usize` integer cast on `ready_tasks_queue_capacity` risking overflow on 32-bit platforms | Low | Fixed |
-| [227](227.md) | ReadTransport `cleanup_resources_callback` double-decref risk on completion path | High | Open |
-| [228](228.md) | WriteTransport parent_transport refcount imbalance across completion paths | Medium-High | Open |
-| [229](229.md) | `interleave_address_list` else-branch missing bounds check on `ipv4_index` | Medium-High | Open |
-| [230](230.md) | `ControlData.traverse` skips GC-visible `record` and `queries_data` PyObject fields | Medium | Open |
-| [231](231.md) | `timeout_from_secs` produces wrapped-around values for negative input | Medium | Open |
-| [232](232.md) | `pidfd_exit_callback` accesses uninitialized `siginfo_t` on non-EINTR `waitid` error | Medium-High | Open |
-| [233](233.md) | Datagram `close()` and `dealloc` duplicate resource cleanup and fd close | Medium-Low | Open |
-| [234](234.md) | Dead code: trivially true unit test in `streamserver/main.zig` | Low | Open |
-| [235](235.md) | `dispatch_completion_batch` silently drops remaining records on Python error | Medium-High | Open |
-| [236](236.md) | `set_future_exception` leaves dangling Python exception on OOM path | Medium | Open |
-| [237](237.md) | Uninitialized `last_err` before loop in `z_create_server_socket` is fragile | Medium-Low | Open |
-| [238](238.md) | `StreamTransportObject.fixed_file_index` not initialized in `z_stream_new` | Low | Open |
-| [239](239.md) | `ServerQueryData.release` lacks atomic guard against concurrent cancel+release | Medium | Open |
+| [227](0227.md) | ReadTransport `cleanup_resources_callback` double-decref risk on completion path | High | False Positive |
+| [228](0228.md) | WriteTransport parent_transport refcount imbalance across completion paths | Medium-High | False Positive |
+| [229](0229.md) | `interleave_address_list` else-branch missing bounds check on `ipv4_index` | Medium-High | Fixed |
+| [230](0230.md) | `ControlData.traverse` skips GC-visible `record` and `queries_data` PyObject fields | Medium | False Positive |
+| [231](0231.md) | `timeout_from_secs` produces wrapped-around values for negative input | Medium | Fixed |
+| [232](0232.md) | `pidfd_exit_callback` accesses uninitialized `siginfo_t` on non-EINTR `waitid` error | Medium-High | Fixed |
+| [233](0233.md) | Datagram `close()` and `dealloc` duplicate resource cleanup and fd close | Medium-Low | False Positive |
+| [234](0234.md) | Dead code: trivially true unit test in `streamserver/main.zig` | Low | Open |
+| [235](0235.md) | `dispatch_completion_batch` silently drops remaining records on Python error | Medium-High | False Positive |
+| [236](0236.md) | `set_future_exception` leaves dangling Python exception on OOM path | Medium | False Positive |
+| [237](0237.md) | Uninitialized `last_err` before loop in `z_create_server_socket` is fragile | Medium-Low | False Positive |
+| [238](0238.md) | `StreamTransportObject.fixed_file_index` not initialized in `z_stream_new` | Low | Fixed |
+| [239](0239.md) | `ServerQueryData.release` lacks atomic guard against concurrent cancel+release | Medium | False Positive |
+| [240](0240.md) | `reserved_slots` underflow in DNS `ControlData.release` and `mark_resolved_and_execute_user_callbacks` | High | Fixed |
+| [241](0241.md) | `PyFloat_AsDouble` NaN/Inf silently accepted in happy eyeballs delay parsing | Medium-High | Open |
+| [242](0242.md) | `PyFloat_AsDouble` NaN/Inf silently accepted in DNS timeout parsing (7 call sites) | Medium | Open |

@@ -166,13 +166,9 @@ pub const ControlData = struct {
             for (self.user_callbacks.items) |*v| {
                 v.data.set_cancelled(true);
                 if (!loop.initialized) {
-                    Loop.Scheduling.Soon.dispatch_guaranteed_nonthreadsafe(loop, v) catch {
-                        loop.reserved_slots -= 1;
-                    };
+                    Loop.Scheduling.Soon.dispatch_nonthreadsafe(loop, v) catch |err| std.log.warn("dispatch cancelled DNS callback failed: {s}", .{@errorName(err)});
                 } else {
-                    Loop.Scheduling.Soon.dispatch_guaranteed(loop, v) catch {
-                        loop.reserved_slots -= 1;
-                    };
+                    Loop.Scheduling.Soon.dispatch(loop, v) catch |err| std.log.warn("dispatch cancelled DNS callback failed: {s}", .{@errorName(err)});
                 }
             }
         }
@@ -225,7 +221,7 @@ fn mark_resolved_and_execute_user_callbacks(server_data: *ServerQueryData) !void
 
     const loop = control_data.loop;
     for (control_data.user_callbacks.items) |*v| {
-        try Loop.Scheduling.Soon.dispatch_guaranteed(loop, v);
+        try Loop.Scheduling.Soon.dispatch(loop, v);
     }
 }
 
