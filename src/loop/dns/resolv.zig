@@ -21,7 +21,8 @@ pub const DnsTimeout = struct {
     nsec: u32 = 0,
 };
 
-pub fn timeout_from_secs(timeout_secs: f64) DnsTimeout {
+pub fn timeout_from_secs(timeout_secs: f64) ?DnsTimeout {
+    if (timeout_secs < 0.0) return null;
     const sec: i64 = @floor(timeout_secs);
     const frac = timeout_secs - @as(f64, @floatFromInt(sec));
     const nsec: i64 = @floor(frac * 1e9);

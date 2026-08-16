@@ -133,7 +133,8 @@ fn resolve_local_addr(data: *const CallbackManager.CallbackData) !void {
         const dns_timeout = blk: {
             if (dcd.py_dns_timeout) |py_timeout| {
                 const timeout_val = python_c.PyFloat_AsDouble(py_timeout);
-                const result: ?Resolv.DnsTimeout = if (timeout_val == -1.0 and python_c.PyErr_Occurred() != null) null else Resolv.timeout_from_secs(timeout_val);
+                if (timeout_val == -1.0 and python_c.PyErr_Occurred() != null) return error.PythonError;
+                const result = Resolv.timeout_from_secs(timeout_val);
                 break :blk result;
             } else break :blk null;
         };
@@ -160,7 +161,8 @@ fn local_addr_resolved_callback(data: *const CallbackManager.CallbackData) !void
     const dns_timeout = blk: {
         if (dcd.py_dns_timeout) |p| {
             const timeout_val = python_c.PyFloat_AsDouble(p);
-            const result: ?Resolv.DnsTimeout = if (timeout_val == -1.0 and python_c.PyErr_Occurred() != null) null else Resolv.timeout_from_secs(timeout_val);
+            if (timeout_val == -1.0 and python_c.PyErr_Occurred() != null) return error.PythonError;
+            const result = Resolv.timeout_from_secs(timeout_val);
             break :blk result;
         } else break :blk null;
     };
@@ -184,7 +186,8 @@ fn resolve_remote_addr(data: *const CallbackManager.CallbackData) !void {
     const dns_timeout = blk: {
         if (dcd.py_dns_timeout) |p| {
             const timeout_val = python_c.PyFloat_AsDouble(p);
-            const result: ?Resolv.DnsTimeout = if (timeout_val == -1.0 and python_c.PyErr_Occurred() != null) null else Resolv.timeout_from_secs(timeout_val);
+            if (timeout_val == -1.0 and python_c.PyErr_Occurred() != null) return error.PythonError;
+            const result = Resolv.timeout_from_secs(timeout_val);
             break :blk result;
         } else break :blk null;
     };
@@ -217,7 +220,8 @@ fn remote_addr_resolved_callback(data: *const CallbackManager.CallbackData) !voi
     const dns_timeout = blk: {
         if (dcd.py_dns_timeout) |p| {
             const timeout_val = python_c.PyFloat_AsDouble(p);
-            const result: ?Resolv.DnsTimeout = if (timeout_val == -1.0 and python_c.PyErr_Occurred() != null) null else Resolv.timeout_from_secs(timeout_val);
+            if (timeout_val == -1.0 and python_c.PyErr_Occurred() != null) return error.PythonError;
+            const result = Resolv.timeout_from_secs(timeout_val);
             break :blk result;
         } else break :blk null;
     };
