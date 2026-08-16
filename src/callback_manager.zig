@@ -464,6 +464,12 @@ pub fn execute_ring_buffer(comptime N: usize, ring: *RingBuffer(N), comptime exc
 
         callback.func(&callback.data) catch |err| {
             defer {
+                if (debug) {
+                    if (mod) |m| {
+                        python_c.py_decref(m);
+                        if (cb) |c| python_c.py_decref(c);
+                    }
+                }
                 if (callback.cleanup) |cleanup| {
                     cleanup(callback.data.user_data);
                 }
@@ -552,6 +558,12 @@ pub fn execute_dynamic_ring_buffer(ring: *DynamicRingBuffer, comptime exception_
 
         callback.func(&callback.data) catch |err| {
             defer {
+                if (debug) {
+                    if (mod) |m| {
+                        python_c.py_decref(m);
+                        if (cb) |c| python_c.py_decref(c);
+                    }
+                }
                 if (callback.cleanup) |cleanup| {
                     cleanup(callback.data.user_data);
                 }

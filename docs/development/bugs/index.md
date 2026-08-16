@@ -252,7 +252,7 @@ Sorted by bug number. See individual bug files for details.
 | [214](214.md) | Invalid pointer comparison and redundant UTF-8 decode in `z_loop_add_path_watcher` | Medium | Fixed |
 | [215](215.md) | Context argument dropped in `Runner.run` | Low | Fixed |
 | [216](216.md) | Premature `continue` in `fetch_completed_tasks` on null stream protocol causes permanent `reserved_slots` desync and `blocking_task` allocation leak | Critical | Fixed |
-| [217](217.md) | Refcount leak of `mod` and `cb` on callback error in debug mode in `CallbackManager` | Medium | Open |
+| [217](217.md) | Refcount leak of `mod` and `cb` on callback error in debug mode in `CallbackManager` | Medium | Fixed |
 | [218](218.md) | Nested GC traversal bug skipping `callback_ptr` when `module_ptr` is null in `traverse_hooks` | Medium | Open |
 | [219](219.md) | Nested GC traversal bug skipping `callback_ptr` when `module_ptr` is null in `BlockingTasksSet.traverse` | Medium | Open |
 | [220](220.md) | Resource and reference count leak on synchronous cache return error in `z_loop_getaddrinfo` | Medium | Open |
