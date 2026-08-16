@@ -19,8 +19,8 @@ const WriteTransport = @import("../write_transport.zig");
 const ReadTransport = @import("../read_transport.zig");
 
 inline fn check_protocol_compatibility(protocol: PyObject, protocol_type: *Stream.ProtocolType) bool {
-    const compatible_protocols = .{"asyncio_protocol", "asyncio_buffered_protocol"};
-    const protocol_types = .{Stream.ProtocolType.Legacy, Stream.ProtocolType.Buffered};
+    const compatible_protocols = .{ "asyncio_protocol", "asyncio_buffered_protocol" };
+    const protocol_types = .{ Stream.ProtocolType.Legacy, Stream.ProtocolType.Buffered };
     inline for (compatible_protocols, protocol_types) |name, @"type"| {
         switch (python_c.PyObject_IsInstance(protocol, utils.PythonImports.get(name))) {
             1 => {
@@ -78,12 +78,10 @@ pub fn set_protocol(self: *StreamTransportObject, protocol: PyObject) !Stream.Pr
 
     switch (protocol_type) {
         .Buffered => {
-            const get_buffer_func = python_c.PyObject_GetAttrString(protocol, "get_buffer\x00")
-                orelse return error.PythonError;
+            const get_buffer_func = python_c.PyObject_GetAttrString(protocol, "get_buffer\x00") orelse return error.PythonError;
             errdefer python_c.py_decref(get_buffer_func);
 
-            const buffer_updated_func = python_c.PyObject_GetAttrString(protocol, "buffer_updated\x00")
-                orelse return error.PythonError;
+            const buffer_updated_func = python_c.PyObject_GetAttrString(protocol, "buffer_updated\x00") orelse return error.PythonError;
             errdefer python_c.py_decref(buffer_updated_func);
 
             self.protocol_buffer_updated = buffer_updated_func;
@@ -91,13 +89,12 @@ pub fn set_protocol(self: *StreamTransportObject, protocol: PyObject) !Stream.Pr
             self.protocol_data_received = null;
         },
         .Legacy => {
-            const data_received_func = python_c.PyObject_GetAttrString(protocol, "data_received\x00")
-                orelse return error.PythonError;
+            const data_received_func = python_c.PyObject_GetAttrString(protocol, "data_received\x00") orelse return error.PythonError;
 
             self.protocol_data_received = data_received_func;
             self.protocol_buffer_updated = null;
             self.protocol_get_buffer = null;
-        }
+        },
     }
     errdefer {
         python_c.py_xdecref(self.protocol_get_buffer);
@@ -105,20 +102,16 @@ pub fn set_protocol(self: *StreamTransportObject, protocol: PyObject) !Stream.Pr
         python_c.py_xdecref(self.protocol_data_received);
     }
 
-    self.protocol_eof_received = python_c.PyObject_GetAttrString(protocol, "eof_received\x00")
-        orelse return error.PythonError;
+    self.protocol_eof_received = python_c.PyObject_GetAttrString(protocol, "eof_received\x00") orelse return error.PythonError;
     errdefer python_c.py_decref(self.protocol_eof_received.?);
 
-    self.protocol_connection_lost = python_c.PyObject_GetAttrString(protocol, "connection_lost\x00")
-        orelse return error.PythonError;
+    self.protocol_connection_lost = python_c.PyObject_GetAttrString(protocol, "connection_lost\x00") orelse return error.PythonError;
     errdefer python_c.py_decref(self.protocol_connection_lost.?);
 
-    self.protocol_pause_writing = python_c.PyObject_GetAttrString(protocol, "pause_writing\x00")
-        orelse return error.PythonError;
+    self.protocol_pause_writing = python_c.PyObject_GetAttrString(protocol, "pause_writing\x00") orelse return error.PythonError;
     errdefer python_c.py_decref(self.protocol_pause_writing.?);
 
-    self.protocol_resume_writing = python_c.PyObject_GetAttrString(protocol, "resume_writing\x00")
-        orelse return error.PythonError;
+    self.protocol_resume_writing = python_c.PyObject_GetAttrString(protocol, "resume_writing\x00") orelse return error.PythonError;
     errdefer python_c.py_decref(self.protocol_resume_writing.?);
 
     python_c.py_xdecref(previous_protocol);
@@ -133,15 +126,11 @@ pub fn set_protocol(self: *StreamTransportObject, protocol: PyObject) !Stream.Pr
     return protocol_type;
 }
 
-fn stream_init_configuration(
-    self: *StreamTransportObject, protocol: PyObject, loop: *LoopObject,
-    fd: std.posix.fd_t, zero_copying: bool
-) !void {
+fn stream_init_configuration(self: *StreamTransportObject, protocol: PyObject, loop: *LoopObject, fd: std.posix.fd_t, zero_copying: bool) !void {
     self.loop = @ptrCast(python_c.py_newref(loop));
     errdefer python_c.py_decref_and_set_null(&self.loop);
 
-    self.protocol_max_read_constant = python_c.PyLong_FromUnsignedLongLong(ReadTransport.MAX_READ)
-        orelse return error.PythonError;
+    self.protocol_max_read_constant = python_c.PyLong_FromUnsignedLongLong(ReadTransport.MAX_READ) orelse return error.PythonError;
     errdefer python_c.py_decref_and_set_null(&self.protocol_max_read_constant);
 
     const loop_data = utils.get_data_ptr(Loop, loop);
@@ -152,19 +141,11 @@ fn stream_init_configuration(
     };
 
     const write_transport_data = utils.get_data_ptr2(WriteTransport, "write_transport", self);
-    try write_transport_data.init(
-        loop_data, fd, &Write.write_operation_completed, @ptrCast(self),
-        exception_handler, &Lifecyle.connection_lost_callback,
-        zero_copying
-    );
+    try write_transport_data.init(loop_data, fd, &Write.write_operation_completed, @ptrCast(self), exception_handler, &Lifecyle.connection_lost_callback, zero_copying);
     errdefer write_transport_data.deinit();
 
     const read_transport_data = utils.get_data_ptr2(ReadTransport, "read_transport", self);
-    try read_transport_data.init(
-        loop_data, fd, &Read.read_operation_completed, @ptrCast(self),
-        exception_handler, &Lifecyle.connection_lost_callback,
-        zero_copying
-    );
+    try read_transport_data.init(loop_data, fd, &Read.read_operation_completed, @ptrCast(self), exception_handler, &Lifecyle.connection_lost_callback, zero_copying);
     errdefer read_transport_data.deinit();
 
     const protocol_type = try set_protocol(self, protocol);
@@ -191,7 +172,7 @@ fn stream_init_configuration(
     // definition is only applied by struct literals, not by field-by-field
     // assignment. Without this, the counter would be uninitialized (0xaa in Debug).
     self.dispatch_generation = 0;
-    
+
     var family: i32 = undefined;
     var optlen: std.posix.socklen_t = @sizeOf(i32);
     _ = std.os.linux.getsockopt(fd, std.posix.SOL.SOCKET, std.posix.SO.DOMAIN, @as([*]u8, @ptrCast(&family)), &optlen);
@@ -219,16 +200,12 @@ pub fn unregister_fixed_file(self: *StreamTransportObject, loop_data: *Loop) voi
 }
 
 pub fn new_stream_transport(protocol: PyObject, loop: *LoopObject, fd: std.posix.fd_t, zero_copying: bool) !*StreamTransportObject {
-    const instance: *StreamTransportObject = @ptrCast(
-        Stream.StreamType.tp_alloc.?(Stream.StreamType, 0) orelse return error.PythonError
-    );
+    const instance: *StreamTransportObject = @ptrCast(Stream.StreamType.tp_alloc.?(Stream.StreamType, 0) orelse return error.PythonError);
     errdefer Stream.StreamType.tp_free.?(instance);
 
     instance.owns_fd = true;
 
-    try stream_init_configuration(
-        instance, protocol, loop, fd, zero_copying
-    );
+    try stream_init_configuration(instance, protocol, loop, fd, zero_copying);
 
     return instance;
 }
@@ -243,7 +220,7 @@ inline fn z_stream_new(@"type": *python_c.PyTypeObject) !*StreamTransportObject 
     const instance: *StreamTransportObject = @ptrCast(@"type".tp_alloc.?(@"type", 0) orelse return error.PythonError);
     errdefer @"type".tp_free.?(instance);
 
-    python_c.initialize_object_fields(instance, &.{"ob_base", "fd", "family", "protocol_type", "is_closing", "closed"});
+    python_c.initialize_object_fields(instance, &.{ "ob_base", "fd", "family", "protocol_type", "is_closing", "closed" });
 
     // Explicit null for all Python object fields (free-threading safety)
     instance.protocol = null;
@@ -267,17 +244,16 @@ inline fn z_stream_new(@"type": *python_c.PyTypeObject) !*StreamTransportObject 
     // BUG-32: Initialize generation counter (struct-literal default not applied
     // to tp_alloc memory).
     instance.dispatch_generation = 0;
+    // BUG-238: Initialize fixed_file_index (same issue as dispatch_generation).
+    instance.fixed_file_index = 0;
 
     return instance;
 }
 
-pub fn stream_new(
-    @"type": ?*python_c.PyTypeObject, _: ?PyObject,
-    _: ?PyObject
-) callconv(.c) ?*StreamTransportObject {
+pub fn stream_new(@"type": ?*python_c.PyTypeObject, _: ?PyObject, _: ?PyObject) callconv(.c) ?*StreamTransportObject {
     return utils.execute_zig_function(z_stream_new, .{@"type".?});
 }
- 
+
 pub fn stream_traverse(self: ?*StreamTransportObject, visit: python_c.visitproc, arg: ?*anyopaque) callconv(.c) c_int {
     const instance = self.?;
 
@@ -364,7 +340,7 @@ pub fn stream_dealloc(self: ?*StreamTransportObject) callconv(.c) void {
 
     if (!instance.closed and instance.fd >= 0) {
         if (instance.loop) |loop| {
-            const loop_obj: *Loop.Python.LoopObject = @alignCast(@ptrCast(loop));
+            const loop_obj: *Loop.Python.LoopObject = @ptrCast(@alignCast(loop));
             if (loop_obj.debug) {
                 const msg = python_c.PyUnicode_FromFormat("unclosed transport <StreamTransport fd=%d>\x00", instance.fd);
                 if (msg) |m| {
@@ -381,7 +357,6 @@ pub fn stream_dealloc(self: ?*StreamTransportObject) callconv(.c) void {
     const @"type" = python_c.get_type(@ptrCast(instance)) orelse return;
     @"type".tp_free.?(@ptrCast(instance));
 }
-
 
 inline fn z_stream_init(self: *StreamTransportObject, args: ?PyObject, kwargs: ?PyObject) !c_int {
     var kwlist: [4][*c]u8 = undefined;
@@ -420,7 +395,7 @@ inline fn z_stream_init(self: *StreamTransportObject, args: ?PyObject, kwargs: ?
 }
 
 pub fn stream_init(self: ?*StreamTransportObject, args: ?PyObject, kwargs: ?PyObject) callconv(.c) c_int {
-    return utils.execute_zig_function(z_stream_init, .{self.?, args, kwargs});
+    return utils.execute_zig_function(z_stream_init, .{ self.?, args, kwargs });
 }
 
 pub fn stream_set_protocol(self: ?*StreamTransportObject, protocol: ?PyObject) callconv(.c) ?PyObject {
