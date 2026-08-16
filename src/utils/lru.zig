@@ -7,7 +7,7 @@ pub fn LRUCache(comptime K: type, comptime V: type) type {
         prev: ?*@This() = null,
         next: ?*@This() = null,
     };
-    const MapType = if (K == []const u8) std.StringHashMap(*LNode) else std.AutoHashMap(K, *LNode);
+    const MapType = if (K == []const u8) std.StringHashMapUnmanaged(*LNode) else std.AutoHashMapUnmanaged(K, *LNode);
     return struct {
         const Self = @This();
 
@@ -26,7 +26,7 @@ pub fn LRUCache(comptime K: type, comptime V: type) type {
             return .{
                 .allocator = allocator,
                 .capacity = capacity,
-                .map = MapType.init(allocator),
+                .map = .empty,
             };
         }
 
@@ -39,7 +39,7 @@ pub fn LRUCache(comptime K: type, comptime V: type) type {
                 }
                 self.allocator.destroy(node);
             }
-            self.map.deinit();
+            self.map.deinit(self.allocator);
         }
 
         pub fn get(self: *Self, key: K) ?V {
@@ -85,7 +85,7 @@ pub fn LRUCache(comptime K: type, comptime V: type) type {
                 .value = value,
             };
 
-            try self.map.put(key, node);
+            try self.map.put(self.allocator, key, node);
             self.prepend(node);
         }
 
