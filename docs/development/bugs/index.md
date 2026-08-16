@@ -258,7 +258,7 @@ Sorted by bug number. See individual bug files for details.
 | [220](220.md) | Resource and reference count leak on synchronous cache return error in `z_loop_getaddrinfo` | Medium | Fixed |
 | [221](221.md) | Leaked `future` and `loop` Python references on `reverse_lookup` error in `z_loop_getnameinfo` | Medium | Fixed |
 | [222](222.md) | Missing error-path release in `initialize_python_imports` leaking acquired references on partial import failure | Medium | Fixed |
-| [223](223.md) | Reference count leak on io_uring re-arm failure in `SubprocessTransport.pidfd_exit_callback` | High | Open |
-| [224](224.md) | Unused legacy `SockRecvIntoData` and `sock_recv_into_callback` dead code in socket operations | Low | Open |
-| [225](225.md) | Abandoned skeleton transport modules and empty utility files | Low | Open |
-| [226](226.md) | Unchecked `u64` to `usize` integer cast on `ready_tasks_queue_capacity` risking overflow on 32-bit platforms | Low | Open |
+| [223](223.md) | Reference count leak on io_uring re-arm failure in `SubprocessTransport.pidfd_exit_callback` | High | Fixed |
+| [224](224.md) | Unused legacy `SockRecvIntoData` and `sock_recv_into_callback` dead code in socket operations | Low | Fixed |
+| [225](225.md) | Abandoned skeleton transport modules and empty utility files | Low | Fixed |
+| [226](226.md) | Unchecked `u64` to `usize` integer cast on `ready_tasks_queue_capacity` risking overflow on 32-bit platforms | Low | Fixed |
