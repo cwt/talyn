@@ -93,10 +93,13 @@ pub fn remove_child_handler(self: *ChildWatcher, pid: i32) bool {
 }
 
 fn on_child_exit(data: *const CallbackManager.CallbackData) !void {
+    if (data.cancelled()) {
+        return;
+    }
     const handler: *ChildHandler = @ptrCast(@alignCast(data.user_data.?));
     const self = handler.watcher;
 
-    if (data.cancelled() or !self.loop.initialized) {
+    if (!self.loop.initialized) {
         return;
     }
 
