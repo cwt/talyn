@@ -432,9 +432,14 @@ fn interleave_address_list(allocator: std.mem.Allocator, address_list: []utils.A
             v.* = tmp_list[address_list.len + ipv6_index];
             ipv6_index += 1;
             interleave_count -= 1;
-        } else {
+        } else if (ipv4_index < ipv4_addresses) {
+            // Defensive bounds guard: should be unreachable when counts are
+            // correct, but protect against off-by-one in future refactors.
             v.* = tmp_list[ipv4_index];
             ipv4_index += 1;
+        } else {
+            // All addresses exhausted — should not happen.
+            break;
         }
     }
 }
