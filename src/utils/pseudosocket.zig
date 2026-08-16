@@ -21,8 +21,8 @@ fn pseudosocket_getsockname(self: ?*PseudoSocketObject, _: ?PyObject) callconv(.
     var addr: std.posix.sockaddr.storage = undefined;
     var addrlen: std.posix.socklen_t = @sizeOf(std.posix.sockaddr.storage);
 
-    _ = std.os.linux.getsockname(instance.fd, @ptrCast(&addr), &addrlen);
-    if (addrlen == 0 or addr.family == 0) {
+    const rc = std.os.linux.getsockname(instance.fd, @ptrCast(&addr), &addrlen);
+    if (std.posix.errno(rc) != .SUCCESS) {
         python_c.raise_python_runtime_error("getsockname failed\x00");
         return null;
     }
