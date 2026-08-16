@@ -15,27 +15,21 @@ inline fn z_loop_new(@"type": *python_c.PyTypeObject) !*LoopObject {
     const instance: *LoopObject = @ptrCast(@"type".tp_alloc.?(@"type", 0) orelse return error.PythonError);
     errdefer @"type".tp_free.?(instance);
 
-    python_c.initialize_object_fields(
-        instance, &.{
-            "ob_base", "asyncgens_set",
-            "asyncgens_set_add", "asyncgens_set_discard",
-        }
-    );
+    python_c.initialize_object_fields(instance, &.{
+        "ob_base",           "asyncgens_set",
+        "asyncgens_set_add", "asyncgens_set_discard",
+    });
 
-    const weakref_set_class = python_c.PyObject_GetAttrString(PythonImports.get("weakref_module"), "WeakSet\x00")
-        orelse return error.PythonError;
+    const weakref_set_class = python_c.PyObject_GetAttrString(PythonImports.get("weakref_module"), "WeakSet\x00") orelse return error.PythonError;
     defer python_c.py_decref(weakref_set_class);
 
-    const weakref_set = python_c.PyObject_CallNoArgs(weakref_set_class)
-        orelse return error.PythonError;
+    const weakref_set = python_c.PyObject_CallNoArgs(weakref_set_class) orelse return error.PythonError;
     errdefer python_c.py_decref(weakref_set);
 
-    const weakref_add = python_c.PyObject_GetAttrString(weakref_set, "add\x00")
-        orelse return error.PythonError;
+    const weakref_add = python_c.PyObject_GetAttrString(weakref_set, "add\x00") orelse return error.PythonError;
     errdefer python_c.py_decref(weakref_add);
 
-    const weakref_discard = python_c.PyObject_GetAttrString(weakref_set, "discard\x00")
-        orelse return error.PythonError;
+    const weakref_discard = python_c.PyObject_GetAttrString(weakref_set, "discard\x00") orelse return error.PythonError;
     errdefer python_c.py_decref(weakref_discard);
 
     instance.asyncgens_set = weakref_set;
@@ -50,13 +44,8 @@ inline fn z_loop_new(@"type": *python_c.PyTypeObject) !*LoopObject {
     return instance;
 }
 
-pub fn loop_new(
-    @"type": ?*python_c.PyTypeObject, _: ?PyObject,
-    _: ?PyObject
-) callconv(.c) ?PyObject {
-    const self = utils.execute_zig_function(
-        z_loop_new, .{@"type".?}
-    );
+pub fn loop_new(@"type": ?*python_c.PyTypeObject, _: ?PyObject, _: ?PyObject) callconv(.c) ?PyObject {
+    const self = utils.execute_zig_function(z_loop_new, .{@"type".?});
     return @ptrCast(self);
 }
 
@@ -133,7 +122,7 @@ pub fn loop_traverse(self: ?*LoopObject, visit: python_c.visitproc, arg: ?*anyop
     // Visit DNS
     const vret_dns = loop_data.dns.traverse(visit, arg);
     if (vret_dns != 0) return vret_dns;
-    
+
     // Visit FS Watcher
     const vret_fs = loop_data.fs_watcher.traverse(visit, arg);
     if (vret_fs != 0) return vret_fs;
@@ -172,13 +161,19 @@ fn traverse_hooks(hooks: *Loop.HooksList, visit: python_c.visitproc, arg: ?*anyo
     var node = hooks.first;
     while (node) |n| {
         const cb = n.data;
+        if (cb.data.traverse()) |t| {
+            const vret = t(cb.data.user_data, @ptrCast(@constCast(visit)), arg);
+            if (vret != 0) return vret;
+        }
+
         if (cb.data.module_ptr()) |mod| {
             const vret1 = visit.?(@ptrCast(mod), arg);
             if (vret1 != 0) return vret1;
-            if (cb.data.callback_ptr()) |cp| {
-                const vret2 = visit.?(@ptrCast(cp), arg);
-                if (vret2 != 0) return vret2;
-            }
+        }
+
+        if (cb.data.callback_ptr()) |cp| {
+            const vret2 = visit.?(@ptrCast(cp), arg);
+            if (vret2 != 0) return vret2;
         }
         node = n.next;
     }
@@ -199,9 +194,7 @@ pub fn loop_dealloc(self: ?*LoopObject) callconv(.c) void {
     }
 }
 
-inline fn z_loop_init(
-    self: *LoopObject, args: ?PyObject, kwargs: ?PyObject
-) !c_int {
+inline fn z_loop_init(self: *LoopObject, args: ?PyObject, kwargs: ?PyObject) !c_int {
     var kwlist: [3][*c]u8 = undefined;
     kwlist[0] = @constCast("ready_tasks_queue_capacity\x00");
     kwlist[1] = @constCast("exception_handler\x00");
@@ -210,10 +203,7 @@ inline fn z_loop_init(
     var ready_tasks_queue_capacity: u64 = 0;
     var exception_handler: ?PyObject = null;
 
-    if (python_c.PyArg_ParseTupleAndKeywords(
-            args, kwargs, "KO\x00", @ptrCast(&kwlist), &ready_tasks_queue_capacity,
-            &exception_handler
-    ) < 0) {
+    if (python_c.PyArg_ParseTupleAndKeywords(args, kwargs, "KO\x00", @ptrCast(&kwlist), &ready_tasks_queue_capacity, &exception_handler) < 0) {
         return error.PythonError;
     }
 
@@ -235,9 +225,6 @@ inline fn z_loop_init(
     return 0;
 }
 
-pub fn loop_init(
-    self: ?*LoopObject, args: ?PyObject, kwargs: ?PyObject
-) callconv(.c) c_int {
-    return utils.execute_zig_function(z_loop_init, .{self.?, args, kwargs});
+pub fn loop_init(self: ?*LoopObject, args: ?PyObject, kwargs: ?PyObject) callconv(.c) c_int {
+    return utils.execute_zig_function(z_loop_init, .{ self.?, args, kwargs });
 }
-
