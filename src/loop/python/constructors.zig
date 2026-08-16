@@ -215,6 +215,11 @@ inline fn z_loop_init(self: *LoopObject, args: ?PyObject, kwargs: ?PyObject) !c_
     self.exception_handler = python_c.py_newref(exception_handler.?);
     errdefer python_c.py_decref(exception_handler.?);
 
+    if (ready_tasks_queue_capacity > std.math.maxInt(usize)) {
+        python_c.raise_python_value_error("ready_tasks_queue_capacity exceeds maximum supported value\x00");
+        return error.PythonError;
+    }
+
     const allocator = utils.gpa.allocator();
     const loop_data = utils.get_data_ptr(Loop, self);
     try loop_data.init(allocator, @intCast(ready_tasks_queue_capacity));
