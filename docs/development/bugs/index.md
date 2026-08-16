@@ -16,22 +16,22 @@ Sorted by bug number. See individual bug files for details.
 | Severity | Count |
 |---|---:|
 | High | 62 |
-| Low | 38 |
+| Low | 41 |
 | Critical | 30 |
 | Medium | 27 |
 | Medium-High | 17 |
 | Medium-Low | 14 |
 | Medium-Mid | 11 |
-| **Total** | **199** |
+| **Total** | **202** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
 | Fixed | 201 |
-| Open | 1 |
+| Open | 4 |
 | False Positive | 3 |
-| **Total** | **205** |
+| **Total** | **208** |
 
 ## All Bugs
 
@@ -259,3 +259,6 @@ Sorted by bug number. See individual bug files for details.
 | [221](221.md) | Leaked `future` and `loop` Python references on `reverse_lookup` error in `z_loop_getnameinfo` | Medium | Fixed |
 | [222](222.md) | Missing error-path release in `initialize_python_imports` leaking acquired references on partial import failure | Medium | Fixed |
 | [223](223.md) | Reference count leak on io_uring re-arm failure in `SubprocessTransport.pidfd_exit_callback` | High | Open |
+| [224](224.md) | Unused legacy `SockRecvIntoData` and `sock_recv_into_callback` dead code in socket operations | Low | Open |
+| [225](225.md) | Abandoned skeleton transport modules and empty utility files | Low | Open |
+| [226](226.md) | Unchecked `u64` to `usize` integer cast on `ready_tasks_queue_capacity` risking overflow on 32-bit platforms | Low | Open |
