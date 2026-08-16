@@ -98,6 +98,7 @@ inline fn z_loop_create_server(self: *LoopObject, args: []?PyObject, knames: ?Py
     }
 
     var creation_data = ServerCreationData{};
+    errdefer python_c.deinitialize_object_fields(&creation_data, &.{});
 
     // Parse kwargs first to check for sock
     try python_c.parse_vector_call_kwargs(
@@ -125,7 +126,7 @@ inline fn z_loop_create_server(self: *LoopObject, args: []?PyObject, knames: ?Py
 
     const creation_data_ptr = try allocator.create(ServerCreationData);
     creation_data_ptr.* = creation_data;
-    errdefer allocator.destroy(creation_data_ptr);
+    errdefer creation_data_ptr.deinit();
 
     if (creation_data.py_sock) |sock| {
         const fileno_func = python_c.PyObject_GetAttrString(sock, "fileno\x00") orelse return error.PythonError;
