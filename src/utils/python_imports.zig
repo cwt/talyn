@@ -43,6 +43,7 @@ pub fn get(comptime name: []const u8) PyObject {
 }
 
 pub fn initialize_python_imports() !void {
+    errdefer release_python_imports();
     const a_mod = python_c.PyImport_ImportModule("asyncio\x00") orelse return error.PythonError;
     asyncio_module.store(a_mod, .release);
     const s_mod = python_c.PyImport_ImportModule("sys\x00") orelse return error.PythonError;
