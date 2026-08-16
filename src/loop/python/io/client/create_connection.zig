@@ -423,18 +423,17 @@ fn interleave_address_list(allocator: std.mem.Allocator, address_list: []utils.A
     var ipv4_index: usize = 0;
     var ipv6_index: usize = 0;
     for (address_list) |*v| {
-        if (interleave_count == 0 or ipv6_index >= ipv6_addresses) {
-            // BUG-72: Previously used `ipv4_addresses -= 1` to
-            // pick from the end of the IPv4 section, which
-            // reversed the order within the IPv4 family. Now
-            // use a forward-running index. Same fix for IPv6.
+        if ((interleave_count == 0 or ipv6_index >= ipv6_addresses) and ipv4_index < ipv4_addresses) {
             v.* = tmp_list[ipv4_index];
             ipv4_index += 1;
             interleave_count = interleave;
-        } else {
+        } else if (ipv6_index < ipv6_addresses) {
             v.* = tmp_list[address_list.len + ipv6_index];
             ipv6_index += 1;
             interleave_count -= 1;
+        } else {
+            v.* = tmp_list[ipv4_index];
+            ipv4_index += 1;
         }
     }
 }
@@ -1013,4 +1012,26 @@ test "interleave_address_list with multiple IPv6 addresses and interleave value 
     try std.testing.expectEqual(std.posix.AF.INET6, addresses[4].any.family);
     try std.testing.expectEqual(std.posix.AF.INET, addresses[5].any.family);
     try std.testing.expectEqual(std.posix.AF.INET, addresses[6].any.family);
+}
+
+test "interleave_address_list with many IPv6 and few IPv4 (BUG-212)" {
+    const allocator = std.testing.allocator;
+    const addresses = try allocator.alloc(utils.Address, 5);
+    defer allocator.free(addresses);
+
+    // 4 IPv6, 1 IPv4
+    addresses[0] = utils.Address{ .any = .{ .family = std.posix.AF.INET, .data = undefined } };
+    addresses[1] = utils.Address{ .any = .{ .family = std.posix.AF.INET6, .data = undefined } };
+    addresses[2] = utils.Address{ .any = .{ .family = std.posix.AF.INET6, .data = undefined } };
+    addresses[3] = utils.Address{ .any = .{ .family = std.posix.AF.INET6, .data = undefined } };
+    addresses[4] = utils.Address{ .any = .{ .family = std.posix.AF.INET6, .data = undefined } };
+
+    try interleave_address_list(allocator, addresses, 1);
+
+    // Order: IPv6, IPv4, IPv6, IPv6, IPv6
+    try std.testing.expectEqual(std.posix.AF.INET6, addresses[0].any.family);
+    try std.testing.expectEqual(std.posix.AF.INET, addresses[1].any.family);
+    try std.testing.expectEqual(std.posix.AF.INET6, addresses[2].any.family);
+    try std.testing.expectEqual(std.posix.AF.INET6, addresses[3].any.family);
+    try std.testing.expectEqual(std.posix.AF.INET6, addresses[4].any.family);
 }
