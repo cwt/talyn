@@ -21,19 +21,19 @@ const GetNameInfoData = struct {
     allocator: std.mem.Allocator,
 
     comptime {
-        python_c.verify_gc_coverage(@This(), &.{ "allocator" });
+        python_c.verify_gc_coverage(@This(), &.{"allocator"});
     }
 };
 
 fn getnameinfo_callback(data: *const CallbackManager.CallbackData) !void {
-    const gnid: *GetNameInfoData = @alignCast(@ptrCast(data.user_data.?));
+    const gnid: *GetNameInfoData = @ptrCast(@alignCast(data.user_data.?));
     defer {
         python_c.py_decref(@ptrCast(gnid.future));
         python_c.py_decref(@ptrCast(gnid.loop));
         gnid.allocator.destroy(gnid);
     }
     const loop_data = utils.get_data_ptr(Loop, gnid.loop);
-    
+
     if (data.cancelled()) {
         return;
     }
@@ -48,7 +48,6 @@ fn getnameinfo_callback(data: *const CallbackManager.CallbackData) !void {
         try Future.Python.Result.future_fast_set_exception(gnid.future, future_data, exc);
         return;
     };
-
 
     const hostname = switch (record.state) {
         .ptr => |name| name,
@@ -65,7 +64,7 @@ fn getnameinfo_callback(data: *const CallbackManager.CallbackData) !void {
     defer python_c.py_decref(py_host);
     const py_port = python_c.PyLong_FromLong(@intCast(gnid.addr.getPort())) orelse return error.PythonError;
     defer python_c.py_decref(py_port);
-    
+
     const py_res = python_c.PyTuple_Pack(2, py_host, py_port) orelse return error.PythonError;
     defer python_c.py_decref(py_res);
 
@@ -102,13 +101,17 @@ inline fn z_loop_getnameinfo(self: *LoopObject, args: []const ?PyObject) !*Futur
         .flags = flags,
         .allocator = alloc,
     };
+    errdefer {
+        python_c.py_decref(@ptrCast(gnid.future));
+        python_c.py_decref(@ptrCast(gnid.loop));
+    }
 
     const callback = CallbackManager.Callback{
         .func = &getnameinfo_callback,
         .cleanup = null,
         .data = .{ .user_data = gnid },
     };
-    
+
     const dns_timeout = blk: {
         const py_timeout = if (args.len > 2) args[2] else null;
         if (py_timeout) |pt| {
@@ -122,10 +125,9 @@ inline fn z_loop_getnameinfo(self: *LoopObject, args: []const ?PyObject) !*Futur
     return fut;
 }
 
-pub fn loop_getnameinfo(
-    self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t
-) callconv(.c) ?*FutureObject {
+pub fn loop_getnameinfo(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t) callconv(.c) ?*FutureObject {
     return utils.execute_zig_function(
-        z_loop_getnameinfo, .{ self.?, args.?[0..@as(usize, @intCast(nargs))] },
+        z_loop_getnameinfo,
+        .{ self.?, args.?[0..@as(usize, @intCast(nargs))] },
     );
 }
