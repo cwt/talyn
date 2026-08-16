@@ -85,11 +85,11 @@ inline fn z_transport_set_write_buffer_limits(self: *StreamTransportObject, args
     var py_low_water_mark: ?PyObject = null;
 
     if (args.len >= 1) {
-        py_high_water_mark = args[0].?;
+        py_high_water_mark = python_c.py_newref(args[0].?);
     }
 
     if (args.len == 2) {
-        py_low_water_mark = args[1].?;
+        py_low_water_mark = python_c.py_newref(args[1].?);
     }
 
     try python_c.parse_vector_call_kwargs(knames, args.ptr + args.len, &.{ "high\x00", "low\x00" }, &.{ &py_high_water_mark, &py_low_water_mark });

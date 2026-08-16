@@ -936,3 +936,38 @@ async def _test_stream_transport_is_writing_initialized() -> None:
 
 def test_stream_transport_is_writing_initialized() -> None:
     talyn.run(_test_stream_transport_is_writing_initialized())
+
+
+async def _test_stream_transport_positional_write_buffer_limits() -> None:
+    loop = asyncio.get_running_loop()
+    server_socket, client_socket = socket.socketpair()
+    server_socket.setblocking(False)
+    client_socket.setblocking(False)
+
+    class DummyProtocol(asyncio.Protocol):
+        def connection_made(self, transport):
+            pass
+
+        def connection_lost(self, exc):
+            pass
+
+    proto = DummyProtocol()
+    transport = StreamTransport(server_socket.fileno(), proto, loop)
+    try:
+        # Set positional limits (high, low)
+        h_val = 5000
+        l_val = 2500
+        transport.set_write_buffer_limits(h_val, l_val)
+        assert transport.get_write_buffer_limits() == (2500, 5000)
+
+        # Set single positional limit (high)
+        transport.set_write_buffer_limits(8000)
+        assert transport.get_write_buffer_limits() == (8000, 8000)
+    finally:
+        transport.close()
+        client_socket.close()
+
+
+def test_stream_transport_positional_write_buffer_limits() -> None:
+    talyn.run(_test_stream_transport_positional_write_buffer_limits())
+
