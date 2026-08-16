@@ -157,6 +157,13 @@ inline fn z_loop_getaddrinfo(self: *LoopObject, args: []const ?PyObject, knames:
         break :blk @intCast(v);
     } else 0;
 
+    var dns_timeout: ?Resolv.DnsTimeout = null;
+    if (py_dns_timeout) |pt| {
+        const timeout_val = python_c.PyFloat_AsDouble(pt);
+        if (python_c.PyErr_Occurred() != null) return error.PythonError;
+        dns_timeout = Resolv.timeout_from_secs(timeout_val);
+    }
+
     const loop_data = utils.get_data_ptr(Loop, self);
     const alloc = loop_data.allocator;
     const fut = try Future.Python.Constructors.fast_new_future(self);
@@ -178,14 +185,7 @@ inline fn z_loop_getaddrinfo(self: *LoopObject, args: []const ?PyObject, knames:
         .socket_type = socket_type,
         .proto = proto,
         .allocator = alloc,
-        .dns_timeout = blk: {
-            if (py_dns_timeout) |py_timeout| {
-                const timeout_val = python_c.PyFloat_AsDouble(py_timeout);
-                if (python_c.PyErr_Occurred() != null) return error.PythonError;
-                const result: ?Resolv.DnsTimeout = if (timeout_val == -1.0) null else Resolv.timeout_from_secs(timeout_val);
-                break :blk result;
-            } else break :blk null;
-        },
+        .dns_timeout = dns_timeout,
     };
     errdefer {
         python_c.py_decref(@ptrCast(gaid.future));

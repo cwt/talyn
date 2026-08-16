@@ -87,6 +87,15 @@ inline fn z_loop_getnameinfo(self: *LoopObject, args: []const ?PyObject) !*Futur
 
     const addr = try utils.Address.fromPyAddr(py_addr, null);
 
+    const dns_timeout = blk: {
+        const py_timeout = if (args.len > 2) args[2] else null;
+        if (py_timeout) |pt| {
+            const timeout_val = python_c.PyFloat_AsDouble(pt);
+            if (python_c.PyErr_Occurred() != null) return error.PythonError;
+            break :blk Resolv.timeout_from_secs(timeout_val);
+        } else break :blk null;
+    };
+
     const loop_data = utils.get_data_ptr(Loop, self);
     const alloc = loop_data.allocator;
     const fut = try Future.Python.Constructors.fast_new_future(self);
@@ -112,15 +121,6 @@ inline fn z_loop_getnameinfo(self: *LoopObject, args: []const ?PyObject) !*Futur
         .data = .{ .user_data = gnid },
     };
 
-    const dns_timeout = blk: {
-        const py_timeout = if (args.len > 2) args[2] else null;
-        if (py_timeout) |pt| {
-            const timeout_val = python_c.PyFloat_AsDouble(pt);
-            if (python_c.PyErr_Occurred() != null) return error.PythonError;
-            const result: ?Resolv.DnsTimeout = if (timeout_val == -1.0) null else Resolv.timeout_from_secs(timeout_val);
-            break :blk result;
-        } else break :blk null;
-    };
     try loop_data.dns.reverse_lookup(addr, &callback, dns_timeout);
 
     return fut;
