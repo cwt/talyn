@@ -204,6 +204,7 @@ pub fn remove_done_callback(self: *Future, callback_id: u64) usize {
 
     var removed_count: usize = 0;
     for (self.callbacks_queue.items) |*callback| {
+        if (callback.cancelled or callback.executed) continue;
         switch (callback.data) {
             .ZigGeneric => |*value| {
                 if (callback_id == @intFromPtr(value.callback)) {

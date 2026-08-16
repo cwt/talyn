@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 190 |
-| Open | 5 |
+| Fixed | 191 |
+| Open | 4 |
 | False Positive | 3 |
 | **Total** | **198** |
 
@@ -230,7 +230,7 @@ Sorted by bug number. See individual bug files for details.
 | [192](192.md) | Nested GC traversal bug in DNS resolver ControlData.traverse skipping callback_ptr | Medium | Fixed |
 | [193](193.md) | Missing tp_clear on GC heap types HookHandleType and PathWatcherHandleType | Medium | Fixed |
 | [194](194.md) | Unsafe @enumFromInt on unchecked signal integers causing enum cast panics | Medium | Fixed |
-| [195](195.md) | `remove_done_callback` recounts already-cancelled or executed callbacks on repeat calls | High | Open |
+| [195](195.md) | `remove_done_callback` recounts already-cancelled or executed callbacks on repeat calls | High | Fixed |
 | [196](196.md) | `SubprocessTransport` protocol callback failure leaks pidfd descriptor and PyObject reference | High | Open |
 | [197](197.md) | Coroutine throw error paths bypass `_leave_task` leaving corrupted `asyncio.current_task` state | High | Open |
 | [198](198.md) | `execute_task_send` leaks `PythonTaskObject` reference if `future_fast_set_exception` errors | Medium | Open |

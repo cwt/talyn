@@ -278,7 +278,8 @@ def test_future_remove_done_callback() -> None:
         future = Future(loop=loop)
         mock_callback = MagicMock()
         future.add_done_callback(mock_callback)
-        future.remove_done_callback(mock_callback)
+        assert future.remove_done_callback(mock_callback) == 1
+        assert future.remove_done_callback(mock_callback) == 0
         future.set_result("Done")
 
         loop.run_until_complete(future)
