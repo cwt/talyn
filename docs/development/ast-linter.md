@@ -52,6 +52,9 @@ python3 tools/linter/rules/python_rules.py
 | `TALYN-006` | `DISCARDED_SYSCALL_RETURN` | [BUG-190](bugs/190.md), [BUG-199](bugs/199.md) | Discarding syscall returns (e.g. `_ = getsockname(...)`) leads to reading uninitialized stack memory on failure. |
 | `TALYN-007` | `NO_SPINLOCK_YIELD` | [BUG-125](bugs/125.md) | `std.Thread.yield()` in spinlocks can fail or perform inefficiently in high-contention paths. |
 | `TALYN-008` | `GC_TYPE_REQUIRES_TP_CLEAR` | [BUG-155](bugs/155.md), [BUG-193](bugs/193.md) | Types declaring `Py_TPFLAGS_HAVE_GC` must implement `.tp_clear` to prevent permanent cyclic garbage leaks. |
+| `TALYN-009` | `MISSING_ERRDEFER_AFTER_FAST_NEW_FUTURE` | [BUG-187](bugs/187.md), [BUG-203](bugs/203.md) | `fast_new_future` returns a new Python reference that must have an `errdefer py_decref` to prevent leaks on error paths. |
+| `TALYN-010` | `UNINITIALIZED_PYOBJECT_FIELD_AFTER_TP_ALLOC` | [BUG-204](bugs/204.md), [BUG-087](bugs/087.md) | Optional `?PyObject` struct fields must be explicitly set to `null` after `tp_alloc` to prevent GC traversal of garbage pointers. |
+| `TALYN-011` | `UNPARSED_PYOBJECT_KWARG` | [BUG-189](bugs/189.md), [BUG-205](bugs/205.md) | Struct fields of type `?PyObject` must be covered by a `parse_vector_call_kwargs` call, or the corresponding Python keyword argument is silently ignored. |
 
 ### Python AST Rules
 
@@ -76,7 +79,10 @@ tools/linter/
     ├── no_bare_switch_else.zig  # Rule TALYN-005
     ├── syscall_safety.zig    # Rule TALYN-006
     ├── no_spinlock_yield.zig # Rule TALYN-007
-    ├── gc_type_clear.zig     # Rule TALYN-008
+    ├── gc_type_clear.zig              # Rule TALYN-008
+    ├── missing_errdefer_after_future.zig  # Rule TALYN-009
+    ├── missing_tp_alloc_pyobject_init.zig # Rule TALYN-010
+    └── unparsed_pyobject_kwarg.zig    # Rule TALYN-011
     └── python_rules.py       # Python AST rules (TALYN-PY01, TALYN-PY02)
 ```
 
