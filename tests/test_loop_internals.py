@@ -1007,3 +1007,14 @@ def test_call_later_fractional_delays() -> None:
     finally:
         loop.close()
 
+
+def test_loop_init_invalid_params() -> None:
+    from talyn.talyn_zig import Loop as _Loop
+
+    # Test invalid exception handler (raises RuntimeError and verifies clean refcount cleanup)
+    with pytest.raises(RuntimeError):
+        _Loop(1048576, "not_callable")
+
+
+
+

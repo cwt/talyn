@@ -207,17 +207,20 @@ inline fn z_loop_init(self: *LoopObject, args: ?PyObject, kwargs: ?PyObject) !c_
         return error.PythonError;
     }
 
+    if (ready_tasks_queue_capacity > std.math.maxInt(usize)) {
+        python_c.raise_python_value_error("ready_tasks_queue_capacity exceeds maximum supported value\x00");
+        return error.PythonError;
+    }
+
     if (python_c.PyCallable_Check(exception_handler.?) == 0) {
         python_c.raise_python_runtime_error("Invalid exception handler\x00");
         return error.PythonError;
     }
 
     self.exception_handler = python_c.py_newref(exception_handler.?);
-    errdefer python_c.py_decref(exception_handler.?);
-
-    if (ready_tasks_queue_capacity > std.math.maxInt(usize)) {
-        python_c.raise_python_value_error("ready_tasks_queue_capacity exceeds maximum supported value\x00");
-        return error.PythonError;
+    errdefer {
+        python_c.py_decref(self.exception_handler.?);
+        self.exception_handler = null;
     }
 
     const allocator = utils.gpa.allocator();
