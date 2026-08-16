@@ -184,12 +184,12 @@ pub const ControlData = struct {
     pub fn traverse(self: *const ControlData, visit: python_c.visitproc, arg: ?*anyopaque) c_int {
         for (self.user_callbacks.items) |*v| {
             if (v.data.module_ptr()) |mod| {
-                const vret1 = visit.?(@ptrCast(mod), arg);
-                if (vret1 != 0) return vret1;
-                if (v.data.callback_ptr()) |cp| {
-                    const vret2 = visit.?(@ptrCast(cp), arg);
-                    if (vret2 != 0) return vret2;
-                }
+                const vret = visit.?(@ptrCast(mod), arg);
+                if (vret != 0) return vret;
+            }
+            if (v.data.callback_ptr()) |cp| {
+                const vret = visit.?(@ptrCast(cp), arg);
+                if (vret != 0) return vret;
             }
         }
         return 0;
