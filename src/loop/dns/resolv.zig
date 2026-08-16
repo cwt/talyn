@@ -154,7 +154,7 @@ pub const ControlData = struct {
     resolved: bool = false,
     record_evicted: bool = false,
 
-    node: Loop.DNS.PendingList.Node = undefined,
+    node: ?Loop.DNS.PendingList.Node = null,
 
     comptime {
         python_c.verify_gc_coverage(@This(), &.{ "record", "loop", "queries_data", "node" });
@@ -177,7 +177,11 @@ pub const ControlData = struct {
             }
         }
 
-        self.loop.dns.pending_queries.unlink_node(self.node) catch |err| std.log.warn("unlink_node failed: {s}", .{@errorName(err)});
+        if (self.node) |node| {
+            self.loop.dns.pending_queries.unlink_node(node) catch |err| std.log.warn("unlink_node failed: {s}", .{@errorName(err)});
+            self.loop.dns.pending_queries.release_node(node);
+            self.node = null;
+        }
         self.arena.deinit();
         self.allocator.destroy(self);
     }
@@ -707,8 +711,7 @@ fn prepare_data(
         .tasks_finished = 0,
         .resolved = false,
         .record_evicted = false,
-        // .node is set by create_new_node / append_node below.
-        .node = undefined,
+        .node = null,
     };
     const arena_allocator = control_data.arena.allocator();
 
@@ -726,8 +729,9 @@ fn prepare_data(
 
     control_data.queries_data = queries_data;
 
-    control_data.node = try loop.dns.pending_queries.create_new_node(control_data);
-    loop.dns.pending_queries.append_node(control_data.node);
+    const node = try loop.dns.pending_queries.create_new_node(control_data);
+    control_data.node = node;
+    loop.dns.pending_queries.append_node(node);
 
     var queries_built: usize = 0;
     errdefer {
