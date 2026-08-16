@@ -337,21 +337,19 @@ fn pidfd_exit_callback(data: *const CallbackManager.CallbackData) !void {
             success = true;
             return;
         }
-        const loop = utils.get_data_ptr(Loop, @as(*LoopObject, @ptrCast(transport.loop.?)));
-        python_c.py_incref(@ptrCast(transport));
-        errdefer python_c.py_decref(@ptrCast(transport));
-        transport.pidfd_task_id = try loop.io.queue(.{
-            .WaitReadable = .{
-                .fd = transport.pidfd,
-                .callback = .{
-                    .func = &pidfd_exit_callback,
-                    .cleanup = &cleanup_pidfd,
-                    .data = .{
-                        .user_data = transport,
-                    },
-                },
-            },
-        });
+        // BUG-232: For any waitid error other than ECHILD, return immediately
+        // instead of falling through to read siginfo.code from uninitialized
+        // memory. EINTR is already handled by the loop above.
+        std.log.warn("pidfd_exit_callback: waitid failed with {s}", .{@tagName(err)});
+        transport.returncode = python_c.PyLong_FromLong(-1);
+        dispatch_subprocess_exit_callbacks(transport);
+        if (transport.pidfd >= 0) {
+            _ = std.os.linux.close(transport.pidfd);
+            transport.pidfd = -1;
+        }
+        transport.pidfd_task_id = 0;
+        python_c.py_xdecref(transport.popen);
+        transport.popen = null;
         success = true;
         return;
     }
