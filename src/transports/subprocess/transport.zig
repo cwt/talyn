@@ -408,6 +408,7 @@ pub fn new_with_pid(protocol: PyObject, loop: *LoopObject, pid: std.posix.pid_t)
     const self: *SubprocessTransportObject = @ptrCast(SubprocessType.?.tp_alloc.?(SubprocessType.?, 0) orelse return error.PythonError);
     self.loop = python_c.py_newref(@as(*python_c.PyObject, @ptrCast(loop)));
     self.protocol = python_c.py_newref(protocol);
+    self.popen = null;
     self.pid = pid;
     self.returncode = null;
     self.pidfd_task_id = 0;
