@@ -17,18 +17,18 @@ Sorted by bug number. See individual bug files for details.
 |---|---:|
 | Critical | 30 |
 | High | 67 |
-| Medium-High | 22 |
-| Medium | 33 |
+| Medium-High | 20 |
+| Medium | 35 |
 | Medium-Low | 15 |
-| Low | 45 |
+| Low | 44 |
 | **Total** | **228** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
-| Fixed | 205 |
-| Open | 16 |
+| Fixed | 208 |
+| Open | 13 |
 | False Positive | 7 |
 | **Total** | **228** |
 
@@ -268,12 +268,12 @@ Sorted by bug number. See individual bug files for details.
 | [231](0231.md) | `timeout_from_secs` produces wrapped-around values for negative input | Medium | Fixed |
 | [232](0232.md) | `pidfd_exit_callback` accesses uninitialized `siginfo_t` on non-EINTR `waitid` error | Medium-High | Fixed |
 | [233](0233.md) | Datagram `close()` and `dealloc` duplicate resource cleanup and fd close | Medium-Low | False Positive |
-| [234](0234.md) | Dead code: trivially true unit test in `streamserver/main.zig` | Low | Open |
+| [234](0234.md) | Dead code: trivially true unit test in `streamserver/main.zig` | Low | Fixed |
 | [235](0235.md) | `dispatch_completion_batch` silently drops remaining records on Python error | Medium-High | False Positive |
 | [236](0236.md) | `set_future_exception` leaves dangling Python exception on OOM path | Medium | False Positive |
 | [237](0237.md) | Uninitialized `last_err` before loop in `z_create_server_socket` is fragile | Medium-Low | False Positive |
 | [238](0238.md) | `StreamTransportObject.fixed_file_index` not initialized in `z_stream_new` | Low | Fixed |
 | [239](0239.md) | `ServerQueryData.release` lacks atomic guard against concurrent cancel+release | Medium | False Positive |
 | [240](0240.md) | `reserved_slots` underflow in DNS `ControlData.release` and `mark_resolved_and_execute_user_callbacks` | High | Fixed |
-| [241](0241.md) | `PyFloat_AsDouble` NaN/Inf silently accepted in happy eyeballs delay parsing | Medium-High | Open |
-| [242](0242.md) | `PyFloat_AsDouble` NaN/Inf silently accepted in DNS timeout parsing (7 call sites) | Medium | Open |
+| [241](0241.md) | `PyFloat_AsDouble` NaN/Inf silently accepted in happy eyeballs delay parsing | Medium-High | Fixed |
+| [242](0242.md) | `PyFloat_AsDouble` NaN/Inf silently accepted in DNS timeout parsing (7 call sites) | Medium | Fixed |

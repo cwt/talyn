@@ -457,26 +457,8 @@ test "BUG-33: start_serving clears accept_paused" {
         .accept_paused = true, // Simulate paused state from EMFILE/ENFILE
         .server_ref = null,
     };
-    // start_serving clears the pause flag.
-    server.accept_paused = false;
-    try testing.expect(!server.accept_paused);
-    try testing.expect(!server.closed);
-}
-
-// BUG-234: Verify accept_paused defaults to false after init.
-test "BUG-33: accept_paused default is false after init" {
-    const server: StreamServerObject = .{
-        .ob_base = undefined,
-        .loop = null,
-        .protocol_factory = null,
-        .server_fd = -1,
-        .family = 0,
-        .backlog = 0,
-        .blocking_task_id = 0,
-        .closed = false,
-        .accept_paused = false,
-        .server_ref = null,
-    };
+    // start_serving clears the pause flag and re-arms the accept watcher.
+    try start_serving(&server);
     try testing.expect(!server.accept_paused);
     try testing.expect(!server.closed);
 }

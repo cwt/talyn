@@ -181,7 +181,8 @@ inline fn z_loop_getaddrinfo(self: *LoopObject, args: []const ?PyObject, knames:
         .dns_timeout = blk: {
             if (py_dns_timeout) |py_timeout| {
                 const timeout_val = python_c.PyFloat_AsDouble(py_timeout);
-                const result: ?Resolv.DnsTimeout = if (timeout_val == -1.0 and python_c.PyErr_Occurred() != null) null else Resolv.timeout_from_secs(timeout_val);
+                if (python_c.PyErr_Occurred() != null) return error.PythonError;
+                const result: ?Resolv.DnsTimeout = if (timeout_val == -1.0) null else Resolv.timeout_from_secs(timeout_val);
                 break :blk result;
             } else break :blk null;
         },

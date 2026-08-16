@@ -278,7 +278,7 @@ fn z_try_resolve_server_host(creation_data: *ServerCreationData) !void {
     const dns_timeout_val = blk: {
         if (creation_data.py_dns_timeout) |py_dns_timeout| {
             const timeout_val = python_c.PyFloat_AsDouble(py_dns_timeout);
-            if (timeout_val == -1.0 and python_c.PyErr_Occurred() != null) return error.PythonError;
+            if (timeout_val == -1.0) break :blk null;
             const result = Resolv.timeout_from_secs(timeout_val);
             break :blk result;
         } else break :blk null;

@@ -116,7 +116,8 @@ inline fn z_loop_getnameinfo(self: *LoopObject, args: []const ?PyObject) !*Futur
         const py_timeout = if (args.len > 2) args[2] else null;
         if (py_timeout) |pt| {
             const timeout_val = python_c.PyFloat_AsDouble(pt);
-            const result: ?Resolv.DnsTimeout = if (timeout_val == -1.0 and python_c.PyErr_Occurred() != null) null else Resolv.timeout_from_secs(timeout_val);
+            if (python_c.PyErr_Occurred() != null) return error.PythonError;
+            const result: ?Resolv.DnsTimeout = if (timeout_val == -1.0) null else Resolv.timeout_from_secs(timeout_val);
             break :blk result;
         } else break :blk null;
     };
