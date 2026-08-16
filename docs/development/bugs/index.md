@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 236 |
-| Open | 3 |
+| Fixed | 237 |
+| Open | 2 |
 | False Positive | 13 |
 | **Total** | **252** |
 
@@ -286,6 +286,6 @@ Sorted by bug number. See individual bug files for details.
 | [248](248.md) | `SocketCreationData.dns_timeout` is never populated in hostname connect path of `create_connection` | High | Fixed |
 | [249](249.md) | Struct literal `dns_timeout` evaluation in `getaddrinfo.zig` leaks references and memory on error | Medium | Fixed |
 | [250](250.md) | Double-decref on `exception_handler` during failed `loop_init` in `constructors.zig` | High | Fixed |
-| [251](251.md) | Zig float cast panics on NaN, Inf, and large floats in `scheduling.zig`, `timer_handle.zig`, and `timeout_from_secs` | High | Open |
+| [251](251.md) | Zig float cast panics on NaN, Inf, and large floats in `scheduling.zig`, `timer_handle.zig`, and `timeout_from_secs` | High | Fixed |
 | [252](252.md) | Uninitialized node access and GPA node leak in DNS `ControlData.release()` | Medium | Open |
 | [253](253.md) | `fixed_file_index` uninitialized in `stream_init_configuration` for internal `new_stream_transport` callers | Low | Open |

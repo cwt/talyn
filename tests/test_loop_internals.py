@@ -1016,5 +1016,36 @@ def test_loop_init_invalid_params() -> None:
         _Loop(1048576, "not_callable")
 
 
+def test_call_later_float_safety() -> None:
+    loop = Loop()
+    try:
+        def dummy():
+            pass
+
+        # Invalid type should raise TypeError
+        with pytest.raises(TypeError):
+            loop.call_later("not_a_number", dummy)
+
+        with pytest.raises(TypeError):
+            loop.call_at("not_a_number", dummy)
+
+        # NaN, Inf, -Inf, negative should raise ValueError
+        for val in (float("nan"), float("inf"), float("-inf"), -1.0):
+            with pytest.raises(ValueError):
+                loop.call_later(val, dummy)
+            with pytest.raises(ValueError):
+                loop.call_at(val, dummy)
+
+        # Huge float should be scheduled safely without crashing
+        h = loop.call_later(1e20, dummy)
+        h.cancel()
+
+        h2 = loop.call_at(1e20, dummy)
+        h2.cancel()
+    finally:
+        loop.close()
+
+
+
 
 

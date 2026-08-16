@@ -57,17 +57,31 @@ inline fn z_timer_handle_init(self: *PythonTimerHandleObject, args: ?PyObject, k
         return error.PythonError;
     }
 
+    if (!std.math.isFinite(ts) or ts < 0.0) {
+        python_c.raise_python_value_error("Invalid when timestamp\x00");
+        return error.PythonError;
+    }
+
     if (py_context) |ctx| {
         if (python_c.is_none(ctx)) {
             python_c.raise_python_type_error("context cannot be None\x00");
             return error.PythonError;
         }
+    } else {
+        python_c.raise_python_type_error("context is required\x00");
+        return error.PythonError;
     }
 
     self.handle.contextvars = python_c.py_newref(py_context.?);
 
-    const ts_sec = @trunc(ts);
-    self.when = .{ .sec = @intFromFloat(ts_sec), .nsec = @as(@FieldType(std.posix.timespec, "nsec"), @intFromFloat((ts - ts_sec) * 1_000_000_000)) };
+    const max_time_secs: f64 = @floatFromInt(std.math.maxInt(std.posix.time_t) - 1_000_000_000);
+    const safe_ts = @min(ts, max_time_secs);
+    const ts_sec = @trunc(safe_ts);
+    const frac = @max(0.0, safe_ts - ts_sec);
+    self.when = .{
+        .sec = @intFromFloat(ts_sec),
+        .nsec = @as(@FieldType(std.posix.timespec, "nsec"), @intFromFloat(@min(999_999_999.0, frac * 1_000_000_000))),
+    };
 
     return 0;
 }

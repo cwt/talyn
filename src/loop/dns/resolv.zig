@@ -23,10 +23,13 @@ pub const DnsTimeout = struct {
 
 pub fn timeout_from_secs(timeout_secs: f64) ?DnsTimeout {
     if (!std.math.isFinite(timeout_secs) or timeout_secs < 0.0) return null;
-    const sec_f = @floor(timeout_secs);
+    const max_secs: f64 = @floatFromInt(std.math.maxInt(u64) - 1_000_000);
+    const safe_secs = @min(timeout_secs, max_secs);
+    const sec_f = @floor(safe_secs);
     const sec: u64 = @intFromFloat(sec_f);
-    const frac = timeout_secs - sec_f;
-    const nsec: u32 = @intFromFloat(@floor(frac * 1e9));
+    const frac = safe_secs - sec_f;
+    const nsec_f = @floor(frac * 1e9);
+    const nsec: u32 = if (nsec_f >= 0.0 and nsec_f < 1e9) @intFromFloat(nsec_f) else 0;
     return .{ .sec = sec, .nsec = nsec };
 }
 

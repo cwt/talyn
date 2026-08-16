@@ -164,25 +164,31 @@ inline fn z_loop_delayed_call(self: *LoopObject, args: []?PyObject, knames: ?PyO
         }
 
         const ts: f64 = python_c.PyFloat_AsDouble(args[0].?);
-        if (ts < 0.0) {
+        if (python_c.PyErr_Occurred() != null) return error.PythonError;
+        if (!std.math.isFinite(ts) or ts < 0.0) {
             python_c.raise_python_value_error("Invalid value received in the first parameter\x00");
             return error.PythonError;
         }
 
+        const max_time_secs: f64 = @floatFromInt(std.math.maxInt(std.posix.time_t) - 1_000_000_000);
+        const safe_ts = @min(ts, max_time_secs);
+
         if (is_absolute) {
-            const when_sec = @trunc(ts);
+            const when_sec = @trunc(safe_ts);
+            const frac = @max(0.0, safe_ts - when_sec);
             time = .{
                 .sec = @intFromFloat(when_sec),
-                .nsec = @as(@FieldType(std.posix.timespec, "nsec"), @intFromFloat((ts - when_sec) * 1_000_000_000)),
+                .nsec = @as(@FieldType(std.posix.timespec, "nsec"), @intFromFloat(@min(999_999_999.0, frac * 1_000_000_000))),
             };
         } else {
             var raw_ts: std.os.linux.timespec = undefined;
             _ = std.os.linux.clock_gettime(.MONOTONIC, &raw_ts);
             time = @bitCast(raw_ts);
-            const delay_sec = @trunc(ts);
+            const delay_sec = @trunc(safe_ts);
+            const frac = @max(0.0, safe_ts - delay_sec);
 
             time.sec += @intFromFloat(delay_sec);
-            time.nsec += @as(@FieldType(std.posix.timespec, "nsec"), @intFromFloat((ts - delay_sec) * 1_000_000_000));
+            time.nsec += @as(@FieldType(std.posix.timespec, "nsec"), @intFromFloat(@min(999_999_999.0, frac * 1_000_000_000)));
         }
 
         if (time.nsec >= 1_000_000_000) {

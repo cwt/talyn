@@ -229,14 +229,14 @@ def test_scheduling_invalid_inputs() -> None:
         with pytest.raises(ValueError):
             loop.call_later(-1, print, "test")  # Negative delay
 
-        with pytest.raises(ValueError):
+        with pytest.raises(TypeError):
             loop.call_later(None, print, "test")  # type: ignore
 
         with pytest.raises(TypeError):
             loop.call_later(DELAY_TIME, None)  # type: ignore
 
         # Test call_at with invalid inputs
-        with pytest.raises(ValueError):
+        with pytest.raises(TypeError):
             loop.call_at(None, print, "test")  # type: ignore
 
         with pytest.raises(TypeError):

@@ -691,9 +691,12 @@ fn z_create_socket_connection(data: *SocketConnectionData) !void {
             .cleanup = null,
             .data = CallbackManager.CallbackData.init_python(mcs, &mcs.python_payload),
         };
-        const sec_f = @floor(delay);
+        const max_delay_secs: f64 = @floatFromInt(std.math.maxInt(std.posix.time_t) - 1_000_000_000);
+        const safe_delay = @min(delay, max_delay_secs);
+        const sec_f = @floor(safe_delay);
         const seconds: u64 = @intFromFloat(sec_f);
-        const nanoseconds: u64 = @intFromFloat((delay - sec_f) * 1e9);
+        const frac = @max(0.0, safe_delay - sec_f);
+        const nanoseconds: u64 = @intFromFloat(@min(999_999_999.0, frac * 1e9));
         const duration: std.os.linux.timespec = .{
             .sec = @intCast(seconds),
             .nsec = @intCast(nanoseconds),
