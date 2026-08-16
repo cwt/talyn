@@ -142,8 +142,10 @@ pub fn z_datagram_sendto(self: *DatagramTransport.DatagramTransportObject, args:
         if (self.fd >= 0) {
             var storage: std.posix.sockaddr.storage = undefined;
             var addrlen: std.posix.socklen_t = @sizeOf(std.posix.sockaddr.storage);
-            _ = std.os.linux.getsockname(self.fd, @ptrCast(&storage), &addrlen);
-            family = storage.family;
+            const rc = std.os.linux.getsockname(self.fd, @ptrCast(&storage), &addrlen);
+            if (std.posix.errno(rc) == .SUCCESS) {
+                family = storage.family;
+            }
         }
 
         sd.address = try utils.Address.fromPyAddr(py_addr, family);

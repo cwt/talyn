@@ -33,7 +33,8 @@ pub fn z_datagram_get_extra_info(self: *DatagramTransport.DatagramTransportObjec
         if (self.fd < 0) return python_c.get_py_none();
         var storage: std.posix.sockaddr.storage = undefined;
         var addrlen: std.posix.socklen_t = @sizeOf(std.posix.sockaddr.storage);
-        _ = std.os.linux.getsockname(self.fd, @ptrCast(&storage), &addrlen);
+        const rc = std.os.linux.getsockname(self.fd, @ptrCast(&storage), &addrlen);
+        if (std.posix.errno(rc) != .SUCCESS) return python_c.get_py_none();
         const address = switch (storage.family) {
             std.posix.AF.INET => blk: {
                 const sa: *align(1) const std.posix.sockaddr.in = @ptrCast(&storage);
