@@ -36,7 +36,7 @@ fn sendto_completed(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
     if (io_uring_err != .SUCCESS) {
         if (self.protocol_error_received) |er| {
-            const exc = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "Ls", @as(c_long, @intFromEnum(io_uring_err)), "Sendto error") orelse return error.PythonError;
+            const exc = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "Ls\x00", @as(c_long, @intFromEnum(io_uring_err)), "Sendto error\x00") orelse return error.PythonError;
             defer python_c.py_decref(exc);
             const r = python_c.PyObject_CallOneArg(er, exc) orelse return error.PythonError;
             python_c.py_decref(r);
@@ -55,7 +55,7 @@ fn sendto_completed(data: *const CallbackManager.CallbackData) !void {
     if (!self.is_writing and self.buffer_size <= self.writing_low_water_mark) {
         self.is_writing = true;
         if (self.protocol) |proto| {
-            const rw = python_c.PyObject_GetAttrString(proto, "resume_writing") orelse return error.PythonError;
+            const rw = python_c.PyObject_GetAttrString(proto, "resume_writing\x00") orelse return error.PythonError;
             defer python_c.py_decref(rw);
             const r = python_c.PyObject_CallNoArgs(rw) orelse return error.PythonError;
             python_c.py_decref(r);
@@ -69,7 +69,7 @@ fn buffer_watermark_check(self: *DatagramTransport.DatagramTransportObject, len:
     if (self.buffer_size > self.writing_high_water_mark and self.is_writing) {
         self.is_writing = false;
         if (self.protocol) |proto| {
-            const pw = python_c.PyObject_GetAttrString(proto, "pause_writing") orelse return error.PythonError;
+            const pw = python_c.PyObject_GetAttrString(proto, "pause_writing\x00") orelse return error.PythonError;
             defer python_c.py_decref(pw);
             const r = python_c.PyObject_CallNoArgs(pw) orelse return error.PythonError;
             python_c.py_decref(r);
@@ -79,12 +79,12 @@ fn buffer_watermark_check(self: *DatagramTransport.DatagramTransportObject, len:
 
 pub fn z_datagram_sendto(self: *DatagramTransport.DatagramTransportObject, args: []?PyObject) !?PyObject {
     if (args.len < 1) {
-        python_c.raise_python_value_error("data argument is required");
+        python_c.raise_python_value_error("data argument is required\x00");
         return error.PythonError;
     }
     const data = args[0].?;
     if (self.closed) {
-        python_c.raise_python_runtime_error("Transport is closed");
+        python_c.raise_python_runtime_error("Transport is closed\x00");
         return error.PythonError;
     }
     // BUG-34: Previously, if is_writing was false (paused by flow

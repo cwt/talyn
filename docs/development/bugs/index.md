@@ -245,7 +245,7 @@ Sorted by bug number. See individual bug files for details.
 | [207](207.md) | PyObject reference and struct leak on error path in `z_loop_create_server` | High | Fixed |
 | [208](208.md) | Leaked heap structs, buffers, and PyObjects on error path in `src/loop/python/io/socket/ops.zig` | High | False Positive |
 | [209](209.md) | Leaked `PythonHandleObject` on callback exception in `callback_for_python_generic_callbacks` | Medium | False Positive |
-| [210](210.md) | Datagram `SendToData` buffer and transport reference leak on protocol exception | Medium | Open |
+| [210](210.md) | Missing null sentinels on CPython string APIs in `src/transports/datagram/write.zig` | Medium | Fixed |
 | [211](211.md) | Datagram `ReadData` and transport reference leak on task cancellation | Medium | Open |
 | [212](212.md) | Out-of-bounds uninitialized read and dropped addresses in `interleave_address_list` | High | Open |
 | [213](213.md) | Panic risk from unchecked `.?` unwrapping on nullable callbacks in `dispatch_completion_batch` | Medium | Open |
