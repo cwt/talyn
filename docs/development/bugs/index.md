@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 178 |
-| Open | 12 |
+| Fixed | 179 |
+| Open | 11 |
 | False Positive | 3 |
 | **Total** | **193** |
 
@@ -218,7 +218,7 @@ Sorted by bug number. See individual bug files for details.
 | [180](180.md) | CancelledError(None) vs standard CancelledError() argument mismatch on future cancellation | High | Fixed |
 | [181](181.md) | Uninitialized stack memory read in DNS answer parsing yielding corrupt resolved addresses | High | Fixed |
 | [182](182.md) | Use-after-free in ChildWatcher.on_child_exit on cancelled CQE dereferencing destroyed handler | Critical | Fixed |
-| [183](183.md) | Use-after-free and dangling pointer in loop.add_hook due to missing refcount hold | Critical | Open |
+| [183](183.md) | Use-after-free and dangling pointer in loop.add_hook due to missing refcount hold | Critical | Fixed |
 | [184](184.md) | Premature decref / refcount underflow on positional arguments in set_write_buffer_limits | Critical | Open |
 | [185](185.md) | Kernel -EINVAL from unnormalized nanoseconds in loop.call_later | High | Open |
 | [186](186.md) | Double-close of socket file descriptors on connection_made exception in StreamServer, create_connection, and create_endpoint | High | Open |

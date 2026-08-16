@@ -153,6 +153,7 @@ fn hook_handle_cancel(self: ?*HookHandle, _: ?PyObject) callconv(.c) ?PyObject {
     instance.cancelled = true;
     const hook_type: Loop.HookType = @enumFromInt(instance.hook_type);
     instance.loop_data.remove_hook(hook_type, instance.node);
+    python_c.py_decref(@ptrCast(instance));
     return python_c.get_py_none();
 }
 
@@ -170,12 +171,16 @@ var HookHandleType = python_c.PyTypeObject{
     .tp_methods = @constCast(&HookHandleMethods),
 };
 
+fn cleanup_hook_handle(ptr: ?*anyopaque) void {
+    const handle: *HookHandle = @ptrCast(@alignCast(ptr.?));
+    python_c.py_decref(@ptrCast(handle));
+}
+
 fn hook_callback(data: *const CallbackManager.CallbackData) !void {
-    const handle: *HookHandle = @ptrCast(@alignCast(data.user_data.?));
     if (data.cancelled()) {
-        python_c.py_decref(@ptrCast(handle));
         return;
     }
+    const handle: *HookHandle = @ptrCast(@alignCast(data.user_data.?));
     const ret = python_c.PyObject_CallNoArgs(handle.callback) orelse return error.PythonError;
     python_c.py_decref(ret);
 }
@@ -209,9 +214,12 @@ fn z_loop_add_hook(self: *LoopObject, args: []const ?PyObject) !PyObject {
         HookHandleType.tp_free.?(@ptrCast(handle));
     }
 
+    python_c.py_incref(@ptrCast(handle));
+    errdefer python_c.py_decref(@ptrCast(handle));
+
     handle.node = try handle.loop_data.add_hook(hook_type, .{
         .func = &hook_callback,
-        .cleanup = null,
+        .cleanup = &cleanup_hook_handle,
         .data = .{ .user_data = handle },
     });
 

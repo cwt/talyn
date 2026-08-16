@@ -85,3 +85,20 @@ def test_hook_multiple_cancel_no_crash():
 
     talyn.run(main())
 
+
+def test_hook_temporary_handle_no_uaf():
+    executed = []
+
+    def dummy():
+        executed.append(1)
+
+    async def main():
+        loop = asyncio.get_running_loop()
+        # Add hook without storing the return handle
+        loop._add_hook(0, dummy)
+        await asyncio.sleep(0)
+        assert len(executed) > 0
+
+    talyn.run(main())
+
+
