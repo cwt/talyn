@@ -256,7 +256,20 @@ pub fn build(b: *std.Build) void {
         utils_unit_tests.linker_allow_shlib_undefined = true;
     }
 
-    const test_step = b.step("test", "Run unit tests");
+    const linter_exe = b.addExecutable(.{
+        .name = "talyn-lint",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/linter/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_linter = b.addRunArtifact(linter_exe);
+    const lint_step = b.step("lint", "Run Zig & Python AST linter and offline bug hunter");
+    lint_step.dependOn(&run_linter.step);
+
+    const test_step = b.step("test", "Run unit tests and AST linter");
+    test_step.dependOn(&run_linter.step);
     test_step.dependOn(&run_talyn_module_unit_tests.step);
     test_step.dependOn(&run_callback_manager_unit_tests.step);
     test_step.dependOn(&run_utils_unit_tests.step);

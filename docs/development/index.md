@@ -38,6 +38,7 @@ This is the development bundle for Talyn. It covers project priorities, lessons 
 - [Lessons Learned](lessons/index.md)
 - [Bugs](bugs/index.md)
 - [Architectural Mandates](architectural-mandates.md)
+- [Offline AST Linter & Bug Hunter](ast-linter.md)
 - [Reference & Misc](reference-and-misc.md)
 - [Audits and Profiling](audits-and-profiling.md)
 - [io_uring Security Hardening](hardening.md)
