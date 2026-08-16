@@ -38,6 +38,7 @@ const DatagramCreationData = struct {
         python_c.py_xdecref(self.py_reuse_port);
         python_c.py_xdecref(self.py_allow_broadcast);
         python_c.py_xdecref(self.py_sock);
+        python_c.py_xdecref(self.py_dns_timeout);
 
         if (self.local_addresses) |addrs| allocator.free(addrs);
         if (self.remote_addresses) |addrs| allocator.free(addrs);
@@ -81,8 +82,8 @@ inline fn z_loop_create_datagram_endpoint(self: *LoopObject, args: []?PyObject, 
     try python_c.parse_vector_call_kwargs(
         knames,
         args.ptr + args.len,
-        &.{ "local_addr", "remote_addr", "family", "reuse_port", "allow_broadcast", "sock" },
-        &.{ &dcd.py_local_addr, &dcd.py_remote_addr, &dcd.py_family, &dcd.py_reuse_port, &dcd.py_allow_broadcast, &dcd.py_sock },
+        &.{ "local_addr", "remote_addr", "family", "reuse_port", "allow_broadcast", "sock", "dns_timeout" },
+        &.{ &dcd.py_local_addr, &dcd.py_remote_addr, &dcd.py_family, &dcd.py_reuse_port, &dcd.py_allow_broadcast, &dcd.py_sock, &dcd.py_dns_timeout },
     );
 
     if (python_c.PyCallable_Check(protocol_factory) <= 0) {
