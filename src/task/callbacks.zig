@@ -19,13 +19,65 @@ fn talyn_task_step_trampoline(
     python_c.py_decref(enter_ret);
 
     // 2 & 3 & 4. Scope context entry, send operation, and context exit
-    if (python_c.PyContext_Enter(context) < 0) return null;
-
     var coro_ret: ?PyObject = null;
-    var gen_ret: python_c.PySendResult = undefined;
-    {
+    var gen_ret: python_c.PySendResult = python_c.PYGEN_ERROR;
+    if (python_c.PyContext_Enter(context) == 0) {
         defer _ = python_c.PyContext_Exit(context);
         gen_ret = python_c.PyIter_Send(coro, send_val, &coro_ret);
+    }
+
+    // Save active exception to avoid SystemError during _leave_task call
+    const exc = python_c.PyErr_GetRaisedException();
+
+    // 5. Leave task
+    const leave_ret = python_c.PyObject_Vectorcall(leave_task_func, &args, 2, null);
+
+    // Restore the exception
+    python_c.PyErr_SetRaisedException(exc);
+
+    if (leave_ret) |ret| {
+        python_c.py_decref(ret);
+    } else {
+        python_c.py_xdecref(coro_ret);
+        return null;
+    }
+
+    send_result_out.* = @intCast(gen_ret);
+    coro_ret_out.* = coro_ret;
+
+    return python_c.get_py_none();
+}
+
+fn talyn_task_throw_trampoline(
+    enter_task_func: PyObject,
+    leave_task_func: PyObject,
+    loop: PyObject,
+    task: PyObject,
+    coro: PyObject,
+    context: PyObject,
+    exception_value: ?PyObject,
+    send_result_out: *c_int,
+    coro_ret_out: *?PyObject,
+) ?PyObject {
+    var args = [2]PyObject{ loop, task };
+
+    // 1. Enter task
+    const enter_ret = python_c.PyObject_Vectorcall(enter_task_func, &args, 2, null) orelse return null;
+    python_c.py_decref(enter_ret);
+
+    var coro_ret: ?PyObject = null;
+    var gen_ret: python_c.PySendResult = python_c.PYGEN_ERROR;
+    if (python_c.PyContext_Enter(context) == 0) {
+        defer _ = python_c.PyContext_Exit(context);
+
+        const coro_throw: ?PyObject = python_c.PyObject_GetAttrString(coro, "throw\x00");
+        if (coro_throw) |ct| {
+            defer python_c.py_decref(ct);
+            if (python_c.PyObject_CallOneArg(ct, exception_value)) |v| {
+                coro_ret = v;
+                gen_ret = python_c.PYGEN_NEXT;
+            }
+        }
     }
 
     // Save active exception to avoid SystemError during _leave_task call
@@ -391,54 +443,33 @@ fn _execute_task_throw(task: *Task.PythonTaskObject, task_exception: ?PyObject) 
         return;
     }
 
-    const enter_task_args: [2]PyObject = .{ @ptrCast(py_loop), @ptrCast(task) };
-
-    const enter_ret: PyObject = python_c.PyObject_Vectorcall(utils.PythonImports.get("enter_task_func"), &enter_task_args, enter_task_args.len, null) orelse return error.PythonError;
-    python_c.py_decref(enter_ret);
-
-    const context = task.py_context.?;
-    if (python_c.PyContext_Enter(context) < 0) {
-        return error.PythonError;
-    }
-
+    var send_result: c_int = 0;
     var coro_ret: ?PyObject = null;
     defer python_c.py_xdecref(coro_ret);
 
-    var gen_ret: python_c.PySendResult = python_c.PYGEN_ERROR;
-    const coro_throw: PyObject = python_c.PyObject_GetAttrString(task.coro.?, "throw\x00") orelse {
-        _ = python_c.PyContext_Exit(context);
-        return error.PythonError;
-    };
-    defer python_c.py_decref(coro_throw);
+    const trampoline_ret = talyn_task_throw_trampoline(
+        utils.PythonImports.get("enter_task_func"),
+        utils.PythonImports.get("leave_task_func"),
+        @ptrCast(py_loop),
+        @ptrCast(task),
+        task.coro.?,
+        task.py_context.?,
+        exception_value,
+        &send_result,
+        &coro_ret,
+    );
 
-    if (python_c.PyObject_CallOneArg(coro_throw, exception_value)) |v| {
-        coro_ret = v;
-        gen_ret = python_c.PYGEN_NEXT;
-    }
-
-    if (python_c.PyContext_Exit(context) < 0) {
+    if (trampoline_ret == null) {
         return error.PythonError;
     }
 
     var exception: ?PyObject = null;
+    const gen_ret: python_c.PySendResult = @intCast(send_result);
     check_gen_ret(gen_ret, task, future_data, loop_data, coro_ret) catch |err| {
         utils.handle_zig_function_error(err, {});
 
         exception = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
     };
-
-    const leave_ret = python_c.PyObject_Vectorcall(utils.PythonImports.get("leave_task_func"), &enter_task_args, enter_task_args.len, null) orelse {
-        // leave_task_func failed. If check_gen_ret had already captured an
-        // exception into `exception`, re-raise it (it is the more meaningful
-        // error for the user); otherwise leave Python's current error state
-        // (from leave_task_func itself) intact. Either way, decref the task
-        // so we don't leak it.
-        if (exception) |exc| {
-            python_c.PyErr_SetRaisedException(exc);
-        }
-        return error.PythonError;
-    };
-    python_c.py_decref(leave_ret);
 
     if (exception) |exc| {
         python_c.PyErr_SetRaisedException(exc);
@@ -459,6 +490,7 @@ pub fn execute_task_throw(data: *const CallbackManager.CallbackData) !void {
             return;
         };
         const fut = utils.get_data_ptr(Future, &task.fut);
+        errdefer python_c.py_decref(@ptrCast(task));
         try Future.Python.Result.future_fast_set_exception(&task.fut, fut, exception);
         python_c.py_decref(@ptrCast(task));
         return;
@@ -466,9 +498,13 @@ pub fn execute_task_throw(data: *const CallbackManager.CallbackData) !void {
     @call(.always_inline, _execute_task_throw, .{ task, task.exception.? }) catch |err| {
         utils.handle_zig_function_error(err, {});
 
-        const exc = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
+        const exc = python_c.PyErr_GetRaisedException() orelse {
+            python_c.py_decref(@ptrCast(task));
+            return error.PythonError;
+        };
 
         const fut = utils.get_data_ptr(Future, &task.fut);
+        errdefer python_c.py_decref(@ptrCast(task));
         try Future.Python.Result.future_fast_set_exception(&task.fut, fut, exc);
         python_c.py_decref(@ptrCast(task));
     };
@@ -538,9 +574,13 @@ pub fn execute_task_send(data: *const CallbackManager.CallbackData) !void {
     @call(.always_inline, _execute_task_send, .{task}) catch |err| {
         utils.handle_zig_function_error(err, {});
 
-        const exc = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
+        const exc = python_c.PyErr_GetRaisedException() orelse {
+            python_c.py_decref(@ptrCast(task));
+            return error.PythonError;
+        };
 
         const fut = utils.get_data_ptr(Future, &task.fut);
+        errdefer python_c.py_decref(@ptrCast(task));
         try Future.Python.Result.future_fast_set_exception(&task.fut, fut, exc);
         python_c.py_decref(@ptrCast(task));
     };

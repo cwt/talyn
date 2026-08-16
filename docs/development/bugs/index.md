@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 192 |
-| Open | 3 |
+| Fixed | 194 |
+| Open | 1 |
 | False Positive | 3 |
 | **Total** | **198** |
 
@@ -232,6 +232,6 @@ Sorted by bug number. See individual bug files for details.
 | [194](194.md) | Unsafe @enumFromInt on unchecked signal integers causing enum cast panics | Medium | Fixed |
 | [195](195.md) | `remove_done_callback` recounts already-cancelled or executed callbacks on repeat calls | High | Fixed |
 | [196](196.md) | `SubprocessTransport` protocol callback failure leaks pidfd descriptor and PyObject reference | High | Fixed |
-| [197](197.md) | Coroutine throw error paths bypass `_leave_task` leaving corrupted `asyncio.current_task` state | High | Open |
-| [198](198.md) | `execute_task_send` leaks `PythonTaskObject` reference if `future_fast_set_exception` errors | Medium | Open |
+| [197](197.md) | Coroutine throw error paths bypass `_leave_task` leaving corrupted `asyncio.current_task` state | High | Fixed |
+| [198](198.md) | `execute_task_send` leaks `PythonTaskObject` reference if `future_fast_set_exception` errors | Medium | Fixed |
 | [199](199.md) | Unchecked `getsockname` syscall return in `DatagramTransport.z_datagram_sendto` reads uninitialized memory | Medium | Open |
