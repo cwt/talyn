@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 186 |
-| Open | 4 |
+| Fixed | 187 |
+| Open | 3 |
 | False Positive | 3 |
 | **Total** | **193** |
 
@@ -226,7 +226,7 @@ Sorted by bug number. See individual bug files for details.
 | [188](188.md) | Unbounded hostname slice length panic in DNS IO path violating Mandate 1 | High | Fixed |
 | [189](189.md) | Systemic keyword argument reference leaks across multiple loop APIs | Medium | Fixed |
 | [190](190.md) | Unchecked syscall return value in pseudosocket_getsockname yielding garbage memory | Medium | Fixed |
-| [191](191.md) | Use-after-free / double-release hazard in LRUCache.pop_tail with eviction callback | Medium | Open |
+| [191](191.md) | Use-after-free / double-release hazard in LRUCache.pop_tail with eviction callback | Medium | Fixed |
 | [192](192.md) | Nested GC traversal bug in DNS resolver ControlData.traverse skipping callback_ptr | Medium | Open |
 | [193](193.md) | Missing tp_clear on GC heap types HookHandleType and PathWatcherHandleType | Medium | Open |
 | [194](194.md) | Unsafe @enumFromInt on unchecked signal integers causing enum cast panics | Medium | Open |

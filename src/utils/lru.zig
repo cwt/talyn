@@ -105,9 +105,6 @@ pub fn LRUCache(comptime K: type, comptime V: type) type {
         pub fn pop_tail(self: *Self) ?V {
             if (self.tail) |node| {
                 const value = node.value;
-                if (self.evict_callback) |cb| {
-                    cb(self.evict_ctx, node.key, node.value);
-                }
                 _ = self.map.remove(node.key);
                 self.remove_node(node);
                 self.allocator.destroy(node);
@@ -220,4 +217,27 @@ test "LRUCache capacity 0 holds nothing (BUG-78)" {
 
     // The map should be empty
     try std.testing.expectEqual(@as(usize, 0), cache.map.count());
+}
+
+test "LRUCache pop_tail does not invoke evict_callback" {
+    const allocator = std.testing.allocator;
+    var cache = LRUCache(u32, []const u8).init(allocator, 2);
+    defer cache.deinit();
+
+    var evict_count: usize = 0;
+    const Ctx = struct {
+        fn cb(ctx: ?*anyopaque, _: u32, _: []const u8) void {
+            const count: *usize = @ptrCast(@alignCast(ctx.?));
+            count.* += 1;
+        }
+    };
+    cache.evict_callback = Ctx.cb;
+    cache.evict_ctx = &evict_count;
+
+    try cache.put(1, "one");
+    try cache.put(2, "two");
+
+    const popped = cache.pop_tail();
+    try std.testing.expectEqualStrings("one", popped.?);
+    try std.testing.expectEqual(@as(usize, 0), evict_count);
 }
