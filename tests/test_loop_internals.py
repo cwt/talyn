@@ -985,3 +985,25 @@ def test_ssl_server_and_connection_unix() -> None:
             os.unlink(sock_path)
     finally:
         loop.close()
+
+
+def test_call_later_fractional_delays() -> None:
+    loop = Loop()
+    try:
+        results = []
+
+        def cb(val):
+            results.append(val)
+
+        # Multiple sub-second timers to trigger potential nanosecond overflow
+        for i in range(10):
+            loop.call_later(0.01 * (i + 1), cb, i)
+
+        loop.call_later(0.15, loop.stop)
+        loop.run_forever()
+
+        assert len(results) == 10
+        assert results == list(range(10))
+    finally:
+        loop.close()
+
