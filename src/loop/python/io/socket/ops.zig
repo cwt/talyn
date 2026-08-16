@@ -778,50 +778,6 @@ fn z_loop_sock_sendto(self: *LoopObject, args: []const ?PyObject) !*FutureObject
 // sock_recv_into
 // ============================================================
 
-const SockRecvIntoData = struct {
-    future: *FutureObject,
-    loop: *LoopObject,
-    allocator: std.mem.Allocator,
-};
-
-fn sock_recv_into_callback(data: *const CallbackManager.CallbackData) !void {
-    const io_uring_err = data.io_uring_err();
-    const io_uring_res = data.io_uring_res();
-    const rd: *SockRecvIntoData = @ptrCast(@alignCast(data.user_data.?));
-    var success = false;
-    defer if (success) {
-        python_c.py_decref(@ptrCast(rd.future));
-        python_c.py_decref(@ptrCast(rd.loop));
-        rd.allocator.destroy(rd);
-    };
-
-    if (data.cancelled()) {
-        success = true;
-        return;
-    }
-
-    if (io_uring_err != .SUCCESS) {
-        const errno_val = @intFromEnum(io_uring_err);
-        const exc = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "is\x00", @as(c_int, @intCast(errno_val)), "Recv_into call failed\x00") orelse return set_future_exception(error.PythonError, rd.future);
-        defer python_c.py_decref(exc);
-
-        const future_data = utils.get_data_ptr(Future, rd.future);
-        try Future.Python.Result.future_fast_set_exception(rd.future, future_data, exc);
-        success = true;
-        return;
-    }
-
-    const nread: usize = @intCast(@max(io_uring_res, 0));
-    const future_data = utils.get_data_ptr(Future, rd.future);
-    // BUG-58: Check for null return from PyLong_FromLong. If allocation
-    // fails, dereferencing the null would segfault. Propagate as a future
-    // exception instead.
-    const py_nread = python_c.PyLong_FromLong(@intCast(nread)) orelse
-        return set_future_exception(error.PythonError, rd.future);
-    try Future.Python.Result.future_fast_set_result(future_data, py_nread);
-    success = true;
-}
-
 pub fn loop_sock_recv_into(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t) callconv(.c) ?*FutureObject {
     return utils.execute_zig_function(z_loop_sock_recv_into, .{ self.?, args.?[0..@as(usize, @intCast(nargs))] });
 }
@@ -860,11 +816,9 @@ fn z_loop_sock_recv_into(self: *LoopObject, args: []const ?PyObject) !*FutureObj
     const rd = try loop_data.allocator.create(SockRecvIntoDataWithBuf);
     errdefer loop_data.allocator.destroy(rd);
     rd.* = .{
-        .base = .{
-            .future = @ptrCast(python_c.py_newref(@as(PyObject, @ptrCast(fut)))),
-            .loop = python_c.py_newref(self),
-            .allocator = loop_data.allocator,
-        },
+        .future = @ptrCast(python_c.py_newref(@as(PyObject, @ptrCast(fut)))),
+        .loop = python_c.py_newref(self),
+        .allocator = loop_data.allocator,
         .pbuf = pbuf,
     };
 
@@ -882,16 +836,18 @@ fn z_loop_sock_recv_into(self: *LoopObject, args: []const ?PyObject) !*FutureObj
 }
 
 const SockRecvIntoDataWithBuf = struct {
-    base: SockRecvIntoData,
+    future: *FutureObject,
+    loop: *LoopObject,
+    allocator: std.mem.Allocator,
     pbuf: python_c.Py_buffer,
 };
 
 fn cleanup_recv_into_with_buf(ptr: ?*anyopaque) void {
     const rd: *SockRecvIntoDataWithBuf = @ptrCast(@alignCast(ptr.?));
     python_c.PyBuffer_Release(&rd.pbuf);
-    python_c.py_decref(@ptrCast(rd.base.future));
-    python_c.py_decref(@ptrCast(rd.base.loop));
-    rd.base.allocator.destroy(rd);
+    python_c.py_decref(@ptrCast(rd.future));
+    python_c.py_decref(@ptrCast(rd.loop));
+    rd.allocator.destroy(rd);
 }
 
 fn sock_recv_into_callback_with_buf(data: *const CallbackManager.CallbackData) !void {
@@ -908,22 +864,22 @@ fn sock_recv_into_callback_with_buf(data: *const CallbackManager.CallbackData) !
 
     if (io_uring_err != .SUCCESS) {
         const errno_val = @intFromEnum(io_uring_err);
-        const exc = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "is\x00", @as(c_int, @intCast(errno_val)), "Recv_into call failed\x00") orelse return set_future_exception(error.PythonError, rd.base.future);
+        const exc = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "is\x00", @as(c_int, @intCast(errno_val)), "Recv_into call failed\x00") orelse return set_future_exception(error.PythonError, rd.future);
         defer python_c.py_decref(exc);
 
-        const future_data = utils.get_data_ptr(Future, rd.base.future);
-        try Future.Python.Result.future_fast_set_exception(rd.base.future, future_data, exc);
+        const future_data = utils.get_data_ptr(Future, rd.future);
+        try Future.Python.Result.future_fast_set_exception(rd.future, future_data, exc);
         success = true;
         return;
     }
 
     const nread: usize = @intCast(@max(io_uring_res, 0));
-    const future_data = utils.get_data_ptr(Future, rd.base.future);
+    const future_data = utils.get_data_ptr(Future, rd.future);
     // BUG-58: Check for null return from PyLong_FromLong. If allocation
     // fails, dereferencing the null would segfault. Propagate as a future
     // exception instead.
     const py_nread = python_c.PyLong_FromLong(@intCast(nread)) orelse
-        return set_future_exception(error.PythonError, rd.base.future);
+        return set_future_exception(error.PythonError, rd.future);
     try Future.Python.Result.future_fast_set_result(future_data, py_nread);
     success = true;
 }
