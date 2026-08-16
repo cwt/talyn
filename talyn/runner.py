@@ -28,7 +28,7 @@ class Runner:
 
     def run(self, coro: Coroutine[Any, Any, _T], *, context: Any = None) -> _T:
         return self._loop.run_until_complete(
-            asyncio.ensure_future(coro, loop=self._loop)
+            self._loop.create_task(coro, context=context)
         )
 
     def close(self) -> None:

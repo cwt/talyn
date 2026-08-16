@@ -47,3 +47,19 @@ def test_runner_close_closed_loop() -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         runner.close()
+
+
+def test_runner_run_with_context() -> None:
+    import contextvars
+
+    var = contextvars.ContextVar("var", default="default")
+
+    async def coro():
+        return var.get()
+
+    ctx = contextvars.copy_context()
+    ctx.run(var.set, "custom_value")
+
+    with Runner() as runner:
+        result = runner.run(coro(), context=ctx)
+        assert result == "custom_value"
