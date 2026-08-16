@@ -54,9 +54,7 @@ fn set_future_exception(err: anyerror, future: *FutureObject) !void {
     try Future.Python.Result.future_fast_set_exception(future, future_data, exc);
 }
 
-inline fn z_loop_create_datagram_endpoint(
-    self: *LoopObject, args: []?PyObject, knames: ?PyObject
-) !*FutureObject {
+inline fn z_loop_create_datagram_endpoint(self: *LoopObject, args: []?PyObject, knames: ?PyObject) !*FutureObject {
     if (Loop.Python.check_forked(self)) return error.PythonError;
     if (Loop.Python.check_thread(self)) return error.PythonError;
     if (args.len < 1) {
@@ -81,7 +79,8 @@ inline fn z_loop_create_datagram_endpoint(
     };
 
     try python_c.parse_vector_call_kwargs(
-        knames, args.ptr + args.len,
+        knames,
+        args.ptr + args.len,
         &.{ "local_addr", "remote_addr", "family", "reuse_port", "allow_broadcast", "sock" },
         &.{ &dcd.py_local_addr, &dcd.py_remote_addr, &dcd.py_family, &dcd.py_reuse_port, &dcd.py_allow_broadcast, &dcd.py_sock },
     );
@@ -124,7 +123,7 @@ fn get_addr_tuple(addr: PyObject) !struct { host: []const u8, port: u16 } {
 }
 
 fn resolve_local_addr(data: *const CallbackManager.CallbackData) !void {
-    const dcd: *DatagramCreationData = @alignCast(@ptrCast(data.user_data.?));
+    const dcd: *DatagramCreationData = @ptrCast(@alignCast(data.user_data.?));
     if (data.cancelled()) return dcd.deinit();
 
     const loop_data = utils.get_data_ptr(Loop, dcd.loop);
@@ -147,8 +146,8 @@ fn resolve_local_addr(data: *const CallbackManager.CallbackData) !void {
         dcd.local_addresses = try loop_data.allocator.dupe(utils.Address, addresses);
         // Update ports
         for (dcd.local_addresses.?) |*addr| addr.setPort(addr_info.port);
-}
-    
+    }
+
     const callback = CallbackManager.Callback{
         .func = &resolve_remote_addr,
         .cleanup = null,
@@ -158,7 +157,7 @@ fn resolve_local_addr(data: *const CallbackManager.CallbackData) !void {
 }
 
 fn local_addr_resolved_callback(data: *const CallbackManager.CallbackData) !void {
-    const dcd: *DatagramCreationData = @alignCast(@ptrCast(data.user_data.?));
+    const dcd: *DatagramCreationData = @ptrCast(@alignCast(data.user_data.?));
     if (data.cancelled()) return dcd.deinit();
 
     const loop_data = utils.get_data_ptr(Loop, dcd.loop);
@@ -183,7 +182,7 @@ fn local_addr_resolved_callback(data: *const CallbackManager.CallbackData) !void
 }
 
 fn resolve_remote_addr(data: *const CallbackManager.CallbackData) !void {
-    const dcd: *DatagramCreationData = @alignCast(@ptrCast(data.user_data.?));
+    const dcd: *DatagramCreationData = @ptrCast(@alignCast(data.user_data.?));
     if (data.cancelled()) return dcd.deinit();
 
     const loop_data = utils.get_data_ptr(Loop, dcd.loop);
@@ -216,7 +215,7 @@ fn resolve_remote_addr(data: *const CallbackManager.CallbackData) !void {
 }
 
 fn remote_addr_resolved_callback(data: *const CallbackManager.CallbackData) !void {
-    const dcd: *DatagramCreationData = @alignCast(@ptrCast(data.user_data.?));
+    const dcd: *DatagramCreationData = @ptrCast(@alignCast(data.user_data.?));
     if (data.cancelled()) return dcd.deinit();
 
     const loop_data = utils.get_data_ptr(Loop, dcd.loop);
@@ -242,7 +241,7 @@ fn remote_addr_resolved_callback(data: *const CallbackManager.CallbackData) !voi
 }
 
 fn create_endpoint(data: *const CallbackManager.CallbackData) !void {
-    const dcd: *DatagramCreationData = @alignCast(@ptrCast(data.user_data.?));
+    const dcd: *DatagramCreationData = @ptrCast(@alignCast(data.user_data.?));
     defer dcd.deinit();
     if (data.cancelled()) return;
 
@@ -261,7 +260,10 @@ fn create_endpoint(data: *const CallbackManager.CallbackData) !void {
     const socket_ret = std.os.linux.socket(family, @as(u32, @intCast(std.posix.SOCK.DGRAM | std.posix.SOCK.NONBLOCK | std.posix.SOCK.CLOEXEC)), 0);
     if (utils.getSyscallErrno(socket_ret) != .SUCCESS) return error.SystemResources;
     const fd: std.posix.fd_t = @intCast(socket_ret);
-    errdefer _ = std.os.linux.close(fd);
+    var owns_fd = true;
+    defer {
+        if (owns_fd) _ = std.os.linux.close(fd);
+    }
 
     if (dcd.py_reuse_port) |rp| {
         if (python_c.PyObject_IsTrue(rp) != 0) {
@@ -309,6 +311,7 @@ fn create_endpoint(data: *const CallbackManager.CallbackData) !void {
     errdefer python_c.py_decref(protocol);
 
     const transport = try DatagramTransport.Constructors.new_datagram_transport(protocol, dcd.loop, fd);
+    owns_fd = false;
     errdefer python_c.py_decref(@ptrCast(transport));
 
     const connection_made = python_c.PyObject_GetAttrString(protocol, "connection_made\x00") orelse return error.PythonError;
@@ -317,23 +320,20 @@ fn create_endpoint(data: *const CallbackManager.CallbackData) !void {
     python_c.py_decref(ret);
 
     try DatagramTransport.ReadTransport.queue_read(transport);
-const result_tuple = python_c.PyTuple_Pack(2, @as(PyObject, @ptrCast(transport)), protocol)
-    orelse return error.PythonError;
-defer python_c.py_decref(result_tuple);
+    const result_tuple = python_c.PyTuple_Pack(2, @as(PyObject, @ptrCast(transport)), protocol) orelse return error.PythonError;
+    defer python_c.py_decref(result_tuple);
 
-// Decref local references as PyTuple_Pack increments them
-python_c.py_decref(@ptrCast(transport));
-python_c.py_decref(protocol);
+    // Decref local references as PyTuple_Pack increments them
+    python_c.py_decref(@ptrCast(transport));
+    python_c.py_decref(protocol);
 
-const future_data = utils.get_data_ptr(Future, dcd.future);
-try Future.Python.Result.future_fast_set_result(future_data, result_tuple);
+    const future_data = utils.get_data_ptr(Future, dcd.future);
+    try Future.Python.Result.future_fast_set_result(future_data, result_tuple);
 }
 
-
-pub fn loop_create_datagram_endpoint(
-    self: ?*LoopObject, args: ?[*]?PyObject, nargs: isize, knames: ?PyObject
-) callconv(.c) ?*FutureObject {
+pub fn loop_create_datagram_endpoint(self: ?*LoopObject, args: ?[*]?PyObject, nargs: isize, knames: ?PyObject) callconv(.c) ?*FutureObject {
     return utils.execute_zig_function(
-        z_loop_create_datagram_endpoint, .{ self.?, args.?[0..@as(usize, @intCast(nargs))], knames },
+        z_loop_create_datagram_endpoint,
+        .{ self.?, args.?[0..@as(usize, @intCast(nargs))], knames },
     );
 }

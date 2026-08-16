@@ -51,7 +51,7 @@ fn streamserver_dealloc(self: ?*StreamServerObject) callconv(.c) void {
     python_c.PyObject_GC_UnTrack(instance);
     if (!instance.closed and instance.server_fd >= 0) {
         if (instance.loop) |loop| {
-            const loop_obj: *Loop.Python.LoopObject = @alignCast(@ptrCast(loop));
+            const loop_obj: *Loop.Python.LoopObject = @ptrCast(@alignCast(loop));
             if (loop_obj.debug) {
                 const msg = python_c.PyUnicode_FromFormat("unclosed server <StreamServerObject fd=%d>\x00", instance.server_fd);
                 if (msg) |m| {
@@ -95,10 +95,7 @@ fn streamserver_clear(self: ?*StreamServerObject) callconv(.c) c_int {
     return 0;
 }
 
-fn z_streamserver_init(
-    self: *StreamServerObject, py_loop: ?PyObject, py_protocol_factory: ?PyObject,
-    py_server_fd: ?PyObject, py_family: ?PyObject, py_backlog: ?PyObject
-) !c_int {
+fn z_streamserver_init(self: *StreamServerObject, py_loop: ?PyObject, py_protocol_factory: ?PyObject, py_server_fd: ?PyObject, py_family: ?PyObject, py_backlog: ?PyObject) !c_int {
     if (python_c.PyCallable_Check(py_protocol_factory.?) <= 0) {
         python_c.raise_python_type_error("protocol_factory must be callable\x00");
         return error.PythonError;
@@ -138,9 +135,7 @@ fn z_streamserver_init(
     return 0;
 }
 
-fn streamserver_init(
-    self: ?*StreamServerObject, args: ?PyObject, kwargs: ?PyObject
-) callconv(.c) c_int {
+fn streamserver_init(self: ?*StreamServerObject, args: ?PyObject, kwargs: ?PyObject) callconv(.c) c_int {
     var py_loop: ?PyObject = null;
     var py_protocol_factory: ?PyObject = null;
     var py_server_fd: ?PyObject = null;
@@ -155,10 +150,7 @@ fn streamserver_init(
     kwlist[4] = @constCast("backlog\x00");
     kwlist[5] = null;
 
-    if (python_c.PyArg_ParseTupleAndKeywords(
-        args, kwargs, "OOOO|O\x00", @ptrCast(&kwlist),
-        &py_loop, &py_protocol_factory, &py_server_fd, &py_family, &py_backlog
-    ) < 0) {
+    if (python_c.PyArg_ParseTupleAndKeywords(args, kwargs, "OOOO|O\x00", @ptrCast(&kwlist), &py_loop, &py_protocol_factory, &py_server_fd, &py_family, &py_backlog) < 0) {
         return -1;
     }
 
@@ -168,7 +160,7 @@ fn streamserver_init(
 }
 
 fn accept_callback(data: *const CallbackManager.CallbackData) !void {
-    const server: *StreamServerObject = @alignCast(@ptrCast(data.user_data.?));
+    const server: *StreamServerObject = @ptrCast(@alignCast(data.user_data.?));
 
     defer python_c.py_decref(@ptrCast(server));
 
@@ -190,11 +182,7 @@ fn accept_callback(data: *const CallbackManager.CallbackData) !void {
 
     const io_uring_err = data.io_uring_err();
     if (io_uring_err != .SUCCESS) {
-        const exception = python_c.PyObject_CallFunction(
-            python_c.PyExc_OSError, "Ls\x00",
-            @as(c_long, @intFromEnum(io_uring_err)),
-            "Accept error\x00"
-        ) orelse return error.PythonError;
+        const exception = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "Ls\x00", @as(c_long, @intFromEnum(io_uring_err)), "Accept error\x00") orelse return error.PythonError;
         python_c.PyErr_SetRaisedException(exception);
         return error.PythonError;
     }
@@ -229,7 +217,10 @@ fn accept_callback(data: *const CallbackManager.CallbackData) !void {
         return error.SystemResources;
     }
     const client_fd: std.posix.fd_t = @intCast(client_fd_ret);
-    errdefer _ = std.os.linux.close(client_fd);
+    var owns_fd = true;
+    defer {
+        if (owns_fd) _ = std.os.linux.close(client_fd);
+    }
 
     const loop = server.loop.?;
     _ = utils.get_data_ptr(Loop, @as(*Loop.Python.LoopObject, @ptrCast(loop)));
@@ -238,16 +229,18 @@ fn accept_callback(data: *const CallbackManager.CallbackData) !void {
     defer python_c.py_decref(protocol);
 
     const transport = try Stream.Constructors.new_stream_transport(
-        protocol, @ptrCast(loop), client_fd, false
+        protocol,
+        @ptrCast(loop),
+        client_fd,
+        false,
     );
+    owns_fd = false;
     defer python_c.py_decref(@ptrCast(transport));
 
-    const connection_made = python_c.PyObject_GetAttrString(protocol, "connection_made\x00")
-        orelse return error.PythonError;
+    const connection_made = python_c.PyObject_GetAttrString(protocol, "connection_made\x00") orelse return error.PythonError;
     defer python_c.py_decref(connection_made);
 
-    const ret = python_c.PyObject_CallOneArg(connection_made, @ptrCast(transport))
-        orelse return error.PythonError;
+    const ret = python_c.PyObject_CallOneArg(connection_made, @ptrCast(transport)) orelse return error.PythonError;
     python_c.py_decref(ret);
 
     // Notify server of new connection
@@ -313,7 +306,7 @@ fn schedule_accept_retry(server: *StreamServerObject) void {
 }
 
 fn accept_retry_callback(data: *const CallbackManager.CallbackData) !void {
-    const server: *StreamServerObject = @alignCast(@ptrCast(data.user_data.?));
+    const server: *StreamServerObject = @ptrCast(@alignCast(data.user_data.?));
     defer python_c.py_decref(@ptrCast(server));
 
     if (data.cancelled() or server.closed or server.loop == null) return;
@@ -438,9 +431,7 @@ pub fn create_type() !void {
     if (StreamServerType != null) {
         return;
     }
-    StreamServerType = @ptrCast(python_c.PyType_FromSpecWithBases(
-        &server_spec, null
-    ) orelse return error.PythonError);
+    StreamServerType = @ptrCast(python_c.PyType_FromSpecWithBases(&server_spec, null) orelse return error.PythonError);
 }
 
 pub fn start_serving(server: *StreamServerObject) !void {

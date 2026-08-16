@@ -855,9 +855,10 @@ fn socket_connected_callback(data: *const CallbackManager.CallbackData) !void {
         }
     }
 
+    const fut = creation_data.future.?;
     z_create_transport_and_set_future_result(&transport_creation_data) catch |err| {
         if (!(mcs.timer_scheduled and !mcs.timer_fired) and mcs.pending == 0) mcs.deinit();
-        return set_future_exception(err, creation_data.future.?);
+        return set_future_exception(err, fut);
     };
     transport_creation_data.fd_created = false;
     if (!(mcs.timer_scheduled and !mcs.timer_fired) and mcs.pending == 0) mcs.deinit();
@@ -867,12 +868,13 @@ fn socket_connected_callback(data: *const CallbackManager.CallbackData) !void {
 // -----------------------------------------------------------------
 // STEP#5: Create transport and set future result
 
-fn z_create_transport_and_set_future_result(data: *const TransportCreationData) !void {
+fn z_create_transport_and_set_future_result(data: *TransportCreationData) !void {
     const protocol = python_c.PyObject_CallNoArgs(data.protocol_factory) orelse return error.PythonError;
-    errdefer python_c.py_decref(protocol);
+    defer python_c.py_decref(protocol);
 
     const transport = try Stream.Constructors.new_stream_transport_with_owns_fd(protocol, data.loop, data.socket_fd, data.zero_copying, data.owns_fd);
-    errdefer python_c.py_decref(@ptrCast(transport));
+    data.fd_created = false;
+    defer python_c.py_decref(@ptrCast(transport));
 
     const connection_made_func = python_c.PyObject_GetAttrString(protocol, "connection_made\x00") orelse return error.PythonError;
     defer python_c.py_decref(connection_made_func);
@@ -882,10 +884,6 @@ fn z_create_transport_and_set_future_result(data: *const TransportCreationData) 
 
     const result_tuple = python_c.PyTuple_Pack(2, @as(PyObject, @ptrCast(transport)), protocol) orelse return error.PythonError;
     defer python_c.py_decref(result_tuple);
-
-    // Decref local references as PyTuple_Pack increments them
-    python_c.py_decref(@ptrCast(transport));
-    python_c.py_decref(protocol);
 
     const future_data = utils.get_data_ptr(Future, data.future);
     try Future.Python.Result.future_fast_set_result(future_data, result_tuple);
@@ -900,7 +898,7 @@ fn create_transport_and_set_future_result(data: *const CallbackManager.CallbackD
 
     defer allocator.destroy(transport_creation_data_ptr);
 
-    const transport_creation_data = transport_creation_data_ptr.*;
+    var transport_creation_data = transport_creation_data_ptr.*;
     defer {
         python_c.py_decref(transport_creation_data.protocol_factory);
         python_c.py_decref(@ptrCast(transport_creation_data.loop));
