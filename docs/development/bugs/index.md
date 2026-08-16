@@ -243,8 +243,8 @@ Sorted by bug number. See individual bug files for details.
 | [205](205.md) | Unhandled `dns_timeout` keyword argument and `PyObject` reference leak in `DatagramCreationData` | Low | Fixed |
 | [206](206.md) | `deinitialize_object_fields` refcount leak on `ob_base` structs (`?*FutureObject`, `?*LoopObject`) | High | Fixed |
 | [207](207.md) | PyObject reference and struct leak on error path in `z_loop_create_server` | High | Fixed |
-| [208](208.md) | Leaked heap structs, buffers, and PyObjects on error path in `src/loop/python/io/socket/ops.zig` | High | Fixed |
-| [209](209.md) | Leaked `PythonHandleObject` on callback exception in `callback_for_python_generic_callbacks` | Medium | Open |
+| [208](208.md) | Leaked heap structs, buffers, and PyObjects on error path in `src/loop/python/io/socket/ops.zig` | High | False Positive |
+| [209](209.md) | Leaked `PythonHandleObject` on callback exception in `callback_for_python_generic_callbacks` | Medium | False Positive |
 | [210](210.md) | Datagram `SendToData` buffer and transport reference leak on protocol exception | Medium | Open |
 | [211](211.md) | Datagram `ReadData` and transport reference leak on task cancellation | Medium | Open |
 | [212](212.md) | Out-of-bounds uninitialized read and dropped addresses in `interleave_address_list` | High | Open |
