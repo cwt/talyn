@@ -128,21 +128,27 @@ const HookHandle = extern struct {
     loop_data: *Loop,
     hook_type: c_int,
     node: Loop.HooksList.Node,
-    callback: PyObject,
+    callback: ?PyObject,
     cancelled: bool,
 };
+
+fn hook_handle_clear(self: ?*HookHandle) callconv(.c) c_int {
+    const instance = self.?;
+    python_c.py_decref_and_set_null(&instance.callback);
+    return 0;
+}
 
 fn hook_handle_dealloc(self: ?*HookHandle) callconv(.c) void {
     const instance = self.?;
     python_c.PyObject_GC_UnTrack(instance);
-    python_c.py_decref(instance.callback);
+    _ = hook_handle_clear(instance);
     const @"type" = python_c.get_type(@ptrCast(instance)) orelse return;
     @"type".tp_free.?(@ptrCast(instance));
 }
 
 fn hook_handle_traverse(self: ?*HookHandle, visit: python_c.visitproc, arg: ?*anyopaque) callconv(.c) c_int {
     const instance = self.?;
-    return visit.?(@ptrCast(instance.callback), arg);
+    return python_c.py_visit(instance, visit, arg);
 }
 
 fn hook_handle_cancel(self: ?*HookHandle, _: ?PyObject) callconv(.c) ?PyObject {
@@ -168,6 +174,7 @@ var HookHandleType = python_c.PyTypeObject{
     .tp_flags = python_c.Py_TPFLAGS_DEFAULT | python_c.Py_TPFLAGS_HAVE_GC,
     .tp_dealloc = @ptrCast(&hook_handle_dealloc),
     .tp_traverse = @ptrCast(&hook_handle_traverse),
+    .tp_clear = @ptrCast(&hook_handle_clear),
     .tp_methods = @constCast(&HookHandleMethods),
 };
 
@@ -181,8 +188,10 @@ fn hook_callback(data: *const CallbackManager.CallbackData) !void {
         return;
     }
     const handle: *HookHandle = @ptrCast(@alignCast(data.user_data.?));
-    const ret = python_c.PyObject_CallNoArgs(handle.callback) orelse return error.PythonError;
-    python_c.py_decref(ret);
+    if (handle.callback) |cb| {
+        const ret = python_c.PyObject_CallNoArgs(cb) orelse return error.PythonError;
+        python_c.py_decref(ret);
+    }
 }
 
 pub fn loop_add_hook(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t) callconv(.c) ?PyObject {
@@ -210,7 +219,7 @@ fn z_loop_add_hook(self: *LoopObject, args: []const ?PyObject) !PyObject {
     handle.callback = python_c.py_newref(py_callback);
     handle.cancelled = false;
     errdefer {
-        python_c.py_decref(handle.callback);
+        python_c.py_xdecref(handle.callback);
         HookHandleType.tp_free.?(@ptrCast(handle));
     }
 
@@ -230,26 +239,34 @@ const PathWatcherHandle = extern struct {
     ob_base: python_c.PyObject,
     loop_data: *Loop,
     wd: i32,
-    callback: PyObject,
+    callback: ?PyObject,
 };
+
+fn path_watcher_handle_clear(self: ?*PathWatcherHandle) callconv(.c) c_int {
+    const instance = self.?;
+    python_c.py_decref_and_set_null(&instance.callback);
+    return 0;
+}
 
 fn path_watcher_handle_dealloc(self: ?*PathWatcherHandle) callconv(.c) void {
     const instance = self.?;
     python_c.PyObject_GC_UnTrack(instance);
-    python_c.py_decref(instance.callback);
+    _ = path_watcher_handle_clear(instance);
     const @"type" = python_c.get_type(@ptrCast(instance)) orelse return;
     @"type".tp_free.?(@ptrCast(instance));
 }
 
 fn path_watcher_handle_traverse(self: ?*PathWatcherHandle, visit: python_c.visitproc, arg: ?*anyopaque) callconv(.c) c_int {
     const instance = self.?;
-    return visit.?(@ptrCast(instance.callback), arg);
+    return python_c.py_visit(instance, visit, arg);
 }
 
 fn path_watcher_handle_cancel(self: ?*PathWatcherHandle, _: ?PyObject) callconv(.c) ?PyObject {
     const instance = self.?;
     if (instance.loop_data.initialized) {
-        instance.loop_data.fs_watcher.remove_watch(instance.wd, instance.callback);
+        if (instance.callback) |cb| {
+            instance.loop_data.fs_watcher.remove_watch(instance.wd, cb);
+        }
     }
     return python_c.get_py_none();
 }
@@ -262,6 +279,7 @@ var PathWatcherHandleType = python_c.PyTypeObject{
     .tp_flags = python_c.Py_TPFLAGS_DEFAULT | python_c.Py_TPFLAGS_HAVE_GC,
     .tp_dealloc = @ptrCast(&path_watcher_handle_dealloc),
     .tp_traverse = @ptrCast(&path_watcher_handle_traverse),
+    .tp_clear = @ptrCast(&path_watcher_handle_clear),
     .tp_methods = @constCast(&PathWatcherHandleMethods),
 };
 
