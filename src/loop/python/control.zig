@@ -298,11 +298,10 @@ fn z_loop_add_path_watcher(self: *LoopObject, args: []const ?PyObject) !PyObject
     const mask: u32 = @intCast(mask_val);
 
     var path_buf: [4096]u8 = undefined;
-    const path_len = python_c.PyUnicode_AsUTF8AndSize(py_path, null);
-    if (path_len < 0) return error.PythonError;
-    const path_str = python_c.PyUnicode_AsUTF8(py_path) orelse return error.PythonError;
+    var path_len: python_c.Py_ssize_t = 0;
+    const path_str = python_c.PyUnicode_AsUTF8AndSize(py_path, &path_len) orelse return error.PythonError;
 
-    const path_z = try std.fmt.bufPrintZ(&path_buf, "{s}", .{std.mem.span(path_str)});
+    const path_z = try std.fmt.bufPrintZ(&path_buf, "{s}", .{path_str[0..@intCast(path_len)]});
 
     const loop_data = utils.get_data_ptr(Loop, self);
     const wd = try loop_data.fs_watcher.add_watch(path_z, mask, py_callback);
