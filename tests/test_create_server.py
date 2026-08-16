@@ -139,3 +139,13 @@ def test_create_server_unresolvable_host() -> None:
             await loop.create_server(EchoProtocol, "invalid--domain", 0)
 
     talyn.run(main())
+
+
+def test_create_server_invalid_dns_timeout() -> None:
+    async def main() -> None:
+        loop = asyncio.get_running_loop()
+        with pytest.raises(TypeError):
+            await loop.create_server(EchoProtocol, "127.0.0.1", 0, dns_timeout="invalid")
+
+    talyn.run(main())
+

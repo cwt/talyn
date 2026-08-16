@@ -3,6 +3,8 @@ import socket
 
 import pytest
 
+import talyn
+
 
 class DatagramProtocol(asyncio.DatagramProtocol):
     def __init__(self):
@@ -267,3 +269,15 @@ async def test_datagram_received_exception_no_double_free():
         assert any(isinstance(e.get("exception"), ValueError) for e in errors)
     finally:
         loop.set_exception_handler(None)
+
+
+def test_create_datagram_endpoint_invalid_dns_timeout() -> None:
+    async def main() -> None:
+        loop = asyncio.get_running_loop()
+        with pytest.raises(TypeError):
+            await loop.create_datagram_endpoint(
+                DatagramProtocol, local_addr=("127.0.0.1", 0), dns_timeout="invalid"
+            )
+
+    talyn.run(main())
+

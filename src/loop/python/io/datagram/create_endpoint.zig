@@ -20,7 +20,7 @@ const DatagramCreationData = struct {
     py_reuse_port: ?PyObject = null,
     py_allow_broadcast: ?PyObject = null,
     py_sock: ?PyObject = null,
-    py_dns_timeout: ?PyObject = null,
+    dns_timeout: ?Resolv.DnsTimeout = null,
 
     local_addresses: ?[]utils.Address = null,
     remote_addresses: ?[]utils.Address = null,
@@ -38,7 +38,6 @@ const DatagramCreationData = struct {
         python_c.py_xdecref(self.py_reuse_port);
         python_c.py_xdecref(self.py_allow_broadcast);
         python_c.py_xdecref(self.py_sock);
-        python_c.py_xdecref(self.py_dns_timeout);
 
         if (self.local_addresses) |addrs| allocator.free(addrs);
         if (self.remote_addresses) |addrs| allocator.free(addrs);
@@ -64,6 +63,37 @@ inline fn z_loop_create_datagram_endpoint(self: *LoopObject, args: []?PyObject, 
     }
 
     const protocol_factory: PyObject = args[0].?;
+    if (python_c.PyCallable_Check(protocol_factory) <= 0) {
+        python_c.raise_python_type_error("protocol_factory must be callable");
+        return error.PythonError;
+    }
+
+    var py_local_addr: ?PyObject = null;
+    var py_remote_addr: ?PyObject = null;
+    var py_family: ?PyObject = null;
+    var py_reuse_port: ?PyObject = null;
+    var py_allow_broadcast: ?PyObject = null;
+    var py_sock: ?PyObject = null;
+    var py_dns_timeout: ?PyObject = null;
+
+    try python_c.parse_vector_call_kwargs(
+        knames,
+        args.ptr + args.len,
+        &.{ "local_addr", "remote_addr", "family", "reuse_port", "allow_broadcast", "sock", "dns_timeout" },
+        &.{ &py_local_addr, &py_remote_addr, &py_family, &py_reuse_port, &py_allow_broadcast, &py_sock, &py_dns_timeout },
+    );
+
+    var dns_timeout: ?Resolv.DnsTimeout = null;
+    if (py_dns_timeout) |pt| {
+        const timeout_val = python_c.PyFloat_AsDouble(pt);
+        if (python_c.PyErr_Occurred() != null) {
+            return error.PythonError;
+        }
+        if (timeout_val != -1.0) {
+            dns_timeout = Resolv.timeout_from_secs(timeout_val);
+        }
+    }
+
     const fut = try Future.Python.Constructors.fast_new_future(self);
     errdefer python_c.py_decref(@ptrCast(fut));
 
@@ -71,26 +101,19 @@ inline fn z_loop_create_datagram_endpoint(self: *LoopObject, args: []?PyObject, 
     const allocator = loop_data.allocator;
 
     const dcd = try allocator.create(DatagramCreationData);
-    errdefer allocator.destroy(dcd);
-
     dcd.* = .{
         .future = @ptrCast(python_c.py_newref(@as(PyObject, @ptrCast(fut)))),
         .loop = python_c.py_newref(self),
         .protocol_factory = python_c.py_newref(protocol_factory),
+        .py_local_addr = if (py_local_addr) |a| python_c.py_newref(a) else null,
+        .py_remote_addr = if (py_remote_addr) |a| python_c.py_newref(a) else null,
+        .py_family = if (py_family) |a| python_c.py_newref(a) else null,
+        .py_reuse_port = if (py_reuse_port) |a| python_c.py_newref(a) else null,
+        .py_allow_broadcast = if (py_allow_broadcast) |a| python_c.py_newref(a) else null,
+        .py_sock = if (py_sock) |a| python_c.py_newref(a) else null,
+        .dns_timeout = dns_timeout,
     };
-
-    try python_c.parse_vector_call_kwargs(
-        knames,
-        args.ptr + args.len,
-        &.{ "local_addr", "remote_addr", "family", "reuse_port", "allow_broadcast", "sock", "dns_timeout" },
-        &.{ &dcd.py_local_addr, &dcd.py_remote_addr, &dcd.py_family, &dcd.py_reuse_port, &dcd.py_allow_broadcast, &dcd.py_sock, &dcd.py_dns_timeout },
-    );
-
-    if (python_c.PyCallable_Check(protocol_factory) <= 0) {
-        dcd.deinit();
-        python_c.raise_python_type_error("protocol_factory must be callable");
-        return error.PythonError;
-    }
+    errdefer dcd.deinit();
 
     const callback = CallbackManager.Callback{
         .func = &resolve_local_addr,
@@ -130,15 +153,7 @@ fn resolve_local_addr(data: *const CallbackManager.CallbackData) !void {
             .cleanup = null,
             .data = .{ .user_data = dcd },
         };
-        const dns_timeout = blk: {
-            if (dcd.py_dns_timeout) |py_timeout| {
-                const timeout_val = python_c.PyFloat_AsDouble(py_timeout);
-                if (timeout_val == -1.0) break :blk null;
-                const result = Resolv.timeout_from_secs(timeout_val);
-                break :blk result;
-            } else break :blk null;
-        };
-        const addresses = try loop_data.dns.lookup(addr_info.host, &resolver_callback, dns_timeout) orelse return;
+        const addresses = try loop_data.dns.lookup(addr_info.host, &resolver_callback, dcd.dns_timeout) orelse return;
         dcd.local_addresses = try loop_data.allocator.dupe(utils.Address, addresses);
         // Update ports
         for (dcd.local_addresses.?) |*addr| addr.setPort(addr_info.port);
@@ -158,15 +173,7 @@ fn local_addr_resolved_callback(data: *const CallbackManager.CallbackData) !void
 
     const loop_data = utils.get_data_ptr(Loop, dcd.loop);
     const addr_info = get_addr_tuple(dcd.py_local_addr.?) catch |err| return set_future_exception(err, dcd.future);
-    const dns_timeout = blk: {
-        if (dcd.py_dns_timeout) |p| {
-            const timeout_val = python_c.PyFloat_AsDouble(p);
-            if (timeout_val == -1.0) break :blk null;
-            const result = Resolv.timeout_from_secs(timeout_val);
-            break :blk result;
-        } else break :blk null;
-    };
-    const addresses = try loop_data.dns.lookup(addr_info.host, null, dns_timeout) orelse return set_future_exception(error.PythonError, dcd.future);
+    const addresses = try loop_data.dns.lookup(addr_info.host, null, dcd.dns_timeout) orelse return set_future_exception(error.PythonError, dcd.future);
     dcd.local_addresses = try loop_data.allocator.dupe(utils.Address, addresses);
     for (dcd.local_addresses.?) |*addr| addr.setPort(addr_info.port);
 
@@ -183,14 +190,6 @@ fn resolve_remote_addr(data: *const CallbackManager.CallbackData) !void {
     if (data.cancelled()) return dcd.deinit();
 
     const loop_data = utils.get_data_ptr(Loop, dcd.loop);
-    const dns_timeout = blk: {
-        if (dcd.py_dns_timeout) |p| {
-            const timeout_val = python_c.PyFloat_AsDouble(p);
-            if (timeout_val == -1.0) break :blk null;
-            const result = Resolv.timeout_from_secs(timeout_val);
-            break :blk result;
-        } else break :blk null;
-    };
 
     if (dcd.py_remote_addr) |ra| {
         const addr_info = get_addr_tuple(ra) catch |err| return set_future_exception(err, dcd.future);
@@ -199,7 +198,7 @@ fn resolve_remote_addr(data: *const CallbackManager.CallbackData) !void {
             .cleanup = null,
             .data = .{ .user_data = dcd },
         };
-        const addresses = try loop_data.dns.lookup(addr_info.host, &resolver_callback, dns_timeout) orelse return;
+        const addresses = try loop_data.dns.lookup(addr_info.host, &resolver_callback, dcd.dns_timeout) orelse return;
         dcd.remote_addresses = try loop_data.allocator.dupe(utils.Address, addresses);
         for (dcd.remote_addresses.?) |*addr| addr.setPort(addr_info.port);
     }
@@ -217,17 +216,9 @@ fn remote_addr_resolved_callback(data: *const CallbackManager.CallbackData) !voi
     if (data.cancelled()) return dcd.deinit();
 
     const loop_data = utils.get_data_ptr(Loop, dcd.loop);
-    const dns_timeout = blk: {
-        if (dcd.py_dns_timeout) |p| {
-            const timeout_val = python_c.PyFloat_AsDouble(p);
-            if (timeout_val == -1.0) break :blk null;
-            const result = Resolv.timeout_from_secs(timeout_val);
-            break :blk result;
-        } else break :blk null;
-    };
 
     const addr_info = get_addr_tuple(dcd.py_remote_addr.?) catch |err| return set_future_exception(err, dcd.future);
-    const addresses = try loop_data.dns.lookup(addr_info.host, null, dns_timeout) orelse return set_future_exception(error.PythonError, dcd.future);
+    const addresses = try loop_data.dns.lookup(addr_info.host, null, dcd.dns_timeout) orelse return set_future_exception(error.PythonError, dcd.future);
     dcd.remote_addresses = try loop_data.allocator.dupe(utils.Address, addresses);
     for (dcd.remote_addresses.?) |*addr| addr.setPort(addr_info.port);
 
