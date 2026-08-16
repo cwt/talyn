@@ -34,9 +34,6 @@ pub const Record = struct {
 
     pub inline fn append_callback(self: *Record, user_callback: *const CallbackManager.Callback) !void {
         const control_data = self.state.pending;
-        try control_data.loop.reserve_slots(1);
-        errdefer control_data.loop.reserved_slots -= 1;
-
         try control_data.user_callbacks.append(control_data.arena.allocator(), user_callback.*);
     }
 

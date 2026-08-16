@@ -123,9 +123,6 @@ pub fn lookup(
     const address_list = record.get_address_list() orelse {
         if (callback == null) return null;
 
-        try self.loop.reserve_slots(1);
-        errdefer self.loop.reserved_slots -= 1;
-
         try record.append_callback(callback.?);
         return null;
     };
@@ -146,8 +143,6 @@ pub fn reverse_lookup(
     if (cache_slot.get(name)) |record| {
         if (record.state == .ptr) {
             // Already resolved
-            try self.loop.reserve_slots(1);
-            errdefer self.loop.reserved_slots -= 1;
             try Loop.Scheduling.Soon.dispatch(self.loop, callback);
             return;
         }
@@ -156,8 +151,6 @@ pub fn reverse_lookup(
         // callback to the in-flight query instead of creating a
         // duplicate. Previously we fell through to Resolv.queue
         // which dispatched a new DNS request for every caller.
-        try self.loop.reserve_slots(1);
-        errdefer self.loop.reserved_slots -= 1;
         try record.append_callback(callback);
         return;
     }

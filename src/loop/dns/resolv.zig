@@ -715,9 +715,6 @@ fn prepare_data(
         control_data.release();
     }
 
-    try loop.reserve_slots(1);
-    errdefer loop.reserved_slots -= 1;
-
     try control_data.user_callbacks.append(arena_allocator, user_callback.*);
     errdefer control_data.user_callbacks.deinit(arena_allocator);
 
