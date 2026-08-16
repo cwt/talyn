@@ -217,27 +217,27 @@ fn fetch_completed_tasks(self: *Loop, blocking_ready_tasks: []std.os.linux.io_ur
                     const bytes_read: usize = @intCast(cqe.res);
 
                     const stream_transport: *Stream.StreamTransportObject = @ptrCast(read_transport.parent_transport);
-                    _ = stream_transport.protocol orelse continue;
+                    if (stream_transport.protocol != null) {
+                        const record: Completion.CompletionRecord = .{
+                            .op = switch (stream_transport.protocol_type) {
+                                .Buffered => .BufferUpdated,
+                                .Legacy => .DataReceived,
+                            },
+                            .stream_transport = @ptrCast(stream_transport),
+                            .buffer_ptr = switch (stream_transport.protocol_type) {
+                                .Buffered => null,
+                                .Legacy => @ptrCast(read_transport.buffer_to_read.ptr),
+                            },
+                            .nbytes = @as(i64, @intCast(bytes_read)),
+                            .transport_generation = @atomicLoad(u64, &stream_transport.dispatch_generation, .acquire),
+                        };
 
-                    const record: Completion.CompletionRecord = .{
-                        .op = switch (stream_transport.protocol_type) {
-                            .Buffered => .BufferUpdated,
-                            .Legacy => .DataReceived,
-                        },
-                        .stream_transport = @ptrCast(stream_transport),
-                        .buffer_ptr = switch (stream_transport.protocol_type) {
-                            .Buffered => null,
-                            .Legacy => @ptrCast(read_transport.buffer_to_read.ptr),
-                        },
-                        .nbytes = @as(i64, @intCast(bytes_read)),
-                        .transport_generation = @atomicLoad(u64, &stream_transport.dispatch_generation, .acquire),
-                    };
-
-                    if (self.completion_batch.push(record)) {
-                        v.data.set_batch_dispatched(true);
-                        read_transport.batch_dispatched = true;
+                        if (self.completion_batch.push(record)) {
+                            v.data.set_batch_dispatched(true);
+                            read_transport.batch_dispatched = true;
+                        }
                     }
-                    // Push failure = batch full, fall through to normal callback.
+                    // Push failure or null protocol = fall through to normal callback.
                     // No cleanup needed: no PyObject refs were created.
                 }
 
