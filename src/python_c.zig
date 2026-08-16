@@ -606,6 +606,17 @@ pub fn deinitialize_object_fields(object: anytype, comptime exclude_fields: []co
                     .pointer => |data2| {
                         if (data2.child == Python.PyObject) {
                             py_decref_and_set_null(&@field(object, field_name));
+                        } else if (@typeInfo(data2.child) == .@"struct") {
+                            if (@hasField(data2.child, "ob_base")) {
+                                if (@field(object, field_name)) |ptr| {
+                                    py_decref(@ptrCast(ptr));
+                                    @field(object, field_name) = null;
+                                }
+                            } else {
+                                if (@field(object, field_name)) |ptr| {
+                                    deinitialize_object_fields(ptr, exclude_fields);
+                                }
+                            }
                         }
                     },
                     else => {
@@ -654,6 +665,19 @@ pub export fn _Py_atomic_load_uint64_relaxed(obj: *const u64) callconv(.c) u64 {
 
 pub export fn _Py_atomic_load_uint32_relaxed(obj: *const u32) callconv(.c) u32 {
     return @atomicLoad(u32, obj, .monotonic);
+}
+
+test "BUG-206: deinitialize_object_fields handles optional pointers to structs with ob_base" {
+    const DummyPyStruct = extern struct {
+        ob_base: Python.PyObject,
+        val: i32,
+    };
+    const TestHolder = struct {
+        dummy: ?*DummyPyStruct = null,
+    };
+    var holder: TestHolder = .{ .dummy = null };
+    deinitialize_object_fields(&holder, &.{});
+    try std.testing.expect(holder.dummy == null);
 }
 
 const Python = @This();

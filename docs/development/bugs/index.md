@@ -241,7 +241,7 @@ Sorted by bug number. See individual bug files for details.
 | [203](203.md) | Leaked Python `FutureObject` and pre-init resource leaks in `z_loop_create_unix_connection` and `z_loop_create_unix_server` | Medium | Fixed |
 | [204](204.md) | Uninitialized `popen` struct field in `SubprocessTransport.new_with_pid` | Medium | Fixed |
 | [205](205.md) | Unhandled `dns_timeout` keyword argument and `PyObject` reference leak in `DatagramCreationData` | Low | Fixed |
-| [206](206.md) | `deinitialize_object_fields` refcount leak on `ob_base` structs (`?*FutureObject`, `?*LoopObject`) | High | Open |
+| [206](206.md) | `deinitialize_object_fields` refcount leak on `ob_base` structs (`?*FutureObject`, `?*LoopObject`) | High | Fixed |
 | [207](207.md) | PyObject reference and struct leak on error path in `z_loop_create_server` | High | Open |
 | [208](208.md) | Leaked heap structs, buffers, and PyObjects on error path in `src/loop/python/io/socket/ops.zig` | High | Open |
 | [209](209.md) | Leaked `PythonHandleObject` on callback exception in `callback_for_python_generic_callbacks` | Medium | Open |
