@@ -21,7 +21,7 @@ Sorted by bug number. See individual bug files for details.
 | Medium | 35 |
 | Medium-Low | 15 |
 | Low | 44 |
-| **Total** | **228** |
+| **Total** | **241** |
 
 ## Summary by Status
 
