@@ -186,9 +186,9 @@ pub fn RingBuffer(comptime N: usize) type {
             return true;
         }
 
-        pub fn push(self: *Self, callback: Callback) void {
+        pub fn push(self: *Self, callback: Callback) !void {
             if (!self.try_push(callback)) {
-                @panic("RingBuffer overflow");
+                return error.RingBufferOverflow;
             }
         }
 
@@ -235,7 +235,7 @@ pub fn RingBuffer(comptime N: usize) type {
 
                 const callback = &self.callbacks[idx];
                 if (callback.data.traverse()) |t| {
-                    const vret = t(callback.data.user_data, @constCast(@ptrCast(visit)), arg);
+                    const vret = t(callback.data.user_data, @ptrCast(@constCast(visit)), arg);
                     if (vret != 0) return vret;
                 }
 
@@ -353,9 +353,9 @@ pub const DynamicRingBuffer = struct {
         return true;
     }
 
-    pub fn push(self: *Self, callback: Callback) void {
+    pub fn push(self: *Self, callback: Callback) !void {
         if (!self.try_push(callback)) {
-            @panic("RingBuffer overflow");
+            return error.RingBufferOverflow;
         }
     }
 
@@ -363,7 +363,7 @@ pub const DynamicRingBuffer = struct {
         if (!self.try_push(callback)) {
             try self.grow();
             if (!self.try_push(callback)) {
-                @panic("RingBuffer overflow after grow");
+                return error.RingBufferOverflow;
             }
         }
     }
@@ -402,7 +402,7 @@ pub const DynamicRingBuffer = struct {
 
             const callback = &self.callbacks[idx];
             if (callback.data.traverse()) |t| {
-                const vret = t(callback.data.user_data, @constCast(@ptrCast(visit)), arg);
+                const vret = t(callback.data.user_data, @ptrCast(@constCast(visit)), arg);
                 if (vret != 0) return vret;
             }
 
@@ -433,15 +433,7 @@ inline fn get_adaptive_yield_threshold(initial_count: usize) usize {
     }
 }
 
-pub fn execute_ring_buffer(
-    comptime N: usize,
-    ring: *RingBuffer(N),
-    comptime exception_handler: ?ExceptionHandler,
-    exception_handler_data: ?*anyopaque,
-    comptime debug: bool,
-    warning_handler: ?WarningHandler,
-    debug_state: ?*const DebugState
-) !usize {
+pub fn execute_ring_buffer(comptime N: usize, ring: *RingBuffer(N), comptime exception_handler: ?ExceptionHandler, exception_handler_data: ?*anyopaque, comptime debug: bool, warning_handler: ?WarningHandler, debug_state: ?*const DebugState) !usize {
     if (ring.is_empty()) return 0;
 
     var callbacks_executed: usize = 0;
@@ -495,7 +487,6 @@ pub fn execute_ring_buffer(
             continue;
         };
 
-
         if (debug) {
             const end_time = nanoTime();
             const duration = @as(f64, @floatFromInt(end_time - start_time)) / 1e9;
@@ -533,14 +524,7 @@ pub fn release_ring_buffer(
     }
 }
 
-pub fn execute_dynamic_ring_buffer(
-    ring: *DynamicRingBuffer,
-    comptime exception_handler: ?ExceptionHandler,
-    exception_handler_data: ?*anyopaque,
-    comptime debug: bool,
-    warning_handler: ?WarningHandler,
-    debug_state: ?*const DebugState
-) !usize {
+pub fn execute_dynamic_ring_buffer(ring: *DynamicRingBuffer, comptime exception_handler: ?ExceptionHandler, exception_handler_data: ?*anyopaque, comptime debug: bool, warning_handler: ?WarningHandler, debug_state: ?*const DebugState) !usize {
     if (ring.is_empty()) return 0;
 
     var callbacks_executed: usize = 0;
@@ -576,7 +560,8 @@ pub fn execute_dynamic_ring_buffer(
             if (err == error.PythonError) {
                 if (python_c.PyErr_Occurred()) |exc| {
                     if (python_c.PyErr_GivenExceptionMatches(exc, python_c.PyExc_KeyboardInterrupt.?) != 0 or
-                        python_c.PyErr_GivenExceptionMatches(exc, python_c.PyExc_SystemExit.?) != 0) {
+                        python_c.PyErr_GivenExceptionMatches(exc, python_c.PyExc_SystemExit.?) != 0)
+                    {
                         return err;
                     }
                 }
@@ -636,7 +621,7 @@ pub fn release_dynamic_ring_buffer(
 fn test_callback(data: *const CallbackData) !void {
     if (data.cancelled()) return;
 
-    const executed_ptr: *usize = @alignCast(@ptrCast(data.user_data.?));
+    const executed_ptr: *usize = @ptrCast(@alignCast(data.user_data.?));
     executed_ptr.* += 1;
     return;
 }
@@ -648,7 +633,7 @@ fn test_callback2(_: *const CallbackData) !void {
 fn test_exception_handler(err: anyerror, data: ?*anyopaque, _: ?*python_c.PyObject, _: ?PyObject) !void {
     try std.testing.expectEqual(error.Test, err);
 
-    const executed_ptr: *usize = @alignCast(@ptrCast(data.?));
+    const executed_ptr: *usize = @ptrCast(@alignCast(data.?));
     executed_ptr.* += 1;
 }
 
@@ -690,13 +675,7 @@ test "RingBuffer push and execute" {
     rb.init();
 
     var executed: usize = 0;
-    const callback = Callback{
-        .func = &test_callback,
-        .cleanup = null,
-        .data = .{
-            .user_data = &executed
-        }
-    };
+    const callback = Callback{ .func = &test_callback, .cleanup = null, .data = .{ .user_data = &executed } };
 
     try std.testing.expect(rb.try_push(callback));
     try std.testing.expectEqual(@as(usize, 1), rb.count());
@@ -732,20 +711,12 @@ test "RingBuffer handle exceptions" {
     var executed: usize = 0;
     var exceptions: usize = 0;
 
-    const cb1 = Callback{
-        .func = &test_callback,
-        .cleanup = null,
-        .data = .{ .user_data = &executed }
-    };
-    const cb2 = Callback{
-        .func = &test_callback2,
-        .cleanup = null,
-        .data = .{ .user_data = null }
-    };
+    const cb1 = Callback{ .func = &test_callback, .cleanup = null, .data = .{ .user_data = &executed } };
+    const cb2 = Callback{ .func = &test_callback2, .cleanup = null, .data = .{ .user_data = null } };
 
-    rb.push(cb1);
-    rb.push(cb2);
-    rb.push(cb1);
+    try rb.push(cb1);
+    try rb.push(cb2);
+    try rb.push(cb1);
 
     const executed_count = try execute_ring_buffer(4, &rb, test_exception_handler, &exceptions, false, null, null);
     try std.testing.expectEqual(@as(usize, 3), executed_count);
@@ -780,8 +751,8 @@ test "RingBuffer traverse" {
         .data = CallbackData.init_python(null, &payload),
     };
 
-    rb.push(callback);
-    rb.push(callback);
+    try rb.push(callback);
+    try rb.push(callback);
 
     _ = rb.traverse(mock_visit, &visit_count);
     try std.testing.expectEqual(@as(usize, 2), visit_count);
