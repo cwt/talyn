@@ -650,14 +650,18 @@ fn z_create_socket_connection(data: *SocketConnectionData) !void {
         }
         delay = python_c.PyFloat_AsDouble(py_delay);
         if (python_c.PyErr_Occurred() != null) return error.PythonError;
-        const eps = comptime std.math.floatEps(f64);
-        // BUG-51: Use `@abs(delay + 1.0) < eps` (symmetric)
-        // instead of `(delay + 1.0) < eps` (asymmetric). The
-        // previous check only caught values where delay+1.0 was
-        // very slightly above 0; values like -0.9999 (delay+1.0
-        // = 0.0001, > eps) would not be caught.
-        if (@abs(delay + 1.0) < eps) {
+        if (!std.math.isFinite(delay) or delay < 0.0) {
             delay = 0;
+        } else {
+            const eps = comptime std.math.floatEps(f64);
+            // BUG-51: Use `@abs(delay + 1.0) < eps` (symmetric)
+            // instead of `(delay + 1.0) < eps` (asymmetric). The
+            // previous check only caught values where delay+1.0 was
+            // very slightly above 0; values like -0.9999 (delay+1.0
+            // = 0.0001, > eps) would not be caught.
+            if (@abs(delay + 1.0) < eps) {
+                delay = 0;
+            }
         }
     }
 
@@ -688,8 +692,9 @@ fn z_create_socket_connection(data: *SocketConnectionData) !void {
             .cleanup = null,
             .data = CallbackManager.CallbackData.init_python(mcs, &mcs.python_payload),
         };
-        const seconds: u64 = @intFromFloat(@floor(delay));
-        const nanoseconds: u64 = @intFromFloat((delay - @floor(delay)) * 1e9);
+        const sec_f = @floor(delay);
+        const seconds: u64 = @intFromFloat(sec_f);
+        const nanoseconds: u64 = @intFromFloat((delay - sec_f) * 1e9);
         const duration: std.os.linux.timespec = .{
             .sec = @intCast(seconds),
             .nsec = @intCast(nanoseconds),

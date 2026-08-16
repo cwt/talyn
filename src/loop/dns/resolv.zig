@@ -22,11 +22,12 @@ pub const DnsTimeout = struct {
 };
 
 pub fn timeout_from_secs(timeout_secs: f64) ?DnsTimeout {
-    if (timeout_secs < 0.0) return null;
-    const sec: i64 = @floor(timeout_secs);
-    const frac = timeout_secs - @as(f64, @floatFromInt(sec));
-    const nsec: i64 = @floor(frac * 1e9);
-    return .{ .sec = @as(u64, @intCast(sec)), .nsec = @as(u32, @intCast(nsec)) };
+    if (!std.math.isFinite(timeout_secs) or timeout_secs < 0.0) return null;
+    const sec_f = @floor(timeout_secs);
+    const sec: u64 = @intFromFloat(sec_f);
+    const frac = timeout_secs - sec_f;
+    const nsec: u32 = @intFromFloat(@floor(frac * 1e9));
+    return .{ .sec = sec, .nsec = nsec };
 }
 
 pub fn timeout_to_secs(timeout: DnsTimeout) f64 {

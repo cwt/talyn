@@ -334,3 +334,25 @@ def test_create_connection_ssl_passes_kwargs() -> None:
         loop.run_until_complete(test())
     finally:
         loop.close()
+
+
+def test_create_connection_nan_inf_safety() -> None:
+    host, port, stop = _start_echo_server()
+    try:
+        async def main() -> None:
+            loop = asyncio.get_running_loop()
+            for val in (float("nan"), float("inf"), float("-inf"), -1.0):
+                t, p = await loop.create_connection(
+                    EchoProtocol, host, port, happy_eyeballs_delay=val
+                )
+                t.close()
+                await p.disconnected
+
+                # Also verify getaddrinfo dns_timeout float safety
+                info = await loop.getaddrinfo(host, port, dns_timeout=val)
+                assert len(info) > 0
+
+        talyn.run(main())
+    finally:
+        stop.set()
+
