@@ -299,10 +299,10 @@ pub const BlockingTasksSet = struct {
                     if (cb.data.module_ptr()) |mod| {
                         const vret1 = visit.?(@ptrCast(mod), arg);
                         if (vret1 != 0) return vret1;
-                        if (cb.data.callback_ptr()) |cp| {
-                            const vret2 = visit.?(@ptrCast(cp), arg);
-                            if (vret2 != 0) return vret2;
-                        }
+                    }
+                    if (cb.data.callback_ptr()) |cp| {
+                        const vret2 = visit.?(@ptrCast(cp), arg);
+                        if (vret2 != 0) return vret2;
                     }
                 },
                 .none => {},
