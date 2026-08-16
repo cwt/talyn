@@ -45,7 +45,7 @@ pub fn queue_read(self: *DatagramTransport.DatagramTransportObject) !void {
             .msg = &rd.msg,
             .callback = .{
                 .func = &read_completed,
-                .cleanup = null,
+                .cleanup = &cleanup_read,
                 .data = .{
                     .user_data = rd,
                 },
@@ -73,24 +73,32 @@ fn cleanup_read(ptr: ?*anyopaque) void {
 }
 
 fn read_completed(data: *const CallbackManager.CallbackData) !void {
-    const rd: *ReadData = @alignCast(@ptrCast(data.user_data.?));
-    defer cleanup_read(@ptrCast(@alignCast(rd)));
+    const rd: *ReadData = @ptrCast(@alignCast(data.user_data.?));
+    var success = false;
+    defer if (success) cleanup_read(@ptrCast(@alignCast(rd)));
 
     const self = rd.transport;
-    if (data.cancelled() or self.closed) return;
+    if (data.cancelled() or self.closed) {
+        success = true;
+        return;
+    }
 
     const io_uring_err = data.io_uring_err();
     if (io_uring_err != .SUCCESS) {
         // Error — notify protocol and re-arm
         if (self.protocol_error_received) |er| {
             const exc = python_c.PyObject_CallFunction(
-                python_c.PyExc_OSError, "Ls", @as(c_long, @intFromEnum(io_uring_err)), "Read error"
+                python_c.PyExc_OSError,
+                "Ls\x00",
+                @as(c_long, @intFromEnum(io_uring_err)),
+                "Read error\x00",
             ) orelse return error.PythonError;
             defer python_c.py_decref(exc);
             const r = python_c.PyObject_CallOneArg(er, exc) orelse return error.PythonError;
             python_c.py_decref(r);
         }
         try queue_read(self);
+        success = true;
         return;
     }
 
@@ -98,6 +106,7 @@ fn read_completed(data: *const CallbackManager.CallbackData) !void {
     if (nread == 0) {
         // Empty datagram — re-arm
         try queue_read(self);
+        success = true;
         return;
     }
 
@@ -105,7 +114,7 @@ fn read_completed(data: *const CallbackManager.CallbackData) !void {
     if (self.protocol_datagram_received) |dr| {
         const py_data = python_c.PyBytes_FromStringAndSize(self.buffer_ptr.?, @intCast(nread)) orelse return error.PythonError;
         defer python_c.py_decref(py_data);
-        
+
         // Format source address using universal helper
         const addr = blk: {
             if (rd.msg.namelen == 0) break :blk null;
@@ -133,4 +142,5 @@ fn read_completed(data: *const CallbackManager.CallbackData) !void {
 
     // Re-arm read
     try queue_read(self);
+    success = true;
 }
