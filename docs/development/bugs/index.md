@@ -248,6 +248,6 @@ Sorted by bug number. See individual bug files for details.
 | [210](210.md) | Missing null sentinels on CPython string APIs in `src/transports/datagram/write.zig` | Medium | Fixed |
 | [211](211.md) | Datagram `ReadData` and transport reference leak on task cancellation | Medium | Fixed |
 | [212](212.md) | Out-of-bounds uninitialized read and dropped addresses in `interleave_address_list` | High | Fixed |
-| [213](213.md) | Panic risk from unchecked `.?` unwrapping on nullable callbacks in `dispatch_completion_batch` | Medium | Open |
+| [213](213.md) | Panic risk from unchecked `.?` unwrapping on nullable callbacks in `dispatch_completion_batch` | Medium | Fixed |
 | [214](214.md) | Invalid pointer comparison and redundant UTF-8 decode in `z_loop_add_path_watcher` | Medium | Open |
 | [215](215.md) | Context argument dropped in `Runner.run` | Low | Open |

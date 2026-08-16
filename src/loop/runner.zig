@@ -133,13 +133,14 @@ fn dispatch_completion_batch(
 
         switch (record.op) {
             .DataReceived => {
+                const cb = transport.protocol_data_received orelse continue;
                 const ptr: [*]u8 = @ptrCast(record.buffer_ptr orelse continue);
                 const py_bytes = python_c.PyBytes_FromStringAndSize(ptr, @intCast(record.nbytes)) orelse {
                     had_error = true;
                     continue;
                 };
                 defer python_c.py_decref(py_bytes);
-                const ret = python_c.PyObject_CallOneArg(transport.protocol_data_received.?, py_bytes);
+                const ret = python_c.PyObject_CallOneArg(cb, py_bytes);
                 if (ret) |r| {
                     python_c.py_decref(r);
                 } else {
@@ -148,12 +149,13 @@ fn dispatch_completion_batch(
                 }
             },
             .BufferUpdated => {
+                const cb = transport.protocol_buffer_updated orelse continue;
                 const nbytes_obj = python_c.PyLong_FromUnsignedLongLong(@intCast(record.nbytes)) orelse {
                     had_error = true;
                     continue;
                 };
                 defer python_c.py_decref(nbytes_obj);
-                const ret = python_c.PyObject_CallOneArg(transport.protocol_buffer_updated.?, nbytes_obj);
+                const ret = python_c.PyObject_CallOneArg(cb, nbytes_obj);
                 if (ret) |r| {
                     python_c.py_decref(r);
                 } else {
