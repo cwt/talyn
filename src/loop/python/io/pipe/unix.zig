@@ -109,6 +109,7 @@ inline fn z_loop_create_unix_connection(self: *LoopObject, args: []?PyObject, kn
     const py_path = args[1].?;
     var py_ssl: ?PyObject = null;
     try python_c.parse_vector_call_kwargs(knames, args.ptr + args.len, &.{"ssl"}, &.{&py_ssl});
+    defer python_c.py_xdecref(py_ssl);
 
     if (python_c.PyCallable_Check(protocol_factory) <= 0) {
         python_c.raise_python_type_error("protocol_factory must be callable");
@@ -178,6 +179,10 @@ inline fn z_loop_create_unix_server(self: *LoopObject, args: []?PyObject, knames
     var py_backlog: ?PyObject = null;
     var py_ssl: ?PyObject = null;
     try python_c.parse_vector_call_kwargs(knames, args.ptr + args.len, &.{ "backlog", "ssl" }, &.{ &py_backlog, &py_ssl });
+    defer {
+        python_c.py_xdecref(py_backlog);
+        python_c.py_xdecref(py_ssl);
+    }
 
     if (python_c.PyCallable_Check(protocol_factory) <= 0) {
         python_c.raise_python_type_error("protocol_factory must be callable");

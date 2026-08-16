@@ -84,12 +84,6 @@ inline fn z_loop_create_datagram_endpoint(self: *LoopObject, args: []?PyObject, 
         &.{ "local_addr", "remote_addr", "family", "reuse_port", "allow_broadcast", "sock" },
         &.{ &dcd.py_local_addr, &dcd.py_remote_addr, &dcd.py_family, &dcd.py_reuse_port, &dcd.py_allow_broadcast, &dcd.py_sock },
     );
-    python_c.py_xincref(dcd.py_local_addr);
-    python_c.py_xincref(dcd.py_remote_addr);
-    python_c.py_xincref(dcd.py_family);
-    python_c.py_xincref(dcd.py_reuse_port);
-    python_c.py_xincref(dcd.py_allow_broadcast);
-    python_c.py_xincref(dcd.py_sock);
 
     if (python_c.PyCallable_Check(protocol_factory) <= 0) {
         dcd.deinit();

@@ -29,7 +29,7 @@ const GetAddrInfoData = struct {
 };
 
 fn getaddrinfo_callback(data: *const CallbackManager.CallbackData) !void {
-    const gaid: *GetAddrInfoData = @alignCast(@ptrCast(data.user_data.?));
+    const gaid: *GetAddrInfoData = @ptrCast(@alignCast(data.user_data.?));
     defer {
         python_c.py_decref(@ptrCast(gaid.future));
         python_c.py_decref(@ptrCast(gaid.loop));
@@ -37,7 +37,7 @@ fn getaddrinfo_callback(data: *const CallbackManager.CallbackData) !void {
         gaid.allocator.destroy(gaid);
     }
     const loop_data = utils.get_data_ptr(Loop, gaid.loop);
-    
+
     if (data.cancelled()) {
         return;
     }
@@ -49,8 +49,7 @@ fn getaddrinfo_callback(data: *const CallbackManager.CallbackData) !void {
         const future_data = utils.get_data_ptr(Future, gaid.future);
         try Future.Python.Result.future_fast_set_exception(gaid.future, future_data, exc);
         return;
-        }
-;
+    };
 
     const py_tuple = try build_result_tuple(address_list, gaid.port, gaid.family, gaid.socket_type, gaid.proto);
     defer python_c.py_decref(py_tuple);
@@ -68,7 +67,7 @@ fn build_result_tuple(address_list: []const utils.Address, port: u16, family_fil
 
     const py_tuple = python_c.PyTuple_New(@intCast(filtered_count)) orelse return error.PythonError;
     errdefer python_c.py_decref(py_tuple);
-    
+
     var idx: usize = 0;
     for (address_list) |addr| {
         if (family_filter != 0 and addr.any.family != family_filter) continue;
@@ -85,14 +84,15 @@ fn build_result_tuple(address_list: []const utils.Address, port: u16, family_fil
         const py_proto = python_c.PyLong_FromLong(proto) orelse return error.PythonError;
         defer python_c.py_decref(py_proto);
 
-        const entry = python_c.PyTuple_Pack(5,
+        const entry = python_c.PyTuple_Pack(
+            5,
             py_family,
             py_type,
             py_proto,
             python_c.get_py_none_without_incref(),
             sockaddr,
         ) orelse return error.PythonError;
-        
+
         if (python_c.PyTuple_SetItem(py_tuple, @intCast(idx), entry) != 0) {
             python_c.py_decref(entry);
             return error.PythonError;
@@ -118,10 +118,18 @@ inline fn z_loop_getaddrinfo(self: *LoopObject, args: []const ?PyObject, knames:
     var py_flags: ?PyObject = null;
     var py_dns_timeout: ?PyObject = null;
     try python_c.parse_vector_call_kwargs(
-        knames, @constCast(args.ptr + args.len),
+        knames,
+        @constCast(args.ptr + args.len),
         &.{ "family", "type", "proto", "flags", "dns_timeout" },
         &.{ &py_family, &py_type, &py_proto, &py_flags, &py_dns_timeout },
     );
+    defer {
+        python_c.py_xdecref(py_family);
+        python_c.py_xdecref(py_type);
+        python_c.py_xdecref(py_proto);
+        python_c.py_xdecref(py_flags);
+        python_c.py_xdecref(py_dns_timeout);
+    }
 
     const port: u16 = blk: {
         if (py_port) |p| {
@@ -184,7 +192,7 @@ inline fn z_loop_getaddrinfo(self: *LoopObject, args: []const ?PyObject, knames:
         .cleanup = null,
         .data = .{ .user_data = gaid },
     };
-    
+
     const address_list = try loop_data.dns.lookup(host_str, &callback, gaid.dns_timeout);
     if (address_list) |al| {
         // Result was in cache
@@ -192,7 +200,7 @@ inline fn z_loop_getaddrinfo(self: *LoopObject, args: []const ?PyObject, knames:
         defer python_c.py_decref(py_res);
         const future_data = utils.get_data_ptr(Future, fut);
         try Future.Python.Result.future_fast_set_result(future_data, py_res);
-        
+
         // Cleanup gaid and host_str since callback won't be called
         python_c.py_decref(@ptrCast(gaid.future));
         python_c.py_decref(@ptrCast(gaid.loop));
@@ -203,10 +211,9 @@ inline fn z_loop_getaddrinfo(self: *LoopObject, args: []const ?PyObject, knames:
     return fut;
 }
 
-pub fn loop_getaddrinfo(
-    self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t, knames: ?PyObject
-) callconv(.c) ?*FutureObject {
+pub fn loop_getaddrinfo(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t, knames: ?PyObject) callconv(.c) ?*FutureObject {
     return utils.execute_zig_function(
-        z_loop_getaddrinfo, .{ self.?, args.?[0..@as(usize, @intCast(nargs))], knames },
+        z_loop_getaddrinfo,
+        .{ self.?, args.?[0..@as(usize, @intCast(nargs))], knames },
     );
 }
