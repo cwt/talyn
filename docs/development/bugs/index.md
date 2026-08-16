@@ -255,6 +255,6 @@ Sorted by bug number. See individual bug files for details.
 | [217](217.md) | Refcount leak of `mod` and `cb` on callback error in debug mode in `CallbackManager` | Medium | Fixed |
 | [218](218.md) | Nested GC traversal bug skipping `callback_ptr` when `module_ptr` is null in `traverse_hooks` | Medium | Fixed |
 | [219](219.md) | Nested GC traversal bug skipping `callback_ptr` when `module_ptr` is null in `BlockingTasksSet.traverse` | Medium | Fixed |
-| [220](220.md) | Resource and reference count leak on synchronous cache return error in `z_loop_getaddrinfo` | Medium | Open |
+| [220](220.md) | Resource and reference count leak on synchronous cache return error in `z_loop_getaddrinfo` | Medium | Fixed |
 | [221](221.md) | Leaked `future` and `loop` Python references on `reverse_lookup` error in `z_loop_getnameinfo` | Medium | Open |
 | [222](222.md) | Missing error-path release in `initialize_python_imports` leaking acquired references on partial import failure | Medium | Open |

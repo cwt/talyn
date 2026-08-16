@@ -186,6 +186,10 @@ inline fn z_loop_getaddrinfo(self: *LoopObject, args: []const ?PyObject, knames:
             } else break :blk null;
         },
     };
+    errdefer {
+        python_c.py_decref(@ptrCast(gaid.future));
+        python_c.py_decref(@ptrCast(gaid.loop));
+    }
 
     const callback = CallbackManager.Callback{
         .func = &getaddrinfo_callback,
