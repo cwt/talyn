@@ -1,8 +1,8 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 246 bugs discovered across 17 audit passes."
-timestamp: "2026-08-17T00:00:00Z"
+description: "Individual bug entries for talyn, one file per bug. 252 bugs discovered across 18 audit passes."
+timestamp: "2026-08-17T00:45:00Z"
 ---
 
 # Bugs — talyn
@@ -16,22 +16,22 @@ Sorted by bug number. See individual bug files for details.
 | Severity | Count |
 |---|---:|
 | Critical | 31 |
-| High | 71 |
+| High | 74 |
 | Medium-High | 23 |
-| Medium | 47 |
+| Medium | 49 |
 | Medium-Mid | 11 |
 | Medium-Low | 16 |
-| Low | 47 |
-| **Total** | **246** |
+| Low | 48 |
+| **Total** | **252** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
 | Fixed | 233 |
-| Open | 0 |
+| Open | 6 |
 | False Positive | 13 |
-| **Total** | **246** |
+| **Total** | **252** |
 
 ## All Bugs
 
@@ -283,3 +283,9 @@ Sorted by bug number. See individual bug files for details.
 | [245](245.md) | Float cast safety violation on `float("nan")` and `float("inf")` in `timeout_from_secs` and `create_connection` | Medium-High | Fixed |
 | [246](246.md) | Broken unit test in `streamserver/main.zig` crashes with optional null unwrap panic | Low | Fixed |
 | [247](247.md) | Documentation link formatting and severity summary math desync in bug tracker | Low | Fixed |
+| [248](248.md) | `SocketCreationData.dns_timeout` is never populated in hostname connect path of `create_connection` | High | Open |
+| [249](249.md) | Struct literal `dns_timeout` evaluation in `getaddrinfo.zig` leaks references and memory on error | Medium | Open |
+| [250](250.md) | Double-decref on `exception_handler` during failed `loop_init` in `constructors.zig` | High | Open |
+| [251](251.md) | Zig float cast panics on NaN, Inf, and large floats in `scheduling.zig`, `timer_handle.zig`, and `timeout_from_secs` | High | Open |
+| [252](252.md) | Uninitialized node access and GPA node leak in DNS `ControlData.release()` | Medium | Open |
+| [253](253.md) | `fixed_file_index` uninitialized in `stream_init_configuration` for internal `new_stream_transport` callers | Low | Open |
