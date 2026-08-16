@@ -235,3 +235,9 @@ Sorted by bug number. See individual bug files for details.
 | [197](197.md) | Coroutine throw error paths bypass `_leave_task` leaving corrupted `asyncio.current_task` state | High | Fixed |
 | [198](198.md) | `execute_task_send` leaks `PythonTaskObject` reference if `future_fast_set_exception` errors | Medium | Fixed |
 | [199](199.md) | Unchecked `getsockname` syscall return in `DatagramTransport.z_datagram_sendto` reads uninitialized memory | Medium | Fixed |
+| [200](200.md) | Managed HashMap in LRUCache violates Zig 0.16.0 unmanaged containers mandate | Medium | Open |
+| [201](201.md) | `@panic` in RingBuffer push methods violates Architectural Mandate 1 | High | Open |
+| [202](202.md) | Python `OSError` reference leak on failed unix socket connection in `unix_connect_callback` | Medium | Open |
+| [203](203.md) | Leaked Python `FutureObject` and pre-init resource leaks in `z_loop_create_unix_connection` and `z_loop_create_unix_server` | Medium | Open |
+| [204](204.md) | Uninitialized `popen` struct field in `SubprocessTransport.new_with_pid` | Medium | Open |
+| [205](205.md) | Unhandled `dns_timeout` keyword argument and `PyObject` reference leak in `DatagramCreationData` | Low | Open |
