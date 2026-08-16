@@ -2,6 +2,17 @@
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
 
+## [2026-08-16] — v0.8.9 Release: Codebase Hardening, Audit Passes 9–14 & Comprehensive Stability Fixes
+
+This release resolves 68 bugs (BUG-132 through BUG-199) discovered across audit rounds 9 through 14, bringing all 198 tracked bugs to 100% resolution (195 Fixed, 3 False Positive, 0 Open).
+
+- **Complete Memory & Refcount Leak Elimination**: Plugged PyObject reference count leaks across batch protocol reads (BUG-162), task callbacks/cancellations (BUG-144, BUG-174, BUG-198), transport error paths (BUG-143, BUG-169), and keyword argument parsing (BUG-189).
+- **Subprocess & IO Descriptor Safety**: Guaranteed unconditional `pidfd` descriptor closure and transport decref on protocol callback failures (BUG-196), fixed socket descriptor double-close hazards on `connection_made` exceptions (BUG-186), and connected missing `.cleanup` function pointers on IO queues (BUG-175).
+- **Task & Future Concurrency Hardening**: Guaranteed `leave_task_func` execution across all coroutine step/throw error paths via task trampolines (BUG-197), fixed `remove_done_callback` duplicate counting on cancelled/executed callbacks (BUG-195), and fixed standard cancellation exception argument matching (BUG-180).
+- **Syscall Error & Defensive Hardening**: Hardened Linux syscall return code handling to prevent uninitialized memory reads in `getsockname` (BUG-190, BUG-199), normalized nanoseconds in `call_later` preventing kernel `-EINVAL` (BUG-185), and bounded DNS hostname slice lengths (BUG-188).
+- **GC & Data Structure Lifecycle**: Implemented `tp_clear` for `HookHandleType` and `PathWatcherHandleType` (BUG-193), fixed nested GC traversal bugs in Unix signals and DNS resolver (BUG-173, BUG-192), and fixed `LRUCache.pop_tail` eviction hazards (BUG-191).
+- **Version Bump**: Bumped version to **0.8.9** in `pyproject.toml` and `build.zig.zon`.
+
 ## [2026-08-16] — Codebase Audit Round 14 (BUG-195 through BUG-199)
 
 A targeted codebase audit across the future state machine, task coroutine execution, subprocess transports, and datagram transports identified 5 new bugs and safety issues:

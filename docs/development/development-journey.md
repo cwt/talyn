@@ -150,6 +150,32 @@ With the release of **v0.8.0**, we undertook a rigorous effort to transition the
 
 With these changes, Talyn has achieved its cleanest, most robust, and highest-security release yet.
 
+## Releasing v0.8.9: Codebase Hardening, Audit Passes 9–14 & Comprehensive Stability Fixes
+
+With the release of **v0.8.9**, a comprehensive series of deep codebase audits across passes 9 through 14 surfaced and resolved 68 bugs (BUG-132 through BUG-199). This milestone brings the total tracked bug count to **198 bugs (195 Fixed, 3 False Positive, 0 Open)** with 100% test suite passing.
+
+Key hardening and stability accomplishments include:
+
+1. **Complete PyObject & Memory Leak Elimination**:
+   - Fixed PyObject reference leaks during batch protocol reads ([BUG-162](bugs/162.md)), task waking and cancellations ([BUG-144](bugs/144.md), [BUG-174](bugs/174.md), [BUG-198](bugs/198.md)), write/read transport error paths ([BUG-143](bugs/143.md), [BUG-169](bugs/169.md)), and loop keyword argument parsing ([BUG-189](bugs/189.md)).
+   - Fixed memory leaks in synchronous DNS lookups ([BUG-166](bugs/166.md)) and LRU cache insertion errors ([BUG-148](bugs/148.md)).
+
+2. **Subprocess, File Descriptor & IO Safety**:
+   - Guaranteed `pidfd` descriptor closure and transport decref on protocol callback failures ([BUG-196](bugs/196.md)).
+   - Prevented socket double-close hazards on `connection_made` exceptions across stream and datagram transports ([BUG-186](bugs/186.md)).
+   - Connected missing `.cleanup` function pointers on IO queues to guarantee resource drainage during loop shutdown ([BUG-175](bugs/175.md)).
+
+3. **Task & Future Concurrency Hardening**:
+   - Implemented task throw trampolines guaranteeing `leave_task_func` is always executed whenever `enter_task_func` succeeds, preserving `asyncio.current_task(loop)` invariants even on throw errors ([BUG-197](bugs/197.md)).
+   - Prevented `remove_done_callback` from recounting already-cancelled or executed callbacks ([BUG-195](bugs/195.md)).
+   - Normalized nanoseconds in `call_later` to eliminate kernel `-EINVAL` timer submission errors ([BUG-185](bugs/185.md)).
+
+4. **Linux Syscall & Defensive Hardening**:
+   - Verified `std.posix.errno` on `getsockname` syscall returns across datagram transports and pseudo-sockets to prevent reading uninitialized stack memory ([BUG-190](bugs/190.md), [BUG-199](bugs/199.md)).
+   - Implemented `tp_clear` for `HookHandleType` and `PathWatcherHandleType` ([BUG-193](bugs/193.md)) and fixed nested GC traversals in Unix signals and DNS resolver ([BUG-173](bugs/173.md), [BUG-192](bugs/192.md)).
+
+Bumped version to **0.8.9** in `pyproject.toml` and `build.zig.zon`.
+
 ## Releasing v0.8.7: Zig 0.16.0 Compliance Audit Fixes & Cross-Compile Fix
 
 With the release of **v0.8.7**, a full Zig 0.16.0 compliance audit surfaced 9 bugs (BUG-122 through BUG-130) that were all fixed in this patch release. The audit focused on Rule 6 (no silent `catch {}`), Rule 7 (no `@cImport`), Rule 9 (proper format specifiers), and Rule 4 (unmanaged containers). Additionally, the entire documentation was restructured under the Open Knowledge Format (OKF v0.1) as `docs/development/`, with all 129 bugs split into individual well-formed files.
