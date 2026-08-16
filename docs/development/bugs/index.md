@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 183 |
-| Open | 7 |
+| Fixed | 184 |
+| Open | 6 |
 | False Positive | 3 |
 | **Total** | **193** |
 
@@ -223,7 +223,7 @@ Sorted by bug number. See individual bug files for details.
 | [185](185.md) | Kernel -EINVAL from unnormalized nanoseconds in loop.call_later | High | Fixed |
 | [186](186.md) | Double-close of socket file descriptors on connection_made exception in StreamServer, create_connection, and create_endpoint | High | Fixed |
 | [187](187.md) | Hanging futures on error in create_datagram_endpoint and subprocess_exec | High | Fixed |
-| [188](188.md) | Unbounded hostname slice length panic in DNS IO path violating Mandate 1 | High | Open |
+| [188](188.md) | Unbounded hostname slice length panic in DNS IO path violating Mandate 1 | High | Fixed |
 | [189](189.md) | Systemic keyword argument reference leaks across multiple loop APIs | Medium | Open |
 | [190](190.md) | Unchecked syscall return value in pseudosocket_getsockname yielding garbage memory | Medium | Open |
 | [191](191.md) | Use-after-free / double-release hazard in LRUCache.pop_tail with eviction callback | Medium | Open |

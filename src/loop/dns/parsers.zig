@@ -198,7 +198,8 @@ pub fn parse_resolv_configuration(allocator: std.mem.Allocator, content: []const
                     continue :loop;
                 }
 
-                const parsed_hostname = std.ascii.lowerString(search_tmp_buf, word);
+                if (word.len > 255) return error.InvalidConfiguration;
+                const parsed_hostname = std.ascii.lowerString(search_tmp_buf[0..word.len], word);
                 // A lone "." search entry (e.g. systemd-resolved emits
                 // "search ." when no search domains are configured) means
                 // "root domain, no search suffix". Skip it instead of failing
@@ -625,4 +626,9 @@ test "build_reverse_name ipv4 and ipv6" {
     const addr6 = try utils.Address.parseIp6("::1", 53);
     const rev6 = try build_reverse_name(addr6, &buf);
     try std.testing.expectEqualStrings("1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.ip6.arpa", rev6);
+}
+
+test "parse_resolv_configuration overlong search domain does not panic" {
+    const long_domain = "search " ++ "a" ** 300 ++ "\n";
+    try std.testing.expectError(error.InvalidConfiguration, parse_resolv_configuration(std.testing.allocator, long_domain));
 }

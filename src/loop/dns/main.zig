@@ -89,7 +89,8 @@ pub fn lookup(
     callback: ?*const CallbackManager.Callback,
     timeout: ?Resolv.DnsTimeout,
 ) !?[]const utils.Address {
-    const parsed_hostname = std.ascii.lowerString(&self.parsed_hostname_buf, hostname);
+    if (hostname.len > 255) return error.InvalidHostname;
+    const parsed_hostname = std.ascii.lowerString(self.parsed_hostname_buf[0..hostname.len], hostname);
 
     const cache_slot = self.get_cache_slot(parsed_hostname);
     const record = cache_slot.get(parsed_hostname) orelse {
