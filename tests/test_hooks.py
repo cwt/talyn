@@ -102,3 +102,36 @@ def test_hook_temporary_handle_no_uaf():
     talyn.run(main())
 
 
+def test_hook_gc_cycle_collection():
+    import gc
+    import weakref
+
+    loop = talyn.Loop()
+
+    class Holder:
+        def __init__(self, l):
+            self.loop = l
+            self.handle = None
+
+        def on_prepare(self):
+            pass
+
+    holder = Holder(loop)
+    handle = loop._add_hook(0, holder.on_prepare)
+    holder.handle = handle
+
+    loop_ref = weakref.ref(loop)
+    holder_ref = weakref.ref(holder)
+
+    del loop
+    del holder
+    del handle
+
+    gc.collect()
+
+    assert loop_ref() is None
+    assert holder_ref() is None
+
+
+
+

@@ -130,11 +130,19 @@ const HookHandle = extern struct {
     node: Loop.HooksList.Node,
     callback: ?PyObject,
     cancelled: bool,
+    python_payload: CallbackManager.PythonPayload,
 };
+
+fn traverse_hook_handle(ptr: ?*anyopaque, visit_ptr: ?*anyopaque, arg: ?*anyopaque) c_int {
+    const handle: *HookHandle = @ptrCast(@alignCast(ptr.?));
+    const visit: python_c.visitproc = @ptrCast(@alignCast(visit_ptr.?));
+    return visit.?(@ptrCast(handle), arg);
+}
 
 fn hook_handle_clear(self: ?*HookHandle) callconv(.c) c_int {
     const instance = self.?;
     python_c.py_decref_and_set_null(&instance.callback);
+    instance.python_payload.callback_ptr = null;
     return 0;
 }
 
@@ -148,7 +156,11 @@ fn hook_handle_dealloc(self: ?*HookHandle) callconv(.c) void {
 
 fn hook_handle_traverse(self: ?*HookHandle, visit: python_c.visitproc, arg: ?*anyopaque) callconv(.c) c_int {
     const instance = self.?;
-    return python_c.py_visit(instance, visit, arg);
+    if (instance.callback) |cb| {
+        const vret = visit.?(@ptrCast(cb), arg);
+        if (vret != 0) return vret;
+    }
+    return 0;
 }
 
 fn hook_handle_cancel(self: ?*HookHandle, _: ?PyObject) callconv(.c) ?PyObject {
@@ -218,6 +230,11 @@ fn z_loop_add_hook(self: *LoopObject, args: []const ?PyObject) !PyObject {
     handle.hook_type = hook_type_int;
     handle.callback = python_c.py_newref(py_callback);
     handle.cancelled = false;
+    handle.python_payload = .{
+        .module_ptr = null,
+        .callback_ptr = null,
+        .traverse = &traverse_hook_handle,
+    };
     errdefer {
         python_c.py_xdecref(handle.callback);
         HookHandleType.tp_free.?(@ptrCast(handle));
@@ -229,7 +246,7 @@ fn z_loop_add_hook(self: *LoopObject, args: []const ?PyObject) !PyObject {
     handle.node = try handle.loop_data.add_hook(hook_type, .{
         .func = &hook_callback,
         .cleanup = &cleanup_hook_handle,
-        .data = .{ .user_data = handle },
+        .data = CallbackManager.CallbackData.init_python(handle, &handle.python_payload),
     });
 
     return @ptrCast(handle);
