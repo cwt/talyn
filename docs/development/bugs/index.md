@@ -293,5 +293,5 @@ Sorted by bug number. See individual bug files for details.
 | [255](255.md) | `failed_execution` leaks the owned exception reference on the generic path | High | Fixed |
 | [256](256.md) | Datagram `close()` frees in-flight recv buffer (use-after-free / buffer-pool corruption) | Critical | Fixed |
 | [257](257.md) | `parseIp4` octet accumulated into `u16` without in-loop range check (Debug panic / ReleaseFast wrong-address) | Medium-High | Fixed |
-| [258](258.md) | DNS cache TTL cap only triggers on exact `maxInt(u32)` sentinel; near-max TTLs uncapped | Medium | Open |
+| [258](258.md) | DNS cache TTL cap only triggers on exact `maxInt(u32)` sentinel; near-max TTLs uncapped | Medium | Fixed |
 | [259](259.md) | Loop hook GC traversal gap — `HookHandle.callback` PyObject* never visited | Medium | Open |

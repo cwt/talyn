@@ -11,6 +11,13 @@ pub fn timestamp() i64 {
     return @as(i64, @intCast(ts.sec));
 }
 
+pub const MAX_DNS_TTL: i64 = 86400 * 7;
+
+pub inline fn compute_effective_ttl(ttl: u32) i64 {
+    if (ttl == std.math.maxInt(u32)) return 60;
+    return @min(@as(i64, ttl), MAX_DNS_TTL);
+}
+
 const RecordState = union(enum) {
     pending: *Resolv.ControlData,
     resolved: []utils.Address,
@@ -38,13 +45,13 @@ pub const Record = struct {
     }
 
     pub inline fn set_resolved_data(self: *Record, address_list: []utils.Address, ttl: u32) void {
-        const effective_ttl: i64 = if (ttl < std.math.maxInt(u32)) @intCast(ttl) else 60;
+        const effective_ttl: i64 = compute_effective_ttl(ttl);
         self.expire_at = timestamp() + effective_ttl;
         self.state = .{ .resolved = address_list };
     }
 
     pub inline fn set_ptr_data(self: *Record, hostname: []u8, ttl: u32) void {
-        const effective_ttl: i64 = if (ttl < std.math.maxInt(u32)) @intCast(ttl) else 60;
+        const effective_ttl: i64 = compute_effective_ttl(ttl);
         self.expire_at = timestamp() + effective_ttl;
         self.state = .{ .ptr = hostname };
     }
@@ -110,7 +117,7 @@ pub fn create_new_record_from_resolved(
     const new_hostname = try allocator.dupe(u8, hostname);
     errdefer allocator.free(new_hostname);
 
-    const effective_ttl: i64 = if (ttl < std.math.maxInt(u32)) @intCast(ttl) else 60;
+    const effective_ttl: i64 = compute_effective_ttl(ttl);
     const expire_at: i64 = timestamp() + effective_ttl;
 
     const record = try allocator.create(Record);
@@ -322,4 +329,21 @@ test "create_new_record_from_resolved with maxInt TTL caps at 60s" {
     try testing.expect(record.state == .resolved);
     try testing.expect(record.expire_at <= now + 65);
     try testing.expect(record.expire_at >= now + 55);
+}
+
+test "create_new_record_from_resolved with near-max TTL caps at MAX_DNS_TTL (BUG-258)" {
+    var cache: Cache = undefined;
+    cache.init(testing.allocator);
+    defer cache.deinit();
+
+    const addresses = try testing.allocator.alloc(utils.Address, 1);
+    addresses[0] = utils.Address.initIp4(.{ 127, 0, 0, 1 }, 80);
+
+    const now = timestamp();
+    const near_max_ttl: u32 = std.math.maxInt(u32) - 1;
+    const record = try cache.create_new_record_from_resolved("example.com", addresses, near_max_ttl);
+
+    try testing.expect(record.state == .resolved);
+    try testing.expect(record.expire_at <= now + MAX_DNS_TTL + 5);
+    try testing.expect(record.expire_at >= now + MAX_DNS_TTL - 5);
 }
