@@ -366,6 +366,7 @@ fn failed_execution(task: *Task.PythonTaskObject) !void {
         return;
     }
 
+    errdefer python_c.py_decref(exception);
     try Future.Python.Result.future_fast_set_exception(fut, future_data, exception);
     if (task.py_context) |ctx| {
         python_c.py_decref(ctx);
@@ -380,8 +381,10 @@ fn failed_execution(task: *Task.PythonTaskObject) !void {
         exc_match(exception, python_c.PyExc_KeyboardInterrupt) > 0)
     {
         python_c.PyErr_SetRaisedException(python_c.py_newref(exception));
+        python_c.py_decref(exception);
         return error.PythonError;
     }
+    python_c.py_decref(exception);
 }
 
 pub fn cleanup_task(ptr: ?*anyopaque) void {

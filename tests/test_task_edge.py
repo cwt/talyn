@@ -60,3 +60,30 @@ def test_task_bad_yield_exception_refcount() -> None:
     finally:
         loop.close()
 
+
+def test_task_failed_execution_exception_refcount() -> None:
+    import gc
+    import sys
+
+    exc = ValueError("test_error_refcount")
+    initial_refcnt = sys.getrefcount(exc)
+
+    loop = Loop()
+    try:
+        async def failing():
+            raise exc
+
+        task = Task(failing(), loop=loop)
+        with pytest.raises(ValueError):
+            loop.run_until_complete(task)
+    finally:
+        del task
+        loop.close()
+        del loop
+
+    exc.__traceback__ = None
+    gc.collect()
+    assert sys.getrefcount(exc) == initial_refcnt
+
+
+
