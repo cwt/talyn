@@ -1,7 +1,7 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 252 bugs discovered across 18 audit passes."
+description: "Individual bug entries for talyn, one file per bug. 258 bugs discovered across 19 audit passes."
 timestamp: "2026-08-17T00:45:00Z"
 ---
 
@@ -15,23 +15,23 @@ Sorted by bug number. See individual bug files for details.
 
 | Severity | Count |
 |---|---:|
-| Critical | 31 |
-| High | 74 |
-| Medium-High | 23 |
-| Medium | 49 |
+| Critical | 33 |
+| High | 75 |
+| Medium-High | 24 |
+| Medium | 51 |
 | Medium-Mid | 11 |
 | Medium-Low | 16 |
 | Low | 48 |
-| **Total** | **252** |
+| **Total** | **258** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
 | Fixed | 239 |
-| Open | 0 |
+| Open | 6 |
 | False Positive | 13 |
-| **Total** | **252** |
+| **Total** | **258** |
 
 ## All Bugs
 
@@ -289,3 +289,9 @@ Sorted by bug number. See individual bug files for details.
 | [251](251.md) | Zig float cast panics on NaN, Inf, and large floats in `scheduling.zig`, `timer_handle.zig`, and `timeout_from_secs` | High | Fixed |
 | [252](252.md) | Uninitialized node access and GPA node leak in DNS `ControlData.release()` | Medium | Fixed |
 | [253](253.md) | `fixed_file_index` uninitialized in `stream_init_configuration` for internal `new_stream_transport` callers | Low | Fixed |
+| [254](254.md) | `execute_task_throw` passes borrowed `task.exception` → use-after-free / double-free | Critical | Open |
+| [255](255.md) | `failed_execution` leaks the owned exception reference on the generic path | High | Open |
+| [256](256.md) | Datagram `close()` frees in-flight recv buffer (use-after-free / buffer-pool corruption) | Critical | Open |
+| [257](257.md) | `parseIp4` octet accumulated into `u16` without in-loop range check (Debug panic / ReleaseFast wrong-address) | Medium-High | Open |
+| [258](258.md) | DNS cache TTL cap only triggers on exact `maxInt(u32)` sentinel; near-max TTLs uncapped | Medium | Open |
+| [259](259.md) | Loop hook GC traversal gap — `HookHandle.callback` PyObject* never visited | Medium | Open |
