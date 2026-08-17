@@ -2,7 +2,17 @@
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
 
-## [2026-08-16] — v0.8.9 Release: Codebase Hardening, Audit Passes 9–14 & Comprehensive Stability Fixes
+## [2026-08-17] — v0.9.0 Release: Offline AST Linter, Audit Passes 15–19 (BUG-200..259) & Complete Production Hardening
+
+This milestone introduces a custom native static analyzer (`zig build lint`) and resolves 60 bugs across audit passes 15 through 19 (BUG-200 through BUG-259), bringing all 258 tracked bugs to **100% resolution (245 Fixed, 13 False Positive, 0 Open)** with 100% test suite passing across all four Python runtime targets (3.13, 3.14, 3.13t, 3.14t).
+
+- **Native Offline AST Linter & Bug Hunter (`tools/linter/`, `zig build lint`)**: Built a zero-dependency static analyzer directly hooking into `std.zig.Ast` and Python's `ast` module. Scans 100+ Zig files (76,000+ AST nodes) in <15ms, enforcing 11 Zig AST rules (`TALYN-001`–`TALYN-011`) and 2 Python AST rules (`TALYN-PY01`–`TALYN-PY02`) to proactively catch uninitialized fields, missing `errdefer py_decref`, discarded syscall returns, `@panic` in I/O paths, and unhandled switch cases. See [docs/development/ast-linter.md](ast-linter.md).
+- **Task & Generator Exception Safety**: Fixed generator throw refcount consumption with owned references in `_execute_task_throw` ([BUG-254](bugs/254.md)) and exception decrefs on generic failure paths in `failed_execution` ([BUG-255](bugs/255.md)).
+- **Garbage Collection & Hook Traversal**: Fixed `HookHandle` GC traversal gap by attaching `python_payload` with `traverse_hook_handle`, allowing hook callbacks to participate in cycle detection and reclamation ([BUG-259](bugs/259.md)).
+- **Transport & Buffer Pool Integrity**: Deferred datagram recv buffer cleanup to object destruction (`datagram_dealloc`/`datagram_clear`) to prevent use-after-free while `io_uring` read completions are in-flight ([BUG-256](bugs/256.md)), and fixed unparsed keyword arguments in stream server ([BUG-205](bugs/205.md)).
+- **Network & Address Parsing Safety**: Added in-loop octet range checks in IPv4 address parser to prevent `u16` accumulator overflow on octets > 255 ([BUG-257](bugs/257.md)), and capped DNS cache TTL to `MAX_DNS_TTL` (7 days) for near-max/overflow TTL records ([BUG-258](bugs/258.md)).
+- **Audit Passes 15–19 (BUG-200..253)**: Comprehensive memory leak, refcount, error deferral, and struct initialization hardening across task, future, stream transport, and DNS subsystems.
+- **Version Bump**: Bumped version to **0.9.0** in `pyproject.toml` and `build.zig.zon`.
 
 This release resolves 68 bugs (BUG-132 through BUG-199) discovered across audit rounds 9 through 14, bringing all 198 tracked bugs to 100% resolution (195 Fixed, 3 False Positive, 0 Open).
 

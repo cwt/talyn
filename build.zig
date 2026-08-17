@@ -87,8 +87,7 @@ pub fn build(b: *std.Build) void {
         break :blk if (trimmed.len > 0) trimmed else "/usr/include/python3.14";
     } else |_| "/usr/include/python3.14";
 
-    const python_include_dir = b.option([]const u8, "python-include-dir", "Path to python include directory")
-        orelse detected_include_dir;
+    const python_include_dir = b.option([]const u8, "python-include-dir", "Path to python include directory") orelse detected_include_dir;
 
     const detected_lib = if (b.runAllowFail(&.{ "python3", "-c", "import sysconfig, os; d = sysconfig.get_config_var('LIBDIR'); f = sysconfig.get_config_var('INSTSONAME'); print(os.path.join(d, f) if d and f else '', end='')" }, &dummy_code, .ignore)) |stdout| blk: {
         const trimmed = std.mem.trim(u8, stdout, " \t\r\n");
@@ -98,18 +97,14 @@ pub fn build(b: *std.Build) void {
     const python_lib_dir = b.option([]const u8, "python-lib-dir", "Path to python library directory");
 
     const builtin = @import("builtin");
-    const python_lib = b.option([]const u8, "python-lib", "Path to the python shared library")
-        orelse (if (target.result.cpu.arch == builtin.cpu.arch) detected_lib else null);
+    const python_lib = b.option([]const u8, "python-lib", "Path to the python shared library") orelse (if (target.result.cpu.arch == builtin.cpu.arch) detected_lib else null);
 
     const detected_gil_disabled = if (b.runAllowFail(&.{ "python3", "-c", "import sys; print(not sys._is_gil_enabled() if hasattr(sys, '_is_gil_enabled') else False, end='')" }, &dummy_code, .ignore)) |stdout| blk: {
         const trimmed = std.mem.trim(u8, stdout, " \t\r\n");
         break :blk std.mem.eql(u8, trimmed, "True");
     } else |_| false;
 
-    const python_is_gil_disabled = b.option(bool, "python-gil-disabled", "Is GIL disabled")
-        orelse detected_gil_disabled;
-
-
+    const python_is_gil_disabled = b.option(bool, "python-gil-disabled", "Is GIL disabled") orelse detected_gil_disabled;
 
     // BUG-123: Use addTranslateC for signal.h instead of @cImport in unix_signals.zig.
 
@@ -183,14 +178,32 @@ pub fn build(b: *std.Build) void {
     const install_step = b.getInstallStep();
 
     create_build_step(
-        b, "talyn", "src/lib.zig", target, optimize, !python_is_gil_disabled,
-        &modules_name, &modules, true, install_step, asan,
+        b,
+        "talyn",
+        "src/lib.zig",
+        target,
+        optimize,
+        !python_is_gil_disabled,
+        &modules_name,
+        &modules,
+        true,
+        install_step,
+        asan,
     );
 
     const check_step = b.step("check", "Run checking for ZLS");
     create_build_step(
-        b, "talyn", "src/lib.zig", target, optimize, true,
-        &modules_name, &modules, false, check_step, asan,
+        b,
+        "talyn",
+        "src/lib.zig",
+        target,
+        optimize,
+        true,
+        &modules_name,
+        &modules,
+        false,
+        check_step,
+        asan,
     );
 
     const talyn_module_unit_tests = b.addTest(.{
@@ -282,5 +295,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_callback_manager_unit_tests.step);
     test_step.dependOn(&run_utils_unit_tests.step);
 
-
+    const lint_step = b.step("lint", "Run offline AST linter");
+    lint_step.dependOn(&run_linter.step);
+    lint_step.dependOn(&run_linter_unit_tests.step);
 }

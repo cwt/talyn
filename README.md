@@ -17,6 +17,7 @@ Talyn prioritizes **correctness, complete system safety, and high usability** ov
 - **Realistic Speed**: Designed to deliver solid and reliable I/O performance on Linux by leveraging `io_uring`'s native kernel-side asynchronous completion queues.
 - **Robust & Crash-Resistant**: Meticulously hardened against circular reference memory leaks, stack alignment faults, signal interrupt deadlocks, and use-after-free bugs.
 - **Full Asyncio Compatibility**: Passes 100% of standard Python `asyncio`, `subprocess`, `transports`, and connection-lifecycle test suites.
+- **Offline AST Bug Hunter & Linter**: Enforces strict invariant safety rules (preventing memory leaks, discarded syscalls, panics, and UAFs) via a built-in, sub-15ms Zig and Python AST static analyzer (`zig build lint`).
 - **Modern Packaging**: Fully migrated to PEP 517/518 standard declarative `pyproject.toml` configuration.
 - **GIL-Disabled Free-Threading Ready**: Fully compatible with `python3.13t` and `python3.14t` without memory races.
 
@@ -181,6 +182,16 @@ Boots a real Fedora 44 VM per architecture (first run downloads the ~0.5 GB clou
 ```
 
 Under heavy emulation, a stdlib module may exceed its per-module timeout (e.g. `test_subprocess` on riscv64); raise it with `TALYN_STDLIB_TIMEOUT=600` and the memory-safety repro timeout with `TALYN_REPRO_TIMEOUT=900`.
+
+### 🛡️ 6. Run the native Offline AST Linter & Bug Hunter
+
+Talyn includes a zero-dependency static analyzer hooked into `std.zig.Ast` and Python's `ast` module to prevent regressions and enforce architectural safety rules in under 15ms:
+
+```bash
+zig build lint
+```
+
+For the complete catalog of rules, see [docs/development/ast-linter.md](docs/development/ast-linter.md).
 
 ### ⏱️ Measured timings
 

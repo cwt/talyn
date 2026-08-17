@@ -33,7 +33,10 @@ Welcome to the Talyn TODO and project tracking documentation. This serves as the
 ## Knowledge Base
 
 - [Lessons Learned](development/lessons/index.md)
+- [Bugs](development/bugs/index.md)
 - [Architectural Mandates](development/architectural-mandates.md)
+- [Offline AST Linter & Bug Hunter](development/ast-linter.md)
+- [Development Journey](development/development-journey.md)
 - [Reference & Misc](development/reference-and-misc.md)
 - [Audits and Profiling](development/audits-and-profiling.md)
 - [io_uring Security Hardening](development/hardening.md)

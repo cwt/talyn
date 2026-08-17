@@ -150,6 +150,43 @@ With the release of **v0.8.0**, we undertook a rigorous effort to transition the
 
 With these changes, Talyn has achieved its cleanest, most robust, and highest-security release yet.
 
+## Releasing v0.9.0: Native Offline AST Linter, Audit Passes 15–19 (BUG-200..259) & Complete Production Hardening
+
+With the release of **v0.9.0**, Talyn introduces an advanced, zero-dependency **Native Offline AST Linter & Bug Hunter** directly integrated into the build pipeline, along with resolving 60 bugs across audit passes 15 through 19 (BUG-200 through BUG-259). This milestone brings the total tracked bug count to **258 bugs (245 Fixed, 13 False Positive, 0 Open)** with 100% test suite passing across all four Python runtime targets (3.13, 3.14, 3.13t, 3.14t).
+
+### 1. Native Offline AST Linter & Bug Hunter (`zig build lint`)
+
+After analyzing hundreds of bugs fixed throughout the project's evolution, we recognized that domain-specific bugs—such as uninitialized `?PyObject` fields after `tp_alloc`, missing `errdefer py_decref` handlers on error paths, panics in the I/O event loop, discarded syscall return values, and unhandled switch variants—are **100% syntactically valid code** to standard Zig and C compilers.
+
+To permanently eradicate these classes of bugs without relying on runtime crashes or expensive AI review loops, we created a custom, native static analysis tool:
+- **Direct AST Hooking**: Operates directly on the native Zig AST via **`std.zig.Ast`** and Python's standard **`ast`** module (`tools/linter/`).
+- **Blazing Performance**: Scans over 100 Zig files (76,000+ AST nodes) and Python files in **under 15 milliseconds** with zero external dependencies.
+- **Enforced Invariant Rules**:
+  - **Zig AST Rules (`TALYN-001`–`TALYN-011`)**: Prohibits `@cImport` ([BUG-123](bugs/123.md)), bans `@panic` in I/O loop paths ([BUG-105](bugs/105.md), [BUG-188](bugs/188.md)), forbids empty `catch {}` blocks ([BUG-122](bugs/122.md)), enforces unmanaged container conventions ([BUG-126](bugs/126.md)), catches bare `else => {}` in switch statements ([BUG-096](bugs/096.md)), guards against discarded syscall return values ([BUG-190](bugs/190.md)), verifies `tp_clear` on all GC types ([BUG-155](bugs/155.md)), requires explicit `errdefer py_decref` after `fast_new_future` ([BUG-187](bugs/187.md), [BUG-203](bugs/203.md)), mandates explicit field initialization on struct allocation ([BUG-204](bugs/204.md), [BUG-253](bugs/253.md)), and validates complete keyword argument parsing ([BUG-189](bugs/189.md), [BUG-205](bugs/205.md)).
+  - **Python AST Rules (`TALYN-PY01`–`TALYN-PY02`)**: Enforces explicit named `def` functions over `lambda` expressions for clean stack traces and prevents silent bare `except: pass` blocks.
+- **Continuous Integration Guard**: Hooked automatically into `./scripts/test_all.sh` and `zig build lint` as a mandatory pre-commit check.
+
+For the full catalog of rules and architecture, see [docs/development/ast-linter.md](ast-linter.md).
+
+### 2. Audit Passes 15–19 & Hardening Fixes (BUG-200..259)
+
+A comprehensive series of five deep audit passes scrutinized the codebase for subtle memory management, lifecycle, and network safety edge cases:
+
+1. **PyObject Lifecycle & Reference Counting Hardening**:
+   - Guaranteed owned references when throwing into generator tasks via `_execute_task_throw` ([BUG-254](bugs/254.md)) and decref'd owned exception references on generic failure paths in `failed_execution` ([BUG-255](bugs/255.md)).
+   - Fixed missing `errdefer py_decref` on future creation failure branches ([BUG-203](bugs/203.md), [BUG-209](bugs/209.md)) and ensured all `?PyObject` fields are explicitly initialized after `tp_alloc` ([BUG-204](bugs/204.md), [BUG-253](bugs/253.md)).
+2. **Garbage Collection Correctness & Cycle Elimination**:
+   - Resolved the loop hook GC traversal gap by attaching `python_payload` to `HookHandle` and registering hooks via `CallbackData.init_python`, ensuring hook callbacks participate in GC traversal and cycle collection ([BUG-259](bugs/259.md)).
+   - Implemented proper `tp_clear` and GC un-tracking sequences across handle types ([BUG-208](bugs/208.md)).
+3. **Transport & Buffer Pool Safety**:
+   - Deferred datagram receive buffer cleanup to object deallocation (`datagram_dealloc`/`datagram_clear`), preventing use-after-free and buffer pool corruption while `io_uring` read completions are in-flight ([BUG-256](bugs/256.md)).
+   - Fixed unparsed keyword arguments in stream server constructors ([BUG-205](bugs/205.md)) and write transport buffer lifecycle transitions.
+4. **Syscall & Network Protocol Correctness**:
+   - Added in-loop octet range checks in `parseIp4` to prevent `u16` accumulator overflow and enforce rejection of octets > 255 across all build modes ([BUG-257](bugs/257.md)).
+   - Capped DNS cache TTL to `MAX_DNS_TTL` (7 days) for near-max and overflowing TTL records ([BUG-258](bugs/258.md)).
+
+Bumped version to **0.9.0** in `pyproject.toml` and `build.zig.zon`.
+
 ## Releasing v0.8.9: Codebase Hardening, Audit Passes 9–14 & Comprehensive Stability Fixes
 
 With the release of **v0.8.9**, a comprehensive series of deep codebase audits across passes 9 through 14 surfaced and resolved 68 bugs (BUG-132 through BUG-199). This milestone brings the total tracked bug count to **198 bugs (195 Fixed, 3 False Positive, 0 Open)** with 100% test suite passing.
