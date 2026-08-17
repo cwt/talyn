@@ -495,7 +495,7 @@ pub fn execute_task_throw(data: *const CallbackManager.CallbackData) !void {
         python_c.py_decref(@ptrCast(task));
         return;
     }
-    @call(.always_inline, _execute_task_throw, .{ task, task.exception.? }) catch |err| {
+    @call(.always_inline, _execute_task_throw, .{ task, python_c.py_newref(task.exception.?) }) catch |err| {
         utils.handle_zig_function_error(err, {});
 
         const exc = python_c.PyErr_GetRaisedException() orelse {

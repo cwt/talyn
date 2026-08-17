@@ -35,3 +35,28 @@ def test_task_without_loop_inside_running_loop() -> None:
         assert loop.run_until_complete(test())
     finally:
         loop.close()
+
+
+def test_task_bad_yield_exception_refcount() -> None:
+    import gc
+
+    loop = Loop()
+    try:
+        class BadYieldObj:
+            _asyncio_future_blocking = 123
+
+        class BadAwaitable:
+            def __await__(self):
+                yield BadYieldObj()
+
+        async def bad_coro():
+            await BadAwaitable()
+
+        task = Task(bad_coro(), loop=loop)
+        with pytest.raises(RuntimeError, match="got bad yield"):
+            loop.run_until_complete(task)
+
+        gc.collect()
+    finally:
+        loop.close()
+

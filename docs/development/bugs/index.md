@@ -289,7 +289,7 @@ Sorted by bug number. See individual bug files for details.
 | [251](251.md) | Zig float cast panics on NaN, Inf, and large floats in `scheduling.zig`, `timer_handle.zig`, and `timeout_from_secs` | High | Fixed |
 | [252](252.md) | Uninitialized node access and GPA node leak in DNS `ControlData.release()` | Medium | Fixed |
 | [253](253.md) | `fixed_file_index` uninitialized in `stream_init_configuration` for internal `new_stream_transport` callers | Low | Fixed |
-| [254](254.md) | `execute_task_throw` passes borrowed `task.exception` → use-after-free / double-free | Critical | Open |
+| [254](254.md) | `execute_task_throw` passes borrowed `task.exception` → use-after-free / double-free | Critical | Fixed |
 | [255](255.md) | `failed_execution` leaks the owned exception reference on the generic path | High | Open |
 | [256](256.md) | Datagram `close()` frees in-flight recv buffer (use-after-free / buffer-pool corruption) | Critical | Open |
 | [257](257.md) | `parseIp4` octet accumulated into `u16` without in-loop range check (Debug panic / ReleaseFast wrong-address) | Medium-High | Open |
