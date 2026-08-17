@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 238 |
-| Open | 1 |
+| Fixed | 239 |
+| Open | 0 |
 | False Positive | 13 |
 | **Total** | **252** |
 
@@ -288,4 +288,4 @@ Sorted by bug number. See individual bug files for details.
 | [250](250.md) | Double-decref on `exception_handler` during failed `loop_init` in `constructors.zig` | High | Fixed |
 | [251](251.md) | Zig float cast panics on NaN, Inf, and large floats in `scheduling.zig`, `timer_handle.zig`, and `timeout_from_secs` | High | Fixed |
 | [252](252.md) | Uninitialized node access and GPA node leak in DNS `ControlData.release()` | Medium | Fixed |
-| [253](253.md) | `fixed_file_index` uninitialized in `stream_init_configuration` for internal `new_stream_transport` callers | Low | Open |
+| [253](253.md) | `fixed_file_index` uninitialized in `stream_init_configuration` for internal `new_stream_transport` callers | Low | Fixed |

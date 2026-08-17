@@ -172,6 +172,7 @@ fn stream_init_configuration(self: *StreamTransportObject, protocol: PyObject, l
     // definition is only applied by struct literals, not by field-by-field
     // assignment. Without this, the counter would be uninitialized (0xaa in Debug).
     self.dispatch_generation = 0;
+    self.fixed_file_index = 0;
 
     var family: i32 = undefined;
     var optlen: std.posix.socklen_t = @sizeOf(i32);
@@ -203,6 +204,7 @@ pub fn new_stream_transport(protocol: PyObject, loop: *LoopObject, fd: std.posix
     const instance: *StreamTransportObject = @ptrCast(Stream.StreamType.tp_alloc.?(Stream.StreamType, 0) orelse return error.PythonError);
     errdefer Stream.StreamType.tp_free.?(instance);
 
+    python_c.initialize_object_fields(instance, &.{ "ob_base", "fd", "family", "protocol_type", "is_closing", "closed" });
     instance.owns_fd = true;
 
     try stream_init_configuration(instance, protocol, loop, fd, zero_copying);
