@@ -119,10 +119,11 @@ pub const Address = extern union {
             const octet_start = i;
             while (i < host.len and host[i] != '.') : (i += 1) {
                 if (host[i] < '0' or host[i] > '9') return error.InvalidIPAddressFormat;
-                val = val * 10 + (host[i] - '0');
+                const digit: u16 = host[i] - '0';
+                val = val * 10 + digit;
+                if (val > 255) return error.InvalidIPAddressFormat;
             }
             if (i == octet_start) return error.InvalidIPAddressFormat;
-            if (val > 255) return error.InvalidIPAddressFormat;
             bytes[octet_i] = @intCast(val);
             octet_i += 1;
             if (i < host.len) i += 1;
@@ -366,3 +367,13 @@ const PosixAddress = struct {
         sa: std.posix.sockaddr.in6,
     };
 };
+
+test "parseIp4 octet overflow rejection (BUG-257)" {
+    const testing = std.testing;
+    try testing.expectError(error.InvalidIPAddressFormat, Address.parseIp4("1.2.3.4294967296", 80));
+    try testing.expectError(error.InvalidIPAddressFormat, Address.parseIp4("1.2.3.70000", 80));
+    try testing.expectError(error.InvalidIPAddressFormat, Address.parseIp4("1.2.3.256", 80));
+    try testing.expectError(error.InvalidIPAddressFormat, Address.parseIp4("1.2.3.999", 80));
+    const addr = try Address.parseIp4("1.2.3.4", 80);
+    try testing.expectEqual(std.mem.nativeToBig(u16, 80), addr.in.sa.port);
+}
