@@ -45,7 +45,7 @@ const ExtraInfo = @import("extra_info.zig");
 fn cleanup_resources(instance: *DatagramTransportObject) void {
     if (instance.fixed_file_index != 0) {
         if (instance.loop) |loop| {
-            const loop_obj: *LoopObject = @alignCast(@ptrCast(loop));
+            const loop_obj: *LoopObject = @ptrCast(@alignCast(loop));
             const loop_data = utils.get_data_ptr(Loop, loop_obj);
             if (loop_data.initialized) {
                 loop_data.io.unregister_fixed_file(instance.fixed_file_index);
@@ -55,7 +55,7 @@ fn cleanup_resources(instance: *DatagramTransportObject) void {
     }
     if (instance.fixed_buffer_index != -1) {
         if (instance.loop) |loop| {
-            const loop_obj: *LoopObject = @alignCast(@ptrCast(loop));
+            const loop_obj: *LoopObject = @ptrCast(@alignCast(loop));
             const loop_data = utils.get_data_ptr(Loop, loop_obj);
             if (loop_data.initialized) {
                 loop_data.io.release_buffer(@intCast(instance.fixed_buffer_index));
@@ -66,7 +66,7 @@ fn cleanup_resources(instance: *DatagramTransportObject) void {
         instance.buffer_len = 0;
     } else if (instance.buffer_len > 0) {
         if (instance.loop) |loop| {
-            const loop_obj: *LoopObject = @alignCast(@ptrCast(loop));
+            const loop_obj: *LoopObject = @ptrCast(@alignCast(loop));
             const loop_data = utils.get_data_ptr(Loop, loop_obj);
             if (loop_data.initialized) {
                 if (instance.buffer_ptr) |ptr| {
@@ -85,7 +85,7 @@ fn datagram_dealloc(self: ?*DatagramTransportObject) callconv(.c) void {
     cleanup_resources(instance);
     if (!instance.closed and instance.fd >= 0) {
         if (instance.loop) |loop| {
-            const loop_obj: *LoopObject = @alignCast(@ptrCast(loop));
+            const loop_obj: *LoopObject = @ptrCast(@alignCast(loop));
             if (loop_obj.debug) {
                 const msg = python_c.PyUnicode_FromFormat("unclosed transport <DatagramTransport fd=%d>\x00", instance.fd);
                 if (msg) |m| {
@@ -159,7 +159,7 @@ fn datagram_close(self: ?*DatagramTransportObject, _: ?PyObject) callconv(.c) ?P
     if (!instance.closed) {
         instance.closed = true;
         if (instance.loop) |loop| {
-            const loop_obj: *LoopObject = @alignCast(@ptrCast(loop));
+            const loop_obj: *LoopObject = @ptrCast(@alignCast(loop));
             const loop_data = utils.get_data_ptr(Loop, loop_obj);
             if (loop_data.initialized) {
                 if (instance.read_task_id != 0) {
@@ -174,12 +174,6 @@ fn datagram_close(self: ?*DatagramTransportObject, _: ?PyObject) callconv(.c) ?P
             _ = std.os.linux.close(instance.fd);
             instance.fd = -1;
         }
-        // BUG-52: cleanup_resources releases the fixed file slot
-        // and the registered buffer (or frees the heap-allocated
-        // buffer if not registered). Without this call, repeatedly
-        // creating and closing datagram transports would exhaust
-        // fixed file slots and the buffer pool.
-        cleanup_resources(instance);
     }
     return python_c.get_py_none();
 }
@@ -215,7 +209,7 @@ fn datagram_get_write_buffer_limits(self: ?*DatagramTransportObject, _: ?PyObjec
     defer python_c.py_decref(low);
     const high = python_c.PyLong_FromUnsignedLongLong(@intCast(instance.writing_high_water_mark)) orelse return null;
     defer python_c.py_decref(high);
-    
+
     return python_c.PyTuple_Pack(2, low, high);
 }
 
@@ -256,7 +250,5 @@ pub var DatagramTransportType: ?*python_c.PyTypeObject = null;
 
 pub fn create_type() !void {
     if (DatagramTransportType != null) return;
-    DatagramTransportType = @ptrCast(python_c.PyType_FromSpecWithBases(
-        @constCast(&datagram_spec), utils.PythonImports.get("asyncio_datagram_transport")
-    ) orelse return error.PythonError);
+    DatagramTransportType = @ptrCast(python_c.PyType_FromSpecWithBases(@constCast(&datagram_spec), utils.PythonImports.get("asyncio_datagram_transport")) orelse return error.PythonError);
 }

@@ -281,3 +281,23 @@ def test_create_datagram_endpoint_invalid_dns_timeout() -> None:
 
     talyn.run(main())
 
+
+@pytest.mark.asyncio
+async def test_datagram_close_inflight_recv_buffer_safety():
+    loop = asyncio.get_running_loop()
+    t1, p1 = await loop.create_datagram_endpoint(
+        EchoServerProtocol, local_addr=("127.0.0.1", 0)
+    )
+    addr = t1.get_extra_info("sockname")
+
+    t2, p2 = await loop.create_datagram_endpoint(
+        DatagramProtocol, local_addr=("127.0.0.1", 0)
+    )
+
+    t2.sendto(b"payload_bytes", addr)
+    t2.close()
+    await asyncio.sleep(0.05)
+    t1.close()
+    await asyncio.sleep(0.05)
+
+
