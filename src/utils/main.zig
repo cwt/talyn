@@ -73,7 +73,7 @@ pub inline fn get_parent_ptr(comptime T: type, talyn_object: anytype) *T {
     if (type_info.pointer.size != .one) {
         @compileError("talyn_pyobject must be a single pointer");
     }
-    
+
     return @as(*T, @ptrFromInt(@intFromPtr(talyn_object) - @offsetOf(T, "data")));
 }
 
@@ -93,7 +93,7 @@ fn get_func_return_type(func: anytype) type {
     return switch (@typeInfo(return_payload)) {
         .int, .@"enum" => return_payload,
         .noreturn => @compileError("return type must not be noreturn"),
-        else => ?return_payload
+        else => ?return_payload,
     };
 }
 
@@ -101,7 +101,7 @@ pub inline fn handle_zig_function_error(@"error": anyerror, return_value: anytyp
     switch (@"error") {
         error.PythonError => {},
         error.OutOfMemory => python_c.raise_python_error(python_c.PyExc_MemoryError.?, null),
-        error.AddressNotAvailable, error.SystemResources => {
+        error.AddressNotAvailable, error.SystemResources, error.ProcessFdQuotaExceeded, error.SystemFdQuotaExceeded => {
             python_c.raise_python_error(python_c.PyExc_OSError.?, @errorName(@"error"));
         },
         error.SignalInterrupt => {
@@ -113,7 +113,7 @@ pub inline fn handle_zig_function_error(@"error": anyerror, return_value: anytyp
             // In release/production we might want to be more quiet, but for now
             // let's just raise the exception without the messy/crashing stack dump.
             python_c.raise_python_runtime_error(@errorName(@"error"));
-        }
+        },
     }
 
     return return_value;
@@ -127,7 +127,7 @@ pub inline fn execute_zig_function(func: anytype, args: anytype) get_func_return
             if (ret_type_info == .int) {
                 if (ret_type_info.int.signedness == .signed) {
                     break :blk -1;
-                }else{
+                } else {
                     break :blk 0;
                 }
             }
@@ -144,6 +144,30 @@ pub fn getSyscallErrno(rc: usize) std.posix.E {
         return @enumFromInt(-signed);
     }
     return .SUCCESS;
+}
+
+/// Map a `socket()` (or similar fd-creating) syscall errno to a Zig error.
+///
+/// `EMFILE` ("too many open files", per-process) and `ENFILE` (system-wide)
+/// are surfaced as distinct errors instead of the generic `SystemResources`,
+/// so callers and operators can tell fd exhaustion apart from genuine memory
+/// / io_uring resource failures. See BUG-260.
+pub fn socketSyscallError(err: std.posix.E) error{ SystemResources, ProcessFdQuotaExceeded, SystemFdQuotaExceeded } {
+    return switch (err) {
+        .MFILE => error.ProcessFdQuotaExceeded,
+        .NFILE => error.SystemFdQuotaExceeded,
+        else => error.SystemResources,
+    };
+}
+
+test "socketSyscallError surfaces EMFILE/ENFILE distinctly (BUG-260)" {
+    // EMFILE / ENFILE must be distinguishable from generic SystemResources so
+    // operators can tell fd exhaustion apart from io_uring/memory failures.
+    try std.testing.expectEqual(error.ProcessFdQuotaExceeded, socketSyscallError(.MFILE));
+    try std.testing.expectEqual(error.SystemFdQuotaExceeded, socketSyscallError(.NFILE));
+    // Anything else (e.g. ENOMEM) stays generic SystemResources.
+    try std.testing.expectEqual(error.SystemResources, socketSyscallError(.NOMEM));
+    try std.testing.expectEqual(error.SystemResources, socketSyscallError(.AGAIN));
 }
 
 test {

@@ -244,7 +244,8 @@ fn z_create_endpoint(dcd: *DatagramCreationData) !void {
     }
 
     const socket_ret = std.os.linux.socket(family, @as(u32, @intCast(std.posix.SOCK.DGRAM | std.posix.SOCK.NONBLOCK | std.posix.SOCK.CLOEXEC)), 0);
-    if (utils.getSyscallErrno(socket_ret) != .SUCCESS) return error.SystemResources;
+    const socket_err = utils.getSyscallErrno(socket_ret);
+    if (socket_err != .SUCCESS) return utils.socketSyscallError(socket_err);
     const fd: std.posix.fd_t = @intCast(socket_ret);
     var owns_fd = true;
     defer {

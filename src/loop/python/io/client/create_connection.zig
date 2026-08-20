@@ -517,7 +517,8 @@ const MultiConnectState = struct {
 fn create_socket_and_submit_connect_req(address: *const utils.Address, data: *SocketData, loop: *Loop) !usize {
     const flags = std.posix.SOCK.STREAM | std.posix.SOCK.NONBLOCK | std.posix.SOCK.CLOEXEC;
     const socket_ret = std.os.linux.socket(address.any.family, flags, std.os.linux.IPPROTO.TCP);
-    if (utils.getSyscallErrno(socket_ret) != .SUCCESS) return error.SystemResources;
+    const socket_err = utils.getSyscallErrno(socket_ret);
+    if (socket_err != .SUCCESS) return utils.socketSyscallError(socket_err);
     const socket_fd: std.posix.fd_t = @intCast(socket_ret);
     errdefer _ = std.os.linux.close(socket_fd);
 

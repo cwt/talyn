@@ -527,11 +527,19 @@ pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
     @atomicStore(u8, &self.ring_blocked, 0, .seq_cst);
 
     // Initialize fixed file table for IOSQE_FIXED_FILE optimization.
-    // Raise RLIMIT_NOFILE if needed — fixed file table needs TotalTasksItems slots.
+    // BUG-260: Do NOT clamp RLIMIT_NOFILE to the io_uring SQE depth. The old
+    // code set the soft limit to TotalTasksItems + 64 (=1088); that is far too
+    // low for a proxy that keeps many sockets open (~2 fds per tunnel), and when
+    // the prior hard limit was higher (e.g. a 1M container cap) it actually
+    // *lowered* the process fd ceiling to 1088. Raise the soft limit up to the
+    // existing hard limit instead, so Talyn never shrinks the available fd
+    // budget and the process can use as many fds as the system allows.
     const nr_files: u32 = TotalTasksItems;
     var rlim: std.os.linux.rlimit = undefined;
     _ = std.os.linux.getrlimit(.NOFILE, &rlim);
-    _ = std.os.linux.setrlimit(.NOFILE, &.{ .cur = nr_files + 64, .max = rlim.max });
+    if (rlim.cur < rlim.max) {
+        _ = std.os.linux.setrlimit(.NOFILE, &.{ .cur = rlim.max, .max = rlim.max });
+    }
 
     self.fixed_file_table = try allocator.alloc(std.posix.fd_t, nr_files);
     errdefer allocator.free(self.fixed_file_table);

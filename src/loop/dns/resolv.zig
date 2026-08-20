@@ -580,12 +580,14 @@ fn build_queries(
         std.posix.SOCK.DGRAM | std.posix.SOCK.CLOEXEC,
         std.os.linux.IPPROTO.UDP,
     );
-    if (utils.getSyscallErrno(socket_ret) != .SUCCESS) return error.SystemResources;
+    const socket_err = utils.getSyscallErrno(socket_ret);
+    if (socket_err != .SUCCESS) return utils.socketSyscallError(socket_err);
     const socket_fd: std.posix.fd_t = @intCast(socket_ret);
     errdefer _ = std.os.linux.close(socket_fd);
 
     const connect_ret = std.os.linux.connect(socket_fd, @ptrCast(&server_address.any), server_address.getOsSockLen());
-    if (utils.getSyscallErrno(connect_ret) != .SUCCESS) return error.SystemResources;
+    const connect_err = utils.getSyscallErrno(connect_ret);
+    if (connect_err != .SUCCESS) return utils.socketSyscallError(connect_err);
 
     // Compute number of individual queries: one per (hostname × question_type).
     const types_per_host: u32 = if (question_type != null) 1 else if (ipv6_supported) 2 else 1;
