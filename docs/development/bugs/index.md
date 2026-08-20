@@ -1,7 +1,7 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 258 bugs discovered across 19 audit passes."
+description: "Individual bug entries for talyn, one file per bug. 259 bugs discovered across 19 audit passes."
 timestamp: "2026-08-17T00:45:00Z"
 ---
 
@@ -22,16 +22,16 @@ Sorted by bug number. See individual bug files for details.
 | Medium-Mid | 11 |
 | Medium-Low | 16 |
 | Low | 48 |
-| **Total** | **258** |
+| **Total** | **259** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
 | Fixed | 245 |
-| Open | 0 |
+| Open | 1 |
 | False Positive | 13 |
-| **Total** | **258** |
+| **Total** | **259** |
 
 ## All Bugs
 
@@ -295,3 +295,4 @@ Sorted by bug number. See individual bug files for details.
 | [257](257.md) | `parseIp4` octet accumulated into `u16` without in-loop range check (Debug panic / ReleaseFast wrong-address) | Medium-High | Fixed |
 | [258](258.md) | DNS cache TTL cap only triggers on exact `maxInt(u32)` sentinel; near-max TTLs uncapped | Medium | Fixed |
 | [259](259.md) | Loop hook GC traversal gap — `HookHandle.callback` PyObject* never visited | Medium | Fixed |
+| [260](260.md) | Talyn clamps RLIMIT_NOFILE to TotalTasksItems+64, exhausting fds under proxy load | High | Open |
