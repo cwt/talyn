@@ -27,7 +27,11 @@ pub var cancelled_error_exc: Atomic(?PyObject) = Atomic(?PyObject).init(null);
 pub var set_running_loop: Atomic(?PyObject) = Atomic(?PyObject).init(null);
 pub var enter_task_func: Atomic(?PyObject) = Atomic(?PyObject).init(null);
 pub var leave_task_func: Atomic(?PyObject) = Atomic(?PyObject).init(null);
+pub var py_enter_task_func: Atomic(?PyObject) = Atomic(?PyObject).init(null);
+pub var py_leave_task_func: Atomic(?PyObject) = Atomic(?PyObject).init(null);
+pub var py_current_task_func: Atomic(?PyObject) = Atomic(?PyObject).init(null);
 pub var register_task_func: Atomic(?PyObject) = Atomic(?PyObject).init(null);
+pub var py_register_task_func: Atomic(?PyObject) = Atomic(?PyObject).init(null);
 
 pub var get_asyncgen_hooks: Atomic(?PyObject) = Atomic(?PyObject).init(null);
 pub var set_asyncgen_hooks: Atomic(?PyObject) = Atomic(?PyObject).init(null);
@@ -40,6 +44,25 @@ pub var py_sock_dgram: Atomic(?PyObject) = Atomic(?PyObject).init(null);
 
 pub fn get(comptime name: []const u8) PyObject {
     return @field(@This(), name).load(.acquire).?;
+}
+
+/// Register a talyn task in asyncio's task registries so `asyncio.all_tasks()`
+/// sees it (BUG-268). Covers both the C registry (the default `all_tasks`)
+/// and the pure-Python `_scheduled_tasks` WeakSet (`_py_all_tasks`). Both
+/// registries are weak/self-cleaning on completion, so no unregister is
+/// needed. Registration is best-effort: errors are cleared because a missing
+/// registry must never fail task creation.
+pub fn register_asyncio_task(task: PyObject) void {
+    if (register_task_func.load(.acquire)) |func| {
+        _ = python_c.PyObject_CallOneArg(func, task) orelse python_c.PyErr_Clear();
+    }
+    if (py_register_task_func.load(.acquire)) |func| {
+        if (register_task_func.load(.acquire)) |cfunc| {
+            if (cfunc != func) {
+                _ = python_c.PyObject_CallOneArg(func, task) orelse python_c.PyErr_Clear();
+            }
+        }
+    }
 }
 
 pub fn initialize_python_imports() !void {
@@ -70,6 +93,21 @@ pub fn initialize_python_imports() !void {
     enter_task_func.store(python_c.PyObject_GetAttrString(a_mod, "_enter_task\x00") orelse return error.PythonError, .release);
     leave_task_func.store(python_c.PyObject_GetAttrString(a_mod, "_leave_task\x00") orelse return error.PythonError, .release);
     register_task_func.store(python_c.PyObject_GetAttrString(a_mod, "_register_task\x00") orelse return error.PythonError, .release);
+
+    // The pure-Python registry aliases (_scheduled_tasks WeakSet / the
+    // _current_tasks dict). They are what asyncio.all_tasks()/current_task()
+    // read when the C accelerator is absent or when the registries are
+    // explicitly switched back (e.g. the stdlib free-threading tests). The
+    // task registry is weak/self-cleaning on completion, so tasks only need
+    // to be registered at creation — see BUG-268.
+    {
+        const tasks_mod = python_c.PyImport_ImportModule("asyncio.tasks\x00") orelse return error.PythonError;
+        defer python_c.py_decref(tasks_mod);
+        py_register_task_func.store(python_c.PyObject_GetAttrString(tasks_mod, "_py_register_task\x00") orelse return error.PythonError, .release);
+        py_enter_task_func.store(python_c.PyObject_GetAttrString(tasks_mod, "_py_enter_task\x00") orelse return error.PythonError, .release);
+        py_leave_task_func.store(python_c.PyObject_GetAttrString(tasks_mod, "_py_leave_task\x00") orelse return error.PythonError, .release);
+        py_current_task_func.store(python_c.PyObject_GetAttrString(tasks_mod, "_py_current_task\x00") orelse return error.PythonError, .release);
+    }
 
     get_asyncgen_hooks.store(python_c.PyObject_GetAttrString(s_mod, "get_asyncgen_hooks\x00") orelse return error.PythonError, .release);
     set_asyncgen_hooks.store(python_c.PyObject_GetAttrString(s_mod, "set_asyncgen_hooks\x00") orelse return error.PythonError, .release);

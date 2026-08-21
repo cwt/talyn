@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 249 |
-| Open | 5 |
+| Fixed | 250 |
+| Open | 4 |
 | False Positive | 13 |
 | **Total** | **267** |
 
@@ -303,4 +303,4 @@ Sorted by bug number. See individual bug files for details.
 | [265](265.md) | Duplicate set_future_exception helpers across 5 files | Low | Fixed |
 | [266](266.md) | Empty DNS hostnames_array yields out-of-bounds `queries[0]` in `resolv.zig` `queue` | Medium-High | Fixed |
 | [267](267.md) | run_forever from a non-creator thread fails: io_uring ring thread-affinity (EEXIST → error.InvalidThread) | High | Fixed |
-| [268](268.md) | Default-factory tasks invisible to asyncio.all_tasks() — talyn.Task never registers with the task registry | Medium-High | Open |
+| [268](268.md) | Default-factory tasks invisible to asyncio.all_tasks() — talyn.Task never registers with the task registry | Medium-High | Fixed |

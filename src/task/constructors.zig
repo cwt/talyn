@@ -18,10 +18,7 @@ inline fn task_set_initial_values(self: *PythonTaskObject) void {
     python_c.initialize_object_fields(self, &.{"fut"});
 }
 
-inline fn task_init_configuration(
-    self: *PythonTaskObject, loop: *LoopObject,
-    coro: PyObject, context: PyObject, name: ?PyObject
-) !void {
+inline fn task_init_configuration(self: *PythonTaskObject, loop: *LoopObject, coro: PyObject, context: PyObject, name: ?PyObject) !void {
     try Future.Python.Constructors.future_init_configuration(&self.fut, loop);
     const coro_type = python_c.get_type(coro) orelse return error.PythonError;
     if (coro_type.tp_as_async == null or coro_type.tp_as_async.*.am_await == null) {
@@ -60,40 +57,33 @@ inline fn task_schedule_coro(self: *PythonTaskObject, loop: *LoopObject) !void {
     python_c.py_incref(@ptrCast(self));
 }
 
-pub inline fn fast_new_task(
-    loop: *LoopObject, coro: PyObject,
-    context: PyObject, name: ?PyObject
-) !*PythonTaskObject {
-    const instance: *PythonTaskObject = @ptrCast(
-        Task.PythonTaskType.tp_alloc.?(&Task.PythonTaskType, 0) orelse return error.PythonError
-    );
+pub inline fn fast_new_task(loop: *LoopObject, coro: PyObject, context: PyObject, name: ?PyObject) !*PythonTaskObject {
+    const instance: *PythonTaskObject = @ptrCast(Task.PythonTaskType.tp_alloc.?(&Task.PythonTaskType, 0) orelse return error.PythonError);
     task_set_initial_values(instance);
     errdefer python_c.py_decref(@ptrCast(instance));
 
     try task_init_configuration(instance, loop, coro, context, name);
-    errdefer { instance.py_context = null; }
+    errdefer {
+        instance.py_context = null;
+    }
 
     try task_schedule_coro(instance, loop);
+
+    // BUG-268: register with asyncio's task registries so asyncio.all_tasks()
+    // (C registry and pure-Python WeakSet alike) sees this task.
+    utils.PythonImports.register_asyncio_task(@ptrCast(instance));
 
     return instance;
 }
 
-inline fn z_task_new(
-    @"type": *python_c.PyTypeObject, _: ?PyObject,
-    _: ?PyObject
-) !*PythonTaskObject {
+inline fn z_task_new(@"type": *python_c.PyTypeObject, _: ?PyObject, _: ?PyObject) !*PythonTaskObject {
     const instance: *PythonTaskObject = @ptrCast(@"type".tp_alloc.?(@"type", 0) orelse return error.PythonError);
     task_set_initial_values(instance);
     return instance;
 }
 
-pub fn task_new(
-    @"type": ?*python_c.PyTypeObject, args: ?PyObject,
-    kwargs: ?PyObject
-) callconv(.c) ?PyObject {
-    const self = utils.execute_zig_function(
-        z_task_new, .{@"type".?, args, kwargs}
-    );
+pub fn task_new(@"type": ?*python_c.PyTypeObject, args: ?PyObject, kwargs: ?PyObject) callconv(.c) ?PyObject {
+    const self = utils.execute_zig_function(z_task_new, .{ @"type".?, args, kwargs });
     return @ptrCast(self);
 }
 
@@ -110,7 +100,7 @@ pub fn task_clear(self: ?*PythonTaskObject) callconv(.c) c_int {
     if (!future_data.released) {
         const _result = future_data.result;
         if (_result) |res| {
-            python_c.py_decref(@alignCast(@ptrCast(res)));
+            python_c.py_decref(@ptrCast(@alignCast(res)));
             future_data.result = null;
         }
         future_data.release();
@@ -168,9 +158,7 @@ pub fn task_dealloc(self: ?*PythonTaskObject) callconv(.c) void {
     @"type".tp_free.?(@ptrCast(instance));
 }
 
-inline fn z_task_init(
-    self: *PythonTaskObject, args: ?PyObject, kwargs: ?PyObject
-) !c_int {
+inline fn z_task_init(self: *PythonTaskObject, args: ?PyObject, kwargs: ?PyObject) !c_int {
     var kwlist: [5][*c]u8 = undefined;
     kwlist[0] = @constCast("coro\x00");
     kwlist[1] = @constCast("loop\x00");
@@ -183,10 +171,7 @@ inline fn z_task_init(
     var name: ?PyObject = null;
     var context: ?PyObject = null;
 
-    if (python_c.PyArg_ParseTupleAndKeywords(
-            args, kwargs, "OO|$OO\x00", @ptrCast(&kwlist), &coro, &py_loop,
-            &name, &context
-        ) < 0) {
+    if (python_c.PyArg_ParseTupleAndKeywords(args, kwargs, "OO|$OO\x00", @ptrCast(&kwlist), &coro, &py_loop, &name, &context) < 0) {
         return error.PythonError;
     }
 
@@ -198,15 +183,14 @@ inline fn z_task_init(
 
     if (context) |py_ctx| {
         if (python_c.is_none(py_ctx)) {
-            context = python_c.PyContext_CopyCurrent()
-                orelse return error.PythonError;
-        }else if (python_c.is_type(py_ctx, &python_c.PyContext_Type)) {
+            context = python_c.PyContext_CopyCurrent() orelse return error.PythonError;
+        } else if (python_c.is_type(py_ctx, &python_c.PyContext_Type)) {
             python_c.py_incref(py_ctx);
-        }else{
+        } else {
             python_c.raise_python_type_error("Invalid context\x00");
             return error.PythonError;
         }
-    }else{
+    } else {
         context = python_c.PyContext_CopyCurrent() orelse return error.PythonError;
     }
     errdefer python_c.py_decref(context.?);
@@ -214,27 +198,31 @@ inline fn z_task_init(
     if (name) |v| {
         if (python_c.is_none(v)) {
             python_c.py_decref_and_set_null(&name);
-        }else if (!python_c.unicode_check(v)) {
+        } else if (!python_c.unicode_check(v)) {
             name = python_c.PyObject_Str(v) orelse return error.PythonError;
-        }else{
+        } else {
             name = python_c.py_newref(v);
         }
     }
     errdefer python_c.py_xdecref(name);
-    
+
     python_c.py_incref(coro.?);
     errdefer python_c.py_decref(coro.?);
 
     try task_init_configuration(self, talyn_loop, coro.?, context.?, name);
-    errdefer { self.py_context = null; }
+    errdefer {
+        self.py_context = null;
+    }
 
     try task_schedule_coro(self, talyn_loop);
+
+    // BUG-268: register with asyncio's task registries so asyncio.all_tasks()
+    // sees directly-constructed talyn tasks too.
+    utils.PythonImports.register_asyncio_task(@ptrCast(self));
 
     return 0;
 }
 
-pub fn task_init(
-    self: ?*PythonTaskObject, args: ?PyObject, kwargs: ?PyObject
-) callconv(.c) c_int {
-    return utils.execute_zig_function(z_task_init, .{self.?, args, kwargs});
+pub fn task_init(self: ?*PythonTaskObject, args: ?PyObject, kwargs: ?PyObject) callconv(.c) c_int {
+    return utils.execute_zig_function(z_task_init, .{ self.?, args, kwargs });
 }

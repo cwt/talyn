@@ -1,6 +1,47 @@
 const python_c = @import("python_c");
 const PyObject = *python_c.PyObject;
 
+/// Enter/leave a task in BOTH current-task registries: the default one
+/// (`asyncio._enter_task`/`_leave_task` — C-accelerated when available) and
+/// the pure-Python `_current_tasks` dict (`_py_enter_task`/`_py_leave_task`).
+/// asyncio.current_task() reads one or the other depending on whether the
+/// stdlib switched to the pure-Python fallbacks (e.g. the free-threading
+/// tests), so talyn must keep both consistent — see BUG-268.
+///
+/// Python 3.13's C and pure-Python variants share the same `_current_tasks`
+/// dict (the default call already updates it), while 3.14 keeps separate
+/// registries. Probe the pure-Python registry after the default call and
+/// skip the second call when it is already in sync.
+fn enter_or_leave_task(loop: PyObject, task: PyObject, comptime entering: bool) ?PyObject {
+    const args = [2]PyObject{ loop, task };
+    const func = if (entering) utils.PythonImports.get("enter_task_func") else utils.PythonImports.get("leave_task_func");
+    const py_func = if (entering) utils.PythonImports.get("py_enter_task_func") else utils.PythonImports.get("py_leave_task_func");
+
+    const ret = python_c.PyObject_Vectorcall(func, &args, 2, null) orelse return null;
+    python_c.py_decref(ret);
+
+    if (py_func != func) {
+        const get_cur = utils.PythonImports.get("py_current_task_func");
+        const cur = python_c.PyObject_CallOneArg(get_cur, loop) orelse {
+            // Probe failed — fall back to updating the py registry directly.
+            python_c.PyErr_Clear();
+            const py_ret = python_c.PyObject_Vectorcall(py_func, &args, 2, null) orelse return null;
+            python_c.py_decref(py_ret);
+            return python_c.get_py_none();
+        };
+        const is_current = cur == task;
+        python_c.py_xdecref(cur);
+
+        const needs_update = if (entering) !is_current else is_current;
+        if (needs_update) {
+            const py_ret = python_c.PyObject_Vectorcall(py_func, &args, 2, null) orelse return null;
+            python_c.py_decref(py_ret);
+        }
+    }
+
+    return python_c.get_py_none();
+}
+
 fn talyn_task_step_trampoline(
     enter_task_func: PyObject,
     leave_task_func: PyObject,
@@ -12,10 +53,11 @@ fn talyn_task_step_trampoline(
     send_result_out: *c_int,
     coro_ret_out: *?PyObject,
 ) ?PyObject {
-    var args = [2]PyObject{ loop, task };
+    _ = enter_task_func;
+    _ = leave_task_func;
 
-    // 1. Enter task
-    const enter_ret = python_c.PyObject_Vectorcall(enter_task_func, &args, 2, null) orelse return null;
+    // 1. Enter task (both current-task registries)
+    const enter_ret = enter_or_leave_task(loop, task, true) orelse return null;
     python_c.py_decref(enter_ret);
 
     // 2 & 3 & 4. Scope context entry, send operation, and context exit
@@ -29,8 +71,8 @@ fn talyn_task_step_trampoline(
     // Save active exception to avoid SystemError during _leave_task call
     const exc = python_c.PyErr_GetRaisedException();
 
-    // 5. Leave task
-    const leave_ret = python_c.PyObject_Vectorcall(leave_task_func, &args, 2, null);
+    // 5. Leave task (both current-task registries)
+    const leave_ret = enter_or_leave_task(loop, task, false);
 
     // Restore the exception
     python_c.PyErr_SetRaisedException(exc);
@@ -59,10 +101,11 @@ fn talyn_task_throw_trampoline(
     send_result_out: *c_int,
     coro_ret_out: *?PyObject,
 ) ?PyObject {
-    var args = [2]PyObject{ loop, task };
+    _ = enter_task_func;
+    _ = leave_task_func;
 
-    // 1. Enter task
-    const enter_ret = python_c.PyObject_Vectorcall(enter_task_func, &args, 2, null) orelse return null;
+    // 1. Enter task (both current-task registries)
+    const enter_ret = enter_or_leave_task(loop, task, true) orelse return null;
     python_c.py_decref(enter_ret);
 
     var coro_ret: ?PyObject = null;
@@ -83,8 +126,8 @@ fn talyn_task_throw_trampoline(
     // Save active exception to avoid SystemError during _leave_task call
     const exc = python_c.PyErr_GetRaisedException();
 
-    // 5. Leave task
-    const leave_ret = python_c.PyObject_Vectorcall(leave_task_func, &args, 2, null);
+    // 5. Leave task (both current-task registries)
+    const leave_ret = enter_or_leave_task(loop, task, false);
 
     // Restore the exception
     python_c.PyErr_SetRaisedException(exc);
