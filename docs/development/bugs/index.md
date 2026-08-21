@@ -1,7 +1,7 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 265 bugs discovered across audit passes."
+description: "Individual bug entries for talyn, one file per bug. 267 bugs discovered across audit passes."
 timestamp: "2026-08-21T00:00:00Z"
 ---
 
@@ -16,22 +16,22 @@ Sorted by bug number. See individual bug files for details.
 | Severity | Count |
 |---|---:|
 | Critical | 33 |
-| High | 76 |
-| Medium-High | 26 |
+| High | 77 |
+| Medium-High | 27 |
 | Medium | 51 |
 | Medium-Mid | 11 |
 | Medium-Low | 17 |
 | Low | 51 |
-| **Total** | **265** |
+| **Total** | **267** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
 | Fixed | 248 |
-| Open | 4 |
+| Open | 6 |
 | False Positive | 13 |
-| **Total** | **265** |
+| **Total** | **267** |
 
 ## All Bugs
 
@@ -302,3 +302,5 @@ Sorted by bug number. See individual bug files for details.
 | [264](264.md) | pseudosocket getsockopt leaves pending exception on invalid buflen type | Medium-Low | Fixed |
 | [265](265.md) | Duplicate set_future_exception helpers across 5 files | Low | Fixed |
 | [266](266.md) | Empty DNS hostnames_array yields out-of-bounds `queries[0]` in `resolv.zig` `queue` | Medium-High | Fixed |
+| [267](267.md) | run_forever from a non-creator thread fails: io_uring ring thread-affinity (EEXIST → error.InvalidThread) | High | Open |
+| [268](268.md) | Default-factory tasks invisible to asyncio.all_tasks() — talyn.Task never registers with the task registry | Medium-High | Open |
