@@ -1,8 +1,8 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 259 bugs discovered across 19 audit passes."
-timestamp: "2026-08-17T00:45:00Z"
+description: "Individual bug entries for talyn, one file per bug. 265 bugs discovered across audit passes."
+timestamp: "2026-08-21T00:00:00Z"
 ---
 
 # Bugs — talyn
@@ -16,22 +16,22 @@ Sorted by bug number. See individual bug files for details.
 | Severity | Count |
 |---|---:|
 | Critical | 33 |
-| High | 75 |
-| Medium-High | 24 |
+| High | 76 |
+| Medium-High | 26 |
 | Medium | 51 |
 | Medium-Mid | 11 |
-| Medium-Low | 16 |
-| Low | 48 |
-| **Total** | **259** |
+| Medium-Low | 17 |
+| Low | 51 |
+| **Total** | **265** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
-| Fixed | 245 |
-| Open | 0 |
+| Fixed | 242 |
+| Open | 10 |
 | False Positive | 13 |
-| **Total** | **259** |
+| **Total** | **265** |
 
 ## All Bugs
 
@@ -258,10 +258,10 @@ Sorted by bug number. See individual bug files for details.
 | [220](220.md) | Resource and reference count leak on synchronous cache return error in `z_loop_getaddrinfo` | Medium | Fixed |
 | [221](221.md) | Leaked `future` and `loop` Python references on `reverse_lookup` error in `z_loop_getnameinfo` | Medium | Fixed |
 | [222](222.md) | Missing error-path release in `initialize_python_imports` leaking acquired references on partial import failure | Medium | Fixed |
-| [223](223.md) | Reference count leak on io_uring re-arm failure in `SubprocessTransport.pidfd_exit_callback` | High | Fixed |
-| [224](224.md) | Unused legacy `SockRecvIntoData` and `sock_recv_into_callback` dead code in socket operations | Low | Fixed |
-| [225](225.md) | Abandoned skeleton transport modules and empty utility files | Low | Fixed |
-| [226](226.md) | Unchecked `u64` to `usize` integer cast on `ready_tasks_queue_capacity` risking overflow on 32-bit platforms | Low | Fixed |
+| [223](223.md) | Reference count leak on io_uring re-arm failure in `SubprocessTransport.pidfd_exit_callback` | High | Open |
+| [224](224.md) | Unused legacy `SockRecvIntoData` and `sock_recv_into_callback` dead code in socket operations | Low | Open |
+| [225](225.md) | Abandoned skeleton transport modules and empty utility files | Low | Open |
+| [226](226.md) | Unchecked `u64` to `usize` integer cast on `ready_tasks_queue_capacity` risking overflow on 32-bit platforms | Low | Open |
 | [227](227.md) | ReadTransport `cleanup_resources_callback` double-decref risk on completion path | High | False Positive |
 | [228](228.md) | WriteTransport parent_transport refcount imbalance across completion paths | Medium-High | False Positive |
 | [229](229.md) | `interleave_address_list` else-branch missing bounds check on `ipv4_index` | Medium-High | Fixed |
@@ -296,3 +296,9 @@ Sorted by bug number. See individual bug files for details.
 | [258](258.md) | DNS cache TTL cap only triggers on exact `maxInt(u32)` sentinel; near-max TTLs uncapped | Medium | Fixed |
 | [259](259.md) | Loop hook GC traversal gap — `HookHandle.callback` PyObject* never visited | Medium | Fixed |
 | [260](260.md) | Talyn clamps RLIMIT_NOFILE to TotalTasksItems+64, exhausting fds under proxy load | High | Fixed |
+| [261](261.md) | DNS queue errdefer leaks UDP socket fds for unsent server queries | Medium-High | Open |
+| [262](262.md) | Duplicated Address.toPyAddr logic and pseudosocket getsockname/getpeername | Low | Open |
+| [263](263.md) | PyFloat_AsDouble -1.0 sentinel ambiguity in DNS timeout parsing | Low | Open |
+| [264](264.md) | pseudosocket getsockopt leaves pending exception on invalid buflen type | Medium-Low | Open |
+| [265](265.md) | Duplicate set_future_exception helpers across 5 files | Low | Open |
+| [266](266.md) | Empty DNS hostnames_array yields out-of-bounds `queries[0]` in `resolv.zig` `queue` | Medium-High | Open |

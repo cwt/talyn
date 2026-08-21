@@ -2,6 +2,20 @@
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
 
+## [2026-08-21] — Bug Validation Pass: BUG-261..272 → 6 False Positives Removed, 6 Real Bugs Renumbered to BUG-261..266
+
+A static-analysis validation pass over bug reports BUG-261 through BUG-272 against the current `src/` (Zig 0.16.0) confirmed 6 as false positives and 6 as real (still open). The false positives were removed from the tracker and the real bugs renumbered to keep the numbering contiguous.
+
+- **False Positives (ownership/control-flow verified safe; deleted from the tracker)**: shallow-copy UAF/double-free in create_connection/create_server — ownership is correctly transferred to the heap copy and never decref'd on the success path; `PyLong_AsUnsignedLongLong` `-1` sentinel — `@bitCast(value)==-1` only errors when `PyErr_Occurred()` is set, so a valid `2^64-1` is safe; unbounded hostname → OOB in `build_query` — `build_hostname`'s `new_len > 255` cap prevents any >254-char hostname from reaching `build_query`; `interleave_address_list` 2× allocation — required because IPv6 entries are stored at offset `address_list.len`; `DynamicRingBuffer.grow` mask underflow — `capacity` is always ≥1 after `init`; `ReadTransport.batch_dispatched` not reset on cancel — cancelled reads never reach the consumer and the next successful read overwrites the flag.
+- **Real, still `Open`, renumbered BUG-261..266**:
+  - **BUG-261** (Medium-High): DNS `queue` errdefer leaks UDP socket fds for unsent server queries — the errdefer cancels only `[0..queries_sent]`; the truncated unsent tail keeps its fds open.
+  - **BUG-262** (Low): duplicated `Address.toPyAddr`/`toPyAddrWithPort` and pseudosocket `getsockname`/`getpeername`.
+  - **BUG-263** (Low): `PyFloat_AsDouble` `-1.0` sentinel — a genuine `dns_timeout=-1.0` is silently treated as no-timeout; severity lowered Medium→Low and the inaccurate "exception state leak" framing corrected (no leak — `PyErr_Occurred` is checked first).
+  - **BUG-264** (Medium-Low): `pseudosocket.getsockopt` leaks a pending `TypeError` on non-numeric `buflen`.
+  - **BUG-265** (Low): duplicate `set_future_exception` across **5** files, not 4.
+  - **BUG-266** (Medium-High): an over-long hostname (>254 chars) makes `get_hostname_array` return `len == 0`; `prepare_data` still proceeds and `resolv.zig` `queue()` indexes `server_data.queries[0]` on an empty slice → out-of-bounds read / Debug panic. This is the real defect behind the removed false positive that misattributed the OOB to `build_query`.
+- Synced `docs/development/bugs/index.md`: corrected the previously-desynced `Summary by Severity`/`Summary by Status` tables, flipped stale rows 223–226 from `Fixed` to `Open` to match file frontmatter, and rewrote rows 261–266. Totals now: 265 bugs (242 Fixed, 10 Open, 13 False Positive).
+
 ## [2026-08-17] — v0.9.0 Release: Offline AST Linter, Audit Passes 15–19 (BUG-200..259) & Complete Production Hardening
 
 This milestone introduces a custom native static analyzer (`zig build lint`) and resolves 60 bugs across audit passes 15 through 19 (BUG-200 through BUG-259), bringing all 258 tracked bugs to **100% resolution (245 Fixed, 13 False Positive, 0 Open)** with 100% test suite passing across all four Python runtime targets (3.13, 3.14, 3.13t, 3.14t).
