@@ -13,13 +13,7 @@ const FutureObject = Future.Python.FutureObject;
 
 const AddressUtils = utils.Address;
 
-fn set_future_exception(err: anyerror, future: *FutureObject) !void {
-    utils.handle_zig_function_error(err, {});
-    const exc = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
-    defer python_c.py_decref(exc);
-    const future_data = utils.get_data_ptr(Future, future);
-    try Future.Python.Result.future_fast_set_exception(future, future_data, exc);
-}
+const set_future_exception = Future.Python.Result.set_future_exception;
 
 // ============================================================
 // sock_accept

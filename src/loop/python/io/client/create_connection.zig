@@ -97,14 +97,7 @@ const TransportCreationData = struct {
     }
 };
 
-fn set_future_exception(err: anyerror, future: *FutureObject) !void {
-    utils.handle_zig_function_error(err, {});
-    const exc = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
-    defer python_c.py_decref(exc);
-
-    const future_data = utils.get_data_ptr(Future, future);
-    try Future.Python.Result.future_fast_set_exception(future, future_data, exc);
-}
+const set_future_exception = Future.Python.Result.set_future_exception;
 
 inline fn z_loop_create_connection(self: *LoopObject, args: []?PyObject, knames: ?PyObject) !*FutureObject {
     if (Loop.Python.check_forked(self)) return error.PythonError;

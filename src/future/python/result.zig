@@ -75,6 +75,18 @@ pub inline fn future_fast_set_exception(self: *PythonFutureObject, obj: *Future,
     try Future.Callback.call_done_callbacks(obj, .finished);
 }
 
+/// Central helper (BUG-265): turn a Zig error into the pending Python
+/// exception and set it on `future`. Previously copy-pasted across five
+/// loop/python/io call sites, causing fix drift.
+pub fn set_future_exception(err: anyerror, future: *PythonFutureObject) !void {
+    utils.handle_zig_function_error(err, {});
+    const exc = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
+    defer python_c.py_decref(exc);
+
+    const future_data = utils.get_data_ptr(Future, future);
+    try future_fast_set_exception(future, future_data, exc);
+}
+
 inline fn z_future_set_exception(self: *PythonFutureObject, exception: PyObject) !PyObject {
     if (!python_c.exception_check(exception)) {
         python_c.raise_python_type_error("Invalid exception instance\x00");

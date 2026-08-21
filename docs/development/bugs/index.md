@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 246 |
-| Open | 6 |
+| Fixed | 247 |
+| Open | 5 |
 | False Positive | 13 |
 | **Total** | **265** |
 
@@ -300,5 +300,5 @@ Sorted by bug number. See individual bug files for details.
 | [262](262.md) | Duplicated Address.toPyAddr logic and pseudosocket getsockname/getpeername | Low | Fixed |
 | [263](263.md) | PyFloat_AsDouble -1.0 sentinel ambiguity in DNS timeout parsing | Low | Fixed |
 | [264](264.md) | pseudosocket getsockopt leaves pending exception on invalid buflen type | Medium-Low | Fixed |
-| [265](265.md) | Duplicate set_future_exception helpers across 5 files | Low | Open |
+| [265](265.md) | Duplicate set_future_exception helpers across 5 files | Low | Fixed |
 | [266](266.md) | Empty DNS hostnames_array yields out-of-bounds `queries[0]` in `resolv.zig` `queue` | Medium-High | Open |
