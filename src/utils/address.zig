@@ -257,44 +257,9 @@ pub const Address = extern union {
     }
 
     pub fn toPyAddrWithPort(self: Address, port: u16) !PyObject {
-        switch (self.any.family) {
-            std.posix.AF.INET => {
-                const sa = self.in.sa;
-                var buf: [16]u8 = undefined;
-                const host_ptr = python_c._c.inet_ntop(std.posix.AF.INET, &sa.addr, &buf, 16) orelse return error.SystemResources;
-                const host_len = std.mem.len(host_ptr);
-
-                const py_host = python_c.PyUnicode_FromStringAndSize(host_ptr, @intCast(host_len)) orelse return error.PythonError;
-                defer python_c.py_decref(py_host);
-                const py_port = python_c.PyLong_FromLong(port) orelse return error.PythonError;
-                defer python_c.py_decref(py_port);
-                return python_c.PyTuple_Pack(2, py_host, py_port) orelse error.PythonError;
-            },
-            std.posix.AF.INET6 => {
-                const sa = self.in6.sa;
-                var buf: [46]u8 = undefined;
-                const host_ptr = python_c._c.inet_ntop(std.posix.AF.INET6, &sa.addr, &buf, 46) orelse return error.SystemResources;
-                const host_len = std.mem.len(host_ptr);
-
-                const py_host = python_c.PyUnicode_FromStringAndSize(host_ptr, @intCast(host_len)) orelse return error.PythonError;
-                defer python_c.py_decref(py_host);
-                const py_port = python_c.PyLong_FromLong(port) orelse return error.PythonError;
-                defer python_c.py_decref(py_port);
-
-                const py_flow = python_c.PyLong_FromUnsignedLongLong(sa.flowinfo) orelse return error.PythonError;
-                defer python_c.py_decref(py_flow);
-                const py_scope = python_c.PyLong_FromUnsignedLongLong(sa.scope_id) orelse return error.PythonError;
-                defer python_c.py_decref(py_scope);
-
-                return python_c.PyTuple_Pack(4, py_host, py_port, py_flow, py_scope) orelse error.PythonError;
-            },
-            std.posix.AF.UNIX => {
-                const sa = self.un;
-                const path = std.mem.span(@as([*:0]const u8, @ptrCast(&sa.path)));
-                return python_c.PyUnicode_FromStringAndSize(path.ptr, @intCast(path.len)) orelse error.PythonError;
-            },
-            else => return error.UnsupportedAddressFamily,
-        }
+        var copy = self;
+        copy.setPort(port);
+        return copy.toPyAddr();
     }
 
     pub fn fromPyAddr(py_addr: PyObject, family: ?i32) !Address {

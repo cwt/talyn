@@ -16,6 +16,24 @@ fn pseudosocket_fileno(self: ?*PseudoSocketObject, _: ?PyObject) callconv(.c) ?P
     return python_c.PyLong_FromLong(self.?.fd);
 }
 
+/// Convert a `getsockname`/`getpeername` result into the Python object
+/// asyncio expects: a str for AF_UNIX paths, a tuple for INET/INET6.
+fn sockaddr_to_py_object(addr: *const std.posix.sockaddr.storage, addrlen: std.posix.socklen_t) ?PyObject {
+    if (addr.family == std.posix.AF.UNIX) {
+        if (addrlen <= @offsetOf(std.posix.sockaddr.un, "path")) {
+            return python_c.PyUnicode_FromStringAndSize("", 0);
+        }
+        const un: *const std.posix.sockaddr.un = @ptrCast(addr);
+        const path = std.mem.span(@as([*:0]const u8, @ptrCast(&un.path)));
+        return python_c.PyUnicode_FromStringAndSize(path.ptr, @intCast(path.len));
+    }
+
+    return Address.toPyAddr(Address.initPosix(@ptrCast(addr))) catch {
+        python_c.raise_python_runtime_error("Failed to convert address\x00");
+        return null;
+    };
+}
+
 fn pseudosocket_getsockname(self: ?*PseudoSocketObject, _: ?PyObject) callconv(.c) ?PyObject {
     const instance = self.?;
     var addr: std.posix.sockaddr.storage = undefined;
@@ -27,19 +45,7 @@ fn pseudosocket_getsockname(self: ?*PseudoSocketObject, _: ?PyObject) callconv(.
         return null;
     }
 
-    if (addr.family == std.posix.AF.UNIX) {
-        if (addrlen <= @offsetOf(std.posix.sockaddr.un, "path")) {
-            return python_c.PyUnicode_FromStringAndSize("", 0);
-        }
-        const un: *const std.posix.sockaddr.un = @ptrCast(&addr);
-        const path = std.mem.span(@as([*:0]const u8, @ptrCast(&un.path)));
-        return python_c.PyUnicode_FromStringAndSize(path.ptr, @intCast(path.len));
-    }
-
-    return Address.toPyAddr(Address.initPosix(@ptrCast(&addr))) catch {
-        python_c.raise_python_runtime_error("Failed to convert address\x00");
-        return null;
-    };
+    return sockaddr_to_py_object(&addr, addrlen);
 }
 
 fn pseudosocket_getpeername(self: ?*PseudoSocketObject, _: ?PyObject) callconv(.c) ?PyObject {
@@ -52,19 +58,7 @@ fn pseudosocket_getpeername(self: ?*PseudoSocketObject, _: ?PyObject) callconv(.
         return null;
     };
 
-    if (addr.family == std.posix.AF.UNIX) {
-        if (addrlen <= @offsetOf(std.posix.sockaddr.un, "path")) {
-            return python_c.PyUnicode_FromStringAndSize("", 0);
-        }
-        const un: *const std.posix.sockaddr.un = @ptrCast(&addr);
-        const path = std.mem.span(@as([*:0]const u8, @ptrCast(&un.path)));
-        return python_c.PyUnicode_FromStringAndSize(path.ptr, @intCast(path.len));
-    }
-
-    return Address.toPyAddr(Address.initPosix(@ptrCast(&addr))) catch {
-        python_c.raise_python_runtime_error("Failed to convert address\x00");
-        return null;
-    };
+    return sockaddr_to_py_object(&addr, addrlen);
 }
 
 fn pseudosocket_setblocking(self: ?*PseudoSocketObject, _: ?PyObject) callconv(.c) ?PyObject {
