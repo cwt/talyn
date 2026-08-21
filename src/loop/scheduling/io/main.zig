@@ -443,6 +443,24 @@ set: *BlockingTasksSet = undefined,
 ring: std.os.linux.IoUring = undefined,
 ring_blocked: u8 = 0,
 
+/// PyThread ident of the thread that created the current ring. Rings created
+/// with COOP_TASKRUN/SINGLE_ISSUER are thread-affine: entering the ring from
+/// any other thread fails with EEXIST → error.InvalidThread. Used by
+/// `ensure_ring_for_current_thread` to support running a freshly-created loop
+/// in a different thread ("loop in a background thread" pattern).
+ring_owner_tid: u64 = 0,
+
+/// Set once any SQE has been submitted to the current ring. A ring that has
+/// submitted operations may hold in-flight work, so it can no longer be
+/// safely recreated in another thread (see `ensure_ring_for_current_thread`).
+ring_has_submitted: bool = false,
+
+/// io_uring user_data of the persistent eventfd wake-up read. Used by
+/// `ensure_ring_for_current_thread` to verify that the only SQEs pending on
+/// a ring handed to another thread are the wake-up read (anything else would
+/// be orphaned by the recreation).
+eventfd_read_user_data: usize = 0,
+
 eventfd: std.posix.fd_t = -1,
 eventfd_val: u64 = 0,
 blocking_ready_tasks: []std.os.linux.io_uring_cqe = &.{},
@@ -482,39 +500,10 @@ pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
 
     self.loop = loop;
 
-    // Initialize the io_uring ring. To maximize performance and minimize scheduling
-    // overhead/context switches, we attempt to configure the ring with:
-    // 1. IORING_SETUP_COOP_TASKRUN (Linux >= 5.11): Avoids hardware interrupts by running
-    //    completion task work cooperatively on the main thread during io_uring_enter.
-    // 2. IORING_SETUP_SINGLE_ISSUER (Linux >= 6.0): Bypasses internal ring locks in the
-    //    kernel since only the registering main thread issues and reaps events.
-    // We implement a graceful runtime fallback chain for backward compatibility.
-    const coop_flag = std.os.linux.IORING_SETUP_COOP_TASKRUN;
-    const single_issuer_flag = std.os.linux.IORING_SETUP_SINGLE_ISSUER;
-
-    self.ring = init_ring: {
-        // Attempt: Coop Taskrun + Single Issuer (High performance, Linux 6.0+)
-        if (std.os.linux.IoUring.init(TotalTasksItems, coop_flag | single_issuer_flag)) |r| {
-            break :init_ring r;
-        } else |err| {
-            if (err == error.ArgumentsInvalid) {
-                // Fallback 1: Coop Taskrun only (Linux 5.11+)
-                if (std.os.linux.IoUring.init(TotalTasksItems, coop_flag)) |r| {
-                    break :init_ring r;
-                } else |err2| {
-                    if (err2 == error.ArgumentsInvalid) {
-                        // Fallback 2: Default scheduling flags (Linux 5.1+)
-                        break :init_ring try std.os.linux.IoUring.init(TotalTasksItems, 0);
-                    }
-                    return err2;
-                }
-            }
-            return err;
-        }
-    };
+    self.ring = try init_ring();
     errdefer self.ring.deinit();
-
     _ = std.os.linux.fcntl(self.ring.fd, std.posix.F.SETFD, @intCast(std.posix.FD_CLOEXEC));
+    self.ring_owner_tid = python_c._c.PyThread_get_thread_ident();
 
     const eventfd_ret = std.os.linux.eventfd(0, std.os.linux.EFD.NONBLOCK | std.os.linux.EFD.CLOEXEC);
     if (utils.getSyscallErrno(eventfd_ret) != .SUCCESS) return error.SystemResources;
@@ -584,6 +573,138 @@ pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
     self.buffers_registered = true;
 }
 
+/// Initialize the io_uring ring. To maximize performance and minimize scheduling
+/// overhead/context switches, we attempt to configure the ring with:
+/// 1. IORING_SETUP_COOP_TASKRUN (Linux >= 5.11): Avoids hardware interrupts by running
+///    completion task work cooperatively on the main thread during io_uring_enter.
+/// 2. IORING_SETUP_SINGLE_ISSUER (Linux >= 6.0): Bypasses internal ring locks in the
+///    kernel since only the registering main thread issues and reaps events.
+/// We implement a graceful runtime fallback chain for backward compatibility.
+fn init_ring() !std.os.linux.IoUring {
+    const coop_flag = std.os.linux.IORING_SETUP_COOP_TASKRUN;
+    const single_issuer_flag = std.os.linux.IORING_SETUP_SINGLE_ISSUER;
+
+    // Attempt: Coop Taskrun + Single Issuer (High performance, Linux 6.0+)
+    if (std.os.linux.IoUring.init(TotalTasksItems, coop_flag | single_issuer_flag)) |r| {
+        return r;
+    } else |err| {
+        if (err == error.ArgumentsInvalid) {
+            // Fallback 1: Coop Taskrun only (Linux 5.11+)
+            if (std.os.linux.IoUring.init(TotalTasksItems, coop_flag)) |r| {
+                return r;
+            } else |err2| {
+                if (err2 == error.ArgumentsInvalid) {
+                    // Fallback 2: Default scheduling flags (Linux 5.1+)
+                    return std.os.linux.IoUring.init(TotalTasksItems, 0);
+                }
+                return err2;
+            }
+        }
+        return err;
+    }
+}
+
+/// Make the ring usable from the current thread.
+///
+/// io_uring rings created with COOP_TASKRUN/SINGLE_ISSUER are bound to the
+/// thread that created them; entering the ring from any other thread fails
+/// with EEXIST → error.InvalidThread. asyncio, however, explicitly supports
+/// running a freshly-created loop from a different thread ("loop in a
+/// background thread"), and the CPython free-threading tests exercise this.
+///
+/// If the current thread differs from the ring's creator:
+///  - If no SQE was ever submitted, the ring is safe to recreate here (there
+///    is no in-flight work to orphan). Re-register the fixed file table and
+///    buffers and re-queue the eventfd wake-up read on the new ring.
+///  - Otherwise raise a clear RuntimeError: the ring may hold in-flight
+///    operations that would be orphaned by a recreation.
+///
+/// Must be called with the loop mutex held (Runner.start does this).
+pub fn ensure_ring_for_current_thread(self: *IO) !void {
+    const current_tid = python_c._c.PyThread_get_thread_ident();
+    if (current_tid == self.ring_owner_tid) return;
+
+    if (self.ring_has_submitted) {
+        python_c.raise_python_runtime_error("The event loop was already used from another thread; its io_uring ring is bound to that thread and cannot be re-bound.\x00");
+        return error.PythonError;
+    }
+
+    // Only the two persistent reads (eventfd wake-up + signalfd) may be
+    // pending on a ring handed to another thread; both are re-queued on the
+    // new ring below. Any other SQE (e.g. a timer or I/O queued between loop
+    // creation and the first run_forever) would be orphaned by the
+    // recreation — reject with a clear error instead of silently dropping it.
+    const eventfd_task: usize = self.eventfd_read_user_data;
+    const signal_task: usize = self.loop.unix_signals.blocking_task_id;
+    var eventfd_pending = false;
+    var signal_pending = false;
+    const sq = &self.ring.sq;
+    var i: u32 = 0;
+    while (i < sq.sqe_tail) : (i += 1) {
+        const sqe = &sq.sqes[i & sq.mask];
+        const ud: usize = @intCast(sqe.user_data);
+        if (ud == eventfd_task and !eventfd_pending) {
+            eventfd_pending = true;
+            continue;
+        }
+        if (signal_task != 0 and ud == signal_task and !signal_pending) {
+            signal_pending = true;
+            continue;
+        }
+        python_c.raise_python_runtime_error("The event loop has pending operations queued from another thread; its io_uring ring is bound to that thread and cannot be re-bound.\x00");
+        return error.PythonError;
+    }
+
+    // Release the old reads' task slots and reserved_slots accounting — their
+    // SQEs die with the old ring and will never produce completions.
+    if (eventfd_pending) {
+        const task: *BlockingTask = @ptrFromInt(eventfd_task);
+        task.discard();
+    }
+    if (signal_pending) {
+        const task: *BlockingTask = @ptrFromInt(signal_task);
+        task.discard();
+    }
+
+    // No work was ever submitted: recreate the ring in this thread.
+    self.ring.deinit();
+    self.ring = try init_ring();
+    errdefer self.ring.deinit();
+    _ = std.os.linux.fcntl(self.ring.fd, std.posix.F.SETFD, @intCast(std.posix.FD_CLOEXEC));
+
+    // Registration state is per-ring; re-register on the new ring with the
+    // same graceful fallbacks as init().
+    const nr_files: u32 = TotalTasksItems;
+    if (self.fixed_files_enabled) {
+        self.ring.register_files_sparse(nr_files) catch {
+            self.fixed_files_enabled = false;
+        };
+    }
+    if (self.fixed_files_enabled) {
+        self.ring.register_files_update(0, self.fixed_file_table[0..1]) catch {
+            self.fixed_files_enabled = false;
+        };
+    }
+    if (self.buffers_registered) {
+        self.ring.register_buffers(self.buffer_pool.iovecs) catch |err| {
+            self.buffers_registered = false;
+            std.log.warn("io_uring buffer re-registration failed after thread handoff; continuing with heap buffers: {t}", .{err});
+        };
+    }
+
+    self.ring_owner_tid = current_tid;
+    self.ring_has_submitted = false;
+
+    // The eventfd wake-up read was queued on the old ring; queue it on the
+    // new one so cross-thread wakeups keep working. Caller holds the loop
+    // mutex, so use the unlocked variant (queue() would self-deadlock).
+    try register_eventfd_callback_unlocked(self);
+
+    // Same for the persistent signalfd read (the old task slot was released
+    // above, so skip the cancel).
+    try self.loop.unix_signals.enqueue_signal_fd(false);
+}
+
 pub fn register_fixed_file(self: *IO, fd: std.posix.fd_t) !u16 {
     const mutex = &self.loop.mutex;
     mutex.lock();
@@ -646,18 +767,21 @@ pub fn release_buffer(self: *IO, index: u16) void {
     self.buffer_pool.release(index);
 }
 
-pub fn register_eventfd_callback(self: *IO) !void {
-    if (self.fixed_files_enabled) {
-        _ = try self.queue(.{ .PerformRead = .{
+/// Queue the persistent eventfd wake-up read. Caller must hold the loop mutex
+/// (uses `queue_unlocked`; `queue` would self-deadlock on the non-recursive
+/// spinlock in multi-threaded builds — see BUG-267).
+fn register_eventfd_callback_unlocked(self: *IO) !void {
+    const data_ptr = if (self.fixed_files_enabled)
+        try self.queue_unlocked(.{ .PerformRead = .{
             .fd = 0,
             .fixed_file_index = 0,
             .callback = .{ .func = &eventfd_callback, .cleanup = null, .data = .{
                 .user_data = self,
             } },
             .data = .{ .buffer = @as([*]u8, @ptrCast(&self.eventfd_val))[0..@sizeOf(u64)] },
-        } });
-    } else {
-        _ = try self.queue(.{ .PerformRead = .{
+        } })
+    else
+        try self.queue_unlocked(.{ .PerformRead = .{
             .fd = self.eventfd,
             .fixed_file_index = null,
             .callback = .{ .func = &eventfd_callback, .cleanup = null, .data = .{
@@ -665,7 +789,15 @@ pub fn register_eventfd_callback(self: *IO) !void {
             } },
             .data = .{ .buffer = @as([*]u8, @ptrCast(&self.eventfd_val))[0..@sizeOf(u64)] },
         } });
-    }
+    self.eventfd_read_user_data = data_ptr;
+}
+
+pub fn register_eventfd_callback(self: *IO) !void {
+    const mutex = &self.loop.mutex;
+    mutex.lock();
+    defer mutex.unlock();
+
+    try register_eventfd_callback_unlocked(self);
 }
 
 pub fn wakeup_eventfd(self: *IO) !void {
@@ -705,7 +837,13 @@ pub fn deinit(self: *IO) void {
         set.deinit();
     }
 
-    self.ring.unregister_buffers() catch |err| std.log.warn("unregister_buffers failed: {s}", .{@errorName(err)});
+    // The ring may have been handed off to another thread (BUG-267). Kernel
+    // registration ops on a SINGLE_ISSUER ring are restricted to the issuer
+    // thread; when the loop is closed from a different thread, skip the
+    // polite unregister — closing the ring releases the registrations anyway.
+    if (python_c._c.PyThread_get_thread_ident() == self.ring_owner_tid) {
+        self.ring.unregister_buffers() catch |err| std.log.warn("unregister_buffers failed: {s}", .{@errorName(err)});
+    }
     self.buffer_pool.deinit(self.busy_sets.allocator);
     @atomicStore([*]u8, &self.buffer_pool.buffer_memory.ptr, @ptrFromInt(0xDEADBEEF), .seq_cst); // HARD-04
 
@@ -755,7 +893,9 @@ pub fn get_blocking_tasks_set(self: *IO) !*BlockingTasksSet {
 pub fn flush_pending_sqes(self: *IO) !u32 {
     const ready = self.ring.sq_ready();
     if (ready == 0) return 0;
-    return try submit_guaranteed(&self.ring);
+    const submitted = try submit_guaranteed(&self.ring);
+    self.ring_has_submitted = true;
+    return submitted;
 }
 
 pub fn queue_unlocked(self: *IO, event: BlockingOperationData) !usize {

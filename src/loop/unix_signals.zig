@@ -106,18 +106,20 @@ fn default_sigint_signal_callback(data: *const CallbackManager.CallbackData) !vo
     return error.PythonError;
 }
 
-fn enqueue_signal_fd(self: *UnixSignals) !void {
-    const blocking_task_id = self.blocking_task_id;
-    const loop = self.loop;
-    if (blocking_task_id > 0) {
-        _ = try loop.io.queue_unlocked(.{ .Cancel = blocking_task_id });
+pub fn enqueue_signal_fd(self: *UnixSignals, comptime cancel_old: bool) !void {
+    if (cancel_old) {
+        const blocking_task_id = self.blocking_task_id;
+        const loop = self.loop;
+        if (blocking_task_id > 0) {
+            _ = try loop.io.queue_unlocked(.{ .Cancel = blocking_task_id });
+        }
     }
 
     const buffer_to_read: std.os.linux.IoUring.ReadBuffer = .{
         .buffer = @as([*]u8, @ptrCast(&self.signalfd_info))[0..@sizeOf(std.os.linux.signalfd_siginfo)],
     };
 
-    self.blocking_task_id = try loop.io.queue_unlocked(.{
+    self.blocking_task_id = try self.loop.io.queue_unlocked(.{
         .PerformRead = .{
             .fd = self.fd,
             .data = buffer_to_read,
@@ -129,7 +131,7 @@ fn enqueue_signal_fd(self: *UnixSignals) !void {
                 .func = &signal_handler,
                 .cleanup = null,
                 .data = .{
-                    .user_data = loop,
+                    .user_data = self.loop,
                 },
             },
         },
@@ -146,7 +148,7 @@ pub fn link(self: *UnixSignals, sig: std.os.linux.SIG, callback: CallbackManager
     _ = siginterrupt(@as(i32, @intCast(@intFromEnum(sig))), 0);
 
     self.fd = try std.posix.signalfd(self.fd, mask, 0);
-    try self.enqueue_signal_fd();
+    try self.enqueue_signal_fd(true);
 
     var prev_callback = self.callbacks.replace(@intCast(@intFromEnum(sig)), callback);
     if (prev_callback) |*v| {

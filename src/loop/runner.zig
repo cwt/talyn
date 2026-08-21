@@ -288,6 +288,7 @@ fn poll_blocking_events(self: *Loop, mutex: *lock.Mutex, wait: bool, ready_queue
                 }
                 return err;
             };
+            self.io.ring_has_submitted = true;
             nevents = try copy_cqes_eintr_safe(&self.io.ring, blocking_ready_tasks);
         } else {
             // Non-blocking: flush pending SQEs, then peek at CQEs.
@@ -340,6 +341,12 @@ pub fn start(self: *Loop, loop_obj: *Loop.Python.LoopObject) !void {
         python_c.raise_python_runtime_error("Loop is already running\x00");
         return error.PythonError;
     }
+
+    // The io_uring ring is bound to the thread that created it. If this loop
+    // is being run from a different thread (asyncio's "loop in a background
+    // thread" pattern), hand the ring over to this thread — safe only while
+    // no operation was ever submitted; otherwise fail with a clear error.
+    try self.io.ensure_ring_for_current_thread();
 
     self.running = true;
     defer {
