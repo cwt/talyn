@@ -755,6 +755,14 @@ fn prepare_data(
 
     const queries_data = try arena_allocator.alloc(ServerQueryData, configuration.servers.len);
     const hostnames_array = try get_hostname_array(arena_allocator, hostname, configuration.search);
+    if (hostnames_array.len == 0) {
+        // Every candidate (the hostname itself for FQDNs, or each
+        // hostname+search-suffix combination) exceeded the 255-byte DNS
+        // name limit — there is nothing to resolve. Reject here instead
+        // of building an empty queries slice that queue() would index
+        // out-of-bounds (`server_data.queries[0]`).
+        return error.InvalidHostname;
+    }
 
     control_data.queries_data = queries_data;
 
