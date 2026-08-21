@@ -146,6 +146,7 @@ fn pseudosocket_getsockopt(self: ?*PseudoSocketObject, args: ?PyObject) callconv
     var buflen: std.c.socklen_t = 256;
     if (argc >= 3) {
         const bl = python_c.PyLong_AsLong(python_c.PyTuple_GetItem(arg_tuple, 2));
+        if (python_c.PyErr_Occurred() != null) return null;
         if (bl >= 0 and bl <= buf.len) buflen = @intCast(bl);
     }
     const rc = std.os.linux.getsockopt(instance.fd, level, optname, &buf, &buflen);
