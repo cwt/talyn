@@ -3,7 +3,7 @@ type: article
 title: Talyn Development Journey
 description: The complete historical narrative and timeline of developing Talyn, sorted chronologically from the latest release back to the project's inception.
 tags: [history, documentation, journey, roadmap]
-timestamp: 2026-08-17T12:50:00Z
+timestamp: 2026-08-22T12:00:00Z
 ---
 
 # Talyn Development Journey
@@ -13,6 +13,12 @@ Talyn is a production-grade, crash-resistant, and realistically fast `asyncio` e
 This document chronicles the engineering narrative and technical milestones of Talyn in **reverse chronological order**—starting with our latest release and architectural breakthroughs, and stepping back through performance optimizations, cross-platform builds, and deep audits to the project's original genesis.
 
 ---
+
+## v0.9.2 — BUG-261..268 Fixes & CPython 3.14.7 free-threading Compatibility
+
+**v0.9.2** fixes all six renumbered real bugs from the BUG-261..272 validation pass and restores full compatibility with the CPython 3.14.7 stdlib test suite. The highlight is deep work on **threading semantics**: a fresh io_uring ring can now be handed to a different thread, so `loop.run_forever()` in a background thread — a documented asyncio pattern newly exercised by the gh-152020 stdlib test — works instead of failing with `EEXIST → error.InvalidThread` and hanging `run_coroutine_threadsafe().result()` callers (BUG-267). Talyn tasks are also now visible to `asyncio.all_tasks()`/`current_task()` by registering in both the C and pure-Python task registries and keeping both current-task registries in sync across Python 3.13's shared-dict and 3.14's separate-registry designs (BUG-268).
+
+This release also closes the fd leak in the DNS `queue` error path (BUG-261), the negative `dns_timeout` sentinel ambiguity (BUG-263), the `getsockopt` stale-exception leak (BUG-264), and the `queries[0]` out-of-bounds panic on over-long hostnames (BUG-266), plus two maintainability cleanups (BUG-262, BUG-265). The tracker stands at **267 bugs (250 Fixed, 4 Open, 13 False Positive)** with the full suite passing on all four Python runtime targets (3.13, 3.14, 3.13t, 3.14t), including `test.test_asyncio.test_free_threading`.
 
 ## v0.9.0 — Native Offline AST Linter, Audit Passes 15–19 (BUG-200..259) & Complete Production Hardening
 

@@ -2,6 +2,21 @@
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
 
+## [2026-08-22] — v0.9.2 Release: BUG-261..268 Fixes & CPython 3.14.7 free-threading Compatibility
+
+This release fixes the six renumbered bugs (BUG-261..266) plus two new compatibility defects (BUG-267, BUG-268) exposed by the CPython 3.14.7 update:
+
+- **BUG-261 (Medium-High)**: DNS `queue` errdefer leaked UDP socket fds for unsent server queries — `close_unsent_query_sockets()` closes the unsent tail in the error path (Zig unit test).
+- **BUG-262 (Low)**: deduplicated `Address.toPyAddrWithPort` (delegates to `toPyAddr`) and the pseudosocket `getsockname`/`getpeername` pair (`sockaddr_to_py_object`).
+- **BUG-263 (Low)**: negative `dns_timeout` now raises `ValueError` everywhere via `Resolv.parse_dns_timeout()` (removed the `-1.0` sentinel ambiguity); `talyn/loop.py` `create_connection`/`create_server` now accept and forward `dns_timeout`.
+- **BUG-264 (Medium-Low)**: `pseudosocket.getsockopt` propagates the `TypeError` on non-numeric `buflen` instead of leaking a stale pending exception.
+- **BUG-265 (Low)**: extracted the 5 duplicate `set_future_exception` helpers into `Future.Python.Result.set_future_exception()`.
+- **BUG-266 (Medium-High)**: `prepare_data` rejects an empty `hostnames_array` with `error.InvalidHostname` instead of letting `queue()` index `queries[0]` out of bounds (subprocess-based regression test).
+- **BUG-267 (High)**: `loop.run_forever()` from a non-creator thread now works — `IO.ensure_ring_for_current_thread()` hands a never-submitted io_uring ring over to the running thread (asyncio's "loop in a background thread" pattern); pre-used rings or pending foreign SQEs raise a clear `RuntimeError` instead of hanging on `run_coroutine_threadsafe().result()`.
+- **BUG-268 (Medium-High)**: talyn tasks register with asyncio's task registries at creation and keep both current-task registries in sync, so `asyncio.all_tasks()`/`current_task()` see default-factory tasks. `test.test_asyncio.test_free_threading` (new in Python 3.14.7, gh-152020) now passes all 24 tests on 3.14/3.14t.
+
+Tracker: 267 bugs (250 Fixed, 4 Open, 13 False Positive). Full suite: 4 passed, 0 failed (320 pytest tests × 4 Python variants, all stdlib modules green).
+
 ## [2026-08-21] — Bug Validation Pass: BUG-261..272 → 6 False Positives Removed, 6 Real Bugs Renumbered to BUG-261..266
 
 A static-analysis validation pass over bug reports BUG-261 through BUG-272 against the current `src/` (Zig 0.16.0) confirmed 6 as false positives and 6 as real (still open). The false positives were removed from the tracker and the real bugs renumbered to keep the numbering contiguous.
