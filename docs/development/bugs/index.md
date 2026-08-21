@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 242 |
-| Open | 10 |
+| Fixed | 243 |
+| Open | 9 |
 | False Positive | 13 |
 | **Total** | **265** |
 
@@ -296,7 +296,7 @@ Sorted by bug number. See individual bug files for details.
 | [258](258.md) | DNS cache TTL cap only triggers on exact `maxInt(u32)` sentinel; near-max TTLs uncapped | Medium | Fixed |
 | [259](259.md) | Loop hook GC traversal gap — `HookHandle.callback` PyObject* never visited | Medium | Fixed |
 | [260](260.md) | Talyn clamps RLIMIT_NOFILE to TotalTasksItems+64, exhausting fds under proxy load | High | Fixed |
-| [261](261.md) | DNS queue errdefer leaks UDP socket fds for unsent server queries | Medium-High | Open |
+| [261](261.md) | DNS queue errdefer leaks UDP socket fds for unsent server queries | Medium-High | Fixed |
 | [262](262.md) | Duplicated Address.toPyAddr logic and pseudosocket getsockname/getpeername | Low | Open |
 | [263](263.md) | PyFloat_AsDouble -1.0 sentinel ambiguity in DNS timeout parsing | Low | Open |
 | [264](264.md) | pseudosocket getsockopt leaves pending exception on invalid buflen type | Medium-Low | Open |

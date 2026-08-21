@@ -206,6 +206,19 @@ fn cleanup_server_query_data(ptr: ?*anyopaque) void {
     server_data.release();
 }
 
+/// Close the sockets of server queries that were never submitted to io_uring.
+/// Their fds were opened in `build_queries`; since no SQE was queued for them,
+/// `server_data.cancel()` (which queues a `CancelByFd`) is unnecessary — the
+/// raw fd is closed and marked -1 so later cleanup cannot double-close.
+fn close_unsent_query_sockets(queries_data: []ServerQueryData, queries_sent: usize) void {
+    for (queries_data[queries_sent..]) |*server_data| {
+        if (server_data.socket_fd >= 0) {
+            _ = std.os.linux.close(server_data.socket_fd);
+            server_data.socket_fd = -1;
+        }
+    }
+}
+
 fn mark_resolved_and_execute_user_callbacks(server_data: *ServerQueryData) !void {
     const control_data = server_data.control_data;
     control_data.resolved = true;
@@ -788,6 +801,7 @@ pub fn queue(
         for (control_data.queries_data[0..queries_sent]) |*server_data| {
             server_data.cancel();
         }
+        close_unsent_query_sockets(control_data.queries_data, queries_sent);
 
         if (queries_sent == 0) {
             control_data.release();
@@ -1038,4 +1052,59 @@ test "each QuerySlot is a complete standalone DNS message" {
             try std.testing.expectEqual(@as(u16, 1), qdcount);
         }
     }
+}
+
+test "close_unsent_query_sockets closes only the unsent tail" {
+    var read_end1: [2]std.posix.fd_t = undefined;
+    try std.testing.expectEqual(std.os.linux.E.SUCCESS, utils.getSyscallErrno(std.os.linux.pipe(&read_end1)));
+    defer _ = std.os.linux.close(read_end1[0]);
+    var read_end2: [2]std.posix.fd_t = undefined;
+    try std.testing.expectEqual(std.os.linux.E.SUCCESS, utils.getSyscallErrno(std.os.linux.pipe(&read_end2)));
+    defer _ = std.os.linux.close(read_end2[0]);
+
+    // entry 0 simulates an already-sent query (fd stays open);
+    // entries 1-2 simulate unsent queries whose fds must be closed.
+    var queries = [_]ServerQueryData{
+        .{
+            .loop = undefined,
+            .socket_fd = read_end1[0],
+            .hostnames_array = undefined,
+            .control_data = undefined,
+            .queries = &.{},
+            .recv_buf = undefined,
+            .results = .empty,
+            .ptr_results = .empty,
+        },
+        .{
+            .loop = undefined,
+            .socket_fd = read_end1[1],
+            .hostnames_array = undefined,
+            .control_data = undefined,
+            .queries = &.{},
+            .recv_buf = undefined,
+            .results = .empty,
+            .ptr_results = .empty,
+        },
+        .{
+            .loop = undefined,
+            .socket_fd = read_end2[1],
+            .hostnames_array = undefined,
+            .control_data = undefined,
+            .queries = &.{},
+            .recv_buf = undefined,
+            .results = .empty,
+            .ptr_results = .empty,
+        },
+    };
+
+    close_unsent_query_sockets(&queries, 1);
+
+    // Unsent fds are closed and marked -1.
+    try std.testing.expectEqual(@as(std.posix.fd_t, -1), queries[1].socket_fd);
+    try std.testing.expectEqual(@as(std.posix.fd_t, -1), queries[2].socket_fd);
+    try std.testing.expectEqual(std.os.linux.E.BADF, utils.getSyscallErrno(std.os.linux.close(read_end1[1])));
+    try std.testing.expectEqual(std.os.linux.E.BADF, utils.getSyscallErrno(std.os.linux.close(read_end2[1])));
+    // The sent entry is untouched: fd still open, value unchanged.
+    try std.testing.expectEqual(read_end1[0], queries[0].socket_fd);
+    try std.testing.expectEqual(std.os.linux.E.SUCCESS, utils.getSyscallErrno(std.os.linux.fcntl(read_end1[0], std.posix.F.GETFD, 0)));
 }
