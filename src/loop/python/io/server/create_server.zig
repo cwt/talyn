@@ -275,15 +275,10 @@ fn z_try_resolve_server_host(creation_data: *ServerCreationData) !void {
             .user_data = server_data,
         },
     };
-    const dns_timeout_val = blk: {
-        if (creation_data.py_dns_timeout) |py_dns_timeout| {
-            const timeout_val = python_c.PyFloat_AsDouble(py_dns_timeout);
-            if (python_c.PyErr_Occurred() != null) return error.PythonError;
-            if (timeout_val == -1.0) break :blk null;
-            const result = Resolv.timeout_from_secs(timeout_val);
-            break :blk result;
-        } else break :blk null;
-    };
+    const dns_timeout_val = if (creation_data.py_dns_timeout) |py_dns_timeout|
+        try Resolv.parse_dns_timeout(py_dns_timeout)
+    else
+        null;
     server_data.dns_timeout = dns_timeout_val;
     const address_list = try loop_data.dns.lookup(hostname, &resolver_callback, server_data.dns_timeout) orelse return;
 

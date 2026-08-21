@@ -146,6 +146,8 @@ def test_create_server_invalid_dns_timeout() -> None:
         loop = asyncio.get_running_loop()
         with pytest.raises(TypeError):
             await loop.create_server(EchoProtocol, "127.0.0.1", 0, dns_timeout="invalid")
+        with pytest.raises(ValueError):
+            await loop.create_server(EchoProtocol, "127.0.0.1", 0, dns_timeout=-1.0)
 
     talyn.run(main())
 

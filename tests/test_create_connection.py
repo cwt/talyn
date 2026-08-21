@@ -348,9 +348,15 @@ def test_create_connection_nan_inf_safety() -> None:
                 t.close()
                 await p.disconnected
 
-                # Also verify getaddrinfo dns_timeout float safety
+            # NaN/Inf map to the default timeout (float cast safety).
+            for val in (float("nan"), float("inf")):
                 info = await loop.getaddrinfo(host, port, dns_timeout=val)
                 assert len(info) > 0
+
+            # Negative dns_timeout values must raise ValueError.
+            for val in (float("-inf"), -1.0, -0.5):
+                with pytest.raises(ValueError):
+                    await loop.getaddrinfo(host, port, dns_timeout=val)
 
         talyn.run(main())
     finally:
@@ -364,6 +370,19 @@ def test_create_connection_invalid_dns_timeout() -> None:
             await loop.create_connection(
                 EchoProtocol, "127.0.0.1", 80, dns_timeout="invalid"
             )
+        with pytest.raises(ValueError):
+            await loop.create_connection(
+                EchoProtocol, "127.0.0.1", 80, dns_timeout=-1.0
+            )
+
+    talyn.run(main())
+
+
+def test_getnameinfo_negative_dns_timeout() -> None:
+    async def main() -> None:
+        loop = asyncio.get_running_loop()
+        with pytest.raises(ValueError):
+            await loop.getnameinfo(("127.0.0.1", 80), 0, -1.0)
 
     talyn.run(main())
 

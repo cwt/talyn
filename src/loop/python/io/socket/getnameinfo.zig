@@ -90,9 +90,7 @@ inline fn z_loop_getnameinfo(self: *LoopObject, args: []const ?PyObject) !*Futur
     const dns_timeout = blk: {
         const py_timeout = if (args.len > 2) args[2] else null;
         if (py_timeout) |pt| {
-            const timeout_val = python_c.PyFloat_AsDouble(pt);
-            if (python_c.PyErr_Occurred() != null) return error.PythonError;
-            break :blk Resolv.timeout_from_secs(timeout_val);
+            break :blk try Resolv.parse_dns_timeout(pt);
         } else break :blk null;
     };
 

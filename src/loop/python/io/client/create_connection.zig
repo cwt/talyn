@@ -140,9 +140,7 @@ inline fn z_loop_create_connection(self: *LoopObject, args: []?PyObject, knames:
 
     var dns_timeout: ?Resolv.DnsTimeout = null;
     if (creation_data.py_dns_timeout) |py_dns_timeout| {
-        const timeout_val = python_c.PyFloat_AsDouble(py_dns_timeout);
-        if (python_c.PyErr_Occurred() != null) return error.PythonError;
-        dns_timeout = Resolv.timeout_from_secs(timeout_val);
+        dns_timeout = try Resolv.parse_dns_timeout(py_dns_timeout);
     }
     creation_data.dns_timeout = dns_timeout;
 

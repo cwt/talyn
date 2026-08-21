@@ -37,6 +37,20 @@ pub fn timeout_to_secs(timeout: DnsTimeout) f64 {
     return @as(f64, @floatFromInt(timeout.sec)) + @as(f64, @floatFromInt(timeout.nsec)) / 1e9;
 }
 
+/// Parse a Python `dns_timeout` argument into a `DnsTimeout`.
+/// Raises `TypeError` on non-float input (via `PyFloat_AsDouble`) and
+/// `ValueError` on negative values. NaN/Inf map to null (default timeout)
+/// through `timeout_from_secs`.
+pub fn parse_dns_timeout(py_timeout: PyObject) !?DnsTimeout {
+    const timeout_val = python_c.PyFloat_AsDouble(py_timeout);
+    if (python_c.PyErr_Occurred() != null) return error.PythonError;
+    if (timeout_val < 0.0) {
+        python_c.raise_python_value_error("DNS timeout must be non-negative\x00");
+        return error.PythonError;
+    }
+    return timeout_from_secs(timeout_val);
+}
+
 pub fn dns_timeout_to_kernel_timespec(timeout: DnsTimeout) std.os.linux.kernel_timespec {
     return .{
         .sec = @as(i64, @intCast(timeout.sec)),

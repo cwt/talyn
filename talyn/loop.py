@@ -591,6 +591,7 @@ class Loop(_Loop):
         happy_eyeballs_delay: float | None = None,
         interleave: int | None = None,
         all_errors: bool = False,
+        dns_timeout: float | None = None,
     ) -> tuple[asyncio.Transport, asyncio.BaseProtocol]:
         if ssl is not None:
             return await self._create_ssl_connection(
@@ -609,6 +610,7 @@ class Loop(_Loop):
                 happy_eyeballs_delay=happy_eyeballs_delay,
                 interleave=interleave,
                 all_errors=all_errors,
+                dns_timeout=dns_timeout,
             )
         # Only pass non-None/non-default kwargs
         kwargs = {}
@@ -632,6 +634,8 @@ class Loop(_Loop):
             kwargs["interleave"] = interleave
         if all_errors:
             kwargs["all_errors"] = all_errors
+        if dns_timeout is not None:
+            kwargs["dns_timeout"] = dns_timeout
 
         return await _Loop.create_connection(
             self,
@@ -856,6 +860,7 @@ class Loop(_Loop):
         happy_eyeballs_delay: float | None,
         interleave: int | None,
         all_errors: bool,
+        dns_timeout: float | None,
     ) -> tuple[asyncio.Transport, asyncio.BaseProtocol]:
         self_loop = self
         import ssl as ssl_module
@@ -1044,6 +1049,8 @@ class Loop(_Loop):
             kwargs["interleave"] = interleave
         if all_errors:
             kwargs["all_errors"] = all_errors
+        if dns_timeout is not None:
+            kwargs["dns_timeout"] = dns_timeout
 
         if sock is not None:
             transport, _ = await _Loop.create_connection(
@@ -1105,6 +1112,7 @@ class Loop(_Loop):
         ssl_handshake_timeout: float | None = None,
         ssl_shutdown_timeout: float | None = None,
         start_serving: bool = True,
+        dns_timeout: float | None = None,
     ) -> "Server":
         if ssl is not None:
             return await self._create_ssl_server(
@@ -1121,6 +1129,7 @@ class Loop(_Loop):
                 ssl_handshake_timeout=ssl_handshake_timeout,
                 ssl_shutdown_timeout=ssl_shutdown_timeout,
                 start_serving=start_serving,
+                dns_timeout=dns_timeout,
             )
         if host is None:
             host = ""
@@ -1135,6 +1144,8 @@ class Loop(_Loop):
             kwargs["reuse_address"] = reuse_address
         if reuse_port is not None:
             kwargs["reuse_port"] = reuse_port
+        if dns_timeout is not None:
+            kwargs["dns_timeout"] = dns_timeout
         srvs = await _Loop.create_server(
             self,
             protocol_factory,
@@ -1161,6 +1172,7 @@ class Loop(_Loop):
         ssl_handshake_timeout: float | None,
         ssl_shutdown_timeout: float | None,
         start_serving: bool,
+        dns_timeout: float | None,
     ) -> "Server":
         self_loop = self
         import ssl as ssl_module
@@ -1298,6 +1310,8 @@ class Loop(_Loop):
             kwargs["reuse_address"] = reuse_address
         if reuse_port is not None:
             kwargs["reuse_port"] = reuse_port
+        if dns_timeout is not None:
+            kwargs["dns_timeout"] = dns_timeout
         srvs = await _Loop.create_server(
             self,
             SSP,

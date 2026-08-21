@@ -278,6 +278,10 @@ def test_create_datagram_endpoint_invalid_dns_timeout() -> None:
             await loop.create_datagram_endpoint(
                 DatagramProtocol, local_addr=("127.0.0.1", 0), dns_timeout="invalid"
             )
+        with pytest.raises(ValueError):
+            await loop.create_datagram_endpoint(
+                DatagramProtocol, local_addr=("127.0.0.1", 0), dns_timeout=-1.0
+            )
 
     talyn.run(main())
 

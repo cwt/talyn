@@ -85,13 +85,7 @@ inline fn z_loop_create_datagram_endpoint(self: *LoopObject, args: []?PyObject, 
 
     var dns_timeout: ?Resolv.DnsTimeout = null;
     if (py_dns_timeout) |pt| {
-        const timeout_val = python_c.PyFloat_AsDouble(pt);
-        if (python_c.PyErr_Occurred() != null) {
-            return error.PythonError;
-        }
-        if (timeout_val != -1.0) {
-            dns_timeout = Resolv.timeout_from_secs(timeout_val);
-        }
+        dns_timeout = try Resolv.parse_dns_timeout(pt);
     }
 
     const fut = try Future.Python.Constructors.fast_new_future(self);

@@ -159,9 +159,7 @@ inline fn z_loop_getaddrinfo(self: *LoopObject, args: []const ?PyObject, knames:
 
     var dns_timeout: ?Resolv.DnsTimeout = null;
     if (py_dns_timeout) |pt| {
-        const timeout_val = python_c.PyFloat_AsDouble(pt);
-        if (python_c.PyErr_Occurred() != null) return error.PythonError;
-        dns_timeout = Resolv.timeout_from_secs(timeout_val);
+        dns_timeout = try Resolv.parse_dns_timeout(pt);
     }
 
     const loop_data = utils.get_data_ptr(Loop, self);
