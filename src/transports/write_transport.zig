@@ -58,6 +58,11 @@ pub fn init(self: *WriteTransport, loop: *Loop, fd: std.posix.fd_t, callback: Wr
     pending_buffers.* = .empty;
     pending_py_objects.* = .empty;
 
+    // BUG-276: commit `initialized` LAST. The caller's errdefer runs
+    // write_transport.deinit(), which touches both heap lists when
+    // initialized is true — arming the prepare hook can fail (node
+    // allocation), so flipping the flag before that point made the
+    // unwinding double-destroy the just-freed ArrayLists.
     self.* = WriteTransport{
         .loop = loop,
         .parent_transport = parent_transport,
@@ -72,7 +77,7 @@ pub fn init(self: *WriteTransport, loop: *Loop, fd: std.posix.fd_t, callback: Wr
 
         .fd = fd,
         .zero_copying = zero_copying,
-        .initialized = true,
+        .initialized = false,
         .blocking_task_id = 0,
     };
 
@@ -81,6 +86,8 @@ pub fn init(self: *WriteTransport, loop: *Loop, fd: std.posix.fd_t, callback: Wr
         .cleanup = null,
         .data = .{ .user_data = self },
     });
+
+    self.initialized = true;
 }
 
 fn flush_buffered_writes(data: *const CallbackManager.CallbackData) !void {
