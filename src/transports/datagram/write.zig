@@ -106,13 +106,20 @@ pub fn z_datagram_sendto(self: *DatagramTransport.DatagramTransportObject, args:
 
     const loop_data = utils.get_data_ptr(Loop, @as(*Loop.Python.LoopObject, @ptrCast(self.loop.?)));
 
-    // Allocate storage on heap for both data and SendToData struct
+    // Allocate storage on heap for both data and SendToData struct.
+    // BUG-270: once io.queue() accepts the operation, ownership of sd /
+    // data_buf transfers to the pending io_uring op (freed by
+    // cleanup_sendto on every completion path). The local errdefers must
+    // stand down at that point - previously they stayed armed and freed
+    // the buffers while the SQE was still outstanding whenever
+    // buffer_watermark_check failed afterwards.
+    var ownership_transferred = false;
     const data_buf = try loop_data.allocator.alloc(u8, len);
-    errdefer loop_data.allocator.free(data_buf);
+    errdefer if (!ownership_transferred) loop_data.allocator.free(data_buf);
     @memcpy(data_buf, @as([*]const u8, @ptrCast(pbuffer.buf))[0..len]);
 
     const sd = try loop_data.allocator.create(SendToData);
-    errdefer loop_data.allocator.destroy(sd);
+    errdefer if (!ownership_transferred) loop_data.allocator.destroy(sd);
     sd.* = .{
         .alloc = loop_data.allocator,
         .transport = self,
@@ -168,6 +175,7 @@ pub fn z_datagram_sendto(self: *DatagramTransport.DatagramTransportObject, args:
         },
     });
     python_c.py_incref(@ptrCast(self));
+    ownership_transferred = true;
 
     try buffer_watermark_check(self, len);
     return python_c.get_py_none();

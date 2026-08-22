@@ -305,3 +305,29 @@ async def test_datagram_close_inflight_recv_buffer_safety():
     await asyncio.sleep(0.05)
 
 
+
+
+class RaisingPauseProtocol(DatagramProtocol):
+    def pause_writing(self):
+        raise ValueError("simulated pause_writing failure")
+
+
+@pytest.mark.asyncio
+async def test_datagram_sendto_pause_writing_error_no_uaf():
+    """BUG-270: a failing buffer_watermark_check after io.queue() took
+    ownership must not free the queued SendToData/data_buf (errdefers have
+    to stand down once the SQE is outstanding)."""
+    loop = asyncio.get_running_loop()
+    t, p = await loop.create_datagram_endpoint(
+        RaisingPauseProtocol, local_addr=("127.0.0.1", 0)
+    )
+    try:
+        addr = ("127.0.0.1", 9)
+        t.set_write_buffer_limits(1, 1)
+        with pytest.raises(ValueError, match="simulated pause_writing"):
+            t.sendto(b"x" * 16, addr)
+        # Transport stays usable afterwards and closes cleanly.
+        t.sendto(b"y", addr)
+        await asyncio.sleep(0.05)
+    finally:
+        t.close()

@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 255 |
-| Open | 33 |
+| Fixed | 256 |
+| Open | 32 |
 | False Positive | 13 |
 | **Total** | **301** |
 
@@ -305,10 +305,10 @@ Sorted by bug number. See individual bug files for details.
 | [267](267.md) | run_forever from a non-creator thread fails: io_uring ring thread-affinity (EEXIST → error.InvalidThread) | High | Fixed |
 | [268](268.md) | Default-factory tasks invisible to asyncio.all_tasks() — talyn.Task never registers with the task registry | Medium-High | Fixed |
 | [269](269.md) | DNS `prepare_data` dual errdefer double-frees `ControlData` on every error path | Critical | Fixed |
-| [270](270.md) | Datagram sendto errdefers stay armed after `io.queue` ownership transfer — UAF + double-free | Critical | Open |
-| [271](271.md) | `failed_execution` double-decrefs raised SystemExit/KeyboardInterrupt — UAF in thread state | Critical | Open |
-| [272](272.md) | `perform_with_iovecs` reversed errdefer ordering double-frees iovec copy on SQ-full/link-timeout failure | Critical | Open |
-| [273](273.md) | `execute_task_send`/`_execute_task_throw` over-release dispatch-owned task reference on error paths | Critical | Open |
+| [270](270.md) | Datagram sendto errdefers stay armed after `io.queue` ownership transfer — UAF + double-free | Critical | Fixed |
+| [271](271.md) | `failed_execution` double-decrefs raised SystemExit/KeyboardInterrupt — UAF in thread state | Critical | Fixed |
+| [272](272.md) | `perform_with_iovecs` reversed errdefer ordering double-frees iovec copy on SQ-full/link-timeout failure | Critical | Fixed |
+| [273](273.md) | `execute_task_send`/`_execute_task_throw` over-release dispatch-owned task reference on error paths | Critical | Fixed |
 | [274](274.md) | `Loop.release()` runs cancelled watcher completions against deinitialized reader/writer B-trees | High | Open |
 | [275](275.md) | WriteTransport resurrects cancelled writes after `force_close` using stale fd/fixed-file slot | High | Open |
 | [276](276.md) | `WriteTransport.init` add_hook failure double-destroys pending buffer lists | High | Open |
