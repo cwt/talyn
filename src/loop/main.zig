@@ -151,8 +151,17 @@ pub fn release(self: *Loop) void {
     // able to communicate with the kernel.
     {
         var sig: std.posix.fd_t = undefined;
-        while (self.reader_watchers.pop(&sig)) |_| {}
-        while (self.writer_watchers.pop(&sig)) |_| {}
+        // BUG-274: invalidate each watcher's fd while popping. Cancelled
+        // completions of the armed polls are dispatched AFTER the trees
+        // below are deinit'd; their cleanup callback calls
+        // reader_watchers.delete(fd) / writer_watchers.delete(fd) when fd
+        // is still valid, traversing a freed B-tree root.
+        while (self.reader_watchers.pop(&sig)) |watcher| {
+            watcher.fd = -1;
+        }
+        while (self.writer_watchers.pop(&sig)) |watcher| {
+            watcher.fd = -1;
+        }
     }
     self.reader_watchers.deinit() catch |err| std.log.warn("deinit failed: {s}", .{@errorName(err)});
     self.writer_watchers.deinit() catch |err| std.log.warn("deinit failed: {s}", .{@errorName(err)});

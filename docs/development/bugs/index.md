@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 261 |
-| Open | 29 |
+| Fixed | 262 |
+| Open | 28 |
 | False Positive | 13 |
 | **Total** | **303** |
 
@@ -309,13 +309,13 @@ Sorted by bug number. See individual bug files for details.
 | [271](271.md) | `failed_execution` double-decrefs raised SystemExit/KeyboardInterrupt — UAF in thread state | Critical | Fixed |
 | [272](272.md) | `perform_with_iovecs` reversed errdefer ordering double-frees iovec copy on SQ-full/link-timeout failure | Critical | Fixed |
 | [273](273.md) | `execute_task_send`/`_execute_task_throw` over-release dispatch-owned task reference on error paths | Critical | Fixed |
-| [274](274.md) | `Loop.release()` runs cancelled watcher completions against deinitialized reader/writer B-trees | High | Open |
-| [275](275.md) | WriteTransport resurrects cancelled writes after `force_close` using stale fd/fixed-file slot | High | Open |
-| [276](276.md) | `WriteTransport.init` add_hook failure double-destroys pending buffer lists | High | Open |
-| [277](277.md) | `add_child_handler` duplicate pid silently orphans previous handler (fd + ref + struct leak) | High | Open |
-| [278](278.md) | FS watcher iterates stale `watchers` slice across Python re-entry (add/remove during callback) | High | Open |
-| [279](279.md) | Tasks completing by exception or cancellation never removed from `asyncio_tasks_set` | High | Open |
-| [280](280.md) | `remove_child_handler` while `on_child_exit` already queued executes callback on freed memory | High | Open |
+| [274](274.md) | `Loop.release()` runs cancelled watcher completions against deinitialized reader/writer B-trees | High | Fixed |
+| [275](275.md) | WriteTransport resurrects cancelled writes after `force_close` using stale fd/fixed-file slot | High | Fixed |
+| [276](276.md) | `WriteTransport.init` add_hook failure double-destroys pending buffer lists | High | Fixed |
+| [277](277.md) | `add_child_handler` duplicate pid silently orphans previous handler (fd + ref + struct leak) | High | Fixed |
+| [278](278.md) | FS watcher iterates stale `watchers` slice across Python re-entry (add/remove during callback) | High | Fixed |
+| [279](279.md) | Tasks completing by exception or cancellation never removed from `asyncio_tasks_set` | High | Fixed |
+| [280](280.md) | `remove_child_handler` while `on_child_exit` already queued executes callback on freed memory | High | Fixed |
 | [281](281.md) | `submit_next_chunk` queues SQE before fallible flush — flush failure duplicates submission / UAFs buffers | Medium-High | Open |
 | [282](282.md) | `fetch_completed_tasks` Overflow drops remaining CQEs, leaks slot, skews `reserved_slots` | Medium-High | Open |
 | [283](283.md) | `new_datagram_transport` error path bypasses dealloc cleanup (loop ref + fixed-file slot + buffer leak) | Medium | Open |
