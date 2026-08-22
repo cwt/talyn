@@ -82,7 +82,25 @@ fn on_inotify_event(data: *const CallbackManager.CallbackData) !void {
             const event: *const std.os.linux.inotify_event = @ptrCast(@alignCast(&buf[pos]));
             const name = if (event.len > 0) std.mem.sliceTo(buf[pos + @sizeOf(std.os.linux.inotify_event) .. pos + @sizeOf(std.os.linux.inotify_event) + event.len], 0) else "";
 
-            for (self.watchers.items) |watcher| {
+            // BUG-278: dispatch_event runs arbitrary Python which may
+            // add/remove watches - append reallocates (and remove_watch
+            // frees) watcher storage, so neither the items slice nor raw
+            // pointers may be held across a dispatch. Snapshot the
+            // pointers once, and re-validate liveness against the LIVE
+            // list immediately before every callback invocation.
+            const pending = try self.loop.allocator.dupe(*Watcher, self.watchers.items);
+            defer self.loop.allocator.free(pending);
+
+            for (pending) |watcher| {
+                var alive = false;
+                for (self.watchers.items) |live| {
+                    if (live == watcher) {
+                        alive = true;
+                        break;
+                    }
+                }
+                if (!alive) continue;
+
                 if (watcher.wd == event.wd and (watcher.mask & event.mask) != 0) {
                     try self.dispatch_event(watcher, event.mask, event.cookie, name);
                 }

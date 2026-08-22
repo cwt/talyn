@@ -53,3 +53,44 @@ def test_path_watcher():
             handle.cancel()
 
     talyn.run(main())
+
+
+def test_watch_callback_may_add_watcher_mid_dispatch():
+    """BUG-278: dispatch must not hold stale watcher-array pointers across
+    Python re-entry - a callback calling _add_path_watcher reallocates the
+    watcher storage that on_inotify_event was iterating (and remove_watch
+    frees entries)."""
+    import asyncio
+
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            seen_a, seen_b = [], []
+            mask = 256  # IN_CREATE
+            state = {"b_handle": None}
+
+            def cb_b(m, cookie, name):
+                seen_b.append(name)
+
+            def cb_a(m, cookie, name):
+                seen_a.append(name)
+                if state["b_handle"] is None:
+                    # Re-enter the watcher registry from inside a dispatch.
+                    state["b_handle"] = loop._add_path_watcher(tmpdir, mask, cb_b)
+
+            handle_a = loop._add_path_watcher(tmpdir, mask, cb_a)
+
+            for i in range(3):
+                with open(os.path.join(tmpdir, f"f{i}.txt"), "w") as f:
+                    f.write("x")
+                await asyncio.sleep(0.1)
+
+            assert len(seen_a) >= 1
+            assert len(seen_b) >= 1  # registered mid-dispatch still receives events
+
+            handle_a.cancel()
+            if state["b_handle"] is not None:
+                state["b_handle"].cancel()
+
+    talyn.run(main())
