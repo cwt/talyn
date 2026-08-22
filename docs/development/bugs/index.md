@@ -1,7 +1,7 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 301 bugs discovered across audit passes."
+description: "Individual bug entries for talyn, one file per bug. 303 bugs discovered across audit passes."
 timestamp: "2026-08-23T00:00:00Z"
 ---
 
@@ -15,23 +15,23 @@ Sorted by bug number. See individual bug files for details.
 
 | Severity | Count |
 |---|---:|
-| Critical | 38 |
-| High | 84 |
+| Critical | 39 |
+| High | 85 |
 | Medium-High | 29 |
 | Medium | 57 |
 | Medium-Mid | 11 |
 | Medium-Low | 19 |
 | Low | 63 |
-| **Total** | **301** |
+| **Total** | **303** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
-| Fixed | 259 |
+| Fixed | 261 |
 | Open | 29 |
 | False Positive | 13 |
-| **Total** | **301** |
+| **Total** | **303** |
 
 ## All Bugs
 
@@ -338,3 +338,5 @@ Sorted by bug number. See individual bug files for details.
 | [300](300.md) | Loop shutdown `cancel_all` leaks `write_iovs_copy` for in-flight vectored writes | Low | Fixed |
 | [301](301.md) | `process_dns_response` duplicates lifetime-critical response-accounting block five times | Low | Fixed |
 | [302](302.md) | Dead store of computed Loop data pointer in `accept_callback` | Low | Fixed |
+| [303](303.md) | `create_task` on a closed loop segfaults instead of raising RuntimeError | High | Fixed |
+| [304](304.md) | `fast_new_task` failure paths double-free coro/context/name (consume-on-success ownership) | Critical | Fixed |

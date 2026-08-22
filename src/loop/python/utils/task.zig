@@ -81,7 +81,12 @@ inline fn z_loop_create_task(self: *PythonLoopObject, args: []?PyObject, knames:
         return @ptrCast(task);
     }
 
+    // BUG-304: fast_new_task took its own references (borrow semantics);
+    // release the locals this function owns on the success path.
     const task = try Task.Constructors.fast_new_task(self, coro, context.?, name);
+    python_c.py_decref(coro);
+    python_c.py_decref(context.?);
+    if (name) |n| python_c.py_decref(n);
     return task;
 }
 

@@ -33,13 +33,21 @@ inline fn task_init_configuration(self: *PythonTaskObject, loop: *LoopObject, co
 }
 
 inline fn task_schedule_coro(self: *PythonTaskObject, loop: *LoopObject) !void {
+    // BUG-303: creating/scheduling a task onto an already-closed loop must
+    // raise RuntimeError ("Event loop is closed") instead of pushing the
+    // start callback into a deinitialized ready ring.
+    const loop_data = utils.get_data_ptr(Loop, loop);
+    if (!loop_data.initialized) {
+        python_c.raise_python_runtime_error("Event loop is closed\x00");
+        return error.PythonError;
+    }
+
     if (loop.asyncio_tasks_set) |tasks_set| {
         if (python_c.PySet_Add(tasks_set, @ptrCast(self)) < 0) {
             return error.PythonError;
         }
     }
 
-    const loop_data = utils.get_data_ptr(Loop, loop);
     const future_data = utils.get_data_ptr(Future, &self.fut);
     future_data.python_payload = .{
         .module_ptr = null,
@@ -67,9 +75,19 @@ pub inline fn fast_new_task(loop: *LoopObject, coro: PyObject, context: PyObject
         instance.py_context = null;
     }
 
+    // BUG-304: task_init_configuration stores coro/context/name as raw
+    // borrowed pointers while instance.dealloc decrefs every PyObject
+    // field. Take the task's own references here so callers retain
+    // independent ownership of theirs — previously ANY failure after the
+    // store made instance.dealloc release references the caller's
+    // errdefers also owned, double-freeing the coroutine/context.
+    python_c.py_incref(coro);
+    python_c.py_incref(context);
+    if (name) |n| python_c.py_incref(n);
+
     try task_schedule_coro(instance, loop);
 
-    // BUG-268: register with asyncio's task registries so asyncio.all_tasks()
+    // BUG-268: register with asyncio's registries so asyncio.all_tasks()
     // (C registry and pure-Python WeakSet alike) sees this task.
     utils.PythonImports.register_asyncio_task(@ptrCast(instance));
 

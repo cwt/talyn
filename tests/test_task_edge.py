@@ -169,3 +169,24 @@ def test_repeated_failing_tasks_keep_loop_healthy() -> None:
         assert loop.run_until_complete(Task(ok(), loop=loop)) == 7
     finally:
         loop.close()
+
+
+def test_create_task_on_closed_loop_raises_runtimeerror() -> None:
+    """BUG-303: scheduling a task onto an already-closed loop must raise
+    RuntimeError('Event loop is closed') instead of pushing the start
+    callback into a deinitialized ready ring (segfault). Mirrors CPython
+    test_base_events.test_create_task_error_closes_coro."""
+    import asyncio
+
+    loop = Loop()
+    loop.close()
+
+    async def dummy():
+        pass
+
+    coro = dummy()
+    try:
+        with pytest.raises(RuntimeError, match="closed"):
+            loop.create_task(coro)
+    finally:
+        coro.close()
