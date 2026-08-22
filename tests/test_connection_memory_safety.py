@@ -271,3 +271,54 @@ def test_writev_sq_pressure_no_double_free() -> None:
     double-free the BlockingTask-owned iovec copy."""
     result = _run_repro_in_subprocess(_WRITEV_SQ_PRESSURE_SCRIPT)
     _assert_clean(result, "writev sq-pressure iovec-copy double-free regression")
+
+
+_ABORT_WITH_PENDING_WRITES_SCRIPT = textwrap.dedent(
+    """\
+    import asyncio, socket, threading, talyn
+
+    # transport.abort() (force_close) while vectored/plain writes are in
+    # flight and buffered data remains. With BUG-275 the ECANCELED
+    # completion resurrected a write on the already-closed fd / recycled
+    # fixed-file slot.
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(64)
+    port = srv.getsockname()[1]
+
+    def serve():
+        conns = []
+        while True:
+            try:
+                c, _ = srv.accept()
+            except OSError:
+                break
+            conns.append(c)
+
+    threading.Thread(target=serve, daemon=True).start()
+
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        class Sink(asyncio.Protocol):
+            def connection_made(self, transport):
+                self.transport = transport
+
+        for _ in range(100):
+            t, _p = await loop.create_connection(Sink, "127.0.0.1", port)
+            chunk = bytes(8192)
+            for _ in range(32):
+                t.write(chunk)          # large backlog, definitely in flight
+            t.abort()                    # force_close mid-flight
+        await asyncio.sleep(0.2)
+
+    talyn.run(main())
+    print("DONE")
+    """
+)
+
+
+def test_abort_with_pending_writes_no_stale_fd_write() -> None:
+    """BUG-275: cancelled writes must not be resurrected after force_close."""
+    result = _run_repro_in_subprocess(_ABORT_WITH_PENDING_WRITES_SCRIPT)
+    _assert_clean(result, "abort-with-pending-writes stale-fd regression")

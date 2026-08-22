@@ -86,7 +86,9 @@ pub fn init(self: *WriteTransport, loop: *Loop, fd: std.posix.fd_t, callback: Wr
 fn flush_buffered_writes(data: *const CallbackManager.CallbackData) !void {
     if (data.cancelled()) return;
     const self: *WriteTransport = @ptrCast(@alignCast(data.user_data.?));
-    if (!self.write_in_flight and self.buffer_size > 0) {
+    // BUG-275: never (re)submit on a closed transport - the fd may already
+    // be closed / the fixed-file slot reassigned.
+    if (!self.closed and !self.write_in_flight and self.buffer_size > 0) {
         try self.submit_next_chunk();
     }
 }
@@ -289,12 +291,19 @@ fn write_operation_completed(data: *const CallbackManager.CallbackData) !void {
         return;
     }
 
-    // Check if more data needs to be written
-    if (self.buffer_size > 0) {
+    // Check if more data needs to be written. BUG-275: per-op cancels from
+    // close()/force_close() arrive as .CANCELED with the cancelled() bit
+    // clear; after force_close the fd is already closed and the fixed-file
+    // slot unregistered, so resubmission must be gated on !closed (the
+    // read side has the equivalent !is_closing gate).
+    if (!self.closed and self.buffer_size > 0) {
         try self.submit_next_chunk();
         success = true;
-    } else {
-        // All data written — clean up consumed buffers
+    } else if (self.closed) {
+        // BUG-275: force_close with pending data — the fd is already torn
+        // down; drop this completion's transport reference and stop.
+        success = true;
+    } else if (self.buffer_size == 0) { // All data written — clean up consumed buffers
         // Release any remaining Py_buffers (at the current index and beyond)
         for (self.pending_py_buffers.items[self.pending_buffer_index..]) |*v| {
             python_c.PyBuffer_Release(v);
