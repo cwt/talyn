@@ -1,8 +1,8 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 267 bugs discovered across audit passes."
-timestamp: "2026-08-21T00:00:00Z"
+description: "Individual bug entries for talyn, one file per bug. 301 bugs discovered across audit passes."
+timestamp: "2026-08-23T00:00:00Z"
 ---
 
 # Bugs — talyn
@@ -15,23 +15,23 @@ Sorted by bug number. See individual bug files for details.
 
 | Severity | Count |
 |---|---:|
-| Critical | 33 |
-| High | 77 |
-| Medium-High | 27 |
-| Medium | 51 |
+| Critical | 38 |
+| High | 84 |
+| Medium-High | 29 |
+| Medium | 57 |
 | Medium-Mid | 11 |
-| Medium-Low | 17 |
-| Low | 51 |
-| **Total** | **267** |
+| Medium-Low | 19 |
+| Low | 63 |
+| **Total** | **301** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
 | Fixed | 250 |
-| Open | 4 |
+| Open | 38 |
 | False Positive | 13 |
-| **Total** | **267** |
+| **Total** | **301** |
 
 ## All Bugs
 
@@ -304,3 +304,37 @@ Sorted by bug number. See individual bug files for details.
 | [266](266.md) | Empty DNS hostnames_array yields out-of-bounds `queries[0]` in `resolv.zig` `queue` | Medium-High | Fixed |
 | [267](267.md) | run_forever from a non-creator thread fails: io_uring ring thread-affinity (EEXIST → error.InvalidThread) | High | Fixed |
 | [268](268.md) | Default-factory tasks invisible to asyncio.all_tasks() — talyn.Task never registers with the task registry | Medium-High | Fixed |
+| [269](269.md) | DNS `prepare_data` dual errdefer double-frees `ControlData` on every error path | Critical | Open |
+| [270](270.md) | Datagram sendto errdefers stay armed after `io.queue` ownership transfer — UAF + double-free | Critical | Open |
+| [271](271.md) | `failed_execution` double-decrefs raised SystemExit/KeyboardInterrupt — UAF in thread state | Critical | Open |
+| [272](272.md) | `perform_with_iovecs` reversed errdefer ordering double-frees iovec copy on SQ-full/link-timeout failure | Critical | Open |
+| [273](273.md) | `execute_task_send`/`_execute_task_throw` over-release dispatch-owned task reference on error paths | Critical | Open |
+| [274](274.md) | `Loop.release()` runs cancelled watcher completions against deinitialized reader/writer B-trees | High | Open |
+| [275](275.md) | WriteTransport resurrects cancelled writes after `force_close` using stale fd/fixed-file slot | High | Open |
+| [276](276.md) | `WriteTransport.init` add_hook failure double-destroys pending buffer lists | High | Open |
+| [277](277.md) | `add_child_handler` duplicate pid silently orphans previous handler (fd + ref + struct leak) | High | Open |
+| [278](278.md) | FS watcher iterates stale `watchers` slice across Python re-entry (add/remove during callback) | High | Open |
+| [279](279.md) | Tasks completing by exception or cancellation never removed from `asyncio_tasks_set` | High | Open |
+| [280](280.md) | `remove_child_handler` while `on_child_exit` already queued executes callback on freed memory | High | Open |
+| [281](281.md) | `submit_next_chunk` queues SQE before fallible flush — flush failure duplicates submission / UAFs buffers | Medium-High | Open |
+| [282](282.md) | `fetch_completed_tasks` Overflow drops remaining CQEs, leaks slot, skews `reserved_slots` | Medium-High | Open |
+| [283](283.md) | `new_datagram_transport` error path bypasses dealloc cleanup (loop ref + fixed-file slot + buffer leak) | Medium | Open |
+| [284](284.md) | `new_stream_transport` error path leaks socket fd and fixed-file slot (worst via pipe/unix ownership transfer) | Medium | Open |
+| [285](285.md) | `start_exit_watcher` queue failure leaves stale closed pidfd and leaks transport reference | Medium | Open |
+| [286](286.md) | `dispatch_guaranteed_nonthreadsafe` silently loses the guaranteed callback on allocation failure | Low | Open |
+| [287](287.md) | AF_UNIX sockaddr conversion spans non-NUL-terminated path (abstract sockets broken, OOB read) | Medium | Open |
+| [288](288.md) | `parseIp6` accepts >8 groups without `::` — silently truncates input, returns different address | Medium | Open |
+| [289](289.md) | Static `RingBuffer.try_push` publishes `write_idx` before clearing `executed` flag (GC traverse race) | Medium | Open |
+| [290](290.md) | `Cancel.perform` dereferences possibly-stale/reused task id to read operation type | Medium-Low | Open |
+| [291](291.md) | `PseudoSocket.close()` not idempotent — second close hits reassigned fd | Medium-Low | Open |
+| [292](292.md) | `failed_execution` StopIteration/CancelledError arms leak owned exception on internal errors | Low | Open |
+| [293](293.md) | Task trampolines clobber `_leave_task` exception, enabling null-exception error paths | Low | Open |
+| [294](294.md) | Unchecked `PyObject_IsTrue` error (-1) treated as transport closed | Low | Open |
+| [295](295.md) | `z_task_init` decrefs borrowed None reference when `name=None` | Low | Open |
+| [296](296.md) | `future.cancel(positional, msg=kwarg)` leaks positional message reference | Low | Open |
+| [297](297.md) | `add_done_callback` OOM errdefer pops entry discarding owned callback/context refs | Low | Open |
+| [298](298.md) | `writelines` treats iterator error as exhaustion — silent truncation + pending exception | Low | Open |
+| [299](299.md) | `IO.init` misses errdefer for `fixed_file_free` ArrayList | Low | Open |
+| [300](300.md) | Loop shutdown `cancel_all` leaks `write_iovs_copy` for in-flight vectored writes | Low | Open |
+| [301](301.md) | `process_dns_response` duplicates lifetime-critical response-accounting block five times | Low | Open |
+| [302](302.md) | Dead store of computed Loop data pointer in `accept_callback` | Low | Open |
