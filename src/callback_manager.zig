@@ -173,16 +173,15 @@ pub fn RingBuffer(comptime N: usize) type {
             if ((w_idx - r_idx) == N) return false;
 
             const idx = w_idx % N;
-            // Order: write data, then release-store write_idx, then
-            // release-store executed=false. A concurrent traverse that
-            // acquire-loads write_idx (and therefore sees this slot
-            // as "in range") and then acquire-loads executed as
-            // false is guaranteed to see the fully written callback
-            // data.
+            // BUG-289: clear `executed` BEFORE release-storing write_idx.
+            // Physical slots are recycled, so `executed[idx]` still holds
+            // `true` from the previous consumption; publishing first let a
+            // concurrent GC traverse see this slot as in-range while
+            // skipping it (executed==true), hiding a live callback from
+            // the collector. Matches DynamicRingBuffer.try_push below.
             self.callbacks[idx] = callback;
-
-            @atomicStore(usize, &self.write_idx, w_idx + 1, .release);
             self.executed[idx].store(false, .release);
+            @atomicStore(usize, &self.write_idx, w_idx + 1, .release);
             return true;
         }
 
