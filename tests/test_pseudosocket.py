@@ -153,3 +153,42 @@ def test_pseudosocket_getsockopt_invalid_buflen():
         server_sock.close()
 
     talyn.run(main())
+
+
+def test_pseudosocket_close_is_idempotent():
+    """BUG-291: a second close() must be a no-op instead of closing
+    whatever fd number now occupies the slot (stdlib socket semantics)."""
+    import asyncio
+    import errno
+    import os
+
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        class Proto(asyncio.Protocol):
+            def connection_made(self, transport):
+                self.transport = transport
+
+        srv_sock, client_sock = socket.socketpair()
+        try:
+            t, p = await loop.create_connection(
+                Proto, sock=client_sock
+            )
+            sock = t.get_extra_info("socket")
+            fd = sock.fileno()
+
+            sock.close()
+            assert sock.fileno() == -1
+            sock.close()  # second close: no-op, must not raise or touch others
+
+            try:
+                os.fstat(fd)
+                raise AssertionError("fd still open after close()")
+            except OSError as e:
+                assert e.errno == errno.EBADF
+
+            t.close()
+        finally:
+            srv_sock.close()
+
+    talyn.run(main())

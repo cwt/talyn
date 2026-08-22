@@ -10,6 +10,11 @@ pub const PseudoSocketObject = extern struct {
     family: i32,
     type: i32,
     proto: i32,
+
+    /// BUG-291: close() must be idempotent like the stdlib socket - a
+    /// second close used to close whatever fd number now occupies the
+    /// slot.
+    closed: bool = false,
 };
 
 fn pseudosocket_fileno(self: ?*PseudoSocketObject, _: ?PyObject) callconv(.c) ?PyObject {
@@ -79,7 +84,12 @@ fn pseudosocket_setblocking(self: ?*PseudoSocketObject, _: ?PyObject) callconv(.
 
 fn pseudosocket_close(self: ?*PseudoSocketObject, _: ?PyObject) callconv(.c) ?PyObject {
     const instance = self.?;
-    _ = std.os.linux.close(instance.fd);
+    // BUG-291: idempotent; mirror stdlib socket semantics.
+    if (!instance.closed) {
+        instance.closed = true;
+        _ = std.os.linux.close(instance.fd);
+        instance.fd = -1;
+    }
     return python_c.get_py_none();
 }
 
@@ -244,5 +254,6 @@ pub fn fast_new_pseudosocket(fd: std.posix.fd_t, family: i32, socket_type: i32, 
     instance.family = family;
     instance.type = socket_type;
     instance.proto = proto;
+    instance.closed = false;
     return instance;
 }

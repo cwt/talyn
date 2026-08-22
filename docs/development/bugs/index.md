@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 277 |
-| Open | 13 |
+| Fixed | 278 |
+| Open | 12 |
 | False Positive | 13 |
 | **Total** | **303** |
 
@@ -326,7 +326,7 @@ Sorted by bug number. See individual bug files for details.
 | [288](288.md) | `parseIp6` accepts >8 groups without `::` — silently truncates input, returns different address | Medium | Fixed |
 | [289](289.md) | Static `RingBuffer.try_push` publishes `write_idx` before clearing `executed` flag (GC traverse race) | Medium | Fixed |
 | [290](290.md) | `Cancel.perform` dereferences possibly-stale/reused task id to read operation type | Medium-Low | Fixed |
-| [291](291.md) | `PseudoSocket.close()` not idempotent — second close hits reassigned fd | Medium-Low | Open |
+| [291](291.md) | `PseudoSocket.close()` not idempotent — second close hits reassigned fd | Medium-Low | Fixed |
 | [292](292.md) | `failed_execution` StopIteration/CancelledError arms leak owned exception on internal errors | Low | Fixed |
 | [293](293.md) | Task trampolines clobber `_leave_task` exception, enabling null-exception error paths | Low | Fixed |
 | [294](294.md) | Unchecked `PyObject_IsTrue` error (-1) treated as transport closed | Low | Fixed |
