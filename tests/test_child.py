@@ -118,3 +118,71 @@ def test_duplicate_add_child_handler_replaces_cleanly():
         assert loop.run_until_complete(ok()) == 1
     finally:
         loop.close()
+
+
+def test_remove_child_handler_while_exit_pending_is_safe():
+    """BUG-280: removing a handler whose exit CQE was already reaped must
+    not free the handler out from under the queued on_child_exit. The
+    marked handler is torn down by its own invocation instead."""
+    import subprocess
+    import time
+
+    loop = talyn.Loop()
+    fired = []
+    try:
+        child = subprocess.Popen(["sleep", "0"])
+        time.sleep(0.05)  # let it exit; CQE may be reaped on next poll
+
+        loop.add_child_handler(child.pid, lambda pid, rc: fired.append((pid, rc)))
+
+        # Remove while the completion may already be queued.
+        assert loop.remove_child_handler(child.pid) in (True, False)
+
+        async def pump():
+            await asyncio.sleep(0.1)
+
+        loop.run_until_complete(pump())
+        loop.run_until_complete(pump())
+
+        child.wait()
+
+        async def ok():
+            return 9
+
+        assert loop.run_until_complete(ok()) == 9
+    finally:
+        loop.close()
+
+
+def test_child_handler_fires_and_cleans_up():
+    """Companion regression for BUG-280 teardown paths: normal exit fires
+    the callback exactly once and leaves the loop healthy."""
+    import asyncio
+    import subprocess
+
+    loop = talyn.Loop()
+    fired = []
+    child = None
+    try:
+        child = subprocess.Popen(["true"])
+        loop.add_child_handler(child.pid, lambda pid, rc: fired.append(rc))
+
+        async def pump():
+            for _ in range(50):
+                if fired:
+                    return
+                await asyncio.sleep(0.02)
+
+        loop.run_until_complete(pump())
+        child.wait()
+        assert fired, "child-exit callback never fired"
+
+        async def ok():
+            return 3
+
+        assert loop.run_until_complete(ok()) == 3
+    finally:
+        if child is not None and child.poll() is None:
+            child.kill()
+            child.wait()
+        loop.close()

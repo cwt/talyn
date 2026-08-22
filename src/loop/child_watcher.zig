@@ -16,6 +16,11 @@ const ChildHandler = struct {
     callback: PyObject,
     task_id: usize = 0,
     watcher: *ChildWatcher,
+    /// BUG-280: set by remove_child_handler. The exit callback may already
+    /// sit in the ready queue (Cancel cannot reach a completed op), so the
+    /// handler is torn down by THAT invocation instead of immediately,
+    /// which used to execute the queued callback on freed memory.
+    removed: bool = false,
 };
 
 pub fn init(self: *ChildWatcher, loop: *Loop) !void {
@@ -92,17 +97,30 @@ pub fn add_child_handler(self: *ChildWatcher, pid: i32, callback: PyObject) !voi
     self.handlers.putAssumeCapacity(pid, handler);
 }
 
+/// BUG-280: single teardown for a handler whose lifecycle has ended.
+fn teardown_child_handler(self: *ChildWatcher, handler: *ChildHandler) void {
+    if (handler.pidfd >= 0) {
+        _ = std.os.linux.close(handler.pidfd);
+        handler.pidfd = -1;
+    }
+    python_c.py_decref(handler.callback);
+    self.loop.allocator.destroy(handler);
+}
+
 pub fn remove_child_handler(self: *ChildWatcher, pid: i32) bool {
     if (self.handlers.fetchRemove(pid)) |entry| {
         const handler = entry.value;
+        handler.removed = true;
+
         if (handler.task_id != 0) {
+            // The WaitReadable may still be armed OR already completed
+            // with its callback queued; either way that invocation now
+            // owns the teardown.
             _ = self.loop.io.queue(.{ .Cancel = handler.task_id }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
+        } else {
+            // Defensive: nothing in flight can reference it.
+            teardown_child_handler(self, handler);
         }
-        if (handler.pidfd >= 0) {
-            _ = std.os.linux.close(handler.pidfd);
-        }
-        python_c.py_decref(handler.callback);
-        self.loop.allocator.destroy(handler);
         return true;
     }
     return false;
@@ -110,6 +128,13 @@ pub fn remove_child_handler(self: *ChildWatcher, pid: i32) bool {
 
 fn on_child_exit(data: *const CallbackManager.CallbackData) !void {
     if (data.cancelled()) {
+        // BUG-280: cancellation now comes from remove_child_handler (which
+        // marked the handler removed and unmapped it) or from watcher
+        // deinit. Only in the former case do we own the teardown.
+        const handler: *ChildHandler = @ptrCast(@alignCast(data.user_data.?));
+        if (handler.removed) {
+            teardown_child_handler(handler.watcher, handler);
+        }
         return;
     }
     const handler: *ChildHandler = @ptrCast(@alignCast(data.user_data.?));
@@ -200,17 +225,21 @@ fn on_child_exit(data: *const CallbackManager.CallbackData) !void {
         }
     }
 
-    // BUG-77 & BUG-157: Check if the Python callback removed this handler
-    // from the map (e.g., by calling remove_child_handler). If not,
-    // ensure pidfd, callback PyObject, and handler heap struct are cleaned up.
+    // BUG-77 & BUG-157 & BUG-280: Finalize exactly once. If the handler
+    // was removed while this invocation was pending, we own the teardown;
+    // otherwise the normal self-cleanup applies (with the fetchRemove
+    // identity check guarding against a concurrent re-register).
+    if (handler.removed) {
+        teardown_child_handler(self, handler);
+        return;
+    }
+
     if (self.handlers.fetchRemove(handler.pid)) |entry| {
         const removed_handler = entry.value;
         // Sanity: the entry we just removed should be the same
         // pointer we're about to free.
         if (removed_handler == handler) {
-            _ = std.os.linux.close(handler.pidfd);
-            python_c.py_decref(handler.callback);
-            self.loop.allocator.destroy(handler);
+            teardown_child_handler(self, handler);
         }
     }
 }
