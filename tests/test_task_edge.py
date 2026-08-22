@@ -190,3 +190,52 @@ def test_create_task_on_closed_loop_raises_runtimeerror() -> None:
             loop.create_task(coro)
     finally:
         coro.close()
+
+
+def test_failed_tasks_leave_asyncio_tasks_set():
+    """BUG-279: tasks completing by exception or cancellation must be
+    discarded from the loop's _asyncio_tasks set (a STRONG reference);
+    previously only completion-by-result removed them, pinning every
+    failed/cancelled task until loop close."""
+    import asyncio
+
+    from talyn import loop as talyn_loop
+
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        async def boom():
+            raise ValueError("gone")
+
+        t1 = loop.create_task(boom())
+        with pytest.raises(ValueError):
+            await t1
+
+        async def cancelled_sleep():
+            await asyncio.sleep(30)
+
+        t2 = loop.create_task(cancelled_sleep())
+        t2.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await t2
+
+        tasks_set = getattr(loop, "_asyncio_tasks", None)
+        if tasks_set is not None:
+            assert t1 not in tasks_set
+            assert t2 not in tasks_set
+
+        gc.collect()
+
+        # Loop stays healthy and registry does not accumulate.
+        async def ok():
+            return 5
+
+        assert await loop.create_task(ok()) == 5
+
+    import gc
+
+    talyn = talyn_loop.Loop()
+    try:
+        talyn.run_until_complete(main())
+    finally:
+        talyn.close()

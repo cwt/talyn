@@ -178,12 +178,25 @@ inline fn set_fut_waiter(task: *Task.PythonTaskObject, future: PyObject) !void {
     }
 }
 
+/// BUG-279: asyncio_tasks_set holds a STRONG reference added at scheduling
+/// time. Only completion-by-result discarded it, so every task finishing
+/// by exception or cancellation stayed pinned for the loop's lifetime.
+inline fn discard_from_asyncio_tasks_set(task: *Task.PythonTaskObject) void {
+    if (task.fut.py_loop) |py_loop| {
+        const loop_obj: *Loop.Python.LoopObject = @ptrCast(@alignCast(py_loop));
+        if (loop_obj.asyncio_tasks_set) |tasks_set| {
+            _ = python_c.PySet_Discard(tasks_set, @ptrCast(task));
+        }
+    }
+}
+
 inline fn set_result(task: *Task.PythonTaskObject, future_data: *Future, result: PyObject) !void {
     if (task.must_cancel) {
         _ = try Future.Python.Cancel.future_fast_cancel(&task.fut, future_data, task.fut.cancel_msg_py_object);
     } else {
         try Future.Python.Result.future_fast_set_result(future_data, result);
     }
+    discard_from_asyncio_tasks_set(task);
     if (task.fut.py_loop) |py_loop| {
         const loop_obj: *Loop.Python.LoopObject = @ptrCast(@alignCast(py_loop));
         if (loop_obj.asyncio_tasks_set) |tasks_set| {
@@ -414,6 +427,7 @@ fn failed_execution(task: *Task.PythonTaskObject) !void {
 
             return error.PythonError;
         };
+        discard_from_asyncio_tasks_set(task);
         if (task.py_context) |ctx| {
             python_c.py_decref(ctx);
             task.py_context = null;
@@ -426,6 +440,7 @@ fn failed_execution(task: *Task.PythonTaskObject) !void {
     }
 
     try Future.Python.Result.future_fast_set_exception(fut, future_data, exception);
+    discard_from_asyncio_tasks_set(task);
     if (task.py_context) |ctx| {
         python_c.py_decref(ctx);
         task.py_context = null;
