@@ -143,3 +143,35 @@ def test_create_unix_connection_multiple() -> None:
             os.unlink(path)
         except OSError:
             pass
+
+
+def test_abstract_unix_socket_peername():
+    """BUG-287: abstract-namespace sockets (leading NUL, length via
+    addrlen) must report their full name instead of an empty string, and
+    fully-filled paths must not read past the buffer."""
+    import asyncio
+    import socket
+
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        name = "\0talyn_bug287_probe"
+        srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        srv.bind(name)
+        srv.listen(1)
+
+        class Proto(asyncio.Protocol):
+            pass
+
+        reader_proto = asyncio.Protocol
+        t, p = await loop.create_unix_connection(Proto, path=name)
+        try:
+            sockname = t.get_extra_info("peername")
+            assert isinstance(sockname, str)
+            assert sockname.startswith("\x00"), f"abstract name lost: {sockname!r}"
+            assert "talyn_bug287_probe" in sockname
+        finally:
+            t.close()
+            srv.close()
+
+    talyn.run(main())

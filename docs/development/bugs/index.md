@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 273 |
-| Open | 17 |
+| Fixed | 274 |
+| Open | 16 |
 | False Positive | 13 |
 | **Total** | **303** |
 
@@ -322,7 +322,7 @@ Sorted by bug number. See individual bug files for details.
 | [284](284.md) | `new_stream_transport` error path leaks socket fd and fixed-file slot (worst via pipe/unix ownership transfer) | Medium | Fixed |
 | [285](285.md) | `start_exit_watcher` queue failure leaves stale closed pidfd and leaks transport reference | Medium | Fixed |
 | [286](286.md) | `dispatch_guaranteed_nonthreadsafe` silently loses the guaranteed callback on allocation failure | Low | Fixed |
-| [287](287.md) | AF_UNIX sockaddr conversion spans non-NUL-terminated path (abstract sockets broken, OOB read) | Medium | Open |
+| [287](287.md) | AF_UNIX sockaddr conversion spans non-NUL-terminated path (abstract sockets broken, OOB read) | Medium | Fixed |
 | [288](288.md) | `parseIp6` accepts >8 groups without `::` — silently truncates input, returns different address | Medium | Open |
 | [289](289.md) | Static `RingBuffer.try_push` publishes `write_idx` before clearing `executed` flag (GC traverse race) | Medium | Open |
 | [290](290.md) | `Cancel.perform` dereferences possibly-stale/reused task id to read operation type | Medium-Low | Open |

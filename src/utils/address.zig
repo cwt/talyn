@@ -79,7 +79,25 @@ pub const Address = extern union {
         return switch (self.any.family) {
             std.posix.AF.INET => @sizeOf(std.posix.sockaddr.in),
             std.posix.AF.INET6 => @sizeOf(std.posix.sockaddr.in6),
-            std.posix.AF.UNIX => @sizeOf(std.posix.sockaddr.un),
+            // BUG-287: the kernel compares EXACTLY addrlen bytes for
+            // abstract-namespace sockets - passing sizeof(sun) appends
+            // trailing NULs and changes the name. Match CPython: abstract
+            // keeps its exact byte length (length runs to the last
+            // non-zero byte); pathname includes one terminator.
+            std.posix.AF.UNIX => blk: {
+                const off: std.posix.socklen_t = @offsetOf(std.posix.sockaddr.un, "path");
+                const plen = self.un.path.len;
+                if (plen == 0) break :blk off;
+                if (self.un.path[0] == 0) {
+                    var l: usize = 0;
+                    for (self.un.path, 0..) |b, i| {
+                        if (b != 0) l = i + 1;
+                    }
+                    break :blk off + @as(std.posix.socklen_t, @intCast(@max(l, 1)));
+                }
+                const zlen = std.mem.indexOfScalar(u8, &self.un.path, 0) orelse plen;
+                break :blk off + @as(std.posix.socklen_t, @intCast(zlen + 1));
+            },
             else => @sizeOf(std.posix.sockaddr.storage),
         };
     }
@@ -249,8 +267,20 @@ pub const Address = extern union {
             },
             std.posix.AF.UNIX => {
                 const sa = self.un;
-                const path = std.mem.span(@as([*:0]const u8, @ptrCast(&sa.path)));
-                return python_c.PyUnicode_FromStringAndSize(path.ptr, @intCast(path.len)) orelse error.PythonError;
+                // BUG-287: same bounded conversion as pseudosocket - never
+                // span past the fixed 108-byte path; abstract sockets keep
+                // their leading NUL, pathname sockets stop at the first
+                // NUL within the buffer.
+                if (sa.path.len > 0 and sa.path[0] == 0) {
+                    // Abstract: trim zero padding so the name is exact.
+                    var l: usize = 0;
+                    for (sa.path, 0..) |b, i| {
+                        if (b != 0) l = i + 1;
+                    }
+                    return python_c.PyUnicode_FromStringAndSize(&sa.path, @intCast(@max(l, 1))) orelse error.PythonError;
+                }
+                const zlen = std.mem.indexOfScalar(u8, &sa.path, 0) orelse sa.path.len;
+                return python_c.PyUnicode_FromStringAndSize(&sa.path, @intCast(zlen)) orelse error.PythonError;
             },
             else => return error.UnsupportedAddressFamily,
         }

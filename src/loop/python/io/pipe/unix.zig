@@ -147,7 +147,9 @@ inline fn z_loop_create_unix_connection(self: *LoopObject, args: []?PyObject, kn
     _ = try Loop.Scheduling.IO.queue(&loop_data.io, .{
         .SocketConnect = .{
             .addr = @ptrCast(&ucd.addr),
-            .len = @sizeOf(std.posix.sockaddr.un),
+            // BUG-287: exact length - abstract names must not gain
+            // trailing NULs, pathname names need their terminator.
+            .len = addr.getOsSockLen(),
             .socket_fd = fd,
             .callback = .{
                 .func = &unix_connect_callback,

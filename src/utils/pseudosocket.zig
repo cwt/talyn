@@ -20,12 +20,23 @@ fn pseudosocket_fileno(self: ?*PseudoSocketObject, _: ?PyObject) callconv(.c) ?P
 /// asyncio expects: a str for AF_UNIX paths, a tuple for INET/INET6.
 fn sockaddr_to_py_object(addr: *const std.posix.sockaddr.storage, addrlen: std.posix.socklen_t) ?PyObject {
     if (addr.family == std.posix.AF.UNIX) {
-        if (addrlen <= @offsetOf(std.posix.sockaddr.un, "path")) {
+        const path_off = @offsetOf(std.posix.sockaddr.un, "path");
+        if (addrlen <= path_off) {
             return python_c.PyUnicode_FromStringAndSize("", 0);
         }
         const un: *const std.posix.sockaddr.un = @ptrCast(addr);
-        const path = std.mem.span(@as([*:0]const u8, @ptrCast(&un.path)));
-        return python_c.PyUnicode_FromStringAndSize(path.ptr, @intCast(path.len));
+        // BUG-287: sun_path is NOT guaranteed NUL-terminated (a fully
+        // filled 108-byte path has no terminator), and Linux abstract
+        // namespace sockets begin with a NUL byte and carry their length
+        // solely via addrlen. Bound every read by addrlen.
+        const avail: usize = @min(addrlen - path_off, un.path.len);
+        const raw = un.path[0..avail];
+        if (raw.len > 0 and raw[0] == 0) {
+            // Abstract namespace: report the exact bytes incl. leading NUL.
+            return python_c.PyUnicode_FromStringAndSize(raw.ptr, @intCast(raw.len));
+        }
+        const zlen = std.mem.indexOfScalar(u8, raw, 0) orelse raw.len;
+        return python_c.PyUnicode_FromStringAndSize(raw.ptr, @intCast(zlen));
     }
 
     return Address.toPyAddr(Address.initPosix(@ptrCast(addr))) catch {
