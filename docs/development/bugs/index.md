@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 269 |
-| Open | 21 |
+| Fixed | 270 |
+| Open | 20 |
 | False Positive | 13 |
 | **Total** | **303** |
 
@@ -317,7 +317,7 @@ Sorted by bug number. See individual bug files for details.
 | [279](279.md) | Tasks completing by exception or cancellation never removed from `asyncio_tasks_set` | High | Fixed |
 | [280](280.md) | `remove_child_handler` while `on_child_exit` already queued executes callback on freed memory | High | Fixed |
 | [281](281.md) | `submit_next_chunk` queues SQE before fallible flush — flush failure duplicates submission / UAFs buffers | Medium-High | Fixed |
-| [282](282.md) | `fetch_completed_tasks` Overflow drops remaining CQEs, leaks slot, skews `reserved_slots` | Medium-High | Open |
+| [282](282.md) | `fetch_completed_tasks` Overflow drops remaining CQEs, leaks slot, skews `reserved_slots` | Medium-High | Fixed |
 | [283](283.md) | `new_datagram_transport` error path bypasses dealloc cleanup (loop ref + fixed-file slot + buffer leak) | Medium | Open |
 | [284](284.md) | `new_stream_transport` error path leaks socket fd and fixed-file slot (worst via pipe/unix ownership transfer) | Medium | Open |
 | [285](285.md) | `start_exit_watcher` queue failure leaves stale closed pidfd and leaks transport reference | Medium | Open |

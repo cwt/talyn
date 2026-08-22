@@ -242,7 +242,20 @@ fn fetch_completed_tasks(self: *Loop, blocking_ready_tasks: []std.os.linux.io_ur
                 }
 
                 blocking_task.check_result(err);
-                if (!ready_queue.try_push(v.*)) return error.Overflow;
+                // BUG-282: a full ready ring must not abort the whole
+                // completion batch - copy_cqes already consumed every CQE
+                // from the ring, so an early return dropped all remaining
+                // completions forever and skipped this task's
+                // reserved_slots/deinit accounting. Grow the ring instead;
+                // only a genuine allocation failure unwinds (now with the
+                // slot and counter released first).
+                if (!ready_queue.try_push(v.*)) {
+                    ready_queue.push_or_grow(v.*) catch |grow_err| {
+                        self.reserved_slots -= 1;
+                        blocking_task.deinit();
+                        return grow_err;
+                    };
+                }
             },
             .none => {},
         }
