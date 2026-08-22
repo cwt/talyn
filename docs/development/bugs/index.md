@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 271 |
-| Open | 19 |
+| Fixed | 272 |
+| Open | 18 |
 | False Positive | 13 |
 | **Total** | **303** |
 
@@ -319,7 +319,7 @@ Sorted by bug number. See individual bug files for details.
 | [281](281.md) | `submit_next_chunk` queues SQE before fallible flush — flush failure duplicates submission / UAFs buffers | Medium-High | Fixed |
 | [282](282.md) | `fetch_completed_tasks` Overflow drops remaining CQEs, leaks slot, skews `reserved_slots` | Medium-High | Fixed |
 | [283](283.md) | `new_datagram_transport` error path bypasses dealloc cleanup (loop ref + fixed-file slot + buffer leak) | Medium | Fixed |
-| [284](284.md) | `new_stream_transport` error path leaks socket fd and fixed-file slot (worst via pipe/unix ownership transfer) | Medium | Open |
+| [284](284.md) | `new_stream_transport` error path leaks socket fd and fixed-file slot (worst via pipe/unix ownership transfer) | Medium | Fixed |
 | [285](285.md) | `start_exit_watcher` queue failure leaves stale closed pidfd and leaks transport reference | Medium | Open |
 | [286](286.md) | `dispatch_guaranteed_nonthreadsafe` silently loses the guaranteed callback on allocation failure | Low | Fixed |
 | [287](287.md) | AF_UNIX sockaddr conversion spans non-NUL-terminated path (abstract sockets broken, OOB read) | Medium | Open |

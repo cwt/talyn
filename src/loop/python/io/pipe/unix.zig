@@ -69,11 +69,18 @@ fn unix_connect_callback(data: *const CallbackManager.CallbackData) !void {
 
     const fd = ucd.socket_fd;
     ucd.socket_fd = -1; // Ownership transferred to transport
+    // BUG-284: on any failure below, the half-built transport never took
+    // the fd - close it here or it leaks forever.
+    var fd_consumed = false;
+    errdefer {
+        if (!fd_consumed) _ = std.os.linux.close(fd);
+    }
 
     const protocol = python_c.PyObject_CallNoArgs(ucd.protocol_factory) orelse return set_future_exception(error.PythonError, ucd.future);
-    errdefer python_c.py_decref(protocol);
+    defer python_c.py_decref(protocol);
 
     const transport = try Stream.Constructors.new_stream_transport(protocol, @ptrCast(ucd.loop), fd, false);
+    fd_consumed = true;
     errdefer python_c.py_decref(@ptrCast(transport));
 
     const connection_made = python_c.PyObject_GetAttrString(protocol, "connection_made\x00") orelse return set_future_exception(error.PythonError, ucd.future);

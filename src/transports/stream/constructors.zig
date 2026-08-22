@@ -189,7 +189,14 @@ fn stream_init_configuration(self: *StreamTransportObject, protocol: PyObject, l
         write_transport_data.fixed_file_index = ffi;
     }
 
-    try Read.queue_read_operation(self, read_transport_data, protocol_type);
+    // BUG-284: roll back the fixed-file registration if arming the first
+    // read fails - this half-built transport never reaches dealloc, and
+    // bare tp_free used to strand the bounded table slot (and leave the
+    // fd to whoever owns it).
+    Read.queue_read_operation(self, read_transport_data, protocol_type) catch |err| {
+        unregister_fixed_file(self, loop_data);
+        return err;
+    };
 }
 
 pub fn unregister_fixed_file(self: *StreamTransportObject, loop_data: *Loop) void {
