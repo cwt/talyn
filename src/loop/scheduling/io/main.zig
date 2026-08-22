@@ -72,7 +72,13 @@ pub const BlockingTask = struct {
         const set: *BlockingTasksSet = @ptrFromInt(pool_start - @offsetOf(BlockingTasksSet, "task_data_pool"));
 
         self.data = .none;
-        self.operation = undefined;
+        // BUG-290: poison the operation instead of leaving it undefined.
+        // A queued .Cancel carrying this slot's old id dereferences the
+        // id to choose timeout_remove vs cancel; reading an undefined
+        // (or unrelated reused) enum here branched on garbage. `.Cancel`
+        // routes stale ids to ring.cancel(), which is a benign ENOENT
+        // for anything already gone.
+        self.operation = .Cancel;
 
         return set;
     }
