@@ -147,3 +147,25 @@ def test_task_cancellederror_completes_without_leak() -> None:
         talyn.run_until_complete(main())
     finally:
         talyn.close()
+
+
+def test_repeated_failing_tasks_keep_loop_healthy() -> None:
+    """BUG-273/BUG-293 stress: many sequential task failures exercise the
+    execute_task_send/throw error unwinding and the enter/leave-task
+    trampolines; the loop must stay fully operational throughout."""
+    loop = Loop()
+    try:
+        for i in range(200):
+            async def boom(idx=i):
+                raise ValueError(f"boom {idx}")
+
+            task = Task(boom(), loop=loop)
+            with pytest.raises(ValueError, match=f"boom {i}"):
+                loop.run_until_complete(task)
+
+        async def ok():
+            return 7
+
+        assert loop.run_until_complete(Task(ok(), loop=loop)) == 7
+    finally:
+        loop.close()

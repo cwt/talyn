@@ -74,13 +74,21 @@ fn talyn_task_step_trampoline(
     // 5. Leave task (both current-task registries)
     const leave_ret = enter_or_leave_task(loop, task, false);
 
-    // Restore the exception
-    python_c.PyErr_SetRaisedException(exc);
-
     if (leave_ret) |ret| {
+        // BUG-293: restore only on successful leave. The previous
+        // unconditional restore clobbered _leave_task's own failure
+        // exception - and cleared the indicator entirely when nothing was
+        // saved - sending callers into error paths with no pending
+        // exception.
+        python_c.PyErr_SetRaisedException(exc);
         python_c.py_decref(ret);
     } else {
         python_c.py_xdecref(coro_ret);
+        if (exc) |e| {
+            // The coroutine's own failure wins over the leave-task error.
+            python_c.PyErr_SetRaisedException(e);
+        }
+        // else: surface _leave_task's pending exception untouched.
         return null;
     }
 
@@ -129,13 +137,15 @@ fn talyn_task_throw_trampoline(
     // 5. Leave task (both current-task registries)
     const leave_ret = enter_or_leave_task(loop, task, false);
 
-    // Restore the exception
-    python_c.PyErr_SetRaisedException(exc);
-
     if (leave_ret) |ret| {
+        // BUG-293: see talyn_task_step_trampoline.
+        python_c.PyErr_SetRaisedException(exc);
         python_c.py_decref(ret);
     } else {
         python_c.py_xdecref(coro_ret);
+        if (exc) |e| {
+            python_c.PyErr_SetRaisedException(e);
+        }
         return null;
     }
 
@@ -551,13 +561,21 @@ pub fn execute_task_throw(data: *const CallbackManager.CallbackData) !void {
     @call(.always_inline, _execute_task_throw, .{ task, python_c.py_newref(task.exception.?) }) catch |err| {
         utils.handle_zig_function_error(err, {});
 
-        const exc = python_c.PyErr_GetRaisedException() orelse {
-            python_c.py_decref(@ptrCast(task));
+        // BUG-273: on the error exits below the executor's cleanup_task
+        // already releases the dispatch-owned reference - a local decref
+        // here double-freed the task. Only the set_exception-success
+        // fall-through (which returns success, so no cleanup runs) keeps
+        // its self-release.
+        // BUG-273: on the error exits below the executor's cleanup_task
+        // already releases the dispatch-owned reference - a local decref
+        // here double-freed the task. Only the set_exception-success
+        // fall-through (which returns success, so no cleanup runs) keeps
+        // its self-release.
+        const exc = python_c.PyErr_GetRaisedException() orelse
             return error.PythonError;
-        };
+        defer python_c.py_decref(exc);
 
         const fut = utils.get_data_ptr(Future, &task.fut);
-        errdefer python_c.py_decref(@ptrCast(task));
         try Future.Python.Result.future_fast_set_exception(&task.fut, fut, exc);
         python_c.py_decref(@ptrCast(task));
     };
@@ -627,13 +645,14 @@ pub fn execute_task_send(data: *const CallbackManager.CallbackData) !void {
     @call(.always_inline, _execute_task_send, .{task}) catch |err| {
         utils.handle_zig_function_error(err, {});
 
-        const exc = python_c.PyErr_GetRaisedException() orelse {
-            python_c.py_decref(@ptrCast(task));
+        // BUG-273: mirror of execute_task_throw - error exits must rely on
+        // the executor's cleanup_task for the dispatch-owned reference;
+        // only the success fall-through self-releases.
+        const exc = python_c.PyErr_GetRaisedException() orelse
             return error.PythonError;
-        };
+        defer python_c.py_decref(exc);
 
         const fut = utils.get_data_ptr(Future, &task.fut);
-        errdefer python_c.py_decref(@ptrCast(task));
         try Future.Python.Result.future_fast_set_exception(&task.fut, fut, exc);
         python_c.py_decref(@ptrCast(task));
     };
