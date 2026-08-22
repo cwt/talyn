@@ -182,6 +182,12 @@ pub const Address = extern union {
             }
             groups[group_i] = val;
             group_i += 1;
+            // BUG-288: an 8th group followed by ANYTHING means either
+            // trailing junk or an extra empty group ("...:8:") - both are
+            // invalid without `::`.
+            if (group_i == 8 and i < host.len) {
+                return error.InvalidIPAddressFormat;
+            }
             if (i < host.len) {
                 i += 1;
                 if (i < host.len and host[i] == ':') {
@@ -215,10 +221,15 @@ pub const Address = extern union {
                 target_i += 1;
             }
         } else {
-            // BUG-47: Without a `::` shorthand, the address must contain
-            // exactly 8 groups.
+            // BUG-47/BUG-288: Without a `::` shorthand the address must be
+            // exactly 8 groups AND fully consumed - the loop above caps at
+            // 8 groups, so trailing input ("1:2:3:4:5:6:7:8:9") previously
+            // parsed as a different valid address.
             if (group_i != 8) {
                 return error.IncompleteAddress;
+            }
+            if (i < host.len) {
+                return error.InvalidIPAddressFormat;
             }
             for (0..group_i) |j| {
                 const g = groups[j];
@@ -371,4 +382,15 @@ test "parseIp4 octet overflow rejection (BUG-257)" {
     try testing.expectError(error.InvalidIPAddressFormat, Address.parseIp4("1.2.3.999", 80));
     const addr = try Address.parseIp4("1.2.3.4", 80);
     try testing.expectEqual(std.mem.nativeToBig(u16, 80), addr.in.sa.port);
+}
+
+test "parseIp6 accepts valid full address" {
+    _ = try Address.parseIp6("1:2:3:4:5:6:7:8", 80);
+}
+
+test "parseIp6 rejects more than 8 groups without :: (BUG-288)" {
+    try std.testing.expectError(error.InvalidIPAddressFormat, Address.parseIp6("1:2:3:4:5:6:7:8:9", 80));
+    try std.testing.expectError(error.InvalidIPAddressFormat, Address.parseIp6("1:2:3:4:5:6:7:8:", 80));
+    try std.testing.expectError(error.InvalidIPAddressFormat, Address.parseIp6("::1:2:3:4:5:6:7:8", 80));
+    try std.testing.expectError(error.IncompleteAddress, Address.parseIp6("1:2:3", 80));
 }
