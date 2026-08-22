@@ -42,7 +42,7 @@ pub const ReadTransport = @import("read.zig");
 pub const Constructors = @import("constructors.zig");
 const ExtraInfo = @import("extra_info.zig");
 
-fn cleanup_resources(instance: *DatagramTransportObject) void {
+pub fn cleanup_resources(instance: *DatagramTransportObject) void {
     if (instance.fixed_file_index != 0) {
         if (instance.loop) |loop| {
             const loop_obj: *LoopObject = @ptrCast(@alignCast(loop));

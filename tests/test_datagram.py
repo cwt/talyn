@@ -331,3 +331,33 @@ async def test_datagram_sendto_pause_writing_error_no_uaf():
         await asyncio.sleep(0.05)
     finally:
         t.close()
+
+
+@pytest.mark.asyncio
+async def test_bad_protocol_factory_no_resource_leak():
+    """BUG-283: a protocol factory returning a non-DatagramProtocol must
+    fail cleanly - the failed transport construction used to leak the loop
+    reference, a fixed-file slot, and its buffer lease (bare tp_free)."""
+    loop = asyncio.get_running_loop()
+
+    class NotADatagramProtocol:  # missing datagram_received etc.
+        pass
+
+    def bad_factory():
+        return NotADatagramProtocol()
+
+    with pytest.raises(TypeError):
+        await loop.create_datagram_endpoint(
+            bad_factory, local_addr=("127.0.0.1", 0)
+        )
+
+    # The loop must remain fully operational and the fixed-file pool must
+    # not have been exhausted by repeated failures.
+    for _ in range(5):
+        with pytest.raises(TypeError):
+            await loop.create_datagram_endpoint(bad_factory, local_addr=("127.0.0.1", 0))
+
+    t, p = await loop.create_datagram_endpoint(
+        DatagramProtocol, local_addr=("127.0.0.1", 0)
+    )
+    t.close()

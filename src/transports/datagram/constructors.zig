@@ -5,21 +5,15 @@ const utils = @import("utils");
 const DatagramTransport = @import("main.zig");
 const Loop = @import("../../loop/main.zig");
 
-pub fn datagram_new(
-    @"type": ?*python_c.PyTypeObject, _: ?PyObject, _: ?PyObject
-) callconv(.c) ?PyObject {
-    const instance: *DatagramTransport.DatagramTransportObject = @ptrCast(
-        @"type".?.tp_alloc.?(@"type".?, 0) orelse return null
-    );
+pub fn datagram_new(@"type": ?*python_c.PyTypeObject, _: ?PyObject, _: ?PyObject) callconv(.c) ?PyObject {
+    const instance: *DatagramTransport.DatagramTransportObject = @ptrCast(@"type".?.tp_alloc.?(@"type".?, 0) orelse return null);
     python_c.initialize_object_fields(instance, &.{"ob_base"});
     instance.fd = -1;
     instance.closed = true;
     return @ptrCast(instance);
 }
 
-pub fn z_datagram_init(
-    self: *DatagramTransport.DatagramTransportObject, args: ?PyObject, kwargs: ?PyObject
-) !c_int {
+pub fn z_datagram_init(self: *DatagramTransport.DatagramTransportObject, args: ?PyObject, kwargs: ?PyObject) !c_int {
     var kwlist: [4][*c]u8 = undefined;
     kwlist[0] = @constCast("loop\x00");
     kwlist[1] = @constCast("protocol\x00");
@@ -30,9 +24,7 @@ pub fn z_datagram_init(
     var py_protocol: ?PyObject = null;
     var py_fd: ?PyObject = null;
 
-    if (python_c.PyArg_ParseTupleAndKeywords(
-        args, kwargs, "OO|L\x00", @ptrCast(&kwlist), &py_loop, &py_protocol, &py_fd
-    ) < 0) return error.PythonError;
+    if (python_c.PyArg_ParseTupleAndKeywords(args, kwargs, "OO|L\x00", @ptrCast(&kwlist), &py_loop, &py_protocol, &py_fd) < 0) return error.PythonError;
 
     if (!python_c.type_check(py_loop.?, Loop.Python.LoopType)) {
         python_c.raise_python_type_error("loop must be a talyn Loop\x00");
@@ -86,9 +78,7 @@ pub fn init_configuration(
     try set_protocol(self, protocol);
 }
 
-pub fn set_protocol(
-    self: *DatagramTransport.DatagramTransportObject, protocol: PyObject
-) !void {
+pub fn set_protocol(self: *DatagramTransport.DatagramTransportObject, protocol: PyObject) !void {
     if (python_c.PyObject_IsInstance(protocol, utils.PythonImports.get("asyncio_datagram_protocol")) != 1) {
         python_c.raise_python_type_error("Invalid protocol\x00");
         return error.PythonError;
@@ -125,10 +115,19 @@ pub fn new_datagram_transport(
     loop: *Loop.Python.LoopObject,
     fd: std.posix.fd_t,
 ) !*DatagramTransport.DatagramTransportObject {
-    const self: *DatagramTransport.DatagramTransportObject = @ptrCast(
-        DatagramTransport.DatagramTransportType.?.tp_alloc.?(DatagramTransport.DatagramTransportType.?, 0) orelse return error.PythonError
-    );
-    errdefer DatagramTransport.DatagramTransportType.?.tp_free.?(@ptrCast(self));
+    const self: *DatagramTransport.DatagramTransportObject = @ptrCast(DatagramTransport.DatagramTransportType.?.tp_alloc.?(DatagramTransport.DatagramTransportType.?, 0) orelse return error.PythonError);
+    // BUG-283: mirror datagram_dealloc's resource release on failure.
+    // Bare tp_free leaked the loop strong-ref, the fixed-file table slot,
+    // and the registered-buffer lease / heap buffer whenever
+    // init_configuration failed (e.g. a non-DatagramProtocol factory).
+    // The fd is intentionally NOT closed here: on this path the caller
+    // (create_datagram_endpoint) still owns it until ownership transfers.
+    errdefer {
+        python_c.PyObject_GC_UnTrack(self);
+        DatagramTransport.cleanup_resources(self);
+        python_c.py_xdecref(self.loop);
+        DatagramTransport.DatagramTransportType.?.tp_free.?(@ptrCast(self));
+    }
     try init_configuration(self, protocol, loop, fd);
     return self;
 }
