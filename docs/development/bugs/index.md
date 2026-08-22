@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 278 |
-| Open | 12 |
+| Fixed | 290 |
+| Open | 0 |
 | False Positive | 13 |
 | **Total** | **303** |
 
