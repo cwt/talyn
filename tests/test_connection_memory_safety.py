@@ -213,3 +213,61 @@ def test_midflight_cancel_happy_eyeballs_uaf_regression() -> None:
     """
     result = _run_repro_in_subprocess(_HAPPY_EYEBALLS_SCRIPT)
     _assert_clean(result, "happy-eyeballs mid-flight cancel UAF regression")
+
+
+_WRITEV_SQ_PRESSURE_SCRIPT = textwrap.dedent(
+    """\
+    import asyncio, socket, threading, talyn
+
+    # A peer that accepts but never reads builds kernel-side and SQ-side
+    # backpressure while many vectored writes (writelines -> WriteV ->
+    # perform_with_iovecs) are submitted. With the BUG-272 double free,
+    # any sendmsg/link-timeout failure inside perform_with_iovecs freed
+    # the heap iovec copy twice (local errdefer + BlockingTask.discard).
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(256)
+    port = srv.getsockname()[1]
+
+    def serve():
+        # Accept everything; deliberately never read.
+        while True:
+            try:
+                c, _ = srv.accept()
+            except OSError:
+                break
+
+    threading.Thread(target=serve, daemon=True).start()
+
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        class Sink(asyncio.Protocol):
+            def connection_made(self, transport):
+                self.transport = transport
+
+        conns = []
+        for _ in range(300):
+            t, p = await loop.create_connection(Sink, "127.0.0.1", port)
+            conns.append(t)
+
+        chunk = bytes(4096)
+        for round in range(20):
+            for t in conns:
+                t.writelines([chunk] * 8)
+
+        for t in conns:
+            t.close()
+
+
+    talyn.run(main())
+    print("DONE")
+    """
+)
+
+
+def test_writev_sq_pressure_no_double_free() -> None:
+    """BUG-272: vectored-write submission under SQ pressure must not
+    double-free the BlockingTask-owned iovec copy."""
+    result = _run_repro_in_subprocess(_WRITEV_SQ_PRESSURE_SCRIPT)
+    _assert_clean(result, "writev sq-pressure iovec-copy double-free regression")

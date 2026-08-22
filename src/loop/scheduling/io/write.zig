@@ -3,25 +3,9 @@ const std = @import("std");
 const CallbackManager = @import("callback_manager");
 const IO = @import("main.zig");
 
-pub const PerformData = struct {
-    fd: std.posix.fd_t,
-    fixed_file_index: ?u16 = null,
-    callback: CallbackManager.Callback,
-    data: []const u8,
-    offset: usize = 0,
-    timeout: ?std.os.linux.kernel_timespec = null,
-    zero_copy: bool = false
-};
+pub const PerformData = struct { fd: std.posix.fd_t, fixed_file_index: ?u16 = null, callback: CallbackManager.Callback, data: []const u8, offset: usize = 0, timeout: ?std.os.linux.kernel_timespec = null, zero_copy: bool = false };
 
-pub const PerformVData = struct {
-    fd: std.posix.fd_t,
-    fixed_file_index: ?u16 = null,
-    callback: CallbackManager.Callback,
-    data: []const std.posix.iovec_const,
-    offset: usize = 0,
-    timeout: ?std.os.linux.kernel_timespec = null,
-    zero_copy: bool = false
-};
+pub const PerformVData = struct { fd: std.posix.fd_t, fixed_file_index: ?u16 = null, callback: CallbackManager.Callback, data: []const std.posix.iovec_const, offset: usize = 0, timeout: ?std.os.linux.kernel_timespec = null, zero_copy: bool = false };
 
 pub const SendMsgData = struct {
     fd: std.posix.fd_t,
@@ -90,7 +74,8 @@ pub fn perform(ring: *std.os.linux.IoUring, set: *IO.BlockingTasksSet, data: Per
             data_ptr.msg_storage.flags = 0;
 
             const sqe = try ring.sendmsg(
-                @intCast(@intFromPtr(data_ptr)), fd_arg,
+                @intCast(@intFromPtr(data_ptr)),
+                fd_arg,
                 @as(*const std.posix.msghdr_const, @ptrCast(&data_ptr.msg_storage)),
                 std.posix.MSG.ZEROCOPY,
             );
@@ -131,8 +116,12 @@ pub fn perform_with_iovecs(ring: *std.os.linux.IoUring, set: *IO.BlockingTasksSe
     // discard/deinit. This ensures the iovec array outlives the
     // caller's stack frame regardless of when the kernel actually
     // reads it.
+    // BUG-272: once the copy is stored into the BlockingTask below,
+    // discard()/deinit() own it — the local errdefer must stand down,
+    // otherwise a sendmsg/link_timeout failure frees iov_copy twice.
+    var iov_ownership_transferred = false;
     const iov_copy = try set.loop.allocator.alloc(std.posix.iovec, data.data.len);
-    errdefer set.loop.allocator.free(iov_copy);
+    errdefer if (!iov_ownership_transferred) set.loop.allocator.free(iov_copy);
     for (data.data, 0..) |src, i| {
         iov_copy[i] = .{
             .base = @ptrCast(@constCast(src.base)),
@@ -140,6 +129,7 @@ pub fn perform_with_iovecs(ring: *std.os.linux.IoUring, set: *IO.BlockingTasksSe
         };
     }
     data_ptr.write_iovs_copy = iov_copy;
+    iov_ownership_transferred = true;
 
     data_ptr.msg_storage.name = null;
     data_ptr.msg_storage.namelen = 0;
@@ -151,7 +141,8 @@ pub fn perform_with_iovecs(ring: *std.os.linux.IoUring, set: *IO.BlockingTasksSe
 
     const flags: u32 = if (data.zero_copy) std.posix.MSG.ZEROCOPY else 0;
     const sqe = try ring.sendmsg(
-        @intCast(@intFromPtr(data_ptr)), fd_arg,
+        @intCast(@intFromPtr(data_ptr)),
+        fd_arg,
         @as(*const std.posix.msghdr_const, @ptrCast(&data_ptr.msg_storage)),
         flags,
     );
