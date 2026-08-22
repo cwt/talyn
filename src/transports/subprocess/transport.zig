@@ -386,9 +386,19 @@ pub fn start_exit_watcher(transport: *SubprocessTransportObject, loop: *LoopObje
     const pidfd: std.posix.fd_t = @intCast(rc);
     _ = std.os.linux.fcntl(pidfd, std.posix.F.SETFD, @intCast(std.posix.FD_CLOEXEC));
     transport.pidfd = pidfd;
-    errdefer _ = std.os.linux.close(pidfd);
+    errdefer {
+        // BUG-285: don't leave a CLOSED descriptor number in the field -
+        // subprocess_close() would later close whatever reused it.
+        transport.pidfd = -1;
+        _ = std.os.linux.close(pidfd);
+    }
 
     python_c.py_incref(@ptrCast(transport));
+    // BUG-285: if io.queue fails below, no exit callback will ever run to
+    // release this reference - drop it here instead of leaking the whole
+    // transport object.
+    errdefer python_c.py_decref(@ptrCast(transport));
+
     transport.pidfd_task_id = try loop_data.io.queue(.{
         .WaitReadable = .{
             .fd = pidfd,
