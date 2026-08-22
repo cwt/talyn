@@ -721,7 +721,6 @@ fn prepare_data(
     const allocator = cache_slot.allocator;
 
     const control_data = try allocator.create(ControlData);
-    errdefer allocator.destroy(control_data);
 
     // Use a struct literal so the compiler enforces that every field of
     // ControlData is explicitly initialized here. Adding a new field to
@@ -744,14 +743,23 @@ fn prepare_data(
     };
     const arena_allocator = control_data.arena.allocator();
 
-    control_data.record = try cache_slot.create_new_record(hostname, control_data);
+    // BUG-269: `release()` is the single destructor once the cache record
+    // exists — it deinits the arena (which also frees arena-backed fields
+    // such as user_callbacks) and destroys the struct. Previously BOTH a
+    // destroy-errdefer and the release-errdefer were armed simultaneously,
+    // so every error path after record creation freed ControlData twice.
+    // Failures before the record exists tear down locally here.
+    control_data.record = cache_slot.create_new_record(hostname, control_data) catch |err| {
+        control_data.arena.deinit();
+        allocator.destroy(control_data);
+        return err;
+    };
 
     errdefer {
         control_data.release();
     }
 
     try control_data.user_callbacks.append(arena_allocator, user_callback.*);
-    errdefer control_data.user_callbacks.deinit(arena_allocator);
 
     const queries_data = try arena_allocator.alloc(ServerQueryData, configuration.servers.len);
     const hostnames_array = try get_hostname_array(arena_allocator, hostname, configuration.search);
@@ -1129,4 +1137,41 @@ test "close_unsent_query_sockets closes only the unsent tail" {
     // The sent entry is untouched: fd still open, value unchanged.
     try std.testing.expectEqual(read_end1[0], queries[0].socket_fd);
     try std.testing.expectEqual(std.os.linux.E.SUCCESS, utils.getSyscallErrno(std.os.linux.fcntl(read_end1[0], std.posix.F.GETFD, 0)));
+}
+
+fn noop_dns_callback(_: *const CallbackManager.CallbackData) anyerror!void {}
+
+test "prepare_data error path does not double-free ControlData (BUG-269)" {
+    const allocator = std.testing.allocator;
+
+    const loop = try allocator.create(Loop);
+    defer allocator.destroy(loop);
+    try loop.init(allocator, 64);
+    defer loop.release();
+
+    var cache: Cache = undefined;
+    cache.init(allocator);
+    defer cache.deinit();
+
+    // A dotless hostname with an empty search list yields zero valid
+    // candidates -> get_hostname_array returns empty -> error.InvalidHostname.
+    // This is the deterministic BUG-269 trigger: previously the destroy
+    // errdefer and the release() errdefer were armed simultaneously and the
+    // struct was freed twice (std.testing.allocator reports the double free).
+    const callback = CallbackManager.Callback{
+        .func = &noop_dns_callback,
+        .cleanup = null,
+        .data = .{ .user_data = null },
+    };
+
+    try std.testing.expectError(
+        error.InvalidHostname,
+        queue(&cache, loop, "abc", &callback, .{
+            .servers = &[_]utils.Address{},
+            .search = &[_][]u8{},
+        }, true, null, null),
+    );
+
+    // release() must have discarded the pending cache record; a leftover
+    // entry would trip BTreeHasElements in cache.deinit().
 }
