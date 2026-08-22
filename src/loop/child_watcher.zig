@@ -73,6 +73,22 @@ pub fn add_child_handler(self: *ChildWatcher, pid: i32, callback: PyObject) !voi
         },
     } });
 
+    // BUG-277: re-registering a pid REPLACES the previous handler. Tear
+    // the old one down fully here - putAssumeCapacity used to silently
+    // overwrite the entry, orphaning the old pidfd, callback reference,
+    // heap struct, and its armed WaitReadable op.
+    if (self.handlers.fetchRemove(pid)) |old| {
+        const old_handler = old.value;
+        if (old_handler.task_id != 0) {
+            _ = self.loop.io.queue(.{ .Cancel = old_handler.task_id }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
+        }
+        if (old_handler.pidfd >= 0) {
+            _ = std.os.linux.close(old_handler.pidfd);
+        }
+        python_c.py_decref(old_handler.callback);
+        self.loop.allocator.destroy(old_handler);
+    }
+
     self.handlers.putAssumeCapacity(pid, handler);
 }
 

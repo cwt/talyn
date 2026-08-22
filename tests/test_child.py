@@ -91,3 +91,30 @@ def test_child_handler_exception_cleanup():
 
     talyn.run(main())
 
+
+
+def test_duplicate_add_child_handler_replaces_cleanly():
+    """BUG-277: re-registering a pid must fully tear down the previous
+    handler (pidfd, callback ref, struct, armed op) instead of silently
+    orphaning it via map overwrite."""
+    import os
+
+    import pytest
+
+    from talyn import Loop
+
+    loop = Loop()
+    try:
+        loop.add_child_handler(os.getpid(), lambda pid, rc: None)
+        loop.add_child_handler(os.getpid(), lambda pid, rc: None)
+
+        assert loop.remove_child_handler(os.getpid()) is True
+        assert loop.remove_child_handler(os.getpid()) is False
+
+        # Loop must remain operational afterwards.
+        async def ok():
+            return 1
+
+        assert loop.run_until_complete(ok()) == 1
+    finally:
+        loop.close()
