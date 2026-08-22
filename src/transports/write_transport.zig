@@ -225,10 +225,16 @@ fn submit_next_chunk(self: *WriteTransport) !void {
         },
     });
     python_c.py_incref(self.parent_transport);
-    _ = try self.loop.io.flush_pending_sqes();
 
+    // BUG-281: the SQE is already queued (deferred submission); mark the
+    // transport in-flight BEFORE the fallible flush. Previously a
+    // flush_pending_sqes failure left write_in_flight == false with the
+    // chunk pending, so the next prepare tick resubmitted the same data -
+    // duplicating bytes and releasing the Py_buffer under the first
+    // in-flight write.
     self.writev_count += 1;
     self.write_in_flight = true;
+    _ = try self.loop.io.flush_pending_sqes();
 }
 
 fn cleanup_resources_callback(ptr: ?*anyopaque) void {
