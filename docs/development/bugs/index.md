@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 256 |
-| Open | 32 |
+| Fixed | 258 |
+| Open | 30 |
 | False Positive | 13 |
 | **Total** | **301** |
 
@@ -321,20 +321,20 @@ Sorted by bug number. See individual bug files for details.
 | [283](283.md) | `new_datagram_transport` error path bypasses dealloc cleanup (loop ref + fixed-file slot + buffer leak) | Medium | Open |
 | [284](284.md) | `new_stream_transport` error path leaks socket fd and fixed-file slot (worst via pipe/unix ownership transfer) | Medium | Open |
 | [285](285.md) | `start_exit_watcher` queue failure leaves stale closed pidfd and leaks transport reference | Medium | Open |
-| [286](286.md) | `dispatch_guaranteed_nonthreadsafe` silently loses the guaranteed callback on allocation failure | Low | Open |
+| [286](286.md) | `dispatch_guaranteed_nonthreadsafe` silently loses the guaranteed callback on allocation failure | Low | Fixed |
 | [287](287.md) | AF_UNIX sockaddr conversion spans non-NUL-terminated path (abstract sockets broken, OOB read) | Medium | Open |
 | [288](288.md) | `parseIp6` accepts >8 groups without `::` — silently truncates input, returns different address | Medium | Open |
 | [289](289.md) | Static `RingBuffer.try_push` publishes `write_idx` before clearing `executed` flag (GC traverse race) | Medium | Open |
 | [290](290.md) | `Cancel.perform` dereferences possibly-stale/reused task id to read operation type | Medium-Low | Open |
 | [291](291.md) | `PseudoSocket.close()` not idempotent — second close hits reassigned fd | Medium-Low | Open |
-| [292](292.md) | `failed_execution` StopIteration/CancelledError arms leak owned exception on internal errors | Low | Open |
-| [293](293.md) | Task trampolines clobber `_leave_task` exception, enabling null-exception error paths | Low | Open |
-| [294](294.md) | Unchecked `PyObject_IsTrue` error (-1) treated as transport closed | Low | Open |
-| [295](295.md) | `z_task_init` decrefs borrowed None reference when `name=None` | Low | Open |
-| [296](296.md) | `future.cancel(positional, msg=kwarg)` leaks positional message reference | Low | Open |
-| [297](297.md) | `add_done_callback` OOM errdefer pops entry discarding owned callback/context refs | Low | Open |
-| [298](298.md) | `writelines` treats iterator error as exhaustion — silent truncation + pending exception | Low | Open |
-| [299](299.md) | `IO.init` misses errdefer for `fixed_file_free` ArrayList | Low | Open |
-| [300](300.md) | Loop shutdown `cancel_all` leaks `write_iovs_copy` for in-flight vectored writes | Low | Open |
-| [301](301.md) | `process_dns_response` duplicates lifetime-critical response-accounting block five times | Low | Open |
-| [302](302.md) | Dead store of computed Loop data pointer in `accept_callback` | Low | Open |
+| [292](292.md) | `failed_execution` StopIteration/CancelledError arms leak owned exception on internal errors | Low | Fixed |
+| [293](293.md) | Task trampolines clobber `_leave_task` exception, enabling null-exception error paths | Low | Fixed |
+| [294](294.md) | Unchecked `PyObject_IsTrue` error (-1) treated as transport closed | Low | Fixed |
+| [295](295.md) | `z_task_init` decrefs borrowed None reference when `name=None` | Low | Fixed |
+| [296](296.md) | `future.cancel(positional, msg=kwarg)` leaks positional message reference | Low | Fixed |
+| [297](297.md) | `add_done_callback` OOM errdefer pops entry discarding owned callback/context refs | Low | Fixed |
+| [298](298.md) | `writelines` treats iterator error as exhaustion — silent truncation + pending exception | Low | Fixed |
+| [299](299.md) | `IO.init` misses errdefer for `fixed_file_free` ArrayList | Low | Fixed |
+| [300](300.md) | Loop shutdown `cancel_all` leaks `write_iovs_copy` for in-flight vectored writes | Low | Fixed |
+| [301](301.md) | `process_dns_response` duplicates lifetime-critical response-accounting block five times | Low | Fixed |
+| [302](302.md) | Dead store of computed Loop data pointer in `accept_callback` | Low | Fixed |

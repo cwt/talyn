@@ -87,3 +87,63 @@ def test_task_failed_execution_exception_refcount() -> None:
 
 
 
+
+
+@pytest.mark.parametrize("exc_cls", [SystemExit, KeyboardInterrupt])
+def test_task_failed_execution_fatal_exception_not_freed(exc_cls) -> None:
+    """BUG-271: the fatal-signal branch of failed_execution used to decref
+    the raised exception twice (manual + errdefer), freeing the object while
+    it was installed as the thread state's current exception."""
+    import gc
+    import sys
+
+    exc = exc_cls("fatal_probe")
+
+    loop = Loop()
+    try:
+        async def failing():
+            raise exc
+
+        task = Task(failing(), loop=loop)
+        with pytest.raises(exc_cls):
+            loop.run_until_complete(task)
+    finally:
+        del task
+        loop.close()
+        del loop
+
+    # The instance must have survived: pre-fix it could be freed while it
+    # was installed as the thread state's raised exception.
+    assert str(exc) == "fatal_probe"
+    assert type(exc) is exc_cls
+    gc.collect()
+
+
+def test_task_cancellederror_completes_without_leak() -> None:
+    """BUG-292: every exit path of failed_execution releases the owned
+    exception exactly once via a single scope-exit defer; the cancelled
+    arm must finalize cleanly and leave the loop operational."""
+    import asyncio
+
+    from talyn import loop as talyn_loop
+
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        async def raises_cancelled():
+            raise asyncio.CancelledError()
+
+        t1 = loop.create_task(raises_cancelled())
+        with pytest.raises(asyncio.CancelledError):
+            await t1
+
+        # The loop must remain fully operational afterwards.
+        t2 = loop.create_task(asyncio.sleep(0))
+        await t2
+        assert t2.done()
+
+    talyn = talyn_loop.Loop()
+    try:
+        talyn.run_until_complete(main())
+    finally:
+        talyn.close()

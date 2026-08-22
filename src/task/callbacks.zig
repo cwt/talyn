@@ -369,6 +369,14 @@ fn failed_execution(task: *Task.PythonTaskObject) !void {
     const fut: *Future.Python.FutureObject = &task.fut;
     const future_data = utils.get_data_ptr(Future, fut);
     const exception: PyObject = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
+    // BUG-271/BUG-292: this function owns exactly one reference to
+    // `exception` from the moment it is fetched until scope exit. A single
+    // unconditional defer releases it on EVERY path - previously the
+    // StopIteration/CancelledError arms leaked it on their internal error
+    // returns, and the fatal-signal branch decref'd it twice (manual +
+    // BUG-255 errdefer), freeing the object while it was installed as the
+    // thread state's raised exception.
+    defer python_c.py_decref(exception);
 
     if (exc_match(exception, python_c.PyExc_StopIteration) > 0) {
         const stop_iteration: *python_c.PyStopIterationObject = @ptrCast(exception);
@@ -381,7 +389,6 @@ fn failed_execution(task: *Task.PythonTaskObject) !void {
             return error.PythonError;
         };
 
-        python_c.py_decref(exception);
         return;
     }
 
@@ -397,7 +404,6 @@ fn failed_execution(task: *Task.PythonTaskObject) !void {
 
             return error.PythonError;
         };
-        python_c.py_decref(exception);
         if (task.py_context) |ctx| {
             python_c.py_decref(ctx);
             task.py_context = null;
@@ -409,7 +415,6 @@ fn failed_execution(task: *Task.PythonTaskObject) !void {
         return;
     }
 
-    errdefer python_c.py_decref(exception);
     try Future.Python.Result.future_fast_set_exception(fut, future_data, exception);
     if (task.py_context) |ctx| {
         python_c.py_decref(ctx);
@@ -423,11 +428,13 @@ fn failed_execution(task: *Task.PythonTaskObject) !void {
     if (exc_match(exception, python_c.PyExc_SystemExit) > 0 or
         exc_match(exception, python_c.PyExc_KeyboardInterrupt) > 0)
     {
+        // Re-install as the thread state's fatal exception. The newref is
+        // transferred to the thread state; the scope-exit defer releases
+        // our own fetch reference. Exactly one reference survives, owned
+        // by the thread state (BUG-271).
         python_c.PyErr_SetRaisedException(python_c.py_newref(exception));
-        python_c.py_decref(exception);
         return error.PythonError;
     }
-    python_c.py_decref(exception);
 }
 
 pub fn cleanup_task(ptr: ?*anyopaque) void {
