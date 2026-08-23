@@ -3,7 +3,7 @@ type: article
 title: Talyn Development Journey
 description: The complete historical narrative and timeline of developing Talyn, sorted chronologically from the latest release back to the project's inception.
 tags: [history, documentation, journey, roadmap]
-timestamp: 2026-08-22T12:00:00Z
+timestamp: 2026-08-23T00:00:00Z
 ---
 
 # Talyn Development Journey
@@ -13,6 +13,41 @@ Talyn is a production-grade, crash-resistant, and realistically fast `asyncio` e
 This document chronicles the engineering narrative and technical milestones of Talyn in **reverse chronological order**—starting with our latest release and architectural breakthroughs, and stepping back through performance optimizations, cross-platform builds, and deep audits to the project's original genesis.
 
 ---
+
+## v0.9.3 — Full-Codebase Audit (BUG-269..302), Task Constructor Contract Rewrite & Zero Open Bugs
+
+**v0.9.3** is the "drive it to zero" release: a fresh full-codebase audit produced 34 new findings (BUG-269 through BUG-302), every one of them fixed and regression-tested one commit at a time, plus two more bugs (**BUG-303**, **BUG-304**) discovered *by* those fixes while running CPython's `test_base_events` directly. The tracker now stands at **303 bugs (290 Fixed, 0 Open, 13 False Positive)**, with the full suite green on all four runtime targets (3.13, 3.14, 3.13t, 3.14t) and benchmarks confirming no performance regressions.
+
+### 1. Eliminating Deterministic Heap Corruption
+
+The audit's critical findings were all ownership-lifecycle defects, and they fell to a consistent toolkit:
+
+- **Dual-errdefer double-free in DNS `prepare_data`** ([BUG-269](bugs/269.md)): an early `errdefer allocator.destroy(control_data)` stayed armed alongside a later `errdefer control_data.release()` whose final statement destroys the struct — any error path freed `ControlData` twice, deterministically reachable via hostnames whose search candidates exceed the 255-byte DNS wire limit. Fixed with single-owner cleanup.
+- **Ownership-transfer vs. armed errdefers**: datagram `sendto` ([BUG-270](bugs/270.md)) and `perform_with_iovecs` ([BUG-272](bugs/272.md)) both transferred buffer ownership into pending io_uring operations while local `errdefer free(...)` calls stayed armed — a failing `pause_writing` callback or SQ-full submission then freed buffers the kernel was still reading, and `BlockingTask.discard()` freed them again. Both now use an explicit ownership-transfer flag so errdefers stand down exactly when ownership moves.
+- **Fatal-signal exception freed under the interpreter** ([BUG-271](bugs/271.md)): `failed_execution`'s SystemExit/KeyboardInterrupt branch decref'd the raised exception twice (manual + errdefer), freeing it while installed as the thread state's current exception — Ctrl+C in any task hit this. Replaced scattered manual releases with one unconditional scope-exit defer, which also closed the arm-level leaks ([BUG-292](bugs/292.md)).
+- **Task executor contract violations** ([BUG-273](bugs/273.md), [BUG-293](bugs/293.md)): the send/throw wrappers released their dispatch-owned task reference on error exits even though the executor's cleanup already does — and the trampolines' unconditional exception-restore could clear the error indicator entirely, steering execution into exactly those paths.
+- **WriteTransport resurrecting cancelled writes** ([BUG-275](bugs/275.md)): per-op `.CANCELED` completions fall through to resubmission because the CallbackData `cancelled()` bit is only set by shutdown; after `force_close` that meant writing via a stale fd or a recycled fixed-file slot. Also fixed the flush-ordering duplicate-write window ([BUG-281](bugs/281.md)).
+
+### 2. The `test_base_events` Breakthrough — BUG-303 & BUG-304
+
+Running CPython's excluded `test_base_events` module directly surfaced a hard segfault: `create_task` on a **closed loop** pushed its start callback into a deinitialized ready ring ([BUG-303](bugs/303.md)). Adding the missing `loop_data.initialized` guard then exposed something bigger — **BUG-304**, an implicit "consume-on-success" ownership contract in `fast_new_task`: `task_init_configuration` stores coro/context/name as borrowed pointers while instance dealloc decrefs every PyObject field, so *any* failure after the store made callers' errdefers and the dealloc double-free all three. The fix establishes explicit borrow semantics (internal increfs + caller-side success releases) across `fast_new_task`, `z_loop_create_task`, and the asyncgen hook path — eliminating an entire class of latent constructor double-frees.
+
+### 3. Lifecycle, Registry & Protocol Correctness
+
+- **Loop teardown ordering**: cancelled watcher completions dispatched after B-tree deinit no longer traverse freed trees ([BUG-274](bugs/274.md)); the ready ring now grows instead of dropping whole completion batches with skewed accounting ([BUG-282](bugs/282.md)).
+- **Watcher safety under re-entry**: inotify dispatch snapshots and re-validates watchers around arbitrary Python callbacks that may add/remove watches mid-batch ([BUG-278](bugs/278.md)); static ring-buffer publish order now matches the dynamic variant so concurrent GC cannot skip live callbacks ([BUG-289](bugs/289.md)); `Cancel.perform` reads poisoned (not undefined) operation fields for stale ids ([BUG-290](bugs/290.md)).
+- **Child watcher lifecycle**: duplicate-pid registration fully tears down the replaced handler ([BUG-277](bugs/277.md)) and removal defers destruction to the handler's own queued invocation instead of freeing it out from under it ([BUG-280](bugs/280.md)).
+- **Registry hygiene**: tasks completing by exception or cancellation are now discarded from `_asyncio_tasks` like result-completed ones — ending a strong-ref accumulation on long-running servers ([BUG-279](bugs/279.md)) — which incidentally un-confounded exact refcount assertions elsewhere.
+- **Protocol strictness**: IPv6 literals with more than eight groups (or a swallowed trailing colon) are rejected instead of silently parsing as a different address ([BUG-288](bugs/288.md)), matching `inet_pton`.
+- **Constructor resource leaks** closed across datagram ([BUG-283](bugs/283.md)), stream ([BUG-284](bugs/284.md)), and subprocess ([BUG-285](bugs/285.md))) transports, plus an idempotent `PseudoSocket.close()` ([BUG-291](bugs/291.md)).
+
+### 4. Abstract UNIX Sockets, End to End
+
+[BUG-287](bugs/287.md) turned out to be three defects in one subsystem: AF_UNIX conversions spanned `sun_path` as a NUL-terminated C string (out-of-bounds on fully-filled paths, empty string for abstract sockets); `Address.toPyAddr` lacked bounds entirely; and — fatally for abstract namespaces — `getOsSockLen()` returned `sizeof(sockaddr_un)`, so connect appended trailing NULs where the kernel compares exactly `addrlen` bytes. With CPython-compatible length computation wired through the unix connect SQE, abstract-namespace sockets (`"\0name"`) now work end-to-end, verified by a new round-trip test.
+
+### 5. Validation
+
+Every fix landed with its own regression test (Zig unit tests or Python crash-guard subprocesses, per failure mode) behind the full gate: `./scripts/test_all.sh --starburst --verbose` passes on **python3.13, python3.14, python3.13t, and python3.14t** (337 pytest cases each + stdlib asyncio subset + 61 Zig unit tests). Post-fix benchmarks show no regressions — Talyn still leads uvloop on TCP Echo (up to 2.74x), Unix Echo (3.08x), UDP Ping-Pong (3.72x), and Socket Ops (3.33x) versus stock asyncio, with Chat scaling to 1.44x at high load.
 
 ## v0.9.2 — BUG-261..268 Fixes & CPython 3.14.7 free-threading Compatibility
 
