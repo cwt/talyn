@@ -22,7 +22,7 @@ pub fn main(init: std.process.Init) !void {
     var stdout_writer: std.Io.File.Writer = .init(.stdout(), io, &stdout_buffer);
     const w = &stdout_writer.interface;
 
-    try w.print("\x1b[1;35m==> Talyn Offline Bug Hunter & AST Linter (v0.9.2-dev)\x1b[0m\n", .{});
+    try w.print("\x1b[1;35m==> Talyn Offline Bug Hunter & AST Linter (v0.9.3-dev)\x1b[0m\n", .{});
     try w.flush();
 
     const arena = init.arena.allocator();
