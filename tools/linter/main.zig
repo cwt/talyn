@@ -13,6 +13,8 @@ const gc_type_clear = @import("rules/gc_type_clear.zig");
 const missing_errdefer_after_future = @import("rules/missing_errdefer_after_future.zig");
 const missing_tp_alloc_pyobject_init = @import("rules/missing_tp_alloc_pyobject_init.zig");
 const unparsed_pyobject_kwarg = @import("rules/unparsed_pyobject_kwarg.zig");
+const no_forced_optional_pyobject_unwrap = @import("rules/no_forced_optional_pyobject_unwrap.zig");
+const no_ptr_from_int_task_id = @import("rules/no_ptr_from_int_task_id.zig");
 
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
@@ -74,6 +76,8 @@ pub fn main(init: std.process.Init) !void {
             try missing_errdefer_after_future.check(&ast, full_path, arena, &diagnostics);
             try missing_tp_alloc_pyobject_init.check(&ast, full_path, arena, &diagnostics);
             try unparsed_pyobject_kwarg.check(&ast, full_path, arena, &diagnostics);
+            try no_forced_optional_pyobject_unwrap.check(&ast, full_path, arena, &diagnostics);
+            try no_ptr_from_int_task_id.check(&ast, full_path, arena, &diagnostics);
         }
     } else |err| {
         try w.print("Failed to open 'src' directory: {t}\n", .{err});
@@ -120,6 +124,8 @@ pub fn main(init: std.process.Init) !void {
             try missing_errdefer_after_future.check(&ast, full_path, arena, &diagnostics);
             try missing_tp_alloc_pyobject_init.check(&ast, full_path, arena, &diagnostics);
             try unparsed_pyobject_kwarg.check(&ast, full_path, arena, &diagnostics);
+            try no_forced_optional_pyobject_unwrap.check(&ast, full_path, arena, &diagnostics);
+            try no_ptr_from_int_task_id.check(&ast, full_path, arena, &diagnostics);
         }
     } else |err| {
         try w.print("Failed to open 'tools/linter' directory: {t}\n", .{err});

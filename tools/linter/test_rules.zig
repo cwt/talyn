@@ -12,6 +12,8 @@ const gc_type_clear = @import("rules/gc_type_clear.zig");
 const missing_errdefer_after_future = @import("rules/missing_errdefer_after_future.zig");
 const missing_tp_alloc_pyobject_init = @import("rules/missing_tp_alloc_pyobject_init.zig");
 const unparsed_pyobject_kwarg = @import("rules/unparsed_pyobject_kwarg.zig");
+const no_forced_optional_pyobject_unwrap = @import("rules/no_forced_optional_pyobject_unwrap.zig");
+const no_ptr_from_int_task_id = @import("rules/no_ptr_from_int_task_id.zig");
 
 fn checkSnippet(
     gpa: std.mem.Allocator,
@@ -150,4 +152,52 @@ test "TALYN-011: unparsed PyObject kwarg" {
         \\}
     , unparsed_pyobject_kwarg.check);
     try std.testing.expectEqual(@as(usize, 1), diags);
+}
+
+test "TALYN-012: forced .? on nullable protocol field in IO path" {
+    // Should flag: .? on a known protocol field
+    const diags_bad = try checkSnippet(std.testing.allocator, "src/transports/stream/read.zig",
+        \\const ret = PyObject_CallNoArgs(transport.protocol_eof_received.?);
+    , no_forced_optional_pyobject_unwrap.check);
+    try std.testing.expectEqual(@as(usize, 1), diags_bad);
+
+    // Should NOT flag: safe capture with |func|
+    const diags_ok = try checkSnippet(std.testing.allocator, "src/transports/stream/read.zig",
+        \\if (transport.protocol_eof_received) |func| {
+        \\    _ = PyObject_CallNoArgs(func);
+        \\}
+    , no_forced_optional_pyobject_unwrap.check);
+    try std.testing.expectEqual(@as(usize, 0), diags_ok);
+
+    // Should NOT flag: .? on an unguarded field name
+    const diags_unguarded = try checkSnippet(std.testing.allocator, "src/transports/stream/read.zig",
+        \\const x = transport.some_other_field.?;
+    , no_forced_optional_pyobject_unwrap.check);
+    try std.testing.expectEqual(@as(usize, 0), diags_unguarded);
+
+    // Should NOT flag: outside IO path
+    const diags_outside = try checkSnippet(std.testing.allocator, "tools/other/helper.zig",
+        \\const ret = foo.protocol_eof_received.?;
+    , no_forced_optional_pyobject_unwrap.check);
+    try std.testing.expectEqual(@as(usize, 0), diags_outside);
+}
+
+test "TALYN-013: @ptrFromInt(task_id) in IO path" {
+    // Should flag: ptrFromInt on a task_id identifier
+    const diags_bad = try checkSnippet(std.testing.allocator, "src/loop/scheduling/io/cancel.zig",
+        \\const task: *BlockingTask = @ptrFromInt(task_id);
+    , no_ptr_from_int_task_id.check);
+    try std.testing.expectEqual(@as(usize, 1), diags_bad);
+
+    // Should NOT flag: ptrFromInt on an unrelated identifier
+    const diags_ok = try checkSnippet(std.testing.allocator, "src/loop/scheduling/io/cancel.zig",
+        \\const ptr: *Foo = @ptrFromInt(raw_ptr);
+    , no_ptr_from_int_task_id.check);
+    try std.testing.expectEqual(@as(usize, 0), diags_ok);
+
+    // Should NOT flag: outside IO path
+    const diags_outside = try checkSnippet(std.testing.allocator, "scripts/gen.zig",
+        \\const task: *BlockingTask = @ptrFromInt(task_id);
+    , no_ptr_from_int_task_id.check);
+    try std.testing.expectEqual(@as(usize, 0), diags_outside);
 }
