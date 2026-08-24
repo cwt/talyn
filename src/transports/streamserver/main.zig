@@ -327,7 +327,7 @@ fn z_close_server(self: *StreamServerObject) !void {
     const loop_data = utils.get_data_ptr(Loop, @as(*Loop.Python.LoopObject, @ptrCast(self.loop.?)));
     const blocking_task_id = self.blocking_task_id;
     if (blocking_task_id > 0) {
-        _ = try loop_data.io.queue(.{ .Cancel = blocking_task_id });
+        _ = try loop_data.io.queue(.{ .CancelIO = blocking_task_id });
         self.blocking_task_id = 0;
     }
     if (self.server_fd >= 0) {

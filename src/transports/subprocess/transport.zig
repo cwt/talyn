@@ -164,7 +164,7 @@ fn subprocess_close(self: ?*SubprocessTransportObject, _: ?PyObject) callconv(.c
             if (instance.loop) |py_loop| {
                 const loop_obj: *LoopObject = @ptrCast(py_loop);
                 const loop_data = utils.get_data_ptr(Loop, loop_obj);
-                _ = loop_data.io.queue(.{ .Cancel = instance.pidfd_task_id }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
+                _ = loop_data.io.queue(.{ .CancelIO = instance.pidfd_task_id }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
             }
             instance.pidfd_task_id = 0;
         }

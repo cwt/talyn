@@ -1,15 +1,12 @@
 const std = @import("std");
-const IO = @import("main.zig");
 
-pub fn perform(ring: *std.os.linux.IoUring, task_id: usize) !usize {
-    const task: *IO.BlockingTask= @ptrFromInt(task_id);
+pub fn perform_timer(ring: *std.os.linux.IoUring, task_id: usize) !usize {
+    _ = try ring.timeout_remove(0, task_id, 0);
+    return 0;
+}
 
-    if (task.operation == .WaitTimer) {
-        _ = try ring.timeout_remove(0, task_id, 0);
-    }else{
-        _ = try ring.cancel(0, task_id, 0);
-    }
-
+pub fn perform_io(ring: *std.os.linux.IoUring, task_id: usize) !usize {
+    _ = try ring.cancel(0, task_id, 0);
     return 0;
 }
 

@@ -107,7 +107,7 @@ pub fn close(self: *WriteTransport) !void {
     self.connection_lost_callback = null;
 
     if (self.blocking_task_id > 0) {
-        _ = try self.loop.io.queue(.{ .Cancel = self.blocking_task_id });
+        _ = try self.loop.io.queue(.{ .CancelIO = self.blocking_task_id });
     }
 
     if (!self.write_in_flight and self.buffer_size == 0) {
@@ -124,7 +124,7 @@ pub fn force_close(self: *WriteTransport) !void {
     self.connection_lost_callback = null;
 
     if (self.blocking_task_id > 0) {
-        _ = try self.loop.io.queue(.{ .Cancel = self.blocking_task_id });
+        _ = try self.loop.io.queue(.{ .CancelIO = self.blocking_task_id });
         self.blocking_task_id = 0;
     }
 

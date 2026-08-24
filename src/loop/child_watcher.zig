@@ -32,7 +32,7 @@ pub fn deinit(self: *ChildWatcher) void {
     while (it.next()) |entry| {
         const handler = entry.value_ptr.*;
         if (handler.task_id != 0) {
-            _ = self.loop.io.queue(.{ .Cancel = handler.task_id }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
+            _ = self.loop.io.queue(.{ .CancelIO = handler.task_id }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
         }
         if (handler.pidfd >= 0) {
             _ = std.os.linux.close(handler.pidfd);
@@ -85,7 +85,7 @@ pub fn add_child_handler(self: *ChildWatcher, pid: i32, callback: PyObject) !voi
     if (self.handlers.fetchRemove(pid)) |old| {
         const old_handler = old.value;
         if (old_handler.task_id != 0) {
-            _ = self.loop.io.queue(.{ .Cancel = old_handler.task_id }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
+            _ = self.loop.io.queue(.{ .CancelIO = old_handler.task_id }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
         }
         if (old_handler.pidfd >= 0) {
             _ = std.os.linux.close(old_handler.pidfd);
@@ -116,7 +116,7 @@ pub fn remove_child_handler(self: *ChildWatcher, pid: i32) bool {
             // The WaitReadable may still be armed OR already completed
             // with its callback queued; either way that invocation now
             // owns the teardown.
-            _ = self.loop.io.queue(.{ .Cancel = handler.task_id }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
+            _ = self.loop.io.queue(.{ .CancelIO = handler.task_id }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
         } else {
             // Defensive: nothing in flight can reference it.
             teardown_child_handler(self, handler);

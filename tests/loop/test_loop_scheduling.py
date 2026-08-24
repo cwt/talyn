@@ -413,3 +413,39 @@ def test_context_not_corrupted_by_failed_callbacks() -> None:
         # If context was corrupted, check_ctx2_value would have failed
     finally:
         loop.close()
+
+
+def test_rapid_call_later_cancel_and_interleaved_io() -> None:
+    """Stress test for rapid timer cancellation (BUG-290).
+
+    Simulates wormhole's LogThrottler pattern where timers are repeatedly
+    created, cancelled, and fired while callbacks and coroutine steps
+    recycle BlockingTask slots in io_uring.
+    """
+    loop = Loop()
+    try:
+        executed_count = 0
+        handles = []
+
+        def cb() -> None:
+            nonlocal executed_count
+            executed_count += 1
+
+        # Rapidly create and cancel timers across multiple iterations
+        for _ in range(500):
+            h = loop.call_later(0.001, cb)
+            handles.append(h)
+            if len(handles) > 5:
+                old = handles.pop(0)
+                old.cancel()
+
+        # Let remaining timers run and settle
+        loop.call_later(0.05, loop.stop)
+        loop.run_forever()
+
+        # Cancel all already-finished/cancelled handles (should be safe no-op)
+        for h in handles:
+            h.cancel()
+    finally:
+        loop.close()
+

@@ -218,7 +218,7 @@ inline fn z_loop_add_watcher(self: *LoopObject, args: []?PyObject, operation: Lo
         // Cancel in-flight IO; cleanup callback will free the struct & decref handle
         if (existing_watcher_data.blocking_task_id != 0) {
             existing_watcher_data.fd = -1;
-            _ = try loop_data.io.queue_unlocked(.{ .Cancel = existing_watcher_data.blocking_task_id });
+            _ = try loop_data.io.queue_unlocked(.{ .CancelIO = existing_watcher_data.blocking_task_id });
         } else {
             // Wrapper callback is pending in Soon queue.
             // We set fd = -1 so the wrapper cleans it up when it runs.
@@ -323,7 +323,7 @@ inline fn z_loop_remove_watcher(self: *LoopObject, py_fd: PyObject, operation: L
             return python_c.get_py_true();
         }
 
-        _ = try loop_data.io.queue_unlocked(.{ .Cancel = blocking_task_id });
+        _ = try loop_data.io.queue_unlocked(.{ .CancelIO = blocking_task_id });
 
         return python_c.get_py_true();
     }

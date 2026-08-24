@@ -75,7 +75,7 @@ pub fn close(self: *ReadTransport) !void {
         return;
     }
 
-    _ = try self.loop.io.queue(.{ .Cancel = blocking_task_id });
+    _ = try self.loop.io.queue(.{ .CancelIO = blocking_task_id });
     self.is_closing = true;
     self.connection_lost_callback = null;
 }
@@ -87,7 +87,7 @@ pub fn force_close(self: *ReadTransport) !void {
     self.connection_lost_callback = null;
 
     if (self.blocking_task_id > 0) {
-        _ = try self.loop.io.queue(.{ .Cancel = self.blocking_task_id });
+        _ = try self.loop.io.queue(.{ .CancelIO = self.blocking_task_id });
     }
 }
 
@@ -207,7 +207,7 @@ pub inline fn cancel(self: *ReadTransport) !void {
         return;
     }
 
-    _ = try self.loop.io.queue(.{ .Cancel = blocking_task_id });
+    _ = try self.loop.io.queue(.{ .CancelIO = blocking_task_id });
 
     self.cancelling = true;
 }

@@ -24,7 +24,8 @@ pub const BlockingOperation = enum {
     PerformRecvMsg,
     PerformSendMsg,
     WaitTimer,
-    Cancel,
+    CancelIO,
+    CancelTimer,
     CancelByFd,
     SocketShutdown,
     SocketConnect,
@@ -73,12 +74,7 @@ pub const BlockingTask = struct {
 
         self.data = .none;
         // BUG-290: poison the operation instead of leaving it undefined.
-        // A queued .Cancel carrying this slot's old id dereferences the
-        // id to choose timeout_remove vs cancel; reading an undefined
-        // (or unrelated reused) enum here branched on garbage. `.Cancel`
-        // routes stale ids to ring.cancel(), which is a benign ENOENT
-        // for anything already gone.
-        self.operation = .Cancel;
+        self.operation = .CancelIO;
 
         return set;
     }
@@ -118,7 +114,7 @@ pub const BlockingTask = struct {
             // design, but log unexpected result codes. -ENOENT
             // is expected (the task already completed), but other
             // errors may indicate a problem.
-            .Cancel => switch (result) {
+            .CancelIO, .CancelTimer => switch (result) {
                 .SUCCESS, .NOENT => {},
                 else => std.log.warn("Cancel: unexpected result {s}", .{@tagName(result)}),
             },
@@ -329,7 +325,8 @@ pub const BlockingOperationData = union(BlockingOperation) {
     PerformRecvMsg: Read.RecvMsgData,
     PerformSendMsg: Write.SendMsgData,
     WaitTimer: Timer.WaitData,
-    Cancel: usize,
+    CancelIO: usize,
+    CancelTimer: usize,
     CancelByFd: usize,
     SocketShutdown: Socket.ShutdownData,
     SocketConnect: Socket.ConnectData,
@@ -919,13 +916,15 @@ pub fn queue_unlocked(self: *IO, event: BlockingOperationData) !usize {
         .PerformSendMsg => |data| Write.sendmsg(&self.ring, set, data),
         .WaitTimer => |data| Timer.wait(&self.ring, set, data),
         .SocketShutdown => |data| Socket.shutdown(&self.ring, set, data),
-        .Cancel => |data| Cancel.perform(&self.ring, data),
+        .CancelIO => |data| Cancel.perform_io(&self.ring, data),
+        .CancelTimer => |data| Cancel.perform_timer(&self.ring, data),
         .CancelByFd => |fd| Cancel.perform_by_fd(&self.ring, fd),
         .SocketConnect => |data| Socket.connect(&self.ring, set, data),
         .SocketAccept => |data| Socket.accept(&self.ring, set, data),
     };
 
-    if (event == .Cancel or event == .CancelByFd or (event != .Cancel and event != .CancelByFd and self.ring.sq_ready() >= TotalTasksItems - 2)) {
+    const is_cancel = (event == .CancelIO or event == .CancelTimer or event == .CancelByFd);
+    if (is_cancel or (!is_cancel and self.ring.sq_ready() >= TotalTasksItems - 2)) {
         _ = try self.flush_pending_sqes();
     }
 

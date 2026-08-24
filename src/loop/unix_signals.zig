@@ -111,7 +111,7 @@ pub fn enqueue_signal_fd(self: *UnixSignals, comptime cancel_old: bool) !void {
         const blocking_task_id = self.blocking_task_id;
         const loop = self.loop;
         if (blocking_task_id > 0) {
-            _ = try loop.io.queue_unlocked(.{ .Cancel = blocking_task_id });
+            _ = try loop.io.queue_unlocked(.{ .CancelIO = blocking_task_id });
         }
     }
 
