@@ -225,7 +225,8 @@ fn accept_callback(data: *const CallbackManager.CallbackData) !void {
     const loop = server.loop.?;
     _ = utils.get_data_ptr(Loop, @as(*Loop.Python.LoopObject, @ptrCast(loop)));
 
-    const protocol = python_c.PyObject_CallNoArgs(server.protocol_factory.?) orelse return error.PythonError;
+    const protocol_factory = server.protocol_factory orelse return;
+    const protocol = python_c.PyObject_CallNoArgs(protocol_factory) orelse return error.PythonError;
     defer python_c.py_decref(protocol);
 
     const transport = try Stream.Constructors.new_stream_transport(

@@ -12,11 +12,7 @@ const StreamTransportObject = Stream.StreamTransportObject;
 const ReadTransport = @import("../read_transport.zig");
 const WriteTransport = @import("../write_transport.zig");
 
-pub inline fn queue_read_operation(
-    transport: *StreamTransportObject,
-    read_transport: *ReadTransport,
-    protocol_type: Stream.ProtocolType
-) !void {
+pub inline fn queue_read_operation(transport: *StreamTransportObject, read_transport: *ReadTransport, protocol_type: Stream.ProtocolType) !void {
     if (!transport.is_reading or read_transport.is_closing) {
         return;
     }
@@ -38,9 +34,7 @@ pub inline fn queue_read_operation(
             defer python_c.py_decref(new_buffer);
 
             if (python_c.PyObject_CheckBuffer(new_buffer) == 0) {
-                python_c.raise_python_value_error(
-                    "Invalid buffer obtained from protocol. Must be Buffer Protocol compatible\x00"
-                );
+                python_c.raise_python_value_error("Invalid buffer obtained from protocol. Must be Buffer Protocol compatible\x00");
                 return error.PythonError;
             }
 
@@ -57,7 +51,7 @@ pub inline fn queue_read_operation(
         },
         .Legacy => {
             try read_transport.perform(null);
-        }
+        },
     }
 }
 
@@ -73,8 +67,8 @@ pub fn read_operation_completed(read_transport: *ReadTransport, data: []const u8
         }
     }
 
-    // When `read_transport` is closing, data length will be always 0
-    const is_closing = read_transport.is_closing;
+    // When `read_transport` is closing or transport is already closed/cleared, ignore data
+    const is_closing = read_transport.is_closing or read_transport.closed or transport.is_closing or transport.closed or transport.protocol == null;
     if (err != .SUCCESS or is_closing) {
         if (is_closing) {
             read_transport.closed = true;
@@ -87,20 +81,25 @@ pub fn read_operation_completed(read_transport: *ReadTransport, data: []const u8
     }
 
     if (data.len == 0) {
-        const ret = python_c.PyObject_CallNoArgs(transport.protocol_eof_received.?)
-            orelse return error.PythonError;
-        defer python_c.py_decref(ret);
+        var keep_open = false;
+        if (transport.protocol_eof_received) |eof_func| {
+            const ret = python_c.PyObject_CallNoArgs(eof_func) orelse return error.PythonError;
+            defer python_c.py_decref(ret);
+            keep_open = (python_c.Py_IsTrue(ret) != 0);
+        }
 
-        if (python_c.Py_IsTrue(ret) == 0) {
-            // TODO: use instance
+        if (!keep_open) {
             const write_transport = utils.get_data_ptr2(WriteTransport, "write_transport", transport);
             const exc = python_c.get_py_none();
             defer python_c.py_decref(exc);
 
             Lifecyle.close_transports(
-                transport, read_transport, write_transport, exc
+                transport,
+                read_transport,
+                write_transport,
+                exc,
             );
-        } 
+        }
 
         return;
     }
@@ -108,30 +107,30 @@ pub fn read_operation_completed(read_transport: *ReadTransport, data: []const u8
     switch (transport.protocol_type) {
         .Buffered => {
             if (!read_transport.batch_dispatched) {
-                const nbytes_obj = python_c.PyLong_FromUnsignedLongLong(@intCast(data.len))
-                    orelse return error.PythonError;
-                defer python_c.py_decref(nbytes_obj);
+                if (transport.protocol_buffer_updated) |buf_updated| {
+                    const nbytes_obj = python_c.PyLong_FromUnsignedLongLong(@intCast(data.len)) orelse return error.PythonError;
+                    defer python_c.py_decref(nbytes_obj);
 
-                const ret = python_c.PyObject_CallOneArg(transport.protocol_buffer_updated.?, nbytes_obj)
-                    orelse return error.PythonError;
-                python_c.py_decref(ret);
+                    const ret = python_c.PyObject_CallOneArg(buf_updated, nbytes_obj) orelse return error.PythonError;
+                    python_c.py_decref(ret);
+                }
             }
 
             try queue_read_operation(transport, read_transport, .Buffered);
         },
         .Legacy => {
             if (!read_transport.batch_dispatched) {
-                const py_bytes = python_c.PyBytes_FromStringAndSize(data.ptr, @intCast(data.len))
-                    orelse return error.PythonError;
-                defer python_c.py_decref(py_bytes);
+                if (transport.protocol_data_received) |data_received| {
+                    const py_bytes = python_c.PyBytes_FromStringAndSize(data.ptr, @intCast(data.len)) orelse return error.PythonError;
+                    defer python_c.py_decref(py_bytes);
 
-                const ret = python_c.PyObject_CallOneArg(transport.protocol_data_received.?, py_bytes)
-                    orelse return error.PythonError;
-                python_c.py_decref(ret);
+                    const ret = python_c.PyObject_CallOneArg(data_received, py_bytes) orelse return error.PythonError;
+                    python_c.py_decref(ret);
+                }
             }
 
             try queue_read_operation(transport, read_transport, .Legacy);
-        }
+        },
     }
 }
 

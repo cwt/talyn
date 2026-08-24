@@ -124,7 +124,11 @@ fn talyn_task_throw_trampoline(
         const coro_throw: ?PyObject = python_c.PyObject_GetAttrString(coro, "throw\x00");
         if (coro_throw) |ct| {
             defer python_c.py_decref(ct);
-            if (python_c.PyObject_CallOneArg(ct, exception_value)) |v| {
+            const call_ret = if (exception_value) |ev|
+                python_c.PyObject_CallOneArg(ct, ev)
+            else
+                python_c.PyObject_CallNoArgs(ct);
+            if (call_ret) |v| {
                 coro_ret = v;
                 gen_ret = python_c.PYGEN_NEXT;
             }
@@ -403,7 +407,8 @@ fn failed_execution(task: *Task.PythonTaskObject) !void {
 
     if (exc_match(exception, python_c.PyExc_StopIteration) > 0) {
         const stop_iteration: *python_c.PyStopIterationObject = @ptrCast(exception);
-        set_result(task, future_data, stop_iteration.value orelse return error.PythonError) catch |err| {
+        const stop_val = stop_iteration.value orelse python_c.get_py_none();
+        set_result(task, future_data, stop_val) catch |err| {
             utils.handle_zig_function_error(err, {});
 
             const exc = python_c.PyErr_Occurred() orelse return error.PythonError;
