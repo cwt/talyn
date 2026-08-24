@@ -3,7 +3,7 @@ type: article
 title: Talyn Development Journey
 description: The complete historical narrative and timeline of developing Talyn, sorted chronologically from the latest release back to the project's inception.
 tags: [history, documentation, journey, roadmap]
-timestamp: 2026-08-23T00:00:00Z
+timestamp: 2026-08-24T00:00:00Z
 ---
 
 # Talyn Development Journey
@@ -11,6 +11,27 @@ timestamp: 2026-08-23T00:00:00Z
 Talyn is a production-grade, crash-resistant, and realistically fast `asyncio` event loop drop-in replacement for Python, powered by **Zig** and **io_uring**. 
 
 This document chronicles the engineering narrative and technical milestones of Talyn in **reverse chronological order**—starting with our latest release and architectural breakthroughs, and stepping back through performance optimizations, cross-platform builds, and deep audits to the project's original genesis.
+
+---
+
+## v0.9.4 — Asynchronous Cancellation Safety (BUG-290 Split Fix) & Proxy Stability
+
+**v0.9.4** is a targeted stability release that resolves an asynchronous use-after-free and type confusion bug in `io_uring` cancellation dispatch ([BUG-290](bugs/290.md)), identified under high-throughput HTTP/HTTPS proxy traffic in the `wormhole` forward proxy.
+
+### 1. Asynchronous Cancellation Pointer Dereference Elimination
+
+During continuous proxy workloads with active logging throttlers and connection timeouts (`LogThrottler`), timers were rapidly scheduled and cancelled. When a timer completed, `fetch_completed_tasks` immediately returned the `BlockingTask` slot to the free pool. When Python subsequently cancelled the associated `TimerHandle`, `Cancel.perform` previously cast the integer task ID back to a `*BlockingTask` and read `task.operation` to decide between `ring.timeout_remove` and `ring.cancel`. This dereferenced uninitialized/reused slot memory, causing segmentation faults or spurious cancellations of active socket reads/writes.
+
+To eliminate this vulnerability:
+- `BlockingOperation` and `BlockingOperationData` now separate cancellation into distinct `.CancelTimer` and `.CancelIO` variants.
+- `TimerHandle.cancel()` explicitly queues `.CancelTimer` (which invokes `ring.timeout_remove(0, task_id, 0)`).
+- Transports, signals, and watchers explicitly queue `.CancelIO` (which invokes `ring.cancel(0, task_id, 0)`).
+- `Cancel.perform` no longer casts or dereferences `task_id` under any condition, passing it strictly as an opaque identifier to the kernel.
+
+### 2. Validation & Stability
+
+- Added regression stress test `test_rapid_call_later_cancel_and_interleaved_io` in `tests/loop/test_loop_scheduling.py`.
+- Verified 100% pass rate across the full 337-test suite and tested against `wormhole` proxy workloads with zero crashes.
 
 ---
 

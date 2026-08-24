@@ -2,6 +2,23 @@
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
 
+## [2026-08-24] — v0.9.4 Release: Asynchronous Cancellation Safety (BUG-290 Split Fix) & Proxy Stability
+
+This release resolves an asynchronous use-after-free and type confusion vulnerability in `io_uring` cancellation dispatch (BUG-290):
+
+- **BUG-290 (Medium-Low / High Under Proxy Load)**: Split `Cancel` into `CancelTimer` and `CancelIO` in `BlockingOperation` / `BlockingOperationData`. Eliminated `@ptrFromInt(task_id)` pointer dereference and reading of `task.operation` from freed/reused `BlockingTask` memory slots.
+- **Regression Testing**: Added `test_rapid_call_later_cancel_and_interleaved_io` in `tests/loop/test_loop_scheduling.py`.
+- **Version Bump**: Bumped version to **0.9.4** in `pyproject.toml`, `build.zig.zon`, and AST linter banner.
+
+## [2026-08-23] — v0.9.3 Release: Full-Codebase Audit (BUG-269..304), Task Constructor Contract Rewrite & Zero Open Bugs
+
+This release resolves 36 bugs (BUG-269 through BUG-304) identified in full-codebase audits:
+
+- **BUG-269..302**: Resolved heap corruption, errdefer ownership transfers, watcher safety, signal handler exceptions, and transport lifecycle leaks.
+- **BUG-303..304**: Resolved closed-loop task creation panic and task constructor ownership contract in `fast_new_task`.
+- **Abstract UNIX Sockets**: Full end-to-end support for Linux abstract sockets (`\0name`).
+- **Tracker**: 303 bugs (290 Fixed, 0 Open, 13 False Positive).
+
 ## [2026-08-22] — v0.9.2 Release: BUG-261..268 Fixes & CPython 3.14.7 free-threading Compatibility
 
 This release fixes the six renumbered bugs (BUG-261..266) plus two new compatibility defects (BUG-267, BUG-268) exposed by the CPython 3.14.7 update:

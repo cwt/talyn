@@ -1,6 +1,6 @@
 .{
     .name = .talyn,
-    .version = "0.9.3",
+    .version = "0.9.4",
     .fingerprint = 0x5cd09dd09528be6a,
 
     .dependencies = .{},
