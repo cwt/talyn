@@ -462,7 +462,7 @@ fn z_create_server_socket(server_data: *ServerSocketData) !void {
         const py_backlog_obj = python_c.PyLong_FromLong(@intCast(backlog)) orelse return error.PythonError;
         defer python_c.py_decref(py_backlog_obj);
 
-        const protocol_factory = creation_data.protocol_factory.?;
+        const protocol_factory = creation_data.protocol_factory orelse return error.PythonError;
         const loop_obj = creation_data.loop.?;
 
         const server = python_c.PyObject_CallFunction(@as(*python_c.PyObject, @ptrCast(StreamServer.StreamServerType.?)), "OOOOO\x00", @as(*python_c.PyObject, @ptrCast(loop_obj)), protocol_factory, py_fd, py_family_obj, py_backlog_obj) orelse return error.PythonError;

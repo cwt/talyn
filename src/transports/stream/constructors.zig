@@ -108,8 +108,9 @@ pub fn set_protocol(self: *StreamTransportObject, protocol: PyObject) !Stream.Pr
     }
     errdefer python_c.py_xdecref(self.protocol_eof_received);
 
-    self.protocol_connection_lost = python_c.PyObject_GetAttrString(protocol, "connection_lost\x00") orelse return error.PythonError;
-    errdefer python_c.py_decref(self.protocol_connection_lost.?);
+    const connection_lost_func = python_c.PyObject_GetAttrString(protocol, "connection_lost\x00") orelse return error.PythonError;
+    self.protocol_connection_lost = connection_lost_func;
+    errdefer python_c.py_decref(connection_lost_func);
 
     self.protocol_pause_writing = python_c.PyObject_GetAttrString(protocol, "pause_writing\x00");
     if (self.protocol_pause_writing == null) {

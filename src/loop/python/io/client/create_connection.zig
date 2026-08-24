@@ -843,10 +843,19 @@ fn socket_connected_callback(data: *const CallbackManager.CallbackData) !void {
         _ = loop_data.io.queue(.{ .CancelIO = task_id }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
     }
 
+    const fut = creation_data.future orelse {
+        if (!(mcs.timer_scheduled and !mcs.timer_fired) and mcs.pending == 0) mcs.deinit();
+        return error.PythonError;
+    };
+    const protocol_factory = creation_data.protocol_factory orelse {
+        if (!(mcs.timer_scheduled and !mcs.timer_fired) and mcs.pending == 0) mcs.deinit();
+        return set_future_exception(error.PythonError, fut);
+    };
+
     var transport_creation_data = TransportCreationData{
-        .protocol_factory = creation_data.protocol_factory.?,
-        .future = creation_data.future.?,
-        .loop = creation_data.loop.?,
+        .protocol_factory = protocol_factory,
+        .future = fut,
+        .loop = loop,
         .socket_fd = fd,
         .zero_copying = false,
         .fd_created = true,
@@ -857,7 +866,6 @@ fn socket_connected_callback(data: *const CallbackManager.CallbackData) !void {
         }
     }
 
-    const fut = creation_data.future.?;
     z_create_transport_and_set_future_result(&transport_creation_data) catch |err| {
         if (!(mcs.timer_scheduled and !mcs.timer_fired) and mcs.pending == 0) mcs.deinit();
         return set_future_exception(err, fut);
