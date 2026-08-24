@@ -14,6 +14,28 @@ This document chronicles the engineering narrative and technical milestones of T
 
 ---
 
+## v0.9.5 — Stream Transport NULL-Safety & Protocol Teardown Hardening (BUG-293)
+
+**v0.9.5** is a targeted crash-fix release that eliminates the remaining class of segmentation faults triggered when an `io_uring` read completion CQE fires *after* a stream transport has already been torn down during fast-path connection rejection (e.g., 403 ad-block responses in `wormhole`).
+
+### 1. Root Cause: In-Flight CQE Races Protocol Teardown
+
+When the proxy immediately writes a 403 response and closes a connection, `stream_clear` / `close_transports` runs before the kernel delivers the corresponding read EOF CQE. At that point every `protocol_*` field on `StreamTransportObject` is already `null`. The previous code used forced `.?` unwraps throughout `read_operation_completed`, so CPython's `PyObject_CallNoArgs(NULL)` dereferenced a null pointer and raised `SIGSEGV` at `libpython3.14.so+0x216d4d`.
+
+### 2. Fixes Applied
+
+- **`src/transports/stream/read.zig` — `read_operation_completed`**: The early-return guard now also fires when `transport.closed`, `transport.is_closing`, or `transport.protocol == null`. All three `protocol_eof_received`, `protocol_data_received`, and `protocol_buffer_updated` call sites use safe `|func|` capture; when `protocol_eof_received` is null, `eof_received` is treated as returning `False` and both transports are closed cleanly.
+- **`src/transports/stream/constructors.zig` — `set_protocol`**: `eof_received`, `pause_writing`, and `resume_writing` are now genuinely optional — `PyErr_Clear()` is called when `PyObject_GetAttrString` returns null, and `null` is stored. Protocols that omit these methods (including `BaseProtocol` subclasses) no longer fail `set_protocol`.
+- **`src/transports/streamserver/main.zig` — `accept_callback`**: `server.protocol_factory` is guarded with `orelse return` to survive a race between server close and an in-flight accept CQE delivering after `StreamServerObject.close()` clears the factory.
+- **`src/task/callbacks.zig` — `talyn_task_throw_trampoline`**: When `exception_value` is `null`, `coro.throw` is called via `PyObject_CallNoArgs` instead of passing `NULL` to `PyObject_CallOneArg`. Also, a null `StopIteration.value` now safely falls back to `Py_None` instead of returning `error.PythonError`.
+
+### 3. Validation
+
+- Built clean with `zig build` and `zig build test`; all Zig unit tests passed.
+- Load-tested against the `wormhole` proxy: 300 rapid ad-blocked CONNECT requests from 5 concurrent threads (domains: taboola, doubleclick, taboola c2, clarity, google-analytics, googletagmanager) — zero crashes, proxy healthy after 7-second timer wait.
+
+---
+
 ## v0.9.4 — Asynchronous Cancellation Safety (BUG-290 Split Fix) & Proxy Stability
 
 **v0.9.4** is a targeted stability release that resolves an asynchronous use-after-free and type confusion bug in `io_uring` cancellation dispatch ([BUG-290](bugs/290.md)), identified under high-throughput HTTP/HTTPS proxy traffic in the `wormhole` forward proxy.

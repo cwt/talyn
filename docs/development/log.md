@@ -2,6 +2,16 @@
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
 
+## [2026-08-24] — v0.9.5 Release: Stream Transport NULL-Safety & Protocol Teardown Hardening (BUG-293)
+
+This release eliminates the final class of segmentation faults caused by `io_uring` read completion CQEs arriving after stream transport teardown:
+
+- **BUG-293 (High)**: `read_operation_completed` now guards on `transport.closed`, `transport.is_closing`, and `transport.protocol == null` before dispatching; all `protocol_eof_received`, `protocol_data_received`, and `protocol_buffer_updated` call sites use safe `|func|` capture, eliminating `PyObject_CallNoArgs(NULL)` crashes.
+- **set_protocol hardening**: `eof_received`, `pause_writing`, and `resume_writing` are now optional — `AttributeError` is cleared and `null` stored, so `BaseProtocol` subclasses that omit these methods are accepted.
+- **`accept_callback` guard**: `server.protocol_factory` is guarded with `orelse return` to survive server-close vs. in-flight accept CQE races.
+- **`talyn_task_throw_trampoline`**: null `exception_value` now calls `PyObject_CallNoArgs(coro.throw)` instead of passing `NULL`; null `StopIteration.value` falls back to `Py_None`.
+- **Version Bump**: Bumped version to **0.9.5** in `pyproject.toml`, `build.zig.zon`, and AST linter banner.
+
 ## [2026-08-24] — v0.9.4 Release: Asynchronous Cancellation Safety (BUG-290 Split Fix) & Proxy Stability
 
 This release resolves an asynchronous use-after-free and type confusion vulnerability in `io_uring` cancellation dispatch (BUG-290):
