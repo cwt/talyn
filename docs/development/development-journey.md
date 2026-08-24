@@ -3,7 +3,7 @@ type: article
 title: Talyn Development Journey
 description: The complete historical narrative and timeline of developing Talyn, sorted chronologically from the latest release back to the project's inception.
 tags: [history, documentation, journey, roadmap]
-timestamp: 2026-08-24T00:00:00Z
+timestamp: 2026-08-24T15:08:18Z
 ---
 
 # Talyn Development Journey
@@ -11,6 +11,39 @@ timestamp: 2026-08-24T00:00:00Z
 Talyn is a production-grade, crash-resistant, and realistically fast `asyncio` event loop drop-in replacement for Python, powered by **Zig** and **io_uring**. 
 
 This document chronicles the engineering narrative and technical milestones of Talyn in **reverse chronological order**—starting with our latest release and architectural breakthroughs, and stepping back through performance optimizations, cross-platform builds, and deep audits to the project's original genesis.
+
+---
+
+## v0.9.6 — Linter Self-Defense: TALYN-012/013 Rules & Residual Forced-Unwrap Hardening
+
+**v0.9.6** closes the feedback loop that v0.9.4 and v0.9.5 exposed: both crash releases were caused by code that is 100% syntactically valid to the Zig compiler yet fatal at runtime under concurrent teardown — exactly the class the native AST linter was built to eradicate. This release teaches the linter those two crash patterns permanently, repairs a Zig 0.16 AST incompatibility inside the linter itself, and fixes the residual forced unwraps the new rules immediately flushed out.
+
+### 1. New Lint Rules Mirroring BUG-290 & BUG-293
+
+The post-mortem question after v0.9.5 was simple: *why couldn't our own linter have caught these?* Answer: the rules for those shapes didn't exist yet. Now they do:
+
+- **`TALYN-012/no_forced_optional_pyobject_unwrap`** ([BUG-293](bugs/293.md)): flags every forced `.?` unwrap applied directly to a nullable protocol/callback field (`protocol_factory`, `protocol_eof_received`, `protocol_connection_lost`, ...) inside IO execution paths (`src/transports/`, `src/loop/`, `src/task/`, `src/future/`). A transport torn down before its CQE arrives turns such an unwrap into `PyObject_Call*(NULL)` — the exact SIGSEGV mechanism of BUG-293.
+- **`TALYN-013/no_ptr_from_int_task_id`** ([BUG-290](bugs/290.md)): flags `@ptrFromInt(task_id)` casts that convert opaque task-slot integers back into pointers — an integer-to-pointer use-after-free whenever the slot has already returned to the free pool, as in BUG-290.
+
+Both rules are wired into the `zig build lint` scan loops with regression tests; `tools/linter/test_rules.zig` now covers **13 rules**, all passing.
+
+### 2. Eating Our Own Dog Food — Three Residual Findings
+
+Running the new TALYN-012 rule against the codebase immediately flagged three residual unwraps of the same BUG-293 shape (2 likely-safe-by-construction, 1 provably safe), all fixed rather than suppressed:
+
+- **`create_connection.socket_connected_callback`**: the connect success path now captures `future` and `protocol_factory` with `orelse` guards instead of `.?`; if the multi-connect state was torn down before completion, the future fails cleanly instead of dereferencing null fields.
+- **`create_server`**: `creation_data.protocol_factory` is guarded with `orelse return error.PythonError` when building the `StreamServer`.
+- **`stream constructors.set_protocol`**: the `connection_lost` attribute is bound to a local const so the `errdefer` no longer re-reads the nullable field — closing the check-to-use TOCTOU window that free-threading GC can exploit.
+
+### 3. The Linter Fixes Itself — Zig 0.16 AST Layout Drift
+
+While validating, we discovered the existing `TALYN-006/syscall_safety` rule panicked with `access of union field`: Zig 0.16 changed the node layouts behind `.assign` and `.assign_destructure`, and the rule read stale `node_and_node` data from destructure nodes. It now reads `.assign` via `nodeData().node_and_node` and `.assign_destructure` via the structured `ast.assignDestructure()` accessor, restoring `zig build lint` and one previously-failing rule test.
+
+### Validation
+
+- `./scripts/test_all.sh --starburst --verbose`: green on **python3.13, python3.14, python3.13t, python3.14t** (338 pytest cases each + full stdlib asyncio subset, including `test_free_threading`).
+- `zig build test`: **101/101** unit tests across four suites, including **13/13** linter-rule tests.
+- Self-scan: **0 violations** across 104 Zig files (~78,000 AST nodes) and 6 Python files.
 
 ---
 
