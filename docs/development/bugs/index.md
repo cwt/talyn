@@ -1,8 +1,8 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 303 bugs discovered across audit passes."
-timestamp: "2026-08-23T00:00:00Z"
+description: "Individual bug entries for talyn, one file per bug. 305 bugs discovered across audit passes."
+timestamp: "2026-08-27T00:00:00Z"
 ---
 
 # Bugs — talyn
@@ -20,18 +20,18 @@ Sorted by bug number. See individual bug files for details.
 | Medium-High | 29 |
 | Medium | 57 |
 | Medium-Mid | 11 |
-| Medium-Low | 19 |
+| Medium-Low | 21 |
 | Low | 63 |
-| **Total** | **303** |
+| **Total** | **305** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
 | Fixed | 290 |
-| Open | 0 |
+| Open | 2 |
 | False Positive | 13 |
-| **Total** | **303** |
+| **Total** | **305** |
 
 ## All Bugs
 
@@ -340,3 +340,5 @@ Sorted by bug number. See individual bug files for details.
 | [302](302.md) | Dead store of computed Loop data pointer in `accept_callback` | Low | Fixed |
 | [303](303.md) | `create_task` on a closed loop segfaults instead of raising RuntimeError | High | Fixed |
 | [304](304.md) | `fast_new_task` failure paths double-free coro/context/name (consume-on-success ownership) | Critical | Fixed |
+| [305](305.md) | Free-threaded module cleanup skips `release_python_imports` — all cached module references leak | Medium-Low | Open |
+| [306](306.md) | `UnixSignals.link()` installs the dummy signal handler before blocking the signal — arriving signals in the window are silently lost | Medium-Low | Open |
