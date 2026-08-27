@@ -139,12 +139,21 @@ pub fn enqueue_signal_fd(self: *UnixSignals, comptime cancel_old: bool) !void {
 }
 
 pub fn link(self: *UnixSignals, sig: std.os.linux.SIG, callback: CallbackManager.Callback) !void {
-    // When the user create a new thread, we need to avoid that python catch the signal
-    _ = signal(@as(i32, @intCast(@intFromEnum(sig))), @ptrCast(&dummy_signal_handler));
-
     const mask = &self.mask;
+    // BUG-306: Block the signal BEFORE installing the dummy handler. The
+    // previous order installed the no-op handler first, leaving a window
+    // in which an arriving signal was executed and discarded by the dummy
+    // — neither raised as KeyboardInterrupt nor delivered via signalfd,
+    // silently lost. Blocking first converts such an occurrence into a
+    // PENDING signal that signalfd reports as soon as its mask covers it,
+    // so nothing can slip through between setup steps.
     std.posix.sigaddset(mask, sig);
     std.posix.sigprocmask(std.os.linux.SIG.BLOCK, mask, null);
+
+    // When the user create a new thread, we need to avoid that python catch the signal.
+    // Installed second: glibc's siginterrupt patches the CURRENTLY installed
+    // action, so it must run after signal().
+    _ = signal(@as(i32, @intCast(@intFromEnum(sig))), @ptrCast(&dummy_signal_handler));
     _ = siginterrupt(@as(i32, @intCast(@intFromEnum(sig))), 0);
 
     self.fd = try std.posix.signalfd(self.fd, mask, 0);
@@ -168,16 +177,19 @@ pub fn unlink(self: *UnixSignals, sig: std.os.linux.SIG) !void {
         return error.KeyNotFound;
     }
 
-    // Restore the default signal disposition by unblocking the signal,
-    // removing it from the signalfd mask, and reinstalling the default signal handler.
-    var mask: std.posix.sigset_t = std.posix.sigemptyset();
-    std.posix.sigaddset(&mask, sig);
-    std.posix.sigprocmask(std.os.linux.SIG.UNBLOCK, &mask, null);
-
+    // BUG-306: disarm completely BEFORE unblocking — drop the signal from
+    // the signalfd mask, restore the default disposition, and unblock last.
+    // Unblocking first let an arriving signal land on the still-installed
+    // no-op dummy handler (no longer covered by signalfd), losing the event
+    // silently during the teardown window.
     std.posix.sigdelset(&self.mask, sig);
     self.fd = try std.posix.signalfd(self.fd, &self.mask, 0);
     _ = signal(@as(i32, @intCast(@intFromEnum(sig))), &default_signal_handler);
     _ = siginterrupt(@as(i32, @intCast(@intFromEnum(sig))), 1);
+
+    var mask: std.posix.sigset_t = std.posix.sigemptyset();
+    std.posix.sigaddset(&mask, sig);
+    std.posix.sigprocmask(std.os.linux.SIG.UNBLOCK, &mask, null);
 }
 
 pub fn init(loop: *Loop) !void {
@@ -243,6 +255,37 @@ fn traverse_btree_node(node: anytype, visit: python_c.visitproc, arg: ?*anyopaqu
         }
     }
     return 0;
+}
+
+// BUG-306: the race is between adjacent kernel calls inside link()/unlink()
+// and cannot be triggered deterministically from user space, so the
+// regression tripwire asserts the REQUIRED ORDERING structurally: block
+// before dummy-handler install in link(), and full disarm (signalfd re-mask
+// + default handler restore) before the final unblock in unlink(). Reading
+// this module's own source at comptime keeps the guard zero-cost and fails
+// the build if anyone ever swaps the steps back.
+test "BUG-306: link blocks before dummy handler; unlink disarms before unblocking" {
+    const src = @embedFile("unix_signals.zig");
+
+    const link_start = std.mem.find(u8, src, "pub fn link(") orelse return error.TestUnexpectedResult;
+    const unlink_start = std.mem.findPos(u8, src, link_start + 1, "pub fn unlink(") orelse return error.TestUnexpectedResult;
+    const init_start = std.mem.findPos(u8, src, unlink_start + 1, "pub fn init(") orelse return error.TestUnexpectedResult;
+
+    const link_body = src[link_start..unlink_start];
+    const unlink_body = src[unlink_start..init_start];
+
+    // link(): SIG.BLOCK must appear before the dummy handler install.
+    const link_block = std.mem.find(u8, link_body, "SIG.BLOCK") orelse return error.TestUnexpectedResult;
+    const link_dummy = std.mem.find(u8, link_body, "&dummy_signal_handler") orelse return error.TestUnexpectedResult;
+    try std.testing.expect(link_block < link_dummy);
+
+    // unlink(): both signalfd re-mask and default-handler restore must
+    // precede the SIG.UNBLOCK.
+    const unlink_signalfd = std.mem.find(u8, unlink_body, "self.fd = try std.posix.signalfd(self.fd, &self.mask") orelse return error.TestUnexpectedResult;
+    const unlink_default = std.mem.find(u8, unlink_body, "&default_signal_handler") orelse return error.TestUnexpectedResult;
+    const unblock_pos = std.mem.find(u8, unlink_body, "SIG.UNBLOCK") orelse return error.TestUnexpectedResult;
+    try std.testing.expect(unlink_signalfd < unblock_pos);
+    try std.testing.expect(unlink_default < unblock_pos);
 }
 
 const UnixSignals = @This();
