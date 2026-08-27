@@ -11,6 +11,7 @@ tracking the C type's refcount across multiple interpreter lifetimes.
 
 import subprocess
 import sys
+import textwrap
 
 
 def test_bug41_module_cleanup_no_double_decref() -> None:
@@ -72,4 +73,87 @@ def test_bug41_type_refcount_stable() -> None:
     assert abs(rc1 - rc2) < 5, (
         f"Refcount changed by {rc1 - rc2} after gc; "
         f"this suggests a double-decref. rc1={rc1}, rc2={rc2}"
+    )
+
+
+# BUG-305 regression harness: repeated import -> full-unload cycles inside a
+# single subprocess. talyn_zig caches ~25 imported Python objects (asyncio
+# module, exception classes, task-registry functions, ...) in .so-global
+# atomics that SURVIVE module instance unload. Each PyInit re-imports and
+# stores over those slots, so every load cycle contributes one owned
+# reference to each cached object. When module_cleanup skipped
+# release_python_imports (pre-fix free-threaded builds), nothing ever gave
+# them back: sys.getrefcount(<cached object>) grew by 1 per load/unload
+# cycle. Post-fix, release_python_imports runs unconditionally and refcounts
+# return to their steady state every cycle.
+BUG305_SUBPROCESS_SCRIPT = textwrap.dedent(
+    """
+    import gc
+    import importlib
+    import sys
+
+    import asyncio  # measured target: talyn caches a reference to this module
+
+    count_cycles = int(sys.argv[1])
+
+    # Importing the package initializes talyn_zig's import cache exactly once.
+    mod = importlib.import_module("talyn")
+    _ = getattr(mod.Loop if hasattr(mod, "Loop") else mod, "run", None)
+
+    refs_first_cycle = sys.getrefcount(asyncio)
+    refs_last_cycle = refs_first_cycle
+
+    for _ in range(count_cycles):
+        for name in [n for n in list(sys.modules) if n.startswith("talyn")]:
+            del sys.modules[name]
+        mod = None
+        gc.collect()
+        gc.collect()
+        mod = importlib.import_module("talyn")
+        refs_last_cycle = sys.getrefcount(asyncio)
+
+    drift = refs_last_cycle - refs_first_cycle
+    print(f"BUG305RESULT {refs_first_cycle} {refs_last_cycle} {drift}")
+
+    # Full-unload at exit exercises m_free under the fixed cleanup path.
+    for name in [n for n in list(sys.modules) if n.startswith("talyn")]:
+        del sys.modules[name]
+    del mod
+    gc.collect()
+    gc.collect()
+    """
+)
+
+
+def test_bug305_repeated_load_unload_does_not_leak_cached_imports() -> None:
+    """Cached imports must be released once per extension teardown.
+
+    Pre-fix behavior (free-threaded builds): each load/unload cycle leaked
+    one owned reference per cached object, so getrefcount(asyncio) drifted
+    by +1 per cycle AND the subprocess could accumulate tens of leaked
+    references. Post-fix: zero drift across cycles.
+
+    This test also guards the original "skip cleanup in free-threading"
+    rationale: if the unconditional release ever reintroduced a teardown
+    crash, the subprocess exits nonzero and the assert below fires.
+    """
+    r = subprocess.run(
+        [sys.executable, "-c", BUG305_SUBPROCESS_SCRIPT, "8"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert r.returncode == 0, (
+        f"subprocess exited with code {r.returncode}\n"
+        f"STDOUT: {r.stdout}\nSTDERR: {r.stderr}"
+    )
+    result_line = next(
+        line for line in r.stdout.splitlines() if line.startswith("BUG305RESULT")
+    )
+    _, first, last, drift = result_line.split()
+    first, last, drift = int(first), int(last), int(drift)
+    assert drift <= 0, (
+        f"asyncio refcount drifted by +{drift} over repeated "
+        f"load/unload cycles ({first} -> {last}); cached imports are "
+        f"being leaked by module_cleanup (BUG-305)"
     )

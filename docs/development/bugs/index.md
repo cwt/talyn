@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 290 |
-| Open | 2 |
+| Fixed | 291 |
+| Open | 1 |
 | False Positive | 13 |
 | **Total** | **305** |
 
@@ -340,5 +340,5 @@ Sorted by bug number. See individual bug files for details.
 | [302](302.md) | Dead store of computed Loop data pointer in `accept_callback` | Low | Fixed |
 | [303](303.md) | `create_task` on a closed loop segfaults instead of raising RuntimeError | High | Fixed |
 | [304](304.md) | `fast_new_task` failure paths double-free coro/context/name (consume-on-success ownership) | Critical | Fixed |
-| [305](305.md) | Free-threaded module cleanup skips `release_python_imports` — all cached module references leak | Medium-Low | Open |
+| [305](305.md) | Free-threaded module cleanup skips `release_python_imports` — all cached module references leak | Medium-Low | Fixed |
 | [306](306.md) | `UnixSignals.link()` installs the dummy signal handler before blocking the signal — arriving signals in the window are silently lost | Medium-Low | Open |

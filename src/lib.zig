@@ -22,12 +22,22 @@ const dynamic_talyn_types_ptrs = .{ &loop.Python.LoopType, &transports.Stream.St
 const dynamic_talyn_modules_names = .{ "Loop\x00", "StreamTransport\x00", "StreamServer\x00", "DatagramTransport\x00", "SubprocessTransport\x00" };
 
 fn module_cleanup(_: *python_c.PyObject) callconv(.c) void {
-    // Skip Python object cleanup in free-threading mode to avoid
-    // teardown segfaults from GC/refcounting race conditions.
-    // All memory is reclaimed by the OS on process exit anyway.
+    // BUG-305: release the cached Python module references on EVERY
+    // teardown, including free-threaded builds. The historical skip of
+    // Python object cleanup in free-threading mode guarded against
+    // teardown segfaults that traced back to the BUG-41-era double-decref
+    // of type objects — which BUG-41 already removed. Plain Py_DecRef of
+    // imported modules carries no such hazard: CPython's free-threaded
+    // runtime supports concurrent reference counting, and interpreter
+    // finalization reaches module dealloc after world threads are joined.
+    //
+    // release_python_imports() is itself race-safe under free-threading:
+    // it swap-extracts each cached reference (BUG-305), so even if this
+    // callback were invoked concurrently or reentrantly, every reference
+    // would be decremented exactly once.
+    utils.PythonImports.release_python_imports();
     if (builtin.single_threaded) {
         deinitialize_talyn_types();
-        utils.PythonImports.release_python_imports();
     }
     // if (builtin.mode == .Debug) {
     //     _ = utils.gpa.detectLeaks();

@@ -125,10 +125,16 @@ pub fn release_python_imports() void {
         const T = @TypeOf(@field(@This(), decl.name));
         if (T != Atomic(?PyObject)) continue;
         const field = &@field(@This(), decl.name);
-        const val = field.load(.acquire);
+        // BUG-305: swap-extract instead of load-then-store so exactly one
+        // caller (thread) receives the reference and drops it. Under
+        // free-threading a load/store pair would let two threads both see
+        // the same non-null value and double-decref it; swap guarantees
+        // single ownership transfer per cached reference.
+        // Optional pointers have plain pointer ABI in Zig, so the atomic
+        // operates on a single word with null as the empty sentinel.
+        const val = field.swap(null, .acq_rel);
         if (val) |v| {
             python_c.py_decref(v);
         }
-        field.store(null, .release);
     }
 }
