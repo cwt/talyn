@@ -1,42 +1,55 @@
+---
+type: attested_computation
+title: "Talyn v0.7.0 Comprehensive Performance Analysis"
+description: "Performance benchmarks evaluating Talyn v0.7.0 against CPython asyncio and uvloop across x86_64 and aarch64."
+status: stable
+sources:
+  - benchmarks/core-ultra-7-265/benchmarks-v0.7.0-3.14-starburst.txt
+  - benchmarks/n6000/benchmarks-v0.7.0-3.14-starburst.txt
+  - benchmarks/macbook-neo/benchmarks-v0.7.0-3.14-starburst.txt
+verified: machine-confirmed
+timestamp: "2026-05-25T00:00:00Z"
+---
+
 # Talyn v0.7.0 Comprehensive Performance Analysis
 
 This report presents a detailed analysis of the performance benchmarks for **Talyn v0.7.0**. The benchmarks evaluate `talyn` in its optimized Starburst (`ReleaseFast`) mode against standard CPython `asyncio` and `uvloop` across multiple dimensions:
 
-1.  **Hardware Architectures**: 
-    *   **Core Ultra 7-265**: A high-performance hybrid-core desktop CPU.
-    *   **Celeron N6000**: A low-power, entry-level mobile processor (Jasper Lake).
-    *   **Macbook Neo (via virtualization)**: A modern ARM-based laptop processor (Apple Silicon / ARM64). Note that because Talyn depends on Linux-specific `io_uring` APIs, running it on macOS requires virtualizing a Linux kernel. The benchmarks were run inside Fedora 44 hosted via Podman (`podman-machine`) utilizing Apple's Hypervisor.framework, rather than running natively on the macOS/XNU kernel or BSD-based stack.
-2.  **Python Runtimes**: 
-    *   **Python 3.14**: Standard CPython with the Global Interpreter Lock (GIL) enabled.
-    *   **Python 3.14t**: CPython Free-Threading (GIL-disabled) mode.
-3.  **Zig Build Optimization Modes**: 
-    *   `starburst`: ReleaseFast mode (compiler optimizations optimized for speed, safety checks disabled). All Talyn benchmarks for v0.7.0 are evaluated in this peak performance mode.
+1. **Hardware Architectures**:
+    * **Core Ultra 7-265**: A high-performance hybrid-core desktop CPU.
+    * **Celeron N6000**: A low-power, entry-level mobile processor (Jasper Lake).
+    * **Macbook Neo (via virtualization)**: A modern ARM-based laptop processor (Apple Silicon / ARM64). Note that because Talyn depends on Linux-specific `io_uring` APIs, running it on macOS requires virtualizing a Linux kernel. The benchmarks were run inside Fedora 44 hosted via Podman (`podman-machine`) utilizing Apple's Hypervisor.framework, rather than running natively on the macOS/XNU kernel or BSD-based stack.
+2. **Python Runtimes**:
+    * **Python 3.14**: Standard CPython with the Global Interpreter Lock (GIL) enabled.
+    * **Python 3.14t**: CPython Free-Threading (GIL-disabled) mode.
+3. **Zig Build Optimization Modes**:
+    * `starburst`: ReleaseFast mode (compiler optimizations optimized for speed, safety checks disabled). All Talyn benchmarks for v0.7.0 are evaluated in this peak performance mode.
 
 ---
 
 ## 1. Executive Summary
 
-*   **Socket Ops Performance Breakthrough**: Across all tested architectures, Talyn v0.7.0 delivers a massive performance leap in socket operations. In Socket Ops, Talyn outperforms standard `asyncio` by up to **3.47x** and consistently beats `uvloop` (which peaks at **3.05x**). This breakthrough was achieved by analyzing a regression after v0.6.3 (caused by defensive `CancelByFd` overhead during socket close) and optimizing the teardown sequence to bypass cancellation system calls when no reads or writes are pending.
-*   **Apple Silicon (ARM64) Support**: The introduction of Macbook Neo benchmarks shows that Talyn is highly optimized for ARM-based systems, yielding **1.8x to 2.6x speedups** on event loop and I/O tasks.
-*   **Low-Power Efficiency**: Talyn remains a superior drop-in accelerator on resource-constrained devices. On the Celeron N6000, Talyn consistently outperforms standard `asyncio` by **1.7x to 2.2x** in complex scheduler scenarios, minimizing event loop overhead where CPU power is limited.
-*   **Free-Threading Readiness**: Under Python 3.14t (GIL-disabled), Talyn exhibits excellent scaling, retaining up to a **2.66x speedup** on Macbook Neo and **3.11x speedup** on Core Ultra. While `uvloop` was unavailable in the macOS free-threaded environment, Talyn ran with 100% stability.
+* **Socket Ops Performance Breakthrough**: Across all tested architectures, Talyn v0.7.0 delivers a massive performance leap in socket operations. In Socket Ops, Talyn outperforms standard `asyncio` by up to **3.47x** and consistently beats `uvloop` (which peaks at **3.05x**). This breakthrough was achieved by analyzing a regression after v0.6.3 (caused by defensive `CancelByFd` overhead during socket close) and optimizing the teardown sequence to bypass cancellation system calls when no reads or writes are pending.
+* **Apple Silicon (ARM64) Support**: The introduction of Macbook Neo benchmarks shows that Talyn is highly optimized for ARM-based systems, yielding **1.8x to 2.6x speedups** on event loop and I/O tasks.
+* **Low-Power Efficiency**: Talyn remains a superior drop-in accelerator on resource-constrained devices. On the Celeron N6000, Talyn consistently outperforms standard `asyncio` by **1.7x to 2.2x** in complex scheduler scenarios, minimizing event loop overhead where CPU power is limited.
+* **Free-Threading Readiness**: Under Python 3.14t (GIL-disabled), Talyn exhibits excellent scaling, retaining up to a **2.66x speedup** on Macbook Neo and **3.11x speedup** on Core Ultra. While `uvloop` was unavailable in the macOS free-threaded environment, Talyn ran with 100% stability.
 
 ---
 
 ## 2. Key Dimensions Analysis
 
 ### A. Performance Optimization & Socket Ops Breakthrough
-Following the release of v0.6.3, a codebase-wide audit was conducted to resolve any violations of developer lessons learned. Although this improved safety, the defensive cancellation routines initially caused a significant performance regression in socket lifecycle paths. 
+Following the release of v0.6.3, a codebase-wide audit was conducted to resolve any violations of developer lessons learned. Although this improved safety, the defensive cancellation routines initially caused a significant performance regression in socket lifecycle paths.
 Further analysis identified that unconditionally issuing `CancelByFd` and flushing the submission queue on every socket close introduced expensive system calls. Bypassing this overhead when no reads or writes are active eliminated the queue-flush bottleneck, catapulting **Socket Ops** to its highest throughput ever—reaching **3.47x speedup** on Core Ultra and **2.62x** on Celeron N6000.
 
 ### B. Hardware Platform Scalability (Core Ultra 7-265 vs. Macbook Neo vs. Celeron N6000)
-*   **High-End Desktop (Core Ultra)**: Absolute throughput is maximized, with Talyn outperforming standard `asyncio` in 10 out of 11 benchmarks (matching or exceeding `uvloop`).
-*   **ARM Apple Silicon (Macbook Neo)**: Talyn shows superb cross-compilation efficiency. Under Fedora 44 virtualized via Podman on macOS, the raw execution performance remains highly competitive with native Linux environments, demonstrating that Apple's Hypervisor virtualizes `io_uring` behaviors and host hardware capabilities with minimal overhead.
-*   **Low-Power Edge (Celeron N6000)**: CPU-bound event scheduling gains are most prominent here. The overhead reduction allows the low-power CPU to process coroutines much faster, dropping execution time from `8.37s` to `4.27s` on the Async Task Workflow.
+* **High-End Desktop (Core Ultra)**: Absolute throughput is maximized, with Talyn outperforming standard `asyncio` in 10 out of 11 benchmarks (matching or exceeding `uvloop`).
+* **ARM Apple Silicon (Macbook Neo)**: Talyn shows superb cross-compilation efficiency. Under Fedora 44 virtualized via Podman on macOS, the raw execution performance remains highly competitive with native Linux environments, demonstrating that Apple's Hypervisor virtualizes `io_uring` behaviors and host hardware capabilities with minimal overhead.
+* **Low-Power Edge (Celeron N6000)**: CPU-bound event scheduling gains are most prominent here. The overhead reduction allows the low-power CPU to process coroutines much faster, dropping execution time from `8.37s` to `4.27s` on the Async Task Workflow.
 
 ### C. GIL vs. Free-Threading (GIL-Disabled)
-*   **Multi-Threaded Concurrency**: Talyn’s atomic scheduling and lock-free thread state integrations scale cleanly under Python 3.14t.
-*   **Platform Support Gaps**: On Macbook Neo with GIL-disabled Python, `uvloop` is currently not supported/enabled. Running virtualized under Fedora 44, Talyn serves as the only high-performance alternative, providing robust support and large speedups (e.g. **2.66x** in Socket Ops and **2.02x** in Async Task Workflow).
+* **Multi-Threaded Concurrency**: Talyn’s atomic scheduling and lock-free thread state integrations scale cleanly under Python 3.14t.
+* **Platform Support Gaps**: On Macbook Neo with GIL-disabled Python, `uvloop` is currently not supported/enabled. Running virtualized under Fedora 44, Talyn serves as the only high-performance alternative, providing robust support and large speedups (e.g. **2.66x** in Socket Ops and **2.02x** in Async Task Workflow).
 
 ---
 
@@ -47,6 +60,7 @@ Below is the structured data comparing average execution times (seconds) and rel
 ### Core Ultra 7-265 (High-End CPU)
 
 #### Python 3.14 (GIL Enabled)
+
 | Benchmark | Asyncio Avg (s) | Uvloop Avg (s) | Talyn Starburst (s) |
 | :--- | :---: | :---: | :---: |
 | **Event Fiesta** | 0.7047 | 0.6125 (1.15x) | **0.3965 (1.78x)** |
@@ -62,6 +76,7 @@ Below is the structured data comparing average execution times (seconds) and rel
 | **Socket Ops** | 0.0561 | 0.0184 (3.05x) | **0.0161 (3.47x)** |
 
 #### Python 3.14t (GIL Disabled / Free-Threading)
+
 | Benchmark | Asyncio Avg (s) | Uvloop Avg (s) | Talyn Starburst (s) |
 | :--- | :---: | :---: | :---: |
 | **Event Fiesta** | 0.4902 | 0.3724 (1.32x) | **0.3041 (1.61x)** |
@@ -81,6 +96,7 @@ Below is the structured data comparing average execution times (seconds) and rel
 ### Macbook Neo (ARM64 CPU)
 
 #### Python 3.14 (GIL Enabled)
+
 | Benchmark | Asyncio Avg (s) | Uvloop Avg (s) | Talyn Starburst (s) |
 | :--- | :---: | :---: | :---: |
 | **Event Fiesta** | 0.6390 | 0.5258 (1.22x) | **0.3425 (1.87x)** |
@@ -96,6 +112,7 @@ Below is the structured data comparing average execution times (seconds) and rel
 | **Socket Ops** | 0.0496 | 0.0219 (2.27x) | **0.0193 (2.57x)** |
 
 #### Python 3.14t (GIL Disabled / Free-Threading)
+
 | Benchmark | Asyncio Avg (s) | Uvloop Avg (s) | Talyn Starburst (s) |
 | :--- | :---: | :---: | :---: |
 | **Event Fiesta** | 0.4764 | N/A | **0.2778 (1.71x)** |
@@ -115,6 +132,7 @@ Below is the structured data comparing average execution times (seconds) and rel
 ### Celeron N6000 (Low-Power CPU)
 
 #### Python 3.14 (GIL Enabled)
+
 | Benchmark | Asyncio Avg (s) | Uvloop Avg (s) | Talyn Starburst (s) |
 | :--- | :---: | :---: | :---: |
 | **Event Fiesta** | 1.9750 | 1.7245 (1.15x) | **1.1042 (1.79x)** |
@@ -130,6 +148,7 @@ Below is the structured data comparing average execution times (seconds) and rel
 | **Socket Ops** | 0.2441 | 0.1647 (1.48x) | **0.0933 (2.62x)** |
 
 #### Python 3.14t (GIL Disabled / Free-Threading)
+
 | Benchmark | Asyncio Avg (s) | Uvloop Avg (s) | Talyn Starburst (s) |
 | :--- | :---: | :---: | :---: |
 | **Event Fiesta** | 1.7090 | 1.3530 (1.26x) | **0.9620 (1.78x)** |
@@ -148,11 +167,11 @@ Below is the structured data comparing average execution times (seconds) and rel
 
 ## 4. Key Takeaways & Recommendations
 
-1.  **Starburst Mode is Production-Ready**: 
+1. **Starburst Mode is Production-Ready**:
     Talyn v0.7.0’s Starburst build offers rock-solid stability while delivering up to **3.5x speedups** over standard `asyncio`. It represents the best balance of safety-correctness (following the intensive bug audit) and extreme performance.
-2.  **Unrivaled Socket Concurrency**: 
+2. **Unrivaled Socket Concurrency**:
     The teardown optimization resolves the previous Socket Ops bottleneck, making Talyn the clear loop of choice for socket-intensive apps (e.g. proxy servers, chat services, and scraping bots).
-3.  **Cross-Platform Deployments (x86 & ARM)**: 
+3. **Cross-Platform Deployments (x86 & ARM)**:
     Support for Apple Silicon (Macbook Neo) means Talyn can be used uniformly across macOS development machines and Linux servers, ensuring consistent benchmark characteristics.
-4.  **Free-Threading is a First-Class Citizen**:
+4. **Free-Threading is a First-Class Citizen**:
     Talyn’s performance on free-threaded Python (3.14t) continues to outpace standard `asyncio` while providing a viable, stable loop on platforms where `uvloop` cannot be deployed.

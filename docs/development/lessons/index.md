@@ -2,7 +2,9 @@
 type: index
 title: Lessons Learned Index
 description: Master index of development lessons learned during Talyn development (originally branched from Leviathan).
-timestamp: 2026-07-07T15:35:00Z
+status: stable
+verified: human-reviewed
+timestamp: "2026-08-27T00:00:00Z"
 ---
 
 [⬅️ Back to Index](../index.md)

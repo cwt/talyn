@@ -1,3 +1,12 @@
+---
+type: historical_archive
+title: "Leviathan Legacy Benchmarking Results"
+description: "Historical benchmark results preserved from the original Leviathan project."
+status: deprecated
+verified: human-reviewed
+timestamp: "2026-05-01T00:00:00Z"
+---
+
 # Leviathan Benchmarking Results
 
 This page presents the benchmarking results for Leviathan, showcasing its performance and efficiency compared to other event loops. The tests compare the implementation of the asyncio standard event loop, uvloop, Leviathan (single thread mode) and Leviathan (thread-safe).
@@ -20,7 +29,7 @@ In the benchmark charts:
 
 ### Test 1: Producer - Consumer
 
-For more information, refer to the [code repository](benchmarks/producer_consumer.py).
+For more information, refer to the [code repository](../../benchmarks/producer_consumer.py).
 
 ```
 +------------------------+---------+-----------+-----------+-----------+-----------+------------+----------------+
@@ -68,7 +77,7 @@ For more information, refer to the [code repository](benchmarks/producer_consume
 
 ### Test 2: Task Workflow
 
-For more information, refer to the [code repository](benchmarks/task_workflow.py).
+For more information, refer to the [code repository](../../benchmarks/task_workflow.py).
 
 ```
 +------------------------+---------+-----------+-----------+-----------+-----------+------------+----------------+
@@ -116,7 +125,7 @@ For more information, refer to the [code repository](benchmarks/task_workflow.py
 
 ### Test 3: Event Fiesta Factory
 
-For more information, refer to the [code repository](benchmarks/event_fiesta_factory.py).
+For more information, refer to the [code repository](../../benchmarks/event_fiesta_factory.py).
 
 ```
 +------------------------+---------+-----------+-----------+-----------+-----------+-----------+----------------+
@@ -164,7 +173,7 @@ For more information, refer to the [code repository](benchmarks/event_fiesta_fac
 
 ### Test 4: Chat
 
-For more information, refer to the [code repository](benchmarks/chat.py).
+For more information, refer to the [code repository](../../benchmarks/chat.py).
 
 ```
 +------------------------+---------+------------+------------+------------+-----------+------------+----------------+
@@ -212,7 +221,7 @@ For more information, refer to the [code repository](benchmarks/chat.py).
 
 ### Test 5: Food Delivery
 
-For more information, refer to the [code repository](benchmarks/food_delivery.py).
+For more information, refer to the [code repository](../../benchmarks/food_delivery.py).
 
 ```
 +------------------------+---------+-----------+-----------+-----------+-----------+-----------+----------------+
@@ -255,4 +264,3 @@ For more information, refer to the [code repository](benchmarks/food_delivery.py
 ```
 
 ![Mixed Workload Test Results](benchmark_results/food_delivery.png)
-

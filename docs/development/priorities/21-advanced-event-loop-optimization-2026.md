@@ -27,12 +27,12 @@ At extreme concurrency scales (e.g. $M=65536$), the primary runtime overhead is 
 
 ### 📈 Phase 1: High-Performance Callback Struct Slimming
 * **Objective:** Reduce task/event queue memory footprint to maximize CPU L1/L2 cache residency.
-* **Mechanism:** 
+* **Mechanism:**
   * Redesign the legacy `Callback` structure, compressing its footprint to **32 bytes or less** using compact field unions and pre-cached callback identifiers.
 * **Mandatory Safeguards (Lessons 3, 7, 11 & 14):**
   > [!CAUTION]
-  > **Avoid GC Ghost References:** Any field or union holding a `PyObject` reference must be fully visible to standard Python GC traversal interfaces. 
-  > * You must implement explicit traversal handlers. DO NOT use unverified generic wrapper macros (`deinitialize_object_fields`). 
+  > **Avoid GC Ghost References:** Any field or union holding a `PyObject` reference must be fully visible to standard Python GC traversal interfaces.
+  > * You must implement explicit traversal handlers. DO NOT use unverified generic wrapper macros (`deinitialize_object_fields`).
   > * Avoid raw pointer casts (`@alignCast(@ptrCast(ptr))`) during GC traversal sweeps to ensure deterministic memory scanning.
   > * Unexecuted callback slots must be programmatically marked `executed = true` to allow idempotent, safe cleanup sweeps and prevent double-decrefs.
 
@@ -68,9 +68,11 @@ At extreme concurrency scales (e.g. $M=65536$), the primary runtime overhead is 
 All implementation phases must be exhaustively verified to guarantee zero functional regressions:
 1. **Thread/GC Sanitizer Run:** Run tests under both `python3.14` and `python3.14t` with garbage collection active to verify reference count integrity.
 2. **Ulimit Verification:** Run all suites under strict constraints:
+
    ```bash
    ulimit -n 1024 ./scripts/test_all.sh
    ```
+
 3. **Execution Throughput Targets:**
    * **Task Spawn:** Boost relative throughput from current **0.57×–0.64×** up to **0.80×** of asyncio.
    * **TCP Echo:** Leverage unified batch completions to sustain performance at **3.0×** relative standard asyncio speed.

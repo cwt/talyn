@@ -59,13 +59,13 @@ Key measurements:
 
 ### Invariants to preserve
 
-- **`!buffers_registered ⇒ pool is full ⇒ `release_buffer` is a safe no-op.** Because `lease_buffer` returns `null` before touching the pool when `!buffers_registered`, no slot is ever leased, so `free_count == SlotCount` and `RegisteredBufferPool.release` returns early via its overflow guard. Documented on `IO.release_buffer`.
+- **`!buffers_registered ⇒ pool is full ⇒`release_buffer` is a safe no-op.** Because `lease_buffer` returns `null` before touching the pool when `!buffers_registered`, no slot is ever leased, so`free_count == SlotCount` and `RegisteredBufferPool.release` returns early via its overflow guard. Documented on `IO.release_buffer`.
 - **`RegisteredBufferPool.release` bounds-checks `index`.** A valid index only ever originates from `lease()` (0..`SlotCount-1`); an out-of-range index must not be written into `free_slots`. A `if (index >= SlotCount) return;` guard was added.
 - **Consumers pair lease/release.** `read_transport` only calls `release_buffer` when `fixed_buffer_index` was set (i.e., the lease succeeded); `perform()` passes `fixed_buffer_index = null` when none was leased, so `read.zig` issues `ring.read` (never `read_fixed`). Datagram's `RecvMsgData` has no `fixed_buffer_index` field at all, so it can never issue `read_fixed`.
 
 ### Cross-references
 
-- Bug report: [BUGS.md — BUG-117](../BUGS.md)
+- Bug report: [BUGS.md — BUG-117](../bugs/index.md)
 - Kernel feature-gating / complete fallback: [io_uring §Lesson 13](04-io-uring-and-kernel.md)
 - Deferred-submission buffer ownership: [io_uring §Lesson 60](04-io-uring-and-kernel.md)
 - Released in Talyn **v0.8.1** (BUG-117 fix + version bump).

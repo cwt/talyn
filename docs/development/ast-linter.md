@@ -2,8 +2,12 @@
 type: reference
 title: Offline AST Linter & Bug Hunter
 description: Architecture, rule catalog, and usage instructions for the native offline Zig/Python AST static analyzer.
+status: stable
+sources:
+  - build.zig
+verified: machine-confirmed
 tags: [static-analysis, ast, linter, bug-prevention, zig-ast]
-timestamp: 2026-08-16T14:10:00Z
+timestamp: "2026-08-16T14:10:00Z"
 ---
 
 [⬅️ Back to Development Index](index.md)

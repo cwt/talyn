@@ -113,8 +113,8 @@ and `BlockingTask.write_iov` fields in the persistent task_data_pool.
 - `Write.perform_with_iovecs` zero-copy: msghdr now in `data_ptr.msg_storage`
 - `Cancel.perform`: Still immediate (cancel targets in-flight ops)
 
-| # | Task | Status |
-|---|------|:---:|
+| # | Task | File | Status |
+|---|------|------|:---:|
 | 11.14 | Add `storage` fields to `BlockingTask` (msghdr, iovec) | `io/main.zig` | ✅ **DONE** |
 | 11.15 | `Timer.wait` — already deferred via `timer_storage` | `timer.zig` | ✅ Already done |
 | 11.16 | `Socket.connect` — already deferred (addr in heap) | `socket.zig` | ✅ Already done |

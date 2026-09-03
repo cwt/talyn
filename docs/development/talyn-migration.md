@@ -8,7 +8,7 @@ timestamp: 2026-07-07T15:35:00Z
 
 # Talyn Migration Plan
 
-This document outlines the strategic migration, refactoring, and modernization plan to spin off the **Leviathan** event loop into a distinct, production-hardened project named **Talyn**. 
+This document outlines the strategic migration, refactoring, and modernization plan to spin off the **Leviathan** event loop into a distinct, production-hardened project named **Talyn**.
 
 ---
 

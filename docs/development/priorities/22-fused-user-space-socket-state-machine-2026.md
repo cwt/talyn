@@ -10,7 +10,7 @@ timestamp: 2026-07-07T16:30:00Z
 
 # ⛔ PRIORITY 22: Fused User-Space Socket State Machine — ABANDONED (2026-05-28 → 2026-05-29)
 
-> **Status: REVERTED.** This priority was implemented in changeset 568 and reverted to changeset 566 code in changeset 571. The zero-workqueue state machine approach caused Socket Ops benchmark timeouts under GIL Python and is not worth pursuing. See [Lesson 20](../lessons-learned.md#20-zero-workqueue-socket-state-machines-are-not-worth-it-2026-05-29).
+> **Status: REVERTED.** This priority was implemented in changeset 568 and reverted to changeset 566 code in changeset 571. The zero-workqueue state machine approach caused Socket Ops benchmark timeouts under GIL Python and is not worth pursuing. See [Lesson 20](../lessons/index.md#20-zero-workqueue-socket-state-machines-are-not-worth-it-2026-05-29).
 
 This document is retained as a historical record of the design, the bugs discovered during implementation, and the reasons it was ultimately abandoned.
 
@@ -45,16 +45,16 @@ Historically, socket operations (`connect`, `accept`) in `src/loop/scheduling/io
 During intensive load testing, a deadlock regression was discovered at `m=4096` along with a garbage collection division-by-zero panic under stress. These were fully investigated and solved:
 
 ### 1. The Direct `accept4` System Call Error Check Bug
-* **The Bug**: In the `accept_callback` inside [streamserver/main.zig](../../src/transports/streamserver/main.zig), the Zig return value of the raw system call `accept4` was checked using a strict `== std.math.maxInt(usize)` to detect failure.
+* **The Bug**: In the `accept_callback` inside [streamserver/main.zig](../../../src/transports/streamserver/main.zig), the Zig return value of the raw system call `accept4` was checked using a strict `== std.math.maxInt(usize)` to detect failure.
 * **The Mechanism**: On Linux, raw system calls return negative values on error (e.g., `-EAGAIN` / `0xFFFFFFFFFFFFFFF5`). Since this is not equal to `std.math.maxInt(usize)` (`-1`), transient level-triggered errors like `EAGAIN` or `ECONNABORTED` bypassed the failure block. The loop cast the large error value into a file descriptor (resulting in `-11` or `-103`), passed it to Python, and registered it in `io_uring`, which permanently stalled and deadlocked the accept queue.
 * **The Fix**: Rewrote the failure check to correctly inspect `client_fd_ret >= std.math.maxInt(usize) - 4095` and extract the exact errno directly from the returned value, ensuring transient level-triggered errors robustly re-arm the poll and never stall the queue.
 
 ### 2. GC Division-by-Zero Panic in Partially Initialized Loops
 * **The Bug**: If the loop initialization (`io_uring_queue_init`) failed with `SystemResources` under high-capacity stresses, the `LoopObject` was partially initialized, but `self.initialized` was already set to `true`. When Python GC ran to collect the failed loop object, `loop_traverse` called `traverse` on the uninitialized callback queues.
-* **The Mechanism**: In [callback_manager.zig](../../src/callback_manager.zig), the traverse loop did `i % self.capacity`. Since initialization failed before capacity was set, it panicked with `division by zero` inside the garbage collection thread.
-* **The Fix**: 
+* **The Mechanism**: In [callback_manager.zig](../../../src/callback_manager.zig), the traverse loop did `i % self.capacity`. Since initialization failed before capacity was set, it panicked with `division by zero` inside the garbage collection thread.
+* **The Fix**:
   1. Added a robust guard in `traverse` to immediately return `0` if `self.capacity == 0`.
-  2. Deferred setting `self.initialized = true` to the very end of `Loop.init` in [src/loop/main.zig](../../src/loop/main.zig). If any component fails during setup, `self.initialized` remains `false`, GC safely skips internal loop structures, and the `errdefer` chain perfectly and cleanly deallocates resources without leaks.
+  2. Deferred setting `self.initialized = true` to the very end of `Loop.init` in [src/loop/main.zig](../../../src/loop/main.zig). If any component fails during setup, `self.initialized` remains `false`, GC safely skips internal loop structures, and the `errdefer` chain perfectly and cleanly deallocates resources without leaks.
 
 ---
 

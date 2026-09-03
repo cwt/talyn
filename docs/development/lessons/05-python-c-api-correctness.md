@@ -48,10 +48,12 @@ In `callback_for_python_generic_callbacks`, `PyContext_Enter(py_context)` was ca
 **Lesson 32 — Defer Ordering and Incomplete Cleanup in Callback Execution**
 Adding `defer py_decref(handle)` after the context defer created a use-after-free: Zig defers execute in LIFO order, so the handle was decref'd BEFORE the context was exited, but the handle holds the context reference.
 - **Fix:** Declare defers in the correct order:
+
   ```zig
   defer python_c.py_decref(@ptrCast(handle));  // declared first, runs LAST
   defer _ = python_c.PyContext_Exit(py_context); // declared second, runs FIRST
   ```
+
 - **Lesson:** Zig's `defer` statements execute in **LIFO (Last In, First Out) order**. When multiple defers have dependencies (object A holds a reference to object B), the defer that should run LAST must be declared FIRST. Always verify defer ordering when cleaning up interdependent resources. Partial cleanup is worse than no cleanup — it creates subtle use-after-free bugs harder to debug than obvious leaks.
 
 **Lesson 35 — Context Leak in Task Throw Execution**

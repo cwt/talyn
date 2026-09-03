@@ -1,3 +1,12 @@
+---
+type: historical_archive
+title: "Leviathan Legacy README"
+description: "Original README preserved from the Leviathan project prior to the Talyn migration."
+status: deprecated
+verified: human-reviewed
+timestamp: "2026-05-01T00:00:00Z"
+---
+
 ![Banner](media/banner.png)
 From the depths of the sea, where darkness meets vastness, emerges Leviathan: an unyielding force of speed and power. In a world where the arcane and the agile intertwine, a loop forged in Python takes its dance. Leviathan, master of the journey, governs events with a steady hand—an **ultra-fast event loop** that deploys its bastion in **asyncio**, powered by the artistry of Zig. Between promises and futures, its path is clear: to rule swiftly where code is prepared.
 
@@ -43,9 +52,8 @@ Leviathan stands out for its speed and performance. Here is a preliminary chart 
 
 ![Performance Benchmark](benchmark_results/chat.png)
 
-For more information and additional tests, check the following file: [More benchmarks and details](BENCHMARK.md).
+For more information and additional tests, check the following file: [More benchmarks and details](leviathan-benchmark.md).
 
 ---
 
 ⚠️ **Warning**: Leviathan is still under active development. Some integrations, such as full networking support, are pending implementation.
-

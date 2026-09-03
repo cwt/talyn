@@ -57,6 +57,7 @@ Zig's `defer` statements execute in **LIFO (Last In, First Out)** order. Adding 
 **Lesson 54 — `?T` vs `error{T}!T` — The `try` Keyword Only Works on Error Unions**
 Passing `PyLong_FromLong(...)` (which returns `?*PyObject`) directly inside a `try` expression does nothing for the null case — `try` only propagates `error union` failures, not `optional` nulls.
 - **Lesson:**
+
   ```zig
   // WRONG: `try` does nothing for an optional.
   const x = try someFuncReturningOptional();
@@ -64,6 +65,7 @@ Passing `PyLong_FromLong(...)` (which returns `?*PyObject`) directly inside a `t
   // RIGHT: capture, then `orelse` to handle null.
   const x = someFuncReturningOptional() orelse return error.Failed;
   ```
+
   Every C Python API function that "may return NULL" must be handled with `orelse`, not `try`. Capture into a `const`, check `orelse`, then use it — never pass directly as a function argument.
 
 **Lesson 55 — `.?` Unwrap-Else-Panic Is Almost Never Correct in Concurrent Code**

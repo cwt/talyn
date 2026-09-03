@@ -34,9 +34,9 @@ cache pressure and fewer memory bandwidth cycles per dispatch.
 
 ### UDP Ping-Pong Timeout — ✅ FIXED (2026-05-14)
 
-The UDP Ping-Pong benchmark was failing with a timeout or entering a busy loop of 0-byte `recvmsg` completions. 
+The UDP Ping-Pong benchmark was failing with a timeout or entering a busy loop of 0-byte `recvmsg` completions.
 
-**Root Cause:** 
+**Root Cause:**
 1. **Dangling Stack Pointers:** `DatagramTransport.sendto` (connected path) used a stack-allocated `iovec`. When `PerformWriteV` was deferred (Priority 11 Phase 1), the pointer became invalid before submission.
 2. **Zero-Copy Stack MSGHdr:** `Read.perform` and `Write.perform` used stack-allocated `msghdr` structs for the `zero_copy` path. As these operations were deferred, they also used dangling pointers.
 3. **Circular Dependency:** UDP Ping-Pong involves immediate request-response. Deferring the first `sendto` (the ping) until the end of the tick created a deadlock if the loop blocked waiting for a completion that couldn't happen until the ping was sent.

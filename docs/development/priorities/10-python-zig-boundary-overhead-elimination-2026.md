@@ -55,5 +55,4 @@ The real bottleneck after debugging: the 80-byte `Callback` struct copy per `Soo
    - **Mechanism**: Pre-allocated and cached common Python socket constants (`AF_INET`, `AF_INET6`, `AF_UNIX`, `SOCK_STREAM`, `SOCK_DGRAM`) as static global `PyObject` references inside `src/utils/python_imports.zig`.
    - **Impact**: Completely eliminated the hot-path `PyLong_FromLong` CPython heap allocator churn per connection accept event in `ops.zig` (`sock_accept_callback`).
 
-
 ---

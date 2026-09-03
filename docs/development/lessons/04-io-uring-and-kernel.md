@@ -55,7 +55,6 @@ Unconditionally queuing `CancelByFd` and flushing the submission queue on every 
 
 ---
 
-
 ### Registration & Fixed Files
 
 **Lesson 12 (cross-reference)** — `ring.fd >= 0` guard before any `register_files_update` call. See [Event Loop Lifecycle](03-event-loop-lifecycle.md).

@@ -8,7 +8,7 @@ timestamp: 2026-08-24T15:08:18Z
 
 # Talyn Development Journey
 
-Talyn is a production-grade, crash-resistant, and realistically fast `asyncio` event loop drop-in replacement for Python, powered by **Zig** and **io_uring**. 
+Talyn is a production-grade, crash-resistant, and realistically fast `asyncio` event loop drop-in replacement for Python, powered by **Zig** and **io_uring**.
 
 This document chronicles the engineering narrative and technical milestones of Talyn in **reverse chronological order**—starting with our latest release and architectural breakthroughs, and stepping back through performance optimizations, cross-platform builds, and deep audits to the project's original genesis.
 
@@ -264,9 +264,9 @@ With the release of **v0.7.0**, we focused on broadening developer access, makin
    To squeeze out extra performance, we configured ThinLTO (`lib.lto = .thin`) and section garbage collection (`lib.link_gc_sections = true`) for all release builds.
 
 These improvements yielded impressive outcomes across three targeted hardware profiles:
-* **Intel Core Ultra 7 265**: Socket Ops reached a peak speedup of **3.47x** over standard `asyncio`, outpacing `uvloop` (**3.05x**). Free-threaded (Python 3.14t) task spawning also saw a clean **2.10x** improvement.
-* **Macbook Neo (ARM64)**: Socket Ops ran **2.57x** faster than asyncio under the GIL, and **2.66x** faster in free-threaded mode.
-* **Intel Celeron N6000**: Edge scaling remained solid, delivering a **2.62x** Socket Ops speedup and dropping coroutine execution times by up to 55%.
+- **Intel Core Ultra 7 265**: Socket Ops reached a peak speedup of **3.47x** over standard `asyncio`, outpacing `uvloop` (**3.05x**). Free-threaded (Python 3.14t) task spawning also saw a clean **2.10x** improvement.
+- **Macbook Neo (ARM64)**: Socket Ops ran **2.57x** faster than asyncio under the GIL, and **2.66x** faster in free-threaded mode.
+- **Intel Celeron N6000**: Edge scaling remained solid, delivering a **2.62x** Socket Ops speedup and dropping coroutine execution times by up to 55%.
 
 For the complete breakdown of results, see [BENCHMARKS-v0.7.0.md](../benchmarks/BENCHMARKS-v0.7.0.md).
 
@@ -274,7 +274,7 @@ For the complete breakdown of results, see [BENCHMARKS-v0.7.0.md](../benchmarks/
 
 ## v0.6.4 — Deep Audit, Model Swarms & The Socket Ops Leap
 
-After the release of **v0.6.3**, we instructed our coding agents to conduct a deep, comprehensive audit of the entire codebase to identify and fix any patterns that violated our accumulated [lessons/index.md](lessons/index.md). 
+After the release of **v0.6.3**, we instructed our coding agents to conduct a deep, comprehensive audit of the entire codebase to identify and fix any patterns that violated our accumulated [lessons/index.md](lessons/index.md).
 
 During this phase, we established a highly effective multi-model workflow:
 1. **Bug Hunting**: We deployed expensive, high-reasoning models (with large thinking quotas) to scrutinize the code, identify subtle bugs, and document their findings in meticulous detail in the bug tracker.
@@ -282,7 +282,7 @@ During this phase, we established a highly effective multi-model workflow:
 
 This audit successfully resolved several critical reference-counting issues, double-frees, ghost reference cycles, and potential use-after-free bugs (including BUG-108 through BUG-115).
 
-However, this rigorous application of defensive programming introduced a severe regression on the **Socket Ops** benchmark. We traced the slowdown to a defensive cancellation mechanism (BUG-116)—unconditional `CancelByFd` calls and queue flushes executing on every socket close. By optimizing the teardown sequence to bypass `CancelByFd` when no reads or writes are pending, we removed the system call overhead entirely. 
+However, this rigorous application of defensive programming introduced a severe regression on the **Socket Ops** benchmark. We traced the slowdown to a defensive cancellation mechanism (BUG-116)—unconditional `CancelByFd` calls and queue flushes executing on every socket close. By optimizing the teardown sequence to bypass `CancelByFd` when no reads or writes are pending, we removed the system call overhead entirely.
 
 The result was a stunning breakthrough: Socket Ops performance didn't just recover—it leaped to its highest benchmark scores yet, proving that correctness and extreme performance can go hand-in-hand. Detailed benchmark logs: [Intel Core Ultra 7 265 (Python 3.14 Starburst)](../benchmarks/core-ultra-7-265/benchmarks-v0.6.4-3.14-starburst.txt).
 
@@ -298,14 +298,14 @@ Through meticulous optimization of struct layouts and memory boundaries, we reso
 
 ## v0.6.0 — Performance & Stability: Unlocking ReleaseFast
 
-With **v0.5.0** fully stable in `ReleaseSafe` mode, we turned our attention to the final barrier: **`ReleaseFast`** optimizations. For a long time, the project suffered from regressions when compiled with `ReleaseFast`—specifically failing standard Python AsyncIO test suites (`test_streams`). 
+With **v0.5.0** fully stable in `ReleaseSafe` mode, we turned our attention to the final barrier: **`ReleaseFast`** optimizations. For a long time, the project suffered from regressions when compiled with `ReleaseFast`—specifically failing standard Python AsyncIO test suites (`test_streams`).
 
 Through rigorous investigation, we uncovered three core compiler and optimization-related issues that only surfaced under the aggressive code reordering of `ReleaseFast`:
 1. **Strict C-Struct Memory Alignment**: The LLVM optimizer vectorized memory operations aggressively. Structs matching Python C-mappings (such as `FutureObject.data`) lacked explicit alignment declarations, causing memory faults during vectorized operations.
 2. **Aggressive Const-Folding**: Essential type descriptors (like `loop_spec`) were folded away as compile-time constants by the optimizer, losing runtime type check guarantees.
 3. **Shutdown Re-Arming Races**: By removing asynchronous queuing (`IOSQE_ASYNC`) to maximize speed, active event watchers (like test readers) registered synchronously and re-armed themselves instantly, creating an infinite loop during stopping iterations.
 
-By correcting alignments, declaring type specs as mutable `var` instances to prevent folding, and adhering to strict Python AsyncIO stop semantics (exiting at the end of the iteration), we fully resolved all `ReleaseFast` stability bugs. 
+By correcting alignments, declaring type specs as mutable `var` instances to prevent folding, and adhering to strict Python AsyncIO stop semantics (exiting at the end of the iteration), we fully resolved all `ReleaseFast` stability bugs.
 
 Consequently, we updated **Starburst mode (`--starburst`) to point to `ReleaseFast` by default** and added a `--safe` flag for `ReleaseSafe`. The results spoke for themselves, delivering massive performance gains—such as doubling throughput on **TCP Echo** and turning a **Socket Ops** deficit into a victory over standard `asyncio`—all while maintaining 100% test suite passing.
 
@@ -319,9 +319,9 @@ Benchmark logs:
 
 As of changeset 566, our preliminary benchmark results on Python [3.14](../benchmarks/core-ultra-7-265/benchmarks-566-3.14.txt) and [3.14t](../benchmarks/core-ultra-7-265/benchmarks-566-3.14t.txt) were promising. But there was a massive catch: those benchmarks were run on a **Debug** build!
 
-When compiling a **ReleaseSafe** build, everything broke. The optimized build exposed severe, hidden concurrency bugs, especially under free-threading. We tried to isolate the bugs by compiling only the `io` module in `Debug` mode while keeping the rest of the modules in `ReleaseSafe`. While this hybrid approach worked for a time, it was not 100% stable under high stress. 
+When compiling a **ReleaseSafe** build, everything broke. The optimized build exposed severe, hidden concurrency bugs, especially under free-threading. We tried to isolate the bugs by compiling only the `io` module in `Debug` mode while keeping the rest of the modules in `ReleaseSafe`. While this hybrid approach worked for a time, it was not 100% stable under high stress.
 
-At that point, we suspected that our primary development machine (an Intel Core Ultra 7 265) was simply too fast—its quick core switching effectively masked real, subtle race conditions and timing-dependent deadlocks. 
+At that point, we suspected that our primary development machine (an Intel Core Ultra 7 265) was simply too fast—its quick core switching effectively masked real, subtle race conditions and timing-dependent deadlocks.
 
 To flush these bugs out, we switched development to a mini PC powered by a much slower Intel N6000 CPU. The resource-constrained processor immediately exposed the race conditions, deadlocks, and scheduling issues. Days of debugging and iterating on this mini PC resolved every single crash, hang, and deadlock, finally delivering a rock-solid **v0.5.0**.
 

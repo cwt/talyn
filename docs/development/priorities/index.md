@@ -2,6 +2,8 @@
 type: index
 title: "Priorities — talyn"
 description: "Project priority tracking documents for talyn, ordered by priority number."
+status: stable
+verified: human-reviewed
 timestamp: "2026-08-14T00:00:00Z"
 ---
 

@@ -1,11 +1,13 @@
 # Developer Agent Instructions
 
-This repository uses the Open Knowledge Format (OKF v0.1) to document development rules, architectural mandates, and lessons learned.
+This repository uses the Open Knowledge Format (OKF v0.2) to document development rules, architectural mandates, and lessons learned.
 
 ## OKF Bundle Root
-- **Talyn Documentation Bundle**: Located at [docs/development/](docs/development/)
-  - **Root Index File**: [docs/development/index.md](docs/development/index.md) (contains priorities and knowledge base links)
-  - **Lessons Learned Index**: [docs/development/lessons/index.md](docs/development/lessons/index.md) (nested bundle index)
+- **Master Documentation Bundle**: Located at [docs/](docs/)
+  - **Master Root Index File**: [docs/index.md](docs/index.md) (contains master priorities, knowledge base, benchmarks, and history)
+- **Development Documentation Bundle**: Located at [docs/development/](docs/development/)
+  - **Development Index File**: [docs/development/index.md](docs/development/index.md) (contains priorities, bugs, and development history)
+  - **Lessons Learned Index**: [docs/development/lessons/index.md](docs/development/lessons/index.md) (nested topic bundle index)
 
 ## Rules for Agents
 Before implementing any changes, refactoring, or writing new code:

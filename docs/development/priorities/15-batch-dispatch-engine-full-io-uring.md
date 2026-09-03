@@ -16,6 +16,7 @@ Infrastructure in place. Batch insertion disabled; completions flow through stan
 All 268 tests pass on all 4 Pythons (3.13, 3.14, 3.13t, 3.14t).
 
 **Files added/modified:**
+
 | File | Change |
 |------|--------|
 | `src/loop/completion.zig` | New: `CompletionOp` enum, `CompletionRecord` (32 bytes), `CompletionBatch` (max 4096, GC-safe traverse) |
@@ -64,6 +65,7 @@ the next `reset()` created a race where GC traversal could visit stale pointers.
 6. No GC traverse for the batch at all.
 
 **Files changed:**
+
 | File | Change |
 |------|--------|
 | `src/loop/completion.zig` | Remove PyObject fields + `traverse()`. Add `stream_transport`, `buffer_ptr` fields |
@@ -100,6 +102,7 @@ Zig: copy_cqes → fetch_completed_tasks        Zig: copy_cqes → fill Completi
 ```
 
 **CompletionRecord** (lightweight, no function pointers):
+
 ```zig
 const CompletionRecord = struct {
     operation: enum { DataReceived, EofReceived, ConnectionLost, 
@@ -128,7 +131,7 @@ Instead of copying a 48-byte `Callback` struct (with function pointer, module_pt
 #### Phase 2: io_uring SQPOLL — Zero-Syscall Submission — ⛔ REVERTED
 
 SQPOLL was implemented and tested but **reverted** after benchmarks showed net regressions.
-See [PRIORITY 17](#🔴-priority-17-sqpoll-hang-after-16000-total-sqes--✅-fixed-2026-05-17) for full analysis.
+See [PRIORITY 17](17-sqpoll-hang-after-16000-total-sqes.md) for full analysis.
 
 | # | Task | Status |
 |---|------|:------:|
@@ -148,8 +151,8 @@ theoretically valuable but practically harmful on this kernel.
 IOSQE_FIXED_FILE optimization eliminates `fget`/`fput` per IO operation. Socket FDs are
 registered in a sparse fixed file table at transport creation. Index 0 reserved for eventfd.
 
-**Architectural Design Update (2026-05-25):** 
-An `io_uring` ring allows only a single buffer registration table. Dynamic register/unregister operations per transport are extremely slow and trigger kernel-level `EBUSY` errors when multiple I/O requests are in flight. 
+**Architectural Design Update (2026-05-25):**
+An `io_uring` ring allows only a single buffer registration table. Dynamic register/unregister operations per transport are extremely slow and trigger kernel-level `EBUSY` errors when multiple I/O requests are in flight.
 
 To solve this, we implemented a global, contiguous **`RegisteredBufferPool`** (64 slots of 64KB, totaling 4MB to fit standard host `MEMLOCK` limits) inside `IO.init()`. Memory is touch-initialized with `@memset` to guarantee residency in writable physical pages before registration. Transports dynamically lease/release a slot index and its pre-registered memory slice at creation/destruction. If the pool is empty, they fallback gracefully to heap-allocated buffers and standard `read` operations.
 

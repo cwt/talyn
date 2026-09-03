@@ -1,3 +1,12 @@
+---
+type: log
+title: "Chronological Update Log — Talyn Documentation Bundle"
+description: "Tracks modifications, releases, and architectural changes across the Talyn documentation bundle."
+status: stable
+verified: human-reviewed
+timestamp: "2026-08-24T00:00:00Z"
+---
+
 # Chronological Update Log — Talyn Documentation Bundle
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
@@ -149,7 +158,6 @@ A comprehensive codebase audit across all subsystems (event loop, signals, child
 - Logged **BUG-160** (Low): Tautological unsigned comparison `optname < 0` and missing conversion error check in `pseudosocket_setsockopt` in `src/utils/pseudosocket.zig`.
 - Updated `docs/development/bugs/index.md` summary counts (Total: 160 bugs; 157 Fixed, 0 Open, 3 False Positive). All 9 bugs (BUG-153 through BUG-161) resolved and verified.
 
-
 ## [2026-08-15] — Comprehensive Deep Codebase Audit (BUG-132 through BUG-152)
 
 A comprehensive codebase audit across all subsystems (event loop, IO scheduling, stream/datagram/subprocess transports, futures, tasks, DNS parser, watchers, memory management, and Python wrapper layers) discovered 21 concrete bugs and memory safety issues:
@@ -203,11 +211,11 @@ This release fixes 9 bugs (BUG-122 through BUG-130) discovered by a Zig 0.16.0 c
 - Bumped version to **0.8.7** in `pyproject.toml` and `build.zig.zon`.
 
 ## [2026-08-06] — v0.8.5 Release: Multi-Arch Linux Build/Test on x86_64, BUG-121 Fix
-- Fixed **BUG-121** (High): `/etc/resolv.conf` with a lone `search .` entry (systemd-resolved stub output when no search domains are configured) crashed loop init with `RuntimeError: InvalidConfiguration`. The search-directive parser now skips a `.` root-domain entry instead of failing hostname validation. See [development/bugs/121.md](development/bugs/121.md).
+- Fixed **BUG-121** (High): `/etc/resolv.conf` with a lone `search .` entry (systemd-resolved stub output when no search domains are configured) crashed loop init with `RuntimeError: InvalidConfiguration`. The search-directive parser now skips a `.` root-domain entry instead of failing hostname validation. See [development/bugs/121.md](bugs/121.md).
 - Added **native multi-architecture wheel building on x86_64**: Zig's cross-compiler now produces `aarch64` and `riscv64` wheels at full host speed (`scripts/linux/build_all_wheels.sh`, 12 wheels total). `setup.py` detects cross-compilation (skips linking the host's `libpython`, rewrites the extension SOABI suffix for the target arch), and `build.zig` defines `__riscv_float_abi_double` for riscv64 (Zig 0.16 translate-c omission).
 - Added **foreign-architecture VM testing**: `scripts/linux/run_tests.sh` boots real Fedora 44 aarch64/riscv64 QEMU VMs and runs the full pytest suite against each installed wheel; `scripts/linux/run_test_all.sh` cross-compiles the extension natively and runs `test_all.sh --no-build` in the VM (~2.4x faster than an in-VM build). QEMU user-mode/containers cannot run Talyn (io_uring is `ENOSYS` under user-mode emulation).
 - Improved `scripts/test_all.sh`: per-test timeouts are overridable (`TALYN_TEST_TIMEOUT`, `TALYN_STDLIB_TIMEOUT`) and a failing build no longer silently aborts the suite under `set -e`.
-- Documented the full workflow in `README.md` (Fedora 44 prerequisites, build/cross-compile/test, measured timings) and [development/development-journey.md](development/development-journey.md) (v0.8.5 section).
+- Documented the full workflow in `README.md` (Fedora 44 prerequisites, build/cross-compile/test, measured timings) and [development/development-journey.md](development-journey.md) (v0.8.5 section).
 - Bumped version to **0.8.5** in `pyproject.toml` and `build.zig.zon`.
 
 ## [2026-07-07] — Bundle Initialization & OKF Conversion
@@ -220,15 +228,15 @@ This release fixes 9 bugs (BUG-122 through BUG-130) discovered by a Zig 0.16.0 c
 - Created `AGENTS.md` at the project root to enable AI auto-discovery of the OKF bundle.
 
 ## [2026-07-15] — BUG-117 Fix & v0.8.1 Release
-- Fixed **BUG-117** (Critical): io_uring registered (fixed) buffer registration failure under `RLIMIT_MEMLOCK` pressure was previously swallowed and tore down `buffer_pool` prematurely. Replaced with a behavior-preserving graceful fallback (`buffers_registered` flag; `lease_buffer()` returns null; consumers fall back to heap buffers; `IO.deinit` keeps a single `buffer_pool.deinit`). See [development/lessons/23-bug-117-registered-buffer-fallback-2026.md](development/lessons/23-bug-117-registered-buffer-fallback-2026.md) and [development/bugs/117.md](development/bugs/117.md).
+- Fixed **BUG-117** (Critical): io_uring registered (fixed) buffer registration failure under `RLIMIT_MEMLOCK` pressure was previously swallowed and tore down `buffer_pool` prematurely. Replaced with a behavior-preserving graceful fallback (`buffers_registered` flag; `lease_buffer()` returns null; consumers fall back to heap buffers; `IO.deinit` keeps a single `buffer_pool.deinit`). See [development/lessons/23-bug-117-registered-buffer-fallback-2026.md](lessons/23-bug-117-registered-buffer-fallback-2026.md) and [development/bugs/117.md](bugs/117.md).
 - Hardened `RegisteredBufferPool.release` with an `index >= SlotCount` bounds guard and documented the `!buffers_registered ⇒ pool-full ⇒ release is a safe no-op` invariant on `IO.release_buffer`.
 - Fixed the BUG-117 regression test (`tests/test_buffer_fallback.py`): it failed in the full `test_all.sh` suite because clamping `RLIMIT_MEMLOCK` in the shared pytest process also broke io_uring **ring setup** (per-process pinned-memory budget not yet reclaimed after prior loop teardowns). The scenario now runs in an isolated subprocess for a clean per-process MEMLOCK budget.
 - Bumped version to **0.8.1** in `pyproject.toml` and `build.zig.zon`.
 
 ## [2026-07-15] — Connection-Creation Memory-Safety Fixes (BUG-118/119/120), Memory-Safety CI, & v0.8.2
-- Fixed **BUG-118** (Critical, double-free): `submit_connect_for_address` freed `socket_data` twice on the connect-submit error path — a redundant explicit `allocator.destroy(socket_data)` in the `catch` alongside the top-of-function `errdefer`. Removed the duplicate free; `socket_data` is now freed exactly once, with ownership transferred to the io_uring callback chain on success. Same error class as BUG-04. See [development/bugs/118.md](development/bugs/118.md).
-- Fixed **BUG-119** (Critical, double-free): `connection_data` was double-freed when `z_create_socket_connection` failed after `MultiConnectState.init` but before any successful submit (the outer `errdefer` in `create_socket_connection` plus `mcs.deinit`). Made ownership single-owner — `create_socket_connection` owns `connection_data` until `mcs` takes over; a guard `errdefer` frees it only pre-handoff. Removed the outer `errdefer` double-free and captured the future handle up front. See [development/bugs/119.md](development/bugs/119.md).
-- Fixed **BUG-120** (Critical, use-after-free): with happy-eyeballs, the first connect freed `mcs` while the `WaitTimer` callback (`schedule_remaining_connects_callback`, `user_data == mcs`) was still pending — cancelling a `WaitTimer` still enqueues the callback (it runs on fire *or* cancel). Made the timer callback the sole teardown owner of `mcs` whenever a timer is scheduled; connect callbacks defer via a `!(timer_scheduled and !timer_fired)` guard. Mirrors BUG-115. See [development/bugs/120.md](development/bugs/120.md).
+- Fixed **BUG-118** (Critical, double-free): `submit_connect_for_address` freed `socket_data` twice on the connect-submit error path — a redundant explicit `allocator.destroy(socket_data)` in the `catch` alongside the top-of-function `errdefer`. Removed the duplicate free; `socket_data` is now freed exactly once, with ownership transferred to the io_uring callback chain on success. Same error class as BUG-04. See [development/bugs/118.md](bugs/118.md).
+- Fixed **BUG-119** (Critical, double-free): `connection_data` was double-freed when `z_create_socket_connection` failed after `MultiConnectState.init` but before any successful submit (the outer `errdefer` in `create_socket_connection` plus `mcs.deinit`). Made ownership single-owner — `create_socket_connection` owns `connection_data` until `mcs` takes over; a guard `errdefer` frees it only pre-handoff. Removed the outer `errdefer` double-free and captured the future handle up front. See [development/bugs/119.md](bugs/119.md).
+- Fixed **BUG-120** (Critical, use-after-free): with happy-eyeballs, the first connect freed `mcs` while the `WaitTimer` callback (`schedule_remaining_connects_callback`, `user_data == mcs`) was still pending — cancelling a `WaitTimer` still enqueues the callback (it runs on fire *or* cancel). Made the timer callback the sole teardown owner of `mcs` whenever a timer is scheduled; connect callbacks defer via a `!(timer_scheduled and !timer_fired)` guard. Mirrors BUG-115. See [development/bugs/120.md](bugs/120.md).
 - Added memory-safety regression coverage: `tests/test_connection_memory_safety.py` (subprocess-based, asserts a clean exit — no SIGSEGV/SIGABRT) for the BUG-118/119 double-free and BUG-120 UAF failure modes, plus repro drivers `tests/resources/repro_submit_fail.py` and `tests/resources/repro_uaf.py`.
 - Added `scripts/memcheck.sh` ("ASAN" CI target) and `-Ddebug-alloc` (swaps `utils.gpa` for `std.heap.DebugAllocator(.{ .safety = true })`, the Zig-native double-free/leak checker — Zig 0.16 has no true AddressSanitizer) and `-Dasan` (Zig 0.16 `-fsanitize-c` / UBSan) build options, forwarded through `setup.py` (`TALYN_DEBUG_ALLOC` / `TALYN_ASAN`).
 - Properly tore down the `debug_gpa` global in `utils.gpa.deinit()` under `-Ddebug-alloc` via `debug_gpa.deinitWithoutLeakChecks()` (wired through the module `m_free` path), so it is no longer leaked at process exit; no-op for production (`c_allocator`) builds.
