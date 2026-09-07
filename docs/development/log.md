@@ -4,12 +4,23 @@ title: "Chronological Update Log — Talyn Documentation Bundle"
 description: "Tracks modifications, releases, and architectural changes across the Talyn documentation bundle."
 status: stable
 verified: human-reviewed
-timestamp: "2026-09-07T10:05:00Z"
+timestamp: "2026-09-07T10:30:00Z"
 ---
 
 # Chronological Update Log — Talyn Documentation Bundle
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
+
+## [2026-09-07] — Bug Validation Pass: BUG-307..325 Re-verified Against Current Sources
+
+All 19 open bugs were re-validated line-by-line against the working tree (Zig 0.16.0). Each bug file received a `- **Validation (2026-09-07)**` section with current `file:line` evidence; all remain **Open** — no tracker status changes:
+
+- **Confirmed valid (16)**: BUG-307, 308, 309, 310, 311, 312, 313, 314, 315, 317, 318, 319, 320, 321, 322, 324 — described patterns verified in the working tree (snippet drift noted where quoted code predates the BUG-277 rewrite or the P15 batch-dispatch rework).
+- **Partially valid (2)**:
+  - **BUG-316**: root cause (missing idempotency guard in `mark_resolved_and_execute_user_callbacks`) confirmed, but the normal-path double-dispatch is now blocked by caller-side `control_data.resolved` guards (`resolv.zig:385`, `:288`); residual exposure only via the `errdefer` reset after partial `Soon.dispatch` failure (`resolv.zig:239`).
+  - **BUG-323**: dead-code claim stands (3 methods unused); the described `get_completions()`/`completion.handle()` segfault hazard no longer exists — rewritten to ctypes `CompletionRecord` parsing with documented retention rationale.
+- **Description drift (1)**: **BUG-325** — a verbatim duplicated 5-line comment block exists at exactly `callbacks.zig:584-593`, but its content is the BUG-273 comment, not the quoted `task_add_done_callback` doc comment (which does not exist in the file).
+- **Tracker Status**: unchanged — 324 bugs total (292 Fixed, 19 Open, 13 False Positive).
 
 ## [2026-09-07] — Codebase Audit Pass: BUG-307..325 Recorded in Tracker (19 Open Bugs)
 
