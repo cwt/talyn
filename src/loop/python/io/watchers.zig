@@ -119,7 +119,16 @@ fn loop_watchers_callback(data: *const CallbackManager.CallbackData) !void {
         };
 
         watcher.blocking_task_id = 0; // Clear blocking task ID since it is no longer in-flight in io_uring
-        try Loop.Scheduling.Soon.dispatch(loop_data, &callback);
+        Loop.Scheduling.Soon.dispatch(loop_data, &callback) catch |err| {
+            // BUG-315: a failed dispatch used to strand the watcher in the
+            // reader/writer B-tree - its io op had already completed, so
+            // nothing would ever clean it up (leaked handle + struct and a
+            // stale B-tree entry). Route through the same cleanup as the
+            // io-error branch and the wrapper's own re-arm-failure path.
+            std.log.warn("fd watcher callback dispatch failed, cleaning up watcher: {s}", .{@errorName(err)});
+            @call(.always_inline, loop_watchers_cleanup_callback, .{watcher});
+            return;
+        };
         python_c.py_incref(@ptrCast(handle));
     } else {
         @call(.always_inline, loop_watchers_cleanup_callback, .{watcher});
