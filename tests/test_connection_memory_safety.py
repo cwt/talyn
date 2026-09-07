@@ -71,14 +71,6 @@ def _assert_clean(result: subprocess.CompletedProcess[str], label: str) -> None:
         # A crash (SIGSEGV=139, SIGABRT=134) or any non-zero exit means the
         # regression is present. Surface the tail of the output for debugging.
         tail = "\n".join((result.stdout + result.stderr).splitlines()[-25:])
-        # BUG-330 (Open): under SQ pressure the repro intermittently
-        # segfaults with completely empty output streams - the known
-        # iovec-shaped heap-corruption signature in the write-path slot
-        # lifecycle. Surface it as an expected failure so the tracked bug
-        # stays visible without flaking the suite; any OTHER failure mode
-        # (non-empty output, different exit code) still fails.
-        if result.returncode == -11 and not (result.stdout or result.stderr):
-            pytest.xfail(f"{label}: known BUG-330 corruption signature (SIGSEGV, empty output)")
         pytest.fail(f"{label} crashed (returncode={result.returncode}).\n{tail}")
     assert "DONE" in result.stdout, f"{label}: repro did not complete cleanly"
 
@@ -262,17 +254,7 @@ _WRITEV_SQ_PRESSURE_SCRIPT = textwrap.dedent(
         chunk = bytes(4096)
         for round in range(20):
             for t in conns:
-                try:
-                    t.writelines([chunk] * 8)
-                except MemoryError:
-                    # The peer never reads, so under system-level socket-buffer
-                    # pressure the transports may legitimately surface an
-                    # allocation error - that is the EXPECTED response to the
-                    # artificial pressure and is NOT the BUG-272 double-free
-                    # (which manifests as a glibc abort / SIGSEGV / SIGABRT,
-                    # i.e. a non-zero returncode). Tolerate it and keep going
-                    # so the double-free detection stays the test's signal.
-                    pass
+                t.writelines([chunk] * 8)
 
         for t in conns:
             t.close()

@@ -24,8 +24,8 @@ connection_lost_callback: ?ConnectionLostCallback,
 
 write_completed_callback: WriteCompletedCallback,
 
-pending_buffers: *BuffersArrayList,
-pending_py_buffers: *PyBuffersArrayList,
+pending_buffers: BuffersArrayList = .empty,
+pending_py_buffers: PyBuffersArrayList = .empty,
 pending_buffer_index: usize = 0,
 pending_buffer_offset: usize = 0,
 buffer_size: usize = 0,
@@ -47,22 +47,14 @@ fixed_file_index: ?u16 = null,
 blocking_task_id: usize = 0,
 
 pub fn init(self: *WriteTransport, loop: *Loop, fd: std.posix.fd_t, callback: WriteCompletedCallback, parent_transport: PyObject, exception_handler: PyObject, connection_lost_callback: ConnectionLostCallback, zero_copying: bool) !void {
-    const allocator = loop.allocator;
-
-    const pending_buffers = try allocator.create(BuffersArrayList);
-    errdefer allocator.destroy(pending_buffers);
-
-    const pending_py_objects = try allocator.create(PyBuffersArrayList);
-    errdefer allocator.destroy(pending_py_objects);
-
-    pending_buffers.* = .empty;
-    pending_py_objects.* = .empty;
-
     // BUG-276: commit `initialized` LAST. The caller's errdefer runs
-    // write_transport.deinit(), which touches both heap lists when
+    // write_transport.deinit(), which touches both lists when
     // initialized is true — arming the prepare hook can fail (node
     // allocation), so flipping the flag before that point made the
-    // unwinding double-destroy the just-freed ArrayLists.
+    // unwinding clean up an uninitialized transport.
+    // BUG-330: pending_buffers and pending_py_buffers are inlined directly into
+    // WriteTransport rather than heap-allocated as separate pointers. This eliminates
+    // extra heap slots whose glibc tcache free/reuse caused UAF corruption.
     self.* = WriteTransport{
         .loop = loop,
         .parent_transport = parent_transport,
@@ -72,8 +64,8 @@ pub fn init(self: *WriteTransport, loop: *Loop, fd: std.posix.fd_t, callback: Wr
 
         .write_completed_callback = callback,
 
-        .pending_buffers = pending_buffers,
-        .pending_py_buffers = pending_py_objects,
+        .pending_buffers = .empty,
+        .pending_py_buffers = .empty,
 
         .fd = fd,
         .zero_copying = zero_copying,
@@ -156,10 +148,11 @@ pub fn deinit(self: *WriteTransport) void {
 
     self.pending_buffers.deinit(allocator);
     self.pending_py_buffers.deinit(allocator);
+    self.pending_buffers = .empty;
+    self.pending_py_buffers = .empty;
 
-    allocator.destroy(self.pending_buffers);
-    allocator.destroy(self.pending_py_buffers);
-
+    self.closed = true;
+    self.is_closing = true;
     self.initialized = false;
 }
 
@@ -370,7 +363,7 @@ fn write_operation_completed(data: *const CallbackManager.CallbackData) !void {
 }
 
 pub fn append_new_buffer_to_write(self: *WriteTransport, py_object: PyObject) !usize {
-    if (self.closed) {
+    if (!self.initialized or self.closed) {
         return error.TransportClosed;
     }
 

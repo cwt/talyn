@@ -11,6 +11,11 @@ timestamp: "2026-09-07T18:00:00Z"
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
 
+## [2026-09-07] — BUG-330 Root-Caused & Fixed: glibc tcache UAF on WriteTransport List Headers
+
+- **BUG-330 (High, Fixed)** — the "iovec-shaped 16-byte overwrite" under SQ pressure was disproved and correctly identified as a glibc 2.32+ `tcache_entry` use-after-free overwrite. `WriteTransport.pending_buffers` and `pending_py_buffers` were separately heap-allocated 24-byte `ArrayList` chunks, freed to glibc's tcache during transport cleanup/GC collection (exacerbated by `stream_traverse` visiting borrowed references `parent_transport` and `exception_handler`). Glibc's per-thread 64-bit random cookie `tcache_key` at offset 8 became `items.len` (`0x6f785a0ba2a8dbfe`), and the mangled safe-linking pointer at offset 0 became `items.ptr`, triggering OOM or SIGSEGV on subsequent write operations. Fixed by inlining both `ArrayList` structures directly into `WriteTransport`, eliminating heap allocations entirely, and stripping borrowed references from `stream_traverse`. Removed the `pytest.xfail` workaround and `MemoryError` suppression in `test_connection_memory_safety.py`.
+- **Tracker Status**: 330 bugs total (317 Fixed, 0 Open, 13 False Positive).
+
 ## [2026-09-07] — SQ-Pressure Flaky SIGSEGV Root-Caused: BUG-329 Fixed, BUG-330 Filed
 
 - **BUG-329 (High, Fixed)** — the flaky SIGSEGV/MemoryError of `test_writev_sq_pressure_no_double_free` partially root-caused via coredumpctl (crash inside `ArrayList(Py_buffer).append` from `transport_write_lines`): `WriteTransport.deinit` released EVERY entry of `pending_py_buffers` including the already-consumed-and-released prefix (double `PyBuffer_Release` → bytes-object refcount underflow → premature free → heap corruption), and `write_operation_completed` returned early on the cancelled path before clearing `write_in_flight` (wedged drain → guaranteed double-release on teardown). Both fixed; the segfault class is eliminated and the memory-safety file is green on python3.13 (3/3, previously flaky).
