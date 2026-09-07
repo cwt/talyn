@@ -269,6 +269,13 @@ fn mark_resolved_and_execute_user_callbacks(server_data: *ServerQueryData) !void
 }
 
 /// Queue an io_uring read for the next DNS response datagram into recv_buf.
+/// BUG-317 decision helper: true when THIS server is the last outstanding
+/// one and nobody has resolved yet - i.e. its failure ends the lookup.
+fn should_fail_resolution_on_server_finish(control_data: *const ControlData) bool {
+    return control_data.tasks_finished + 1 == control_data.queries_data.len and !control_data.resolved;
+}
+
+/// Queue an io_uring read for the next DNS response datagram into recv_buf.
 fn queue_next_response_read(server_data: *ServerQueryData) !void {
     _ = try server_data.loop.io.queue(.{
         .PerformRead = .{
@@ -396,8 +403,16 @@ fn process_dns_response(data: *const CallbackManager.CallbackData) !void {
     }
 
     if (io_uring_err != .SUCCESS) {
-        // Timeout or I/O error on this server — report whatever we have.
-        try mark_resolved_and_execute_user_callbacks(server_data);
+        // BUG-317: a timeout/io error on ONE nameserver must not abort the
+        // whole multi-server resolution - the remaining nameservers may
+        // still answer. Release this server only; the lookup is failed
+        // through the record machinery (empty results -> discard, giving
+        // the callbacks the established error semantics) only when the
+        // LAST outstanding nameserver finishes without anyone having
+        // resolved.
+        if (should_fail_resolution_on_server_finish(control_data)) {
+            try mark_resolved_and_execute_user_callbacks(server_data);
+        }
         server_data.release();
         return;
     }
@@ -1219,4 +1234,42 @@ test "mark_resolved_and_execute_user_callbacks is idempotent (BUG-316)" {
 
     try mark_resolved_and_execute_user_callbacks(&server_data);
     try std.testing.expect(control_data.resolved);
+}
+
+test "should_fail_resolution_on_server_finish decision table (BUG-317)" {
+    const control_data = try std.testing.allocator.create(ControlData);
+    defer std.testing.allocator.destroy(control_data);
+    control_data.* = ControlData{
+        .allocator = std.testing.allocator,
+        .arena = std.heap.ArenaAllocator.init(std.testing.allocator),
+        .loop = undefined,
+        .user_callbacks = .empty,
+        .record = undefined,
+        .queries_data = undefined,
+        .tasks_finished = 0,
+        .resolved = false,
+        .record_evicted = false,
+        .node = null,
+    };
+    defer control_data.arena.deinit();
+
+    // Two nameservers outstanding: the first one failing must NOT end the
+    // lookup (the second may still answer).
+    var servers: [2]ServerQueryData = undefined;
+    control_data.queries_data = servers[0..];
+    try std.testing.expect(!should_fail_resolution_on_server_finish(control_data));
+
+    // After the first server finished, the second one failing IS the end.
+    control_data.tasks_finished = 1;
+    try std.testing.expect(should_fail_resolution_on_server_finish(control_data));
+
+    // Single-nameserver setups keep the old immediate-failure behavior.
+    control_data.tasks_finished = 0;
+    control_data.queries_data = servers[0..1];
+    try std.testing.expect(should_fail_resolution_on_server_finish(control_data));
+
+    // Never fail "again" once the lookup is already resolved.
+    control_data.queries_data = servers[0..];
+    control_data.resolved = true;
+    try std.testing.expect(!should_fail_resolution_on_server_finish(control_data));
 }
