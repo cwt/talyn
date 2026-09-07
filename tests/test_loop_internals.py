@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import talyn
 from talyn import Loop
 from talyn.loop import PseudoSocket, _SSLTransportWrapper
 
@@ -1049,3 +1050,49 @@ def test_call_later_float_safety() -> None:
 
 
 
+
+
+def test_dispatch_protocol_callbacks_forward_real_exception() -> None:
+    """BUG-321: the loop's protocol dispatch wrappers must forward the
+    ORIGINAL exception (type, message, traceback) to the exception
+    handler instead of a fabricated Exception('... failed')."""
+
+    async def main() -> None:
+        loop = asyncio.get_running_loop()
+        captured = []
+
+        def handler(lp, context):
+            captured.append(context)
+
+        loop.set_exception_handler(handler)
+
+        class Boom:
+            def data_received(self, data):
+                raise ValueError("original boom")
+
+            def eof_received(self):
+                raise KeyError("original eof")
+
+            def buffer_updated(self, nbytes):
+                raise RuntimeError("original buffer")
+
+            def connection_lost(self, exc):
+                raise TypeError("original lost")
+
+        proto = Boom()
+
+        loop._dispatch_data_received(proto, b"x", 1)
+        loop._dispatch_eof_received(proto)
+        loop._dispatch_buffer_updated(proto, 8)
+        loop._dispatch_connection_lost(proto, None)
+
+        assert len(captured) == 4
+        assert isinstance(captured[0]["exception"], ValueError)
+        assert str(captured[0]["exception"]) == "original boom"
+        assert isinstance(captured[1]["exception"], KeyError)
+        assert isinstance(captured[2]["exception"], RuntimeError)
+        assert isinstance(captured[3]["exception"], TypeError)
+        # The real traceback is preserved for debugging.
+        assert captured[0]["exception"].__traceback__ is not None
+
+    talyn.run(main())

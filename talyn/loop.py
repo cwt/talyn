@@ -407,11 +407,11 @@ class Loop(_Loop):
         """Call protocol.data_received."""
         try:
             protocol.data_received(data)
-        except Exception:
+        except Exception as exc:  # BUG-321: forward the real exception
             self.call_exception_handler(
                 {
                     "message": "Exception in data_received callback",
-                    "exception": Exception("data_received failed"),
+                    "exception": exc,
                     "protocol": protocol,
                 }
             )
@@ -420,11 +420,11 @@ class Loop(_Loop):
         """Call protocol.eof_received."""
         try:
             protocol.eof_received()
-        except Exception:
+        except Exception as exc:  # BUG-321: forward the real exception
             self.call_exception_handler(
                 {
                     "message": "Exception in eof_received callback",
-                    "exception": Exception("eof_received failed"),
+                    "exception": exc,
                     "protocol": protocol,
                 }
             )
@@ -433,11 +433,11 @@ class Loop(_Loop):
         """Call protocol.buffer_updated on a BufferedProtocol."""
         try:
             protocol.buffer_updated(nbytes)
-        except Exception:
+        except Exception as exc:  # BUG-321: forward the real exception
             self.call_exception_handler(
                 {
                     "message": "Exception in buffer_updated callback",
-                    "exception": Exception("buffer_updated failed"),
+                    "exception": exc,
                     "protocol": protocol,
                 }
             )
@@ -446,11 +446,11 @@ class Loop(_Loop):
         """Call protocol.connection_lost on a transport."""
         try:
             protocol.connection_lost(exc)
-        except Exception:
+        except Exception as exc2:  # BUG-321: forward the real exception
             self.call_exception_handler(
                 {
                     "message": "Exception in connection_lost callback",
-                    "exception": Exception("connection_lost failed"),
+                    "exception": exc2,
                     "protocol": protocol,
                 }
             )
