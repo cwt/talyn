@@ -99,8 +99,6 @@ def test_duplicate_add_child_handler_replaces_cleanly():
     orphaning it via map overwrite."""
     import os
 
-    import pytest
-
     from talyn import Loop
 
     loop = Loop()

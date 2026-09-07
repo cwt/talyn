@@ -387,3 +387,136 @@ def test_getnameinfo_negative_dns_timeout() -> None:
     talyn.run(main())
 
 
+
+
+def test_create_connection_sock_protocol_factory_refcount() -> None:
+    """BUG-309: the sock= path must hand the protocol factory to the
+    dispatched transport creation with an OWNED reference - the callback's
+    cleanup decref previously dropped the caller's reference (refcount
+    underflow / premature deallocation).
+
+    Both paths share an identical unrelated background retention, so the
+    invariant under test is that the sock path's net reference delta equals
+    the host/port path's delta over N cycles: the bug made the sock path
+    come out exactly one reference lower per connection.
+
+    A minimal accept-and-close listener is used instead of the threaded
+    echo server - rapid sequential close cycles against a busy recv-loop
+    thread trigger an unrelated pre-existing hang in the host path
+    (reproduced on the pre-fix build too)."""
+    import sys
+
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(16)
+    addr = listener.getsockname()
+    stop = threading.Event()
+
+    def _accept_and_close() -> None:
+        listener.settimeout(0.2)
+        while not stop.is_set():
+            try:
+                conn, _ = listener.accept()
+            except socket.timeout:
+                continue
+            conn.close()  # immediate EOF; the client transport sees connection_lost
+        listener.close()
+
+    acceptor = threading.Thread(target=_accept_and_close, daemon=True)
+    acceptor.start()
+
+    try:
+
+        async def main() -> None:
+            loop = asyncio.get_running_loop()
+            factory: type[EchoProtocol] = EchoProtocol
+
+            async def sock_cycle() -> None:
+                client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                client.connect(addr)
+                transport, protocol = await loop.create_connection(factory, sock=client)
+                transport.close()
+                await asyncio.wait_for(protocol.disconnected, timeout=2.0)
+                # Caller owns the fd: only release it once the transport
+                # has fully completed its teardown.
+                client.close()
+                del transport, protocol, client
+
+            async def host_cycle() -> None:
+                transport, protocol = await loop.create_connection(factory, addr[0], addr[1])
+                transport.close()
+                await asyncio.wait_for(protocol.disconnected, timeout=2.0)
+                del transport, protocol
+
+            # Warm-up so lazy caches settle before measuring.
+            await sock_cycle()
+            await asyncio.sleep(0.05)
+
+            base = sys.getrefcount(factory)
+            for _ in range(4):
+                await sock_cycle()
+            await asyncio.sleep(0.05)
+            sock_delta = sys.getrefcount(factory) - base
+
+            base = sys.getrefcount(factory)
+            for _ in range(4):
+                await host_cycle()
+            await asyncio.sleep(0.05)
+            host_delta = sys.getrefcount(factory) - base
+
+            assert sock_delta == host_delta, (
+                f"sock path leaked a factory reference: sock delta {sock_delta} "
+                f"!= host delta {host_delta}"
+            )
+
+        talyn.run(main())
+    finally:
+        stop.set()
+
+
+def test_create_connection_sock_factory_survives_gc() -> None:
+    """BUG-309 follow-up: with the owned reference in place, dropping all
+    Python references to the factory class while the transport is alive
+    must not deallocate it out from under the transport's connection_made
+    machinery (previously the borrowed-reference decref freed it)."""
+    import gc
+
+    host, port, stop = _start_echo_server()
+    try:
+
+        async def main() -> None:
+            loop = asyncio.get_running_loop()
+
+            client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            client.connect((host, port))
+
+            class LocalProto(asyncio.Protocol):
+                def __init__(self) -> None:
+                    self.connected = loop.create_future()
+
+                def connection_made(self, transport: asyncio.Transport) -> None:
+                    self.transport = transport
+                    self.connected.set_result(None)
+
+                def data_received(self, data: bytes) -> None:
+                    pass
+
+                def connection_lost(self, exc: BaseException | None) -> None:
+                    pass
+
+            transport, _protocol = await loop.create_connection(LocalProto, sock=client)  # type: ignore[arg-type]
+            assert _protocol.connected.done()
+
+            # Drop the class reference; the transport machinery must keep
+            # whatever it needs alive via its own references.
+            del LocalProto
+            gc.collect()
+
+            transport.write(b"ping")
+            await asyncio.sleep(0.05)
+            transport.close()
+
+        talyn.run(main())
+    finally:
+        stop.set()

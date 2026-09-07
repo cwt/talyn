@@ -174,7 +174,14 @@ inline fn z_loop_create_connection(self: *LoopObject, args: []?PyObject, knames:
         errdefer allocator.destroy(transport_creation_data);
 
         transport_creation_data.* = .{
-            .protocol_factory = protocol_factory,
+            // BUG-309: the dispatched create_transport_and_set_future_result
+            // unconditionally decrefs protocol_factory in its cleanup defer.
+            // The sock path used to store a borrowed reference here (the
+            // normal path takes py_newref), so that decref dropped the
+            // caller's reference - refcount underflow and use-after-free on
+            // loop.create_connection(..., sock=s). Take an owned reference
+            // like the normal path does.
+            .protocol_factory = python_c.py_newref(protocol_factory),
             .future = python_c.py_newref(fut),
             .loop = python_c.py_newref(self),
             .socket_fd = @intCast(fd),
@@ -188,6 +195,16 @@ inline fn z_loop_create_connection(self: *LoopObject, args: []?PyObject, knames:
                 .traverse = &TransportCreationData.traverse,
             },
         };
+        // BUG-309/BUG-312: if the Soon.dispatch below fails, the errdefers
+        // destroyed the struct without releasing its owned references,
+        // permanently leaking the future, loop, and (after the BUG-309 fix)
+        // protocol_factory references. Release all three on the error path;
+        // on success the dispatched callback's cleanup defer owns them.
+        errdefer {
+            python_c.py_decref(transport_creation_data.protocol_factory);
+            python_c.py_decref(@ptrCast(transport_creation_data.loop));
+            python_c.py_decref(@ptrCast(transport_creation_data.future));
+        }
         errdefer python_c.py_decref(@ptrCast(self));
 
         const callback = CallbackManager.Callback{
