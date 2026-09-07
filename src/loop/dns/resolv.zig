@@ -235,6 +235,14 @@ fn close_unsent_query_sockets(queries_data: []ServerQueryData, queries_sent: usi
 
 fn mark_resolved_and_execute_user_callbacks(server_data: *ServerQueryData) !void {
     const control_data = server_data.control_data;
+
+    // BUG-316: idempotency guard. The caller-side `control_data.resolved`
+    // checks (process_dns_response, on_query_sent) already keep the normal
+    // path single-shot; this guard makes the entry point itself safe for
+    // any future caller, so a second invocation can never evict the cached
+    // record and re-dispatch user callbacks whose futures already carry a
+    // result (asyncio.InvalidStateError).
+    if (control_data.resolved) return;
     control_data.resolved = true;
     errdefer control_data.resolved = false;
 
@@ -1174,4 +1182,41 @@ test "prepare_data error path does not double-free ControlData (BUG-269)" {
 
     // release() must have discarded the pending cache record; a leftover
     // entry would trip BTreeHasElements in cache.deinit().
+}
+
+test "mark_resolved_and_execute_user_callbacks is idempotent (BUG-316)" {
+    // With `resolved` already set, the function must return immediately
+    // WITHOUT touching the record, the queries, or the loop - a second
+    // invocation used to evict the cached record and re-dispatch user
+    // callbacks whose futures already carried a result
+    // (asyncio.InvalidStateError). The stub fields are `undefined`
+    // on purpose: reaching them would crash the test.
+    const control_data = try std.testing.allocator.create(ControlData);
+    defer std.testing.allocator.destroy(control_data);
+    control_data.* = ControlData{
+        .allocator = std.testing.allocator,
+        .arena = std.heap.ArenaAllocator.init(std.testing.allocator),
+        .loop = undefined,
+        .user_callbacks = .empty,
+        .record = undefined,
+        .queries_data = undefined,
+        .tasks_finished = 0,
+        .resolved = true,
+        .record_evicted = false,
+        .node = null,
+    };
+    defer control_data.arena.deinit();
+
+    var server_data: ServerQueryData = .{
+        .loop = undefined,
+        .socket_fd = -1,
+        .hostnames_array = undefined,
+        .control_data = control_data,
+        .queries = &.{},
+        .results = .empty,
+        .ptr_results = .empty,
+    };
+
+    try mark_resolved_and_execute_user_callbacks(&server_data);
+    try std.testing.expect(control_data.resolved);
 }
