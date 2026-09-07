@@ -4,12 +4,26 @@ title: "Chronological Update Log — Talyn Documentation Bundle"
 description: "Tracks modifications, releases, and architectural changes across the Talyn documentation bundle."
 status: stable
 verified: human-reviewed
-timestamp: "2026-09-07T10:30:00Z"
+timestamp: "2026-09-07T15:00:00Z"
 ---
 
 # Chronological Update Log — Talyn Documentation Bundle
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
+
+## [2026-09-07] — Fix Pass: BUG-307..325 All Fixed + 2 New Bugs (BUG-326, BUG-327); Zero Open Bugs
+
+All 19 open bugs from the morning audit were fixed one commit at a time, each with regression coverage where the failure path is Python-triggerable, validated per-commit via `scripts/test_all.sh --python=3.14 --starburst --verbose` (pytest + stdlib asyncio suites + Zig unit tests + AST linter):
+
+- **Critical (BUG-307..309)**: child-watcher replacement UAF (deferred teardown + pre-`waitid` removed guard — the regression test reproduced the live ENOENT waitid race); StreamServer socket double-close (ownership flip at the constructor); borrowed protocol_factory decref on `create_connection(sock=...)` (owned reference + full errdefer, grouped with BUG-312's dispatch-failure leak).
+- **High (BUG-310..315)**: socket-ops io.queue-failure errdefer leaks across all 7 initiators; fast_new_task context leak (plus the inverse double-decref in `z_task_init`); create_connection future leak; child-watcher map orphan (identity-guarded unmap); non-transient waitid leak (final teardown); fd-watcher Soon.dispatch stranding.
+- **Medium (BUG-316..321)**: DNS idempotency guard (residual errdefer window documented); multi-nameserver failover preserved (decision helper + Zig decision-table test); malformed IPv4 octet count rejection; inotify bounds checks + unconditional re-arm; get_extra_info METH_O/family/default; protocol-callback exception forwarding.
+- **Low (BUG-322..325)**: Mandate-1 `unreachable` replaced with best-effort rollback; dead completion dispatch prototypes removed; bounds-checked 64-bit narrowing at 5 sites (recv + recvfrom); duplicate comment removed.
+- **New discoveries during the pass**:
+  - **BUG-326 (High)**: five call sites decoded raw syscall returns with `std.posix.errno` — the libc-style decoder (`rc == -1` + C errno TLS) mis-reads `-errno` returns as SUCCESS; `pidfd_open` on reaped pids produced `pidfd = -3` (EINVAL waitids, stranded handlers) and `getsockname` failures returned garbage addresses. All sites migrated to `utils.getSyscallErrno`.
+  - **BUG-327 (High)**: `create_server(sock=...)` error unwind double-decref'd the references shared between the stack `creation_data` errdefer and the heap copy's deinit (abort inside `PyObject_GC_Del`); ownership now transfers to the heap copy. Exposed by the first-ever `create_server(sock=...)` error-path test.
+- **Harness observations**: `@pytest.mark.asyncio` tests without a policy install run on STOCK asyncio (no conftest exists) — the pre-existing async-marked datagram tests exercise nothing talyn-specific; new tests use `talyn.run`-based sync style. A pre-existing hang was also observed for rapid sequential connect/close cycles against a busy threaded echo server (reproduced on the pre-fix build; noted for future investigation).
+- **Tracker Status**: 326 bugs total (313 Fixed, 0 Open, 13 False Positive).
 
 ## [2026-09-07] — Bug Validation Pass: BUG-307..325 Re-verified Against Current Sources
 
