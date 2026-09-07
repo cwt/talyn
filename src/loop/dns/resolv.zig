@@ -244,6 +244,10 @@ fn mark_resolved_and_execute_user_callbacks(server_data: *ServerQueryData) !void
     // result (asyncio.InvalidStateError).
     if (control_data.resolved) return;
     control_data.resolved = true;
+    // The errdefer covers only the RECORD-SETUP phase below: nothing has
+    // been dispatched yet there, so letting a later server event retry the
+    // whole resolution is clean. The dispatch phase (end of the function)
+    // must NEVER reset `resolved` - see the BUG-316 residual comment there.
     errdefer control_data.resolved = false;
 
     for (control_data.queries_data) |*sd| {
@@ -262,9 +266,30 @@ fn mark_resolved_and_execute_user_callbacks(server_data: *ServerQueryData) !void
         }
     }
 
+    // BUG-316 (residual window): the dispatch phase must never reset
+    // `resolved`. The old errdefer ran on a mid-dispatch Soon.dispatch
+    // failure too - a later server event then re-ran this function, evicted
+    // the freshly cached record and re-dispatched ALL user callbacks
+    // (including the ones whose futures already completed ->
+    // asyncio.InvalidStateError). From here the resolution stands: on a
+    // dispatch failure the remaining callbacks are failed as cancelled
+    // (best effort, mirroring ControlData.release's unresolved path) so no
+    // future hangs, and `resolved` stays true so nothing re-enters.
     const loop = control_data.loop;
+    var dispatched: usize = 0;
     for (control_data.user_callbacks.items) |*v| {
-        try Loop.Scheduling.Soon.dispatch(loop, v);
+        if (Loop.Scheduling.Soon.dispatch(loop, v)) |_| {
+            dispatched += 1;
+        } else |err| {
+            std.log.warn("DNS user callback dispatch failed ({s}); failing the remaining callbacks as cancelled", .{@errorName(err)});
+            for (control_data.user_callbacks.items[dispatched..]) |*rest| {
+                rest.data.set_cancelled(true);
+                Loop.Scheduling.Soon.dispatch_nonthreadsafe(loop, rest) catch |err2| {
+                    std.log.warn("dispatch cancelled DNS callback failed: {s}", .{@errorName(err2)});
+                };
+            }
+            return;
+        }
     }
 }
 
