@@ -4,12 +4,22 @@ title: "Chronological Update Log — Talyn Documentation Bundle"
 description: "Tracks modifications, releases, and architectural changes across the Talyn documentation bundle."
 status: stable
 verified: human-reviewed
-timestamp: "2026-08-24T00:00:00Z"
+timestamp: "2026-09-07T10:05:00Z"
 ---
 
 # Chronological Update Log — Talyn Documentation Bundle
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
+
+## [2026-09-07] — Codebase Audit Pass: BUG-307..325 Recorded in Tracker (19 Open Bugs)
+
+A comprehensive audit of the Talyn codebase under Zig 0.16.0, the 7 Architectural Mandates, and historical bug patterns identified 19 new defect entries recorded into the bug tracker:
+
+- **BUG-307..309 (Critical)**: Child watcher replacement UAF/double-free on cancelled CQE; StreamServer socket double-close on startup failure; premature decref/UAF on custom socket `create_connection`.
+- **BUG-310..315 (High)**: Systemic PyObject reference leaks in all socket operations on `io.queue` failure; task context reference leak on `task_schedule_coro` failure in `fast_new_task`; leaked future reference on `create_connection` dispatch failure; child watcher map inconsistency & handler orphan on duplicate registration; child watcher unhandled non-transient `waitid` error descriptor leak; file watcher leak on `Soon.dispatch` exhaustion in `loop_watchers_callback`.
+- **BUG-316..321 (Medium)**: DNS resolution double-dispatch and cache invalidation race; multi-nameserver redundancy broken by premature abort in `process_dns_response`; uninitialized stack memory read in IPv4 address parser; inotify event buffer over-read & permanent watcher disarm on callback error; transport `get_extra_info` signature and family incompatibilities; exception swallowing and traceback destruction in Python loop protocol callbacks.
+- **BUG-322..325 (Low)**: Architectural Mandate 1 violation (`unreachable` in IO error path of `z_loop_add_watcher`); dead & broken completion dispatch methods in Python event loop; unchecked 64-bit integer narrowing panics across socket and transport APIs; duplicated documentation comments in `task/callbacks.zig`.
+- **Tracker Status**: 324 bugs total (292 Fixed, 19 Open, 13 False Positive).
 
 ## [2026-08-24] — v0.9.5 Release: Stream Transport NULL-Safety & Protocol Teardown Hardening (BUG-293)
 

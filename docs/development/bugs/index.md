@@ -1,8 +1,8 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 305 bugs discovered across audit passes."
-timestamp: "2026-08-27T00:00:00Z"
+description: "Individual bug entries for talyn, one file per bug. 324 bugs discovered across audit passes."
+timestamp: "2026-09-07T10:05:00Z"
 ---
 
 # Bugs — talyn
@@ -15,23 +15,23 @@ Sorted by bug number. See individual bug files for details.
 
 | Severity | Count |
 |---|---:|
-| Critical | 39 |
-| High | 85 |
+| Critical | 42 |
+| High | 91 |
 | Medium-High | 29 |
-| Medium | 57 |
+| Medium | 63 |
 | Medium-Mid | 11 |
 | Medium-Low | 21 |
-| Low | 63 |
-| **Total** | **305** |
+| Low | 67 |
+| **Total** | **324** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
 | Fixed | 292 |
-| Open | 0 |
+| Open | 19 |
 | False Positive | 13 |
-| **Total** | **305** |
+| **Total** | **324** |
 
 ## All Bugs
 
@@ -342,3 +342,22 @@ Sorted by bug number. See individual bug files for details.
 | [304](304.md) | `fast_new_task` failure paths double-free coro/context/name (consume-on-success ownership) | Critical | Fixed |
 | [305](305.md) | Free-threaded module cleanup skips `release_python_imports` — all cached module references leak | Medium-Low | Fixed |
 | [306](306.md) | `UnixSignals.link()` installs the dummy signal handler before blocking the signal — arriving signals in the window are silently lost | Medium-Low | Fixed |
+| [307](307.md) | Child watcher replacement use-after-free and double-free on cancelled CQE | Critical | Open |
+| [308](308.md) | `StreamServer` socket double-close on startup failure | Critical | Open |
+| [309](309.md) | Premature decref and use-after-free on custom socket `create_connection` | Critical | Open |
+| [310](310.md) | Systemic PyObject reference leaks in all socket operations on `io.queue` failure | High | Open |
+| [311](311.md) | Task context reference leak on `task_schedule_coro` failure in `fast_new_task` | High | Open |
+| [312](312.md) | Leaked future reference on `create_connection` dispatch failure | High | Open |
+| [313](313.md) | Child watcher map inconsistency and handler orphan on duplicate registration | High | Open |
+| [314](314.md) | Child watcher unhandled non-transient `waitid` error descriptor leak | High | Open |
+| [315](315.md) | File watcher leak on `Soon.dispatch` exhaustion in `loop_watchers_callback` | High | Open |
+| [316](316.md) | DNS resolution double-dispatch and cache invalidation race | Medium | Open |
+| [317](317.md) | Multi-nameserver redundancy broken by premature abort in `process_dns_response` | Medium | Open |
+| [318](318.md) | Uninitialized stack memory read in IPv4 address parser | Medium | Open |
+| [319](319.md) | Inotify event buffer over-read & permanent watcher disarm on callback error | Medium | Open |
+| [320](320.md) | Transport `get_extra_info` signature and family incompatibilities | Medium | Open |
+| [321](321.md) | Exception swallowing and traceback destruction in Python loop protocol callbacks | Medium | Open |
+| [322](322.md) | Architectural Mandate 1 violation (`unreachable` in IO error path of `z_loop_add_watcher`) | Low | Open |
+| [323](323.md) | Dead & broken completion dispatch methods in Python event loop | Low | Open |
+| [324](324.md) | Unchecked 64-bit integer narrowing panics across socket and transport APIs | Low | Open |
+| [325](325.md) | Duplicated documentation comments in `task/callbacks.zig` | Low | Open |
