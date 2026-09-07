@@ -239,3 +239,59 @@ def test_failed_tasks_leave_asyncio_tasks_set():
         talyn.run_until_complete(main())
     finally:
         talyn.close()
+
+
+def test_create_task_closed_loop_context_refcount() -> None:
+    """BUG-311: a failed task_schedule_coro (closed loop) must release the
+    task's owned context/coro/name references. The old errdefer detached
+    the py_context field without releasing it, leaking one context
+    reference per failed create_task."""
+    import contextvars
+    import sys
+
+    loop = Loop()
+    loop.close()
+
+    async def dummy():
+        pass
+
+    coro = dummy()
+    ctx = contextvars.copy_context()
+    coro_before = sys.getrefcount(coro)
+    ctx_before = sys.getrefcount(ctx)
+    try:
+        with pytest.raises(RuntimeError, match="closed"):
+            loop.create_task(coro, context=ctx)
+        assert sys.getrefcount(ctx) == ctx_before, (
+            "failed create_task leaked a context reference"
+        )
+        assert sys.getrefcount(coro) == coro_before, (
+            "failed create_task leaked a coroutine reference"
+        )
+    finally:
+        coro.close()
+
+
+def test_task_constructor_failure_does_not_double_release() -> None:
+    """BUG-311 (sibling z_task_init path): a failed Task() construction
+    must not double-release the coro/name references the instance fields
+    alias - the detach errdefer now nulls the fields before the local
+    owned references are released by the earlier errdefers."""
+    import sys
+
+    loop = Loop()
+    loop.close()
+
+    async def dummy():
+        pass
+
+    coro = dummy()
+    coro_before = sys.getrefcount(coro)
+    try:
+        with pytest.raises(RuntimeError, match="closed"):
+            Task(coro, loop=loop, name="named-task")
+        assert sys.getrefcount(coro) == coro_before, (
+            "failed Task() construction double-released the coroutine"
+        )
+    finally:
+        coro.close()

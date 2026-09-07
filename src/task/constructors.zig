@@ -71,9 +71,6 @@ pub inline fn fast_new_task(loop: *LoopObject, coro: PyObject, context: PyObject
     errdefer python_c.py_decref(@ptrCast(instance));
 
     try task_init_configuration(instance, loop, coro, context, name);
-    errdefer {
-        instance.py_context = null;
-    }
 
     // BUG-304: task_init_configuration stores coro/context/name as raw
     // borrowed pointers while instance.dealloc decrefs every PyObject
@@ -84,6 +81,21 @@ pub inline fn fast_new_task(loop: *LoopObject, coro: PyObject, context: PyObject
     python_c.py_incref(coro);
     python_c.py_incref(context);
     if (name) |n| python_c.py_incref(n);
+
+    // BUG-311: from here the fields hold the instance's own references.
+    // The old `errdefer instance.py_context = null` detached the field
+    // without releasing it, so a task_schedule_coro failure leaked the
+    // context reference (dealloc's decref was bypassed by the null).
+    // Release-and-detach all three instead; the instance dealloc that
+    // follows sees null fields and releases nothing twice.
+    errdefer {
+        python_c.py_xdecref(instance.coro);
+        python_c.py_xdecref(instance.name);
+        python_c.py_xdecref(instance.py_context);
+        instance.coro = null;
+        instance.name = null;
+        instance.py_context = null;
+    }
 
     try task_schedule_coro(instance, loop);
 
@@ -229,6 +241,13 @@ inline fn z_task_init(self: *PythonTaskObject, args: ?PyObject, kwargs: ?PyObjec
 
     try task_init_configuration(self, talyn_loop, coro.?, context.?, name);
     errdefer {
+        // BUG-311 (sibling path): the instance fields alias the local owned
+        // references released by the errdefers registered before this one
+        // (coro/name/context). This errdefer runs FIRST (LIFO), detaching
+        // the fields so the object teardown's deinitialize pass does not
+        // decref the same pointers a second time after those releases.
+        self.coro = null;
+        self.name = null;
         self.py_context = null;
     }
 
