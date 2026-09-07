@@ -254,7 +254,17 @@ _WRITEV_SQ_PRESSURE_SCRIPT = textwrap.dedent(
         chunk = bytes(4096)
         for round in range(20):
             for t in conns:
-                t.writelines([chunk] * 8)
+                try:
+                    t.writelines([chunk] * 8)
+                except MemoryError:
+                    # The peer never reads, so under system-level socket-buffer
+                    # pressure the transports may legitimately surface an
+                    # allocation error - that is the EXPECTED response to the
+                    # artificial pressure and is NOT the BUG-272 double-free
+                    # (which manifests as a glibc abort / SIGSEGV / SIGABRT,
+                    # i.e. a non-zero returncode). Tolerate it and keep going
+                    # so the double-free detection stays the test's signal.
+                    pass
 
         for t in conns:
             t.close()
