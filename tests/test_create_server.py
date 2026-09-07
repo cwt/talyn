@@ -180,3 +180,35 @@ def test_create_server_fd_hygiene_across_cycles() -> None:
         assert open_fd_count() == baseline
 
     talyn.run(main())
+
+
+def test_create_server_sock_malformed_ipv4_rejected() -> None:
+    """BUG-318: a sock= whose getsockname returns a short dotted-quad (or
+    more than 4 octets) must be rejected instead of binding to a
+    non-deterministic address built from uninitialized stack bytes."""
+
+    class FakeSock:
+        family = socket.AF_INET
+
+        def __init__(self, real: socket.socket, host: str) -> None:
+            self._real = real
+            self._host = host
+
+        def fileno(self) -> int:
+            return self._real.fileno()
+
+        def getsockname(self) -> tuple[str, int]:
+            return (self._host, self._real.getsockname()[1])
+
+    async def main() -> None:
+        loop = asyncio.get_running_loop()
+        real = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        real.bind(("127.0.0.1", 0))
+        try:
+            for bad_host in ("127.1", "10.0.1", "1", "1.2.3.4.5", "a.b.c.d", ""):
+                with pytest.raises(Exception):
+                    await loop.create_server(EchoProtocol, sock=FakeSock(real, bad_host))
+        finally:
+            real.close()
+
+    talyn.run(main())
