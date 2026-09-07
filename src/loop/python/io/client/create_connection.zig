@@ -75,6 +75,12 @@ const TransportCreationData = struct {
     zero_copying: bool,
     fd_created: bool = true,
     owns_fd: bool = true,
+    // BUG-328: the caller's socket object on the sock= path - the transport
+    // adopts the connection via dup and closes the caller's object the way
+    // CPython's _SelectorTransport._call_connection_lost closes the wrapped
+    // socket (otherwise the object keeps the connection open forever and a
+    // peer waiting for EOF is wedged).
+    py_sock: ?PyObject = null,
     python_payload: CallbackManager.PythonPayload = .{},
     dns_timeout: ?Resolv.DnsTimeout = null,
 
@@ -92,6 +98,10 @@ const TransportCreationData = struct {
             if (vret != 0) return vret;
             vret = visit.?(@ptrCast(self.loop), arg);
             if (vret != 0) return vret;
+            if (self.py_sock) |py_sock| {
+                vret = visit.?(py_sock, arg);
+                if (vret != 0) return vret;
+            }
         }
         return 0;
     }
@@ -185,9 +195,19 @@ inline fn z_loop_create_connection(self: *LoopObject, args: []?PyObject, knames:
             .future = python_c.py_newref(fut),
             .loop = python_c.py_newref(self),
             .socket_fd = @intCast(fd),
-            .zero_copying = false, // Caller owns the fd (e.g. accept()'d socket).
-            .fd_created = false, // Caller owns the fd (e.g. accept()'d socket).
-            .owns_fd = false, // Don't close the fd on transport close.
+            .zero_copying = false,
+            // BUG-328: the raw fd is the caller's until the transport is
+            // created (pre-adoption error paths must not close it). At
+            // transport creation the fd is ADOPTED VIA DUP (see the
+            // callback) and the caller's socket OBJECT is closed the way
+            // CPython's _SelectorTransport._call_connection_lost closes
+            // the wrapped socket - a caller object left holding the
+            // connection keeps it open forever (peer never sees EOF),
+            // which cascades into accept-queue exhaustion and SYN-SENT
+            // hangs for subsequent connections.
+            .fd_created = false,
+            .owns_fd = false,
+            .py_sock = python_c.py_newref(v),
             .dns_timeout = dns_timeout,
             .python_payload = .{
                 .module_ptr = @ptrCast(self),
@@ -204,6 +224,7 @@ inline fn z_loop_create_connection(self: *LoopObject, args: []?PyObject, knames:
             python_c.py_decref(transport_creation_data.protocol_factory);
             python_c.py_decref(@ptrCast(transport_creation_data.loop));
             python_c.py_decref(@ptrCast(transport_creation_data.future));
+            python_c.py_xdecref(transport_creation_data.py_sock);
         }
         errdefer python_c.py_decref(@ptrCast(self));
 
@@ -899,8 +920,45 @@ fn z_create_transport_and_set_future_result(data: *TransportCreationData) !void 
     const protocol = python_c.PyObject_CallNoArgs(data.protocol_factory) orelse return error.PythonError;
     defer python_c.py_decref(protocol);
 
-    const transport = try Stream.Constructors.new_stream_transport_with_owns_fd(protocol, data.loop, data.socket_fd, data.zero_copying, data.owns_fd);
+    // BUG-328: adopt the caller's connected socket. Dup first (the
+    // transport gets its own descriptor number that outlives the caller's
+    // object), then close the CALLER'S SOCKET OBJECT the way CPython's
+    // _SelectorTransport._call_connection_lost closes the wrapped socket -
+    // a caller object left holding the connection keeps it open forever
+    // (the peer never sees EOF, wedging accept loops and cascading into
+    // accept-queue exhaustion and SYN-SENT hangs), and closing only the
+    // raw fd number would leave the object wrapping a descriptor that may
+    // later be REUSED by an unrelated socket.
+    var adopted_fd: std.posix.fd_t = -1;
+    errdefer if (adopted_fd >= 0) {
+        _ = std.os.linux.close(adopted_fd);
+    };
+    if (data.py_sock) |py_sock| {
+        const dup_ret = std.os.linux.dup(data.socket_fd);
+        if (utils.getSyscallErrno(dup_ret) != .SUCCESS) return error.SystemResources;
+        adopted_fd = @intCast(dup_ret);
+
+        const close_method = python_c.PyObject_GetAttrString(py_sock, "close\x00") orelse {
+            python_c.PyErr_Clear();
+            return error.PythonError;
+        };
+        defer python_c.py_decref(close_method);
+        if (python_c.PyObject_CallNoArgs(close_method)) |res| {
+            python_c.py_decref(res);
+        } else {
+            // Best effort - a raising close() must not fail the connection;
+            // the connection itself is already the transport's (dup).
+            python_c.PyErr_Clear();
+        }
+    }
+
+    const transport_fd: std.posix.fd_t = if (adopted_fd >= 0) adopted_fd else data.socket_fd;
+    const transport = try Stream.Constructors.new_stream_transport_with_owns_fd(protocol, data.loop, transport_fd, data.zero_copying, true);
     data.fd_created = false;
+    // Ownership of adopted_fd transferred to the transport (owns_fd=true);
+    // the transport's own teardown closes it - disarm the errdefer above so
+    // a later failure does not double-close.
+    adopted_fd = -1;
     defer python_c.py_decref(@ptrCast(transport));
 
     const connection_made_func = python_c.PyObject_GetAttrString(protocol, "connection_made\x00") orelse return error.PythonError;
@@ -930,6 +988,7 @@ fn create_transport_and_set_future_result(data: *const CallbackManager.CallbackD
         python_c.py_decref(transport_creation_data.protocol_factory);
         python_c.py_decref(@ptrCast(transport_creation_data.loop));
         python_c.py_decref(@ptrCast(transport_creation_data.future));
+        python_c.py_xdecref(transport_creation_data.py_sock);
 
         if (transport_creation_data.fd_created) {
             _ = std.os.linux.close(@intCast(transport_creation_data.socket_fd));
