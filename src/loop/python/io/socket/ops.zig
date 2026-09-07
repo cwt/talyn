@@ -150,6 +150,12 @@ fn z_loop_sock_accept(self: *LoopObject, args: []const ?PyObject) !*FutureObject
         .family = family,
         .allocator = loop_data.allocator,
     };
+    // BUG-310: if io.queue fails the op was never queued, so its cleanup
+    // callback never runs; release the owned Python references here.
+    errdefer {
+        python_c.py_decref(@ptrCast(ad.future));
+        python_c.py_decref(@ptrCast(ad.loop));
+    }
 
     _ = try loop_data.io.queue(.{ .SocketAccept = .{
         .socket_fd = fd,
@@ -255,6 +261,12 @@ fn z_loop_sock_connect(self: *LoopObject, args: []const ?PyObject) !*FutureObjec
         .allocator = loop_data.allocator,
         .addr = addr,
     };
+    // BUG-310: if io.queue fails the op was never queued, so its cleanup
+    // callback never runs; release the owned Python references here.
+    errdefer {
+        python_c.py_decref(@ptrCast(scd.future));
+        python_c.py_decref(@ptrCast(scd.loop));
+    }
 
     _ = try loop_data.io.queue(.{ .SocketConnect = .{
         .socket_fd = fd,
@@ -362,6 +374,12 @@ fn z_loop_sock_recv(self: *LoopObject, args: []const ?PyObject) !*FutureObject {
         .allocator = loop_data.allocator,
         .buf = buf,
     };
+    // BUG-310: if io.queue fails the op was never queued, so its cleanup
+    // callback never runs; release the owned Python references here.
+    errdefer {
+        python_c.py_decref(@ptrCast(rd.future));
+        python_c.py_decref(@ptrCast(rd.loop));
+    }
 
     _ = try loop_data.io.queue(.{ .PerformRead = .{
         .fd = fd,
@@ -492,6 +510,12 @@ fn z_loop_sock_sendall(self: *LoopObject, args: []const ?PyObject) !*FutureObjec
         .fd = fd,
         .data = data_buf,
     };
+    // BUG-310: if io.queue fails the op was never queued, so its cleanup
+    // callback never runs; release the owned Python references here.
+    errdefer {
+        python_c.py_decref(@ptrCast(sd.future));
+        python_c.py_decref(@ptrCast(sd.loop));
+    }
 
     _ = try loop_data.io.queue(.{ .PerformWrite = .{
         .fd = fd,
@@ -607,6 +631,12 @@ fn z_loop_sock_recvfrom(self: *LoopObject, args: []const ?PyObject) !*FutureObje
         .allocator = loop_data.allocator,
         .buf = buf,
     };
+    // BUG-310: if io.queue fails the op was never queued, so its cleanup
+    // callback never runs; release the owned Python references here.
+    errdefer {
+        python_c.py_decref(@ptrCast(rd.future));
+        python_c.py_decref(@ptrCast(rd.loop));
+    }
 
     rd.iov = .{ .base = buf.ptr, .len = buf.len };
     rd.msg = .{
@@ -743,6 +773,12 @@ fn z_loop_sock_sendto(self: *LoopObject, args: []const ?PyObject) !*FutureObject
         .buf = data_buf,
         .addr = addr,
     };
+    // BUG-310: if io.queue fails the op was never queued, so its cleanup
+    // callback never runs; release the owned Python references here.
+    errdefer {
+        python_c.py_decref(@ptrCast(sd.future));
+        python_c.py_decref(@ptrCast(sd.loop));
+    }
 
     sd.iov = .{ .base = data_buf.ptr, .len = data_buf.len };
     sd.msg = .{
@@ -815,6 +851,13 @@ fn z_loop_sock_recv_into(self: *LoopObject, args: []const ?PyObject) !*FutureObj
         .allocator = loop_data.allocator,
         .pbuf = pbuf,
     };
+    // BUG-310: if io.queue fails the op was never queued, so its cleanup
+    // callback never runs; release the owned Python references (the buffer
+    // view stays valid - it is released with the future's owner below).
+    errdefer {
+        python_c.py_decref(@ptrCast(rd.future));
+        python_c.py_decref(@ptrCast(rd.loop));
+    }
 
     _ = try loop_data.io.queue(.{ .PerformRead = .{
         .fd = fd,
