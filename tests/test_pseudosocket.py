@@ -216,3 +216,38 @@ def test_pseudosocket_getsockname_after_close_raises():
         server_sock.close()
 
     talyn.run(main())
+
+
+def test_pseudosocket_setsockopt_out_of_range_raises():
+    """BUG-324: out-of-range level/optname/value integers must raise
+    ValueError instead of panicking (Debug/ReleaseSafe) or silently
+    truncating (ReleaseFast)."""
+
+    async def main():
+        loop = asyncio.get_running_loop()
+        server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_sock.bind(("127.0.0.1", 0))
+        server_sock.listen(1)
+        addr = server_sock.getsockname()
+
+        def run_server():
+            client, _ = server_sock.accept()
+            client.sendall(b"hello")
+            client.close()
+
+        server_task = loop.run_in_executor(None, run_server)
+        reader, writer = await asyncio.open_connection(*addr)
+        sock = writer.transport.get_extra_info("socket")
+        try:
+            with pytest.raises(ValueError):
+                sock.setsockopt(2**40, 1, 1)
+            with pytest.raises(ValueError):
+                sock.setsockopt(socket.IPPROTO_TCP, 2**40, 1)
+            with pytest.raises(ValueError):
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 2**40)
+        finally:
+            writer.close()
+            await server_task
+            server_sock.close()
+
+    talyn.run(main())

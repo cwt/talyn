@@ -40,7 +40,16 @@ inline fn z_loop_subprocess_exec(self: *LoopObject, args: []?PyObject, knames: ?
 
     const pid_val = python_c.PyLong_AsLongLong(py_pid.?);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
-    const pid: std.posix.pid_t = @intCast(pid_val);
+    // BUG-324: an unchecked @intCast panicked for pids beyond i32 range
+    // (Debug/ReleaseSafe) or silently truncated them (ReleaseFast).
+    if (pid_val <= 0) {
+        python_c.raise_python_value_error("pid must be a positive integer\x00");
+        return error.PythonError;
+    }
+    const pid: std.posix.pid_t = std.math.cast(std.posix.pid_t, pid_val) orelse {
+        python_c.raise_python_value_error("pid out of range\x00");
+        return error.PythonError;
+    };
 
     const protocol = python_c.PyObject_CallNoArgs(protocol_factory) orelse return error.PythonError;
     defer python_c.py_decref(protocol);

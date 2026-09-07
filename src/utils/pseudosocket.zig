@@ -122,14 +122,27 @@ fn pseudosocket_setsockopt(self: ?*PseudoSocketObject, args: ?PyObject) callconv
         python_c.raise_python_value_error("setsockopt() invalid level/optname\x00");
         return null;
     }
-    const level: i32 = @intCast(raw_level);
-    const optname: u32 = @intCast(raw_optname);
+    // BUG-324: unchecked @intCast panicked (Debug/ReleaseSafe) or silently
+    // truncated (ReleaseFast) for out-of-range values; raise ValueError
+    // instead.
+    const level: i32 = std.math.cast(i32, raw_level) orelse {
+        python_c.raise_python_value_error("setsockopt() level out of range\x00");
+        return null;
+    };
+    const optname: u32 = std.math.cast(u32, raw_optname) orelse {
+        python_c.raise_python_value_error("setsockopt() optname out of range\x00");
+        return null;
+    };
     const value_obj = python_c.PyTuple_GetItem(arg_tuple, 2);
     // Value may be an int or a bytes/bytearray buffer. Try int first;
     // if it is not a convertible integer, fall back to a bytes buffer.
     const long_val = python_c.PyLong_AsLong(value_obj);
     if (python_c.PyErr_Occurred() == null) {
-        const value: c_int = @intCast(long_val);
+        // BUG-324: unchecked narrowing (see above).
+        const value: c_int = std.math.cast(c_int, long_val) orelse {
+            python_c.raise_python_value_error("setsockopt() value out of range\x00");
+            return null;
+        };
         std.posix.setsockopt(instance.fd, level, optname, std.mem.asBytes(&value)) catch {
             python_c.raise_python_value_error("setsockopt() failed\x00");
             return null;

@@ -1,6 +1,8 @@
 import asyncio
 import socket
 
+import pytest
+
 import talyn
 
 
@@ -129,5 +131,27 @@ def test_task_factory():
         task2 = loop.create_task(dummy())
         assert not hasattr(task2, "my_attr")
         await task2
+
+    talyn.run(main())
+
+
+def test_sock_recv_negative_nbytes_raises():
+    """BUG-324: negative nbytes must raise ValueError instead of panicking
+    (Debug/ReleaseSafe) or truncating into a bogus allocation size
+    (ReleaseFast)."""
+
+    async def main():
+        loop = asyncio.get_running_loop()
+        server_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        server_sock.bind(("127.0.0.1", 0))
+        client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        client.setblocking(False)
+        client.connect(server_sock.getsockname())
+        try:
+            with pytest.raises(ValueError, match="non-negative"):
+                await loop.sock_recv(client, -5)
+        finally:
+            client.close()
+            server_sock.close()
 
     talyn.run(main())

@@ -179,3 +179,24 @@ def test_subprocess_get_extra_info_default() -> None:
             transport.close()
 
     talyn.run(main())
+
+
+def test_subprocess_exec_pid_out_of_range_raises() -> None:
+    """BUG-324: an out-of-range or non-positive pid must raise ValueError
+    instead of panicking (Debug/ReleaseSafe) or silently truncating
+    (ReleaseFast). Exercised against the native method directly - the
+    Python wrapper always passes a real popen.pid."""
+    from talyn.loop import _Loop
+
+    async def main() -> None:
+        loop = asyncio.get_running_loop()
+        with pytest.raises(ValueError, match="out of range"):
+            await _Loop.subprocess_exec(
+                loop, SubprocessProtocolStub, "/bin/true", pid=2**40
+            )
+        with pytest.raises(ValueError, match="positive"):
+            await _Loop.subprocess_exec(
+                loop, SubprocessProtocolStub, "/bin/true", pid=-1
+            )
+
+    talyn.run(main())

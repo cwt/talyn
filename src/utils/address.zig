@@ -350,10 +350,13 @@ pub const Address = extern union {
 
             const flowinfo_val = python_c.PyLong_AsUnsignedLong(py_flow);
             if (python_c.PyErr_Occurred() != null) return error.PythonError;
-            const flowinfo: u32 = @intCast(flowinfo_val);
+            // BUG-324: unchecked @intCast panicked (Debug/ReleaseSafe) or
+            // silently truncated (ReleaseFast) for values above u32 max;
+            // reject instead.
+            const flowinfo: u32 = std.math.cast(u32, flowinfo_val) orelse return error.InvalidAddress;
             const scope_id_val = python_c.PyLong_AsUnsignedLong(py_scope);
             if (python_c.PyErr_Occurred() != null) return error.PythonError;
-            const scope_id: u32 = @intCast(scope_id_val);
+            const scope_id: u32 = std.math.cast(u32, scope_id_val) orelse return error.InvalidAddress;
 
             var addr = try Address.parseIp6(host, port);
             addr.in6.sa.flowinfo = flowinfo;

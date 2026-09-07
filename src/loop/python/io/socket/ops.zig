@@ -349,6 +349,13 @@ fn z_loop_sock_recv(self: *LoopObject, args: []const ?PyObject) !*FutureObject {
     const py_nbytes = args[1].?;
     const nbytes_sz = python_c.PyLong_AsSsize_t(py_nbytes);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
+    // BUG-324: an unchecked @intCast panicked on negative nbytes
+    // (Debug/ReleaseSafe) or truncated into a bogus allocation size
+    // (ReleaseFast); raise ValueError instead.
+    if (nbytes_sz < 0) {
+        python_c.raise_python_value_error("nbytes must be non-negative\x00");
+        return error.PythonError;
+    }
     const nbytes: usize = @intCast(nbytes_sz);
 
     const fileno_attr = python_c.PyObject_GetAttrString(py_sock, "fileno\x00") orelse return error.PythonError;
@@ -606,6 +613,13 @@ fn z_loop_sock_recvfrom(self: *LoopObject, args: []const ?PyObject) !*FutureObje
     const py_nbytes = args[1].?;
     const nbytes_sz = python_c.PyLong_AsSsize_t(py_nbytes);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
+    // BUG-324: an unchecked @intCast panicked on negative nbytes
+    // (Debug/ReleaseSafe) or truncated into a bogus allocation size
+    // (ReleaseFast); raise ValueError instead.
+    if (nbytes_sz < 0) {
+        python_c.raise_python_value_error("nbytes must be non-negative\x00");
+        return error.PythonError;
+    }
     const nbytes: usize = @intCast(nbytes_sz);
 
     const fileno_attr = python_c.PyObject_GetAttrString(py_sock, "fileno\x00") orelse return error.PythonError;
