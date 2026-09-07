@@ -186,8 +186,11 @@ fn datagram_is_closing(self: ?*DatagramTransportObject, _: ?PyObject) callconv(.
     return python_c.PyBool_FromLong(@intFromBool(self.?.closed));
 }
 
-fn datagram_get_extra_info(self: ?*DatagramTransportObject, args: ?PyObject) callconv(.c) ?PyObject {
-    return ExtraInfo.z_datagram_get_extra_info(self.?, args) catch |err| {
+fn datagram_get_extra_info(self: ?*DatagramTransportObject, args: ?[*]?PyObject, nargs: isize, knames: ?PyObject) callconv(.c) ?PyObject {
+    // BUG-320: METH_O only accepted one positional argument, so the standard
+    // asyncio call get_extra_info(name, default) raised TypeError. Parse
+    // (name, default=None) with keyword support instead.
+    return ExtraInfo.z_datagram_get_extra_info(self.?, args.?[0..@as(usize, @intCast(nargs))], knames) catch |err| {
         return utils.handle_zig_function_error(err, null);
     };
 }
@@ -218,7 +221,7 @@ const DatagramMethods: []const python_c.PyMethodDef = &[_]python_c.PyMethodDef{
     .{ .ml_name = "close\x00", .ml_meth = @ptrCast(&datagram_close), .ml_doc = "Close the transport.\x00", .ml_flags = python_c.METH_NOARGS },
     .{ .ml_name = "abort\x00", .ml_meth = @ptrCast(&datagram_abort), .ml_doc = "Abort the transport.\x00", .ml_flags = python_c.METH_NOARGS },
     .{ .ml_name = "is_closing\x00", .ml_meth = @ptrCast(&datagram_is_closing), .ml_doc = "Return True if the transport is closing.\x00", .ml_flags = python_c.METH_NOARGS },
-    .{ .ml_name = "get_extra_info\x00", .ml_meth = @ptrCast(&datagram_get_extra_info), .ml_doc = "Get extra transport info.\x00", .ml_flags = python_c.METH_O },
+    .{ .ml_name = "get_extra_info\x00", .ml_meth = @ptrCast(&datagram_get_extra_info), .ml_doc = "Get extra transport info.\x00", .ml_flags = python_c.METH_FASTCALL | python_c.METH_KEYWORDS },
     .{ .ml_name = "set_write_buffer_limits\x00", .ml_meth = @ptrCast(&datagram_set_write_buffer_limits), .ml_doc = "Set write buffer limits.\x00", .ml_flags = python_c.METH_FASTCALL },
     .{ .ml_name = "get_write_buffer_size\x00", .ml_meth = @ptrCast(&datagram_get_write_buffer_size), .ml_doc = "Get write buffer size.\x00", .ml_flags = python_c.METH_NOARGS },
     .{ .ml_name = "get_write_buffer_limits\x00", .ml_meth = @ptrCast(&datagram_get_write_buffer_limits), .ml_doc = "Get write buffer limits.\x00", .ml_flags = python_c.METH_NOARGS },

@@ -143,16 +143,29 @@ fn subprocess_get_pipe_transport(self: ?*SubprocessTransportObject, arg: ?PyObje
 
 fn subprocess_get_extra_info(self: ?*SubprocessTransportObject, args: ?PyObject, kwargs: ?PyObject) callconv(.c) ?PyObject {
     const instance = self.?;
-    _ = kwargs;
     const name_obj = python_c.PyTuple_GetItem(args, 0) orelse return null;
     const name_c = python_c.PyUnicode_AsUTF8(name_obj) orelse return null;
+
+    // BUG-320: resolve the caller-provided default (default= keyword or a
+    // second positional argument); unknown keys must return it instead of
+    // an unconditional Py_None.
+    var default_obj: ?PyObject = null;
+    if (kwargs) |kw| {
+        if (python_c.PyDict_GetItemString(kw, "default\x00")) |d| default_obj = d; // borrowed
+    }
+    if (default_obj == null and python_c.PyTuple_Size(args) >= 2) {
+        default_obj = python_c.PyTuple_GetItem(args, 1); // borrowed
+    }
+
     if (std.mem.eql(u8, std.mem.span(name_c), "subprocess")) {
         if (instance.popen) |p| return python_c.py_newref(p);
+        if (default_obj) |d| return python_c.py_newref(d);
         return python_c.get_py_none();
     }
     if (std.mem.eql(u8, std.mem.span(name_c), "pid")) {
         return python_c.PyLong_FromLong(@intCast(instance.pid));
     }
+    if (default_obj) |d| return python_c.py_newref(d);
     return python_c.get_py_none();
 }
 

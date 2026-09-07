@@ -158,3 +158,24 @@ def test_subprocess_popen_cleaned_on_success() -> None:
         transport.close()
 
     talyn.run(main())
+
+
+def test_subprocess_get_extra_info_default() -> None:
+    """BUG-320: get_extra_info must return the caller-provided default
+    (keyword or second positional) for unknown keys instead of an
+    unconditional None, and still serve the known keys."""
+
+    async def main() -> None:
+        loop = asyncio.get_running_loop()
+        transport, protocol = await loop.subprocess_exec(
+            SubprocessProtocolStub, "/usr/bin/true"
+        )
+        try:
+            assert transport.get_extra_info("unknown-key") is None
+            assert transport.get_extra_info("unknown-key", 42) == 42
+            assert transport.get_extra_info("unknown-key", default=42) == 42
+            assert transport.get_extra_info("pid", default=0) == transport.get_pid()
+        finally:
+            transport.close()
+
+    talyn.run(main())

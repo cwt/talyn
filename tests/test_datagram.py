@@ -361,3 +361,42 @@ async def test_bad_protocol_factory_no_resource_leak():
         DatagramProtocol, local_addr=("127.0.0.1", 0)
     )
     t.close()
+
+
+@pytest.mark.asyncio
+async def test_datagram_get_extra_info_default_and_signature():
+    """BUG-320: get_extra_info must accept the standard asyncio signature
+    (name, default=None) - positionally and via the default= keyword - and
+    return the caller's default for unknown keys instead of an
+    unconditional None."""
+    loop = asyncio.get_running_loop()
+    t, p = await loop.create_datagram_endpoint(
+        DatagramProtocol, local_addr=("127.0.0.1", 0)
+    )
+    try:
+        assert t.get_extra_info("unknown-key") is None
+        assert t.get_extra_info("unknown-key", None) is None
+        assert t.get_extra_info("unknown-key", 42) == 42
+        assert t.get_extra_info("unknown-key", default=42) == 42
+        assert t.get_extra_info("unknown-key", default="fallback") == "fallback"
+        # Known keys still work with the extended signature.
+        assert t.get_extra_info("sockname", default=None) is not None
+    finally:
+        t.close()
+
+
+@pytest.mark.asyncio
+async def test_datagram_get_extra_info_socket_family_ipv6():
+    """BUG-320: the 'socket' extra must report the transport's REAL socket
+    family - the hardcoded AF_INET (2) was wrong for IPv6 transports."""
+    loop = asyncio.get_running_loop()
+    t, p = await loop.create_datagram_endpoint(
+        DatagramProtocol, local_addr=("::1", 0)
+    )
+    try:
+        sock = t.get_extra_info("socket")
+        assert sock is not None
+        assert sock.family == socket.AF_INET6
+        assert sock.type == socket.SOCK_DGRAM
+    finally:
+        t.close()
