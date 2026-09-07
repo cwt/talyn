@@ -28,17 +28,24 @@ pub fn init(self: *ChildWatcher, loop: *Loop) !void {
 }
 
 pub fn deinit(self: *ChildWatcher) void {
+    // BUG-307: deferred teardown. Queueing a CancelIO does not synchronously
+    // stop the op - its completion (or the release-time dispatch of an
+    // already-queued callback) later invokes on_child_exit with this handler
+    // as user_data. Destroying the handler here used to make that invocation
+    // read freed memory. Marking `removed` hands teardown ownership to that
+    // invocation; every dispatch path during Loop.release() (both
+    // release_dynamic_ring_buffer and BlockingTasksSet.cancel_all) forces
+    // cancelled=true, so the cancelled branch always owns the final destroy.
     var it = self.handlers.iterator();
     while (it.next()) |entry| {
         const handler = entry.value_ptr.*;
+        handler.removed = true;
         if (handler.task_id != 0) {
             _ = self.loop.io.queue(.{ .CancelIO = handler.task_id }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
+        } else {
+            // Defensive: nothing in flight can reference it.
+            teardown_child_handler(self, handler);
         }
-        if (handler.pidfd >= 0) {
-            _ = std.os.linux.close(handler.pidfd);
-        }
-        python_c.py_decref(handler.callback);
-        self.loop.allocator.destroy(handler);
     }
     self.handlers.deinit(self.loop.allocator);
 }
@@ -78,20 +85,24 @@ pub fn add_child_handler(self: *ChildWatcher, pid: i32, callback: PyObject) !voi
         },
     } });
 
-    // BUG-277: re-registering a pid REPLACES the previous handler. Tear
-    // the old one down fully here - putAssumeCapacity used to silently
-    // overwrite the entry, orphaning the old pidfd, callback reference,
-    // heap struct, and its armed WaitReadable op.
+    // BUG-277: re-registering a pid REPLACES the previous handler; the old
+    // one must be fully torn down (pidfd, callback ref, heap struct, armed
+    // WaitReadable op) instead of silently orphaned by a map overwrite.
+    // BUG-307: the teardown cannot happen here. The queued CancelIO only
+    // asynchronously ends the old op - its CQE (or an already-queued exit
+    // callback) later invokes on_child_exit with old_handler as user_data,
+    // and freeing the struct now makes that invocation read freed memory
+    // (and potentially double-free). Mark it removed and hand teardown
+    // ownership to that invocation, mirroring remove_child_handler.
     if (self.handlers.fetchRemove(pid)) |old| {
         const old_handler = old.value;
+        old_handler.removed = true;
         if (old_handler.task_id != 0) {
             _ = self.loop.io.queue(.{ .CancelIO = old_handler.task_id }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
+        } else {
+            // Defensive: nothing in flight can reference it.
+            teardown_child_handler(self, old_handler);
         }
-        if (old_handler.pidfd >= 0) {
-            _ = std.os.linux.close(old_handler.pidfd);
-        }
-        python_c.py_decref(old_handler.callback);
-        self.loop.allocator.destroy(old_handler);
     }
 
     self.handlers.putAssumeCapacity(pid, handler);
@@ -128,9 +139,11 @@ pub fn remove_child_handler(self: *ChildWatcher, pid: i32) bool {
 
 fn on_child_exit(data: *const CallbackManager.CallbackData) !void {
     if (data.cancelled()) {
-        // BUG-280: cancellation now comes from remove_child_handler (which
-        // marked the handler removed and unmapped it) or from watcher
-        // deinit. Only in the former case do we own the teardown.
+        // BUG-280/BUG-307: cancellation now comes from remove_child_handler,
+        // add_child_handler replacement, or watcher deinit - all of which
+        // mark the handler removed and unmapped it, so this invocation owns
+        // the teardown in every case. The `removed` check stays as a guard
+        // against a future cancel source that doesn't mark (leak, not UAF).
         const handler: *ChildHandler = @ptrCast(@alignCast(data.user_data.?));
         if (handler.removed) {
             teardown_child_handler(handler.watcher, handler);
@@ -141,6 +154,17 @@ fn on_child_exit(data: *const CallbackManager.CallbackData) !void {
     const self = handler.watcher;
 
     if (!self.loop.initialized) {
+        return;
+    }
+
+    // BUG-307: if this handler was replaced while its op was in flight, the
+    // cancellation may have lost the kernel race (ASYNC_CANCEL -> ENOENT) and
+    // the completion arrives as a normal POLLIN. This handler no longer owns
+    // the exit status: consuming it here would starve the replacement's own
+    // waitid (ECHILD) and its callback would never fire. Skip both and
+    // finalize; the replacement handler reports the exit.
+    if (handler.removed) {
+        teardown_child_handler(self, handler);
         return;
     }
 
@@ -226,9 +250,8 @@ fn on_child_exit(data: *const CallbackManager.CallbackData) !void {
     }
 
     // BUG-77 & BUG-157 & BUG-280: Finalize exactly once. If the handler
-    // was removed while this invocation was pending, we own the teardown;
-    // otherwise the normal self-cleanup applies (with the fetchRemove
-    // identity check guarding against a concurrent re-register).
+    // was removed while this invocation was pending (e.g. by a Python
+    // re-entry during the user callback), we own the teardown.
     if (handler.removed) {
         teardown_child_handler(self, handler);
         return;

@@ -186,3 +186,53 @@ def test_child_handler_fires_and_cleans_up():
             child.kill()
             child.wait()
         loop.close()
+
+
+def test_replace_child_handler_cancelled_cqe_is_safe():
+    """BUG-307: replacing a live child handler must not free the old
+    handler while its cancellation CQE is still in flight. The old handler
+    is torn down by its own (cancelled) on_child_exit invocation; the
+    replacement receives the exit; the loop stays healthy afterwards."""
+    import os
+    import subprocess
+
+    loop = talyn.Loop()
+    fired = []
+    child = None
+    try:
+        # Deterministic half: our own pid never exits, so the replaced
+        # handler's op is always ended by an ECANCELED dispatch.
+        loop.add_child_handler(os.getpid(), lambda pid, rc: fired.append(("old-self", pid, rc)))
+        loop.add_child_handler(os.getpid(), lambda pid, rc: fired.append(("new-self", pid, rc)))
+        assert loop.remove_child_handler(os.getpid()) is True
+
+        # Racy half: child exits after replacement. The replacement must be
+        # the one notified, and processing the old handler's cancelled CQE
+        # must not corrupt anything.
+        child = subprocess.Popen(["sleep", "10"])
+        loop.add_child_handler(child.pid, lambda pid, rc: fired.append(("old-child", pid, rc)))
+        loop.add_child_handler(child.pid, lambda pid, rc: fired.append(("new-child", pid, rc)))
+        child.terminate()
+
+        async def pump():
+            for _ in range(100):
+                if any(entry[0] == "new-child" for entry in fired):
+                    return
+                await asyncio.sleep(0.02)
+
+        loop.run_until_complete(pump())
+        child.wait()
+        assert ("new-child", child.pid, -signal.SIGTERM) in fired
+
+        # Loop stays healthy after the cancelled replacement CQEs were
+        # processed (previously a use-after-free read on the freed handler).
+        async def ok():
+            return 7
+
+        assert loop.run_until_complete(ok()) == 7
+        assert loop.remove_child_handler(os.getpid()) is False
+    finally:
+        if child is not None and child.poll() is None:
+            child.kill()
+            child.wait()
+        loop.close()
