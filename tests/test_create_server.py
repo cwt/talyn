@@ -151,3 +151,32 @@ def test_create_server_invalid_dns_timeout() -> None:
 
     talyn.run(main())
 
+
+
+def test_create_server_fd_hygiene_across_cycles() -> None:
+    """BUG-308 companion: server socket ownership must be exactly-once -
+    no leaked listening fds across repeated create/close cycles (a
+    double-close or missed transfer shows up as fd-count drift)."""
+    import os
+
+    def open_fd_count() -> int:
+        return len(os.listdir("/proc/self/fd"))
+
+    async def main() -> None:
+        loop = asyncio.get_running_loop()
+
+        # Warm-up cycle: lazy allocations (DNS caches, socket module imports)
+        # settle here so the baseline is stable.
+        warm = await loop.create_server(EchoProtocol, "127.0.0.1", 0)
+        warm.close()
+        await warm.wait_closed()
+        baseline = open_fd_count()
+
+        for _ in range(8):
+            server = await loop.create_server(EchoProtocol, "127.0.0.1", 0)
+            server.close()
+            await server.wait_closed()
+
+        assert open_fd_count() == baseline
+
+    talyn.run(main())

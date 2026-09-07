@@ -468,6 +468,17 @@ fn z_create_server_socket(server_data: *ServerSocketData) !void {
         const server = python_c.PyObject_CallFunction(@as(*python_c.PyObject, @ptrCast(StreamServer.StreamServerType.?)), "OOOOO\x00", @as(*python_c.PyObject, @ptrCast(loop_obj)), protocol_factory, py_fd, py_family_obj, py_backlog_obj) orelse return error.PythonError;
         errdefer python_c.py_decref(server);
 
+        // BUG-308: the StreamServer constructor (tp_init) takes ownership of
+        // `fd` (self.server_fd = fd) and its dealloc closes it on every error
+        // path from here on (start_serving failure, list append failure).
+        // Flip `success` now: the local close(fd) defer below is guarded by
+        // `server_data.socket_fd < 0`, which is still -1 on the fresh-socket
+        // path, so leaving success=false used to fire a SECOND close(fd)
+        // right after the server's dealloc had already closed it. Before the
+        // constructor, success must stay false so a construction failure
+        // still closes the not-yet-owned fd.
+        success = true;
+
         const server_ptr: *StreamServer.StreamServerObject = @ptrCast(server);
 
         StreamServer.start_serving(server_ptr) catch |err| {
@@ -478,7 +489,6 @@ fn z_create_server_socket(server_data: *ServerSocketData) !void {
 
         if (python_c.PyList_Append(servers_list, server) != 0) return error.PythonError;
         python_c.py_decref(server);
-        success = true;
     }
 
     if (python_c.PyList_Size(servers_list) == 0) {
