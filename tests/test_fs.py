@@ -94,3 +94,44 @@ def test_watch_callback_may_add_watcher_mid_dispatch():
                 state["b_handle"].cancel()
 
     talyn.run(main())
+
+
+def test_fs_watcher_survives_raising_callback():
+    """BUG-319 companion: a raising callback must not permanently disable
+    the inotify watcher - the read SQE must always be re-armed and later
+    events must still be delivered."""
+
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = os.path.join(tmpdir, "probe.txt")
+
+            events = []
+            state = {"raise_next": True}
+
+            def callback(mask, cookie, name):
+                events.append((mask, name))
+                if state["raise_next"]:
+                    state["raise_next"] = False
+                    raise ValueError("boom in fs callback")
+
+            mask = 2 | 256  # IN_MODIFY | IN_CREATE
+            handle = loop._add_path_watcher(tmpdir, mask, callback)
+
+            with open(file_path, "w") as f:
+                f.write("hello")  # first event -> callback raises
+            await asyncio.sleep(0.15)
+
+            with open(file_path, "a") as f:
+                f.write(" world")  # second event -> must still be delivered
+            await asyncio.sleep(0.15)
+
+            assert events, "no events delivered at all"
+            assert len(events) >= 2, (
+                f"watcher was disarmed after the raising callback: {events}"
+            )
+
+            handle.cancel()
+
+    talyn.run(main())

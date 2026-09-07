@@ -79,7 +79,20 @@ fn on_inotify_event(data: *const CallbackManager.CallbackData) !void {
 
         var pos: usize = 0;
         while (pos < n) {
+            // BUG-319: bounds-check before touching the event - a truncated
+            // buffer must not slice past the valid bytes (the name slice and
+            // the pos advance both trust event.len unconditionally).
+            const remaining = n - pos;
+            if (remaining < @sizeOf(std.os.linux.inotify_event)) {
+                std.log.warn("inotify: truncated event header ({d} bytes left)", .{remaining});
+                break;
+            }
             const event: *const std.os.linux.inotify_event = @ptrCast(@alignCast(&buf[pos]));
+            const total = @sizeOf(std.os.linux.inotify_event) + event.len;
+            if (total > remaining) {
+                std.log.warn("inotify: event spans {d} bytes but only {d} remain", .{ total, remaining });
+                break;
+            }
             const name = if (event.len > 0) std.mem.sliceTo(buf[pos + @sizeOf(std.os.linux.inotify_event) .. pos + @sizeOf(std.os.linux.inotify_event) + event.len], 0) else "";
 
             // BUG-278: dispatch_event runs arbitrary Python which may
@@ -102,11 +115,18 @@ fn on_inotify_event(data: *const CallbackManager.CallbackData) !void {
                 if (!alive) continue;
 
                 if (watcher.wd == event.wd and (watcher.mask & event.mask) != 0) {
-                    try self.dispatch_event(watcher, event.mask, event.cookie, name);
+                    // BUG-319: a dispatch failure (Python C-API allocation
+                    // error) must not abort the read pass - returning here
+                    // skipped the re-arm below and permanently disabled the
+                    // inotify watcher. Log and keep processing; the re-arm
+                    // at the end of the function always runs.
+                    self.dispatch_event(watcher, event.mask, event.cookie, name) catch |err| {
+                        std.log.warn("inotify dispatch failed: {s}", .{@errorName(err)});
+                    };
                 }
             }
 
-            pos += @sizeOf(std.os.linux.inotify_event) + event.len;
+            pos += total;
         }
     }
 
