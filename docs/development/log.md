@@ -4,12 +4,18 @@ title: "Chronological Update Log — Talyn Documentation Bundle"
 description: "Tracks modifications, releases, and architectural changes across the Talyn documentation bundle."
 status: stable
 verified: human-reviewed
-timestamp: "2026-09-07T15:00:00Z"
+timestamp: "2026-09-07T16:00:00Z"
 ---
 
 # Chronological Update Log — Talyn Documentation Bundle
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
+
+## [2026-09-07] — Hang Root-Cause Fixed (BUG-328) + BUG-316 Residual Window Closed
+
+- **BUG-328 (High, new)** — the "threaded-echo rapid connect/close hang" root-caused and fixed. Diagnosis chain: gdb showed the loop thread blocked in `io_uring_enter(min_complete=1)` at 0% CPU; `ss` showed the in-flight connect stuck in `SYN-SENT` against a listener whose accept queue had overflowed; the overflow existed because an earlier `create_connection(sock=...)` transport left its connection ESTAB after `transport.close()` — talyn's sock path used `owns_fd=false` and never closed the fd, so the peer's recv-until-EOF loop never ended and its `accept()` never ran again. CPython's `_SelectorTransport._call_connection_lost` closes the wrapped socket (selector_events.py:911); talyn now matches: the fd is adopted via `dup()` into the transport and the caller's socket OBJECT is closed at adoption (dup is required — a raw close leaves the caller's object wrapping a descriptor that may later be reused, observed as `EBADF` from a fresh `connect()` during the first fix attempt). Regression test: `test_create_connection_sock_close_eof_reaches_peer` (peer must observe EOF without the caller touching the socket; server must keep accepting).
+- **BUG-316 residual closed** — the idempotency guard's errdefer no longer spans the dispatch phase. Record-setup failures still reset `resolved` (retry is clean); once dispatching begins the resolution stands: a mid-dispatch `Soon.dispatch` failure keeps `resolved=true`, fails the remaining callbacks as cancelled (best effort via `dispatch_nonthreadsafe`), and returns — no re-entry, no record eviction, no double dispatch (the old window ended in `asyncio.InvalidStateError`).
+- **Tracker Status**: 327 bugs total (314 Fixed, 0 Open, 13 False Positive).
 
 ## [2026-09-07] — Fix Pass: BUG-307..325 All Fixed + 2 New Bugs (BUG-326, BUG-327); Zero Open Bugs
 

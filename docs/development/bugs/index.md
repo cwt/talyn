@@ -1,7 +1,7 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 326 bugs discovered across audit passes."
+description: "Individual bug entries for talyn, one file per bug. 327 bugs discovered across audit passes."
 timestamp: "2026-09-07T15:00:00Z"
 ---
 
@@ -16,22 +16,22 @@ Sorted by bug number. See individual bug files for details.
 | Severity | Count |
 |---|---:|
 | Critical | 42 |
-| High | 93 |
+| High | 94 |
 | Medium-High | 29 |
 | Medium | 63 |
 | Medium-Mid | 11 |
 | Medium-Low | 21 |
 | Low | 67 |
-| **Total** | **326** |
+| **Total** | **327** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
-| Fixed | 313 |
+| Fixed | 314 |
 | Open | 0 |
 | False Positive | 13 |
-| **Total** | **326** |
+| **Total** | **327** |
 
 ## All Bugs
 
@@ -363,3 +363,4 @@ Sorted by bug number. See individual bug files for details.
 | [325](325.md) | Duplicated documentation comments in `task/callbacks.zig` | Low | Fixed |
 | [326](326.md) | libc-style errno decoder mis-reads raw syscall returns across 5 call sites | High | Fixed |
 | [327](327.md) | `create_server` sock-path error unwind double-decrefs shared references | High | Fixed |
+| [328](328.md) | `create_connection(sock=)` never closes the caller's socket - wedged peers, accept-queue exhaustion, SYN-SENT hangs | High | Fixed |
