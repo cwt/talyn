@@ -245,10 +245,12 @@ inline fn z_loop_add_watcher(self: *LoopObject, args: []?PyObject, operation: Lo
         python_c.raise_python_runtime_error("Unexpected error adding watcher\x00");
         return error.PythonError;
     }
+    // BUG-322: the old `if (watchers.delete(fd) == null) unreachable;` turned
+    // a recoverable rollback into a runtime crash, violating Architectural
+    // Mandate 1 (Zero-Panic Guarantee in the IO Path). Best-effort rollback:
+    // a null here only means the entry was already gone.
     errdefer {
-        if (watchers.delete(fd) == null) {
-            unreachable;
-        }
+        _ = watchers.delete(fd);
     }
 
     const watcher_callback: CallbackManager.Callback = .{

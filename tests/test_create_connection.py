@@ -418,7 +418,8 @@ def test_create_connection_sock_protocol_factory_refcount() -> None:
         while not stop.is_set():
             try:
                 conn, _ = listener.accept()
-            except socket.timeout:
+            except (socket.timeout, OSError):
+                # OSError covers the listener being closed during shutdown.
                 continue
             conn.close()  # immediate EOF; the client transport sees connection_lost
         listener.close()
@@ -520,3 +521,92 @@ def test_create_connection_sock_factory_survives_gc() -> None:
         talyn.run(main())
     finally:
         stop.set()
+
+
+def test_create_connection_sock_close_eof_reaches_peer() -> None:
+    """BUG-328: transport.close() on a sock= connection must close the
+    ADOPTED fd (CPython's _SelectorTransport._call_connection_lost closes
+    the wrapped socket). A peer server that waits for EOF must never be
+    wedged by a closed-but-still-open socket: this is the dynamic behind
+    the 'threaded-echo rapid connect/close hang' - the stale fd kept the
+    server's recv loop alive forever, its accept() never ran again, the
+    listen backlog filled, and subsequent connects sat in SYN-SENT with
+    no connect timeout."""
+    import socket as sock_mod
+    import threading
+
+    state = {"accepted": 0, "eof": 0}
+    listener = sock_mod.socket(sock_mod.AF_INET, sock_mod.SOCK_STREAM)
+    listener.setsockopt(sock_mod.SOL_SOCKET, sock_mod.SO_REUSEADDR, 1)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(5)
+    addr = listener.getsockname()
+    stop = threading.Event()
+
+    def _server() -> None:
+        listener.settimeout(0.2)
+        while not stop.is_set():
+            try:
+                conn, _ = listener.accept()
+            except (sock_mod.timeout, OSError):
+                # OSError covers the listener being closed during shutdown.
+                continue
+            state["accepted"] += 1
+            try:
+                while not stop.is_set():
+                    conn.settimeout(0.1)
+                    try:
+                        data = conn.recv(1024)
+                    except sock_mod.timeout:
+                        continue
+                    except OSError:
+                        break  # connection reset - treat as EOF
+                    if not data:
+                        state["eof"] += 1
+                        break
+            finally:
+                conn.close()
+
+    acceptor = threading.Thread(target=_server, daemon=True)
+    acceptor.start()
+
+    try:
+
+        async def main() -> None:
+            loop = asyncio.get_running_loop()
+
+            # Sock-path connection: the caller-provided socket is adopted;
+            # closing the transport must deliver EOF to the peer without
+            # the caller touching the socket again.
+            client = sock_mod.socket(sock_mod.AF_INET, sock_mod.SOCK_STREAM)
+            client.connect(addr)
+            transport, protocol = await loop.create_connection(
+                EchoProtocol, sock=client
+            )
+            transport.close()
+            await asyncio.wait_for(protocol.disconnected, timeout=2.0)
+
+            async def wait_eof() -> None:
+                for _ in range(100):
+                    if state["eof"] >= 1:
+                        return
+                    await asyncio.sleep(0.02)
+                raise AssertionError(
+                    "peer never saw EOF after transport close "
+                    "(adopted fd was left open - BUG-328)"
+                )
+
+            await asyncio.wait_for(wait_eof(), timeout=3.0)
+
+            # The server must not be wedged: a fresh host-path connection
+            # must still be accepted and torn down cleanly.
+            transport2, protocol2 = await loop.create_connection(
+                EchoProtocol, addr[0], addr[1]
+            )
+            transport2.close()
+            await asyncio.wait_for(protocol2.disconnected, timeout=2.0)
+
+        talyn.run(main())
+    finally:
+        stop.set()
+        listener.close()

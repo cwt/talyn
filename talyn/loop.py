@@ -1,9 +1,6 @@
-import _ctypes
 import asyncio
-import ctypes
 import os
 import socket
-import struct
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from logging import getLogger
@@ -340,78 +337,23 @@ class Loop(_Loop):
             self._exception_handler = handler
 
     # --------------------------------------------------------------------------------------------------------
-    # P15 Phase 1: Completion batch dispatch infrastructure.
-    # Called from Zig after poll_blocking_events to dispatch IO completions
-    # in a tight Python loop. Currently unused (batch always empty) —
-    # infrastructure in place for future optimization.
+    # P15 Phase 1: Completion batch dispatch handlers.
+    # Called from Zig's completion batch engine (currently the batch is
+    # always empty). The obsolete prototype entry points
+    # (_dispatch_completions, _dispatch_completions_with_list,
+    # _test_batch_dispatch) were removed as dead code (BUG-323); these four
+    # handlers are the actual dispatch surface a future batch engine calls.
     # --------------------------------------------------------------------------------------------------------
-
-    def _dispatch_completions(self, records_ptr: int, count: int) -> None:
-        """Dispatch IO completions from Zig's batch buffer.
-
-        Args:
-            records_ptr: Pointer to array of CompletionRecord (32 bytes each).
-            count: Number of records in the batch.
-        """
-        if count == 0:
-            return
-
-        # CompletionRecord layout (extern struct, 32 bytes):
-        #   op: u8          (offset 0)
-        #   transport: ptr  (offset 8)
-        #   data: ptr       (offset 16)
-        #   nbytes: i64     (offset 24)
-        record_size = 32
-        for i in range(count):
-            offset = i * record_size
-            raw = ctypes.string_at(records_ptr + offset, record_size)
-            op = raw[0]
-            transport_ptr = struct.unpack_from("Q", raw, 8)[0]
-            data_ptr = struct.unpack_from("Q", raw, 16)[0]
-            nbytes = struct.unpack_from("q", raw, 24)[0]
-
-            match op:
-                case 0:  # DataReceived
-                    self._dispatch_data_received(transport_ptr, data_ptr, nbytes)
-                case 1:  # EofReceived
-                    self._dispatch_eof_received(transport_ptr)
-                case 2:  # BufferUpdated
-                    self._dispatch_buffer_updated(transport_ptr, nbytes)
-                case 3:  # ConnectionLost
-                    self._dispatch_connection_lost(transport_ptr, data_ptr)
-
-    def _test_batch_dispatch(self, count: int) -> None:
-        """Test: just receive count, do nothing."""
-        pass
-
-    def _dispatch_completions_with_list(self, records: list) -> None:
-        """Dispatch IO completions from a list of (op, protocol_ptr, data, nbytes) tuples.
-
-        protocol_ptr is a raw pointer to the protocol object.
-        """
-        for op, protocol_ptr, data, nbytes in records:
-            if protocol_ptr is None:
-                continue
-            protocol = _ctypes.PyObj_FromPtr(protocol_ptr)
-            match op:
-                case 0:  # DataReceived
-                    self._dispatch_data_received(protocol, data, nbytes)
-                case 1:  # EofReceived
-                    self._dispatch_eof_received(protocol)
-                case 2:  # BufferUpdated
-                    self._dispatch_buffer_updated(protocol, nbytes)
-                case 3:  # ConnectionLost
-                    self._dispatch_connection_lost(protocol, data)
 
     def _dispatch_data_received(self, protocol, data, nbytes: int) -> None:
         """Call protocol.data_received."""
         try:
             protocol.data_received(data)
-        except Exception:
+        except Exception as exc:  # BUG-321: forward the real exception
             self.call_exception_handler(
                 {
                     "message": "Exception in data_received callback",
-                    "exception": Exception("data_received failed"),
+                    "exception": exc,
                     "protocol": protocol,
                 }
             )
@@ -420,11 +362,11 @@ class Loop(_Loop):
         """Call protocol.eof_received."""
         try:
             protocol.eof_received()
-        except Exception:
+        except Exception as exc:  # BUG-321: forward the real exception
             self.call_exception_handler(
                 {
                     "message": "Exception in eof_received callback",
-                    "exception": Exception("eof_received failed"),
+                    "exception": exc,
                     "protocol": protocol,
                 }
             )
@@ -433,11 +375,11 @@ class Loop(_Loop):
         """Call protocol.buffer_updated on a BufferedProtocol."""
         try:
             protocol.buffer_updated(nbytes)
-        except Exception:
+        except Exception as exc:  # BUG-321: forward the real exception
             self.call_exception_handler(
                 {
                     "message": "Exception in buffer_updated callback",
-                    "exception": Exception("buffer_updated failed"),
+                    "exception": exc,
                     "protocol": protocol,
                 }
             )
@@ -446,11 +388,11 @@ class Loop(_Loop):
         """Call protocol.connection_lost on a transport."""
         try:
             protocol.connection_lost(exc)
-        except Exception:
+        except Exception as exc2:  # BUG-321: forward the real exception
             self.call_exception_handler(
                 {
                     "message": "Exception in connection_lost callback",
-                    "exception": Exception("connection_lost failed"),
+                    "exception": exc2,
                     "protocol": protocol,
                 }
             )

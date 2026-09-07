@@ -586,11 +586,6 @@ pub fn execute_task_throw(data: *const CallbackManager.CallbackData) !void {
         // here double-freed the task. Only the set_exception-success
         // fall-through (which returns success, so no cleanup runs) keeps
         // its self-release.
-        // BUG-273: on the error exits below the executor's cleanup_task
-        // already releases the dispatch-owned reference - a local decref
-        // here double-freed the task. Only the set_exception-success
-        // fall-through (which returns success, so no cleanup runs) keeps
-        // its self-release.
         const exc = python_c.PyErr_GetRaisedException() orelse
             return error.PythonError;
         defer python_c.py_decref(exc);

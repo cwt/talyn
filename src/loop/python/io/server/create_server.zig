@@ -122,7 +122,15 @@ inline fn z_loop_create_server(self: *LoopObject, args: []?PyObject, knames: ?Py
     creation_data_ptr.* = creation_data;
     errdefer creation_data_ptr.deinit();
 
-    if (creation_data.py_sock) |sock| {
+    // BUG-327: the stack struct's errdefer (deinitialize_object_fields) and
+    // the heap copy's deinit both decref the same owned references - any
+    // error on the paths below double-released them (premature PyObject_GC_Del
+    // abort), and the dispatched heap copy's own cleanup would have
+    // double-released the kwargs references on success. Transfer ownership
+    // to the heap copy; from here the stack struct holds nothing.
+    creation_data = .{};
+
+    if (creation_data_ptr.py_sock) |sock| {
         const fileno_func = python_c.PyObject_GetAttrString(sock, "fileno\x00") orelse return error.PythonError;
         defer python_c.py_decref(fileno_func);
 
@@ -161,10 +169,21 @@ inline fn z_loop_create_server(self: *LoopObject, args: []?PyObject, knames: ?Py
                 const ip_str = python_c.PyUnicode_AsUTF8AndSize(py_ip, null) orelse return error.PythonError;
                 var ip_parts = std.mem.splitSequence(u8, ip_str[0..std.mem.len(ip_str)], ".");
                 var i: usize = 0;
+                var malformed = false;
                 while (ip_parts.next()) |part| : (i += 1) {
-                    if (i >= 4) break;
-                    ip_bytes[i] = try std.fmt.parseInt(u8, part, 10);
+                    if (i >= 4) {
+                        malformed = true; // more than 4 octets
+                        break;
+                    }
+                    ip_bytes[i] = std.fmt.parseInt(u8, part, 10) catch {
+                        malformed = true;
+                        break;
+                    };
                 }
+                // BUG-318: fewer than 4 dot-separated parts used to leave
+                // the tail of ip_bytes holding uninitialized stack bytes,
+                // binding the server to a non-deterministic address.
+                if (malformed or i != 4) return error.InvalidAddress;
                 break :blk utils.Address.initIp4(ip_bytes, @intCast(port_val));
             },
             std.posix.AF.INET6 => blk: {

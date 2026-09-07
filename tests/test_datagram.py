@@ -361,3 +361,77 @@ async def test_bad_protocol_factory_no_resource_leak():
         DatagramProtocol, local_addr=("127.0.0.1", 0)
     )
     t.close()
+
+
+def test_datagram_get_extra_info_default_and_signature():
+    """BUG-320: get_extra_info must accept the standard asyncio signature
+    (name, default=None) - positionally and via the default= keyword - and
+    return the caller's default for unknown keys instead of an
+    unconditional None.
+
+    Runs via talyn.run (not @pytest.mark.asyncio): without a policy
+    install, pytest-asyncio tests run on STOCK asyncio and would exercise
+    nothing talyn-specific."""
+
+    async def main():
+        loop = asyncio.get_running_loop()
+        t, p = await loop.create_datagram_endpoint(
+            DatagramProtocol, local_addr=("127.0.0.1", 0)
+        )
+        try:
+            assert t.get_extra_info("unknown-key") is None
+            assert t.get_extra_info("unknown-key", None) is None
+            assert t.get_extra_info("unknown-key", 42) == 42
+            assert t.get_extra_info("unknown-key", default=42) == 42
+            assert t.get_extra_info("unknown-key", default="fallback") == "fallback"
+            # Known keys still work with the extended signature.
+            assert t.get_extra_info("sockname", default=None) is not None
+        finally:
+            t.close()
+
+    talyn.run(main())
+
+
+def test_datagram_get_extra_info_socket_family_ipv6():
+    """BUG-320: the 'socket' extra must report the transport's REAL socket
+    family - the hardcoded AF_INET (2) was wrong for IPv6 transports.
+    Runs via talyn.run (see the default/signature test's docstring)."""
+
+    async def main():
+        loop = asyncio.get_running_loop()
+        t, p = await loop.create_datagram_endpoint(
+            DatagramProtocol, local_addr=("::1", 0)
+        )
+        try:
+            sock = t.get_extra_info("socket")
+            assert sock is not None
+            assert sock.family == socket.AF_INET6
+            assert sock.type == socket.SOCK_DGRAM
+        finally:
+            t.close()
+
+    talyn.run(main())
+
+
+def test_datagram_sendto_scope_id_out_of_range_raises():
+    """BUG-324: a 4-tuple address with a flowinfo/scope_id beyond u32 must
+    raise instead of panicking (Debug/ReleaseSafe) or silently truncating
+    into a different destination address (ReleaseFast). Runs via talyn.run
+    (see the default/signature test's docstring)."""
+
+    async def main():
+        loop = asyncio.get_running_loop()
+        t, p = await loop.create_datagram_endpoint(
+            DatagramProtocol, local_addr=("::1", 0)
+        )
+        try:
+            addr = t.get_extra_info("sockname")
+            port = addr[1]
+            with pytest.raises(Exception):
+                t.sendto(b"x", ("::1", port, 2**40, 0))
+            with pytest.raises(Exception):
+                t.sendto(b"x", ("::1", port, 0, 2**40))
+        finally:
+            t.close()
+
+    talyn.run(main())

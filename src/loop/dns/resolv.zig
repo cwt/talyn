@@ -244,6 +244,10 @@ fn mark_resolved_and_execute_user_callbacks(server_data: *ServerQueryData) !void
     // result (asyncio.InvalidStateError).
     if (control_data.resolved) return;
     control_data.resolved = true;
+    // The errdefer covers only the RECORD-SETUP phase below: nothing has
+    // been dispatched yet there, so letting a later server event retry the
+    // whole resolution is clean. The dispatch phase (end of the function)
+    // must NEVER reset `resolved` - see the BUG-316 residual comment there.
     errdefer control_data.resolved = false;
 
     for (control_data.queries_data) |*sd| {
@@ -262,10 +266,38 @@ fn mark_resolved_and_execute_user_callbacks(server_data: *ServerQueryData) !void
         }
     }
 
+    // BUG-316 (residual window): the dispatch phase must never reset
+    // `resolved`. The old errdefer ran on a mid-dispatch Soon.dispatch
+    // failure too - a later server event then re-ran this function, evicted
+    // the freshly cached record and re-dispatched ALL user callbacks
+    // (including the ones whose futures already completed ->
+    // asyncio.InvalidStateError). From here the resolution stands: on a
+    // dispatch failure the remaining callbacks are failed as cancelled
+    // (best effort, mirroring ControlData.release's unresolved path) so no
+    // future hangs, and `resolved` stays true so nothing re-enters.
     const loop = control_data.loop;
+    var dispatched: usize = 0;
     for (control_data.user_callbacks.items) |*v| {
-        try Loop.Scheduling.Soon.dispatch(loop, v);
+        if (Loop.Scheduling.Soon.dispatch(loop, v)) |_| {
+            dispatched += 1;
+        } else |err| {
+            std.log.warn("DNS user callback dispatch failed ({s}); failing the remaining callbacks as cancelled", .{@errorName(err)});
+            for (control_data.user_callbacks.items[dispatched..]) |*rest| {
+                rest.data.set_cancelled(true);
+                Loop.Scheduling.Soon.dispatch_nonthreadsafe(loop, rest) catch |err2| {
+                    std.log.warn("dispatch cancelled DNS callback failed: {s}", .{@errorName(err2)});
+                };
+            }
+            return;
+        }
     }
+}
+
+/// Queue an io_uring read for the next DNS response datagram into recv_buf.
+/// BUG-317 decision helper: true when THIS server is the last outstanding
+/// one and nobody has resolved yet - i.e. its failure ends the lookup.
+fn should_fail_resolution_on_server_finish(control_data: *const ControlData) bool {
+    return control_data.tasks_finished + 1 == control_data.queries_data.len and !control_data.resolved;
 }
 
 /// Queue an io_uring read for the next DNS response datagram into recv_buf.
@@ -396,8 +428,16 @@ fn process_dns_response(data: *const CallbackManager.CallbackData) !void {
     }
 
     if (io_uring_err != .SUCCESS) {
-        // Timeout or I/O error on this server — report whatever we have.
-        try mark_resolved_and_execute_user_callbacks(server_data);
+        // BUG-317: a timeout/io error on ONE nameserver must not abort the
+        // whole multi-server resolution - the remaining nameservers may
+        // still answer. Release this server only; the lookup is failed
+        // through the record machinery (empty results -> discard, giving
+        // the callbacks the established error semantics) only when the
+        // LAST outstanding nameserver finishes without anyone having
+        // resolved.
+        if (should_fail_resolution_on_server_finish(control_data)) {
+            try mark_resolved_and_execute_user_callbacks(server_data);
+        }
         server_data.release();
         return;
     }
@@ -1219,4 +1259,42 @@ test "mark_resolved_and_execute_user_callbacks is idempotent (BUG-316)" {
 
     try mark_resolved_and_execute_user_callbacks(&server_data);
     try std.testing.expect(control_data.resolved);
+}
+
+test "should_fail_resolution_on_server_finish decision table (BUG-317)" {
+    const control_data = try std.testing.allocator.create(ControlData);
+    defer std.testing.allocator.destroy(control_data);
+    control_data.* = ControlData{
+        .allocator = std.testing.allocator,
+        .arena = std.heap.ArenaAllocator.init(std.testing.allocator),
+        .loop = undefined,
+        .user_callbacks = .empty,
+        .record = undefined,
+        .queries_data = undefined,
+        .tasks_finished = 0,
+        .resolved = false,
+        .record_evicted = false,
+        .node = null,
+    };
+    defer control_data.arena.deinit();
+
+    // Two nameservers outstanding: the first one failing must NOT end the
+    // lookup (the second may still answer).
+    var servers: [2]ServerQueryData = undefined;
+    control_data.queries_data = servers[0..];
+    try std.testing.expect(!should_fail_resolution_on_server_finish(control_data));
+
+    // After the first server finished, the second one failing IS the end.
+    control_data.tasks_finished = 1;
+    try std.testing.expect(should_fail_resolution_on_server_finish(control_data));
+
+    // Single-nameserver setups keep the old immediate-failure behavior.
+    control_data.tasks_finished = 0;
+    control_data.queries_data = servers[0..1];
+    try std.testing.expect(should_fail_resolution_on_server_finish(control_data));
+
+    // Never fail "again" once the lookup is already resolved.
+    control_data.queries_data = servers[0..];
+    control_data.resolved = true;
+    try std.testing.expect(!should_fail_resolution_on_server_finish(control_data));
 }
