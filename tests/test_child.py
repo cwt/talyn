@@ -307,3 +307,41 @@ def test_add_child_handler_on_reaped_pid_raises():
             loop.add_child_handler(child.pid, lambda pid, rc: None)
     finally:
         loop.close()
+
+
+def test_child_handler_external_reap_teardown():
+    """BUG-314: a non-transient waitid failure (ECHILD - the child was
+    reaped externally) must tear the handler down instead of stranding it
+    mapped with an open pidfd and a leaked struct. The callback cannot
+    fire (no exit status is available) but the map must end clean."""
+    import os as os_mod
+    import subprocess
+    import time
+
+    loop = talyn.Loop()
+    fired = []
+    child = None
+    try:
+        child = subprocess.Popen(["true"])
+        loop.add_child_handler(child.pid, lambda pid, rc: fired.append((pid, rc)))
+        time.sleep(0.05)  # let the child exit (its POLLIN completes)
+        os_mod.waitpid(child.pid, 0)  # external reap -> our waitid gets ECHILD
+
+        async def pump():
+            await asyncio.sleep(0.1)
+
+        loop.run_until_complete(pump())
+        assert fired == []  # no exit status available for the callback
+        # The handler must have been torn down (unmapped) - previously it
+        # stayed mapped forever with an open pidfd.
+        assert loop.remove_child_handler(child.pid) is False
+
+        async def ok():
+            return 8
+
+        assert loop.run_until_complete(ok()) == 8
+    finally:
+        if child is not None and child.poll() is None:
+            child.kill()
+            child.wait()
+        loop.close()

@@ -198,6 +198,19 @@ fn on_child_exit(data: *const CallbackManager.CallbackData) !void {
         const eagain: u32 = @intFromEnum(std.os.linux.E.AGAIN);
         if (errno != eintr and errno != eagain) {
             std.log.err("on_child_exit: waitid failed with errno {d}, not re-arming", .{errno});
+            // BUG-314: a non-transient waitid failure (e.g. ECHILD after the
+            // child was reaped externally) used to just return, leaving the
+            // handler mapped forever with an open pidfd and a leaked struct.
+            // This op is finished (no re-arm, and no further completion can
+            // arrive for it), so this invocation owns the final teardown:
+            // unmap - only if the entry is still ours, per the BUG-313
+            // identity guard - and release pidfd, callback ref, and struct.
+            if (self.handlers.get(handler.pid)) |current| {
+                if (current == handler) {
+                    _ = self.handlers.remove(handler.pid);
+                }
+            }
+            teardown_child_handler(self, handler);
             return;
         }
         // Process might still be alive (though POLLIN triggered)?
