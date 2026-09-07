@@ -144,7 +144,13 @@ pub fn deinit(self: *WriteTransport) void {
 
     const allocator = self.loop.allocator;
 
-    for (self.pending_py_buffers.items) |*v| {
+    // BUG-329: only the UNCONSUMED buffers are still owned here. The
+    // consumed prefix ([0..pending_buffer_index) ) was already released
+    // one-by-one as its chunks completed; releasing it again here was a
+    // double PyBuffer_Release -> refcount underflow of the exported bytes
+    // objects -> premature free and heap corruption (the SIGSEGV inside
+    // ArrayList(Py_buffer).append under write pressure).
+    for (self.pending_py_buffers.items[self.pending_buffer_index..]) |*v| {
         python_c.PyBuffer_Release(v);
     }
 
@@ -249,6 +255,15 @@ fn write_operation_completed(data: *const CallbackManager.CallbackData) !void {
     var success = false;
     defer if (success) python_c.py_decref(self.parent_transport);
 
+    // BUG-329: the in-flight flag must clear on EVERY completion outcome.
+    // It used to be reset only after the cancelled() early-return, so a
+    // cancelled write (close() cancels the in-flight op) left
+    // write_in_flight stuck true - the prepare hook never resubmitted, the
+    // pending buffers were never drained, and a transport destroyed in
+    // that state double-released its consumed Py_buffers (see the deinit
+    // fix) - refcount underflow and heap corruption under write pressure.
+    self.write_in_flight = false;
+
     if (data.cancelled()) {
         success = true;
         return;
@@ -256,7 +271,6 @@ fn write_operation_completed(data: *const CallbackManager.CallbackData) !void {
 
     const io_uring_res = data.io_uring_res();
     const io_uring_err = data.io_uring_err();
-    self.write_in_flight = false;
 
     if (io_uring_res > 0) {
         const written = @as(usize, @intCast(io_uring_res));

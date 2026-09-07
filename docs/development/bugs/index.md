@@ -1,7 +1,7 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 327 bugs discovered across audit passes."
+description: "Individual bug entries for talyn, one file per bug. 329 bugs discovered across audit passes."
 timestamp: "2026-09-07T15:00:00Z"
 ---
 
@@ -16,22 +16,22 @@ Sorted by bug number. See individual bug files for details.
 | Severity | Count |
 |---|---:|
 | Critical | 42 |
-| High | 94 |
+| High | 96 |
 | Medium-High | 29 |
 | Medium | 63 |
 | Medium-Mid | 11 |
 | Medium-Low | 21 |
 | Low | 67 |
-| **Total** | **327** |
+| **Total** | **329** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
-| Fixed | 314 |
+| Fixed | 315 |
 | Open | 0 |
 | False Positive | 13 |
-| **Total** | **327** |
+| **Total** | **329** |
 
 ## All Bugs
 
@@ -364,3 +364,5 @@ Sorted by bug number. See individual bug files for details.
 | [326](326.md) | libc-style errno decoder mis-reads raw syscall returns across 5 call sites | High | Fixed |
 | [327](327.md) | `create_server` sock-path error unwind double-decrefs shared references | High | Fixed |
 | [328](328.md) | `create_connection(sock=)` never closes the caller's socket - wedged peers, accept-queue exhaustion, SYN-SENT hangs | High | Fixed |
+| [329](329.md) | WriteTransport double-releases consumed Py_buffers in deinit; write_in_flight stuck on cancellation | High | Fixed |
+| [330](330.md) | SQ pressure corrupts a WriteTransport ArrayList header (iovec-shaped overwrite) | High | Open |

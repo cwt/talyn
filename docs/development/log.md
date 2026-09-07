@@ -4,12 +4,19 @@ title: "Chronological Update Log — Talyn Documentation Bundle"
 description: "Tracks modifications, releases, and architectural changes across the Talyn documentation bundle."
 status: stable
 verified: human-reviewed
-timestamp: "2026-09-07T16:00:00Z"
+timestamp: "2026-09-07T18:00:00Z"
 ---
 
 # Chronological Update Log — Talyn Documentation Bundle
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
+
+## [2026-09-07] — SQ-Pressure Flaky SIGSEGV Root-Caused: BUG-329 Fixed, BUG-330 Filed
+
+- **BUG-329 (High, Fixed)** — the flaky SIGSEGV/MemoryError of `test_writev_sq_pressure_no_double_free` partially root-caused via coredumpctl (crash inside `ArrayList(Py_buffer).append` from `transport_write_lines`): `WriteTransport.deinit` released EVERY entry of `pending_py_buffers` including the already-consumed-and-released prefix (double `PyBuffer_Release` → bytes-object refcount underflow → premature free → heap corruption), and `write_operation_completed` returned early on the cancelled path before clearing `write_in_flight` (wedged drain → guaranteed double-release on teardown). Both fixed; the segfault class is eliminated and the memory-safety file is green on python3.13 (3/3, previously flaky).
+- **BUG-330 (High, Open)** — a SECOND, pre-existing defect remains: under the same pressure, `append_new_buffer_to_write` fails with `error.OutOfMemory` while the target ArrayList header holds a corrupted-pointer-shaped `items.len` with `capacity` intact — an iovec-shaped 16-byte overwrite onto a neighbouring transport's list header. Constraints established: needs multiple transports, load/layout sensitive (early A/B evidence in this area is unreliable), DebugAllocator and valgrind hide it. Filed with a 4-step investigation plan (deterministic reproducer, PerformWrite slot-lifecycle audit, gdb watchpoint, gated slot poisoning).
+- **Methodology note**: the SQ-pressure flakiness initially looked like a regression from the BUG-328/316 commits (interleaved A/B said so) — disproven: the host-path code is identical between revisions, and the A/B was confounded by system state. Coredump-driven root-causing is the reliable route here.
+- **Tracker Status**: 329 bugs total (315 Fixed, 1 Open (BUG-330), 13 False Positive).
 
 ## [2026-09-07] — Hang Root-Cause Fixed (BUG-328) + BUG-316 Residual Window Closed
 
