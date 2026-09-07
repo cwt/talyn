@@ -382,7 +382,10 @@ pub fn start_exit_watcher(transport: *SubprocessTransportObject, loop: *LoopObje
     const loop_data = utils.get_data_ptr(Loop, loop);
 
     const rc = std.os.linux.syscall2(.pidfd_open, @as(usize, @intCast(transport.pid)), 0);
-    if (std.posix.errno(rc) != .SUCCESS) return error.SystemResources;
+    // BUG-326: raw-syscall errno decoding (see child_watcher.zig); the
+    // libc-style std.posix.errno mis-decoded failures as SUCCESS and left a
+    // truncated -errno value to be used as the pidfd.
+    if (utils.getSyscallErrno(rc) != .SUCCESS) return error.SystemResources;
     const pidfd: std.posix.fd_t = @intCast(rc);
     _ = std.os.linux.fcntl(pidfd, std.posix.F.SETFD, @intCast(std.posix.FD_CLOEXEC));
     transport.pidfd = pidfd;

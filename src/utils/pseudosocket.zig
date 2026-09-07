@@ -3,6 +3,7 @@ const python_c = @import("python_c");
 const PyObject = *python_c.PyObject;
 const address_mod = @import("address.zig");
 const Address = address_mod.Address;
+const utils = @import("main.zig");
 
 pub const PseudoSocketObject = extern struct {
     ob_base: python_c.PyObject,
@@ -56,7 +57,11 @@ fn pseudosocket_getsockname(self: ?*PseudoSocketObject, _: ?PyObject) callconv(.
     var addrlen: std.posix.socklen_t = @sizeOf(std.posix.sockaddr.storage);
 
     const rc = std.os.linux.getsockname(instance.fd, @ptrCast(&addr), &addrlen);
-    if (std.posix.errno(rc) != .SUCCESS) {
+    // BUG-326: std.posix.errno is the libc-style decoder (rc == -1 plus the
+    // C errno TLS) and mis-decodes raw syscall returns - any error other
+    // than -1 read as SUCCESS and this returned a garbage address. Use the
+    // raw-syscall decoder instead.
+    if (utils.getSyscallErrno(rc) != .SUCCESS) {
         python_c.raise_python_runtime_error("getsockname failed\x00");
         return null;
     }

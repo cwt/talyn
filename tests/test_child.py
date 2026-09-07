@@ -234,3 +234,76 @@ def test_replace_child_handler_cancelled_cqe_is_safe():
             child.kill()
             child.wait()
         loop.close()
+
+
+def test_re_register_inside_exit_callback_stays_consistent():
+    """BUG-313: re-registering the same pid from inside the exit callback
+    must not corrupt the handler map. After the reap the pid is gone, so
+    the re-register raises 'No such process' (routed to the exception
+    handler); the exiting handler still tears itself down, the map ends
+    up empty, and the loop stays healthy."""
+    import subprocess
+
+    loop = talyn.Loop()
+    fired = []
+    errors = []
+    child = None
+    try:
+        loop.set_exception_handler(lambda lp, ctx: errors.append(ctx))
+        child = subprocess.Popen(["true"])
+
+        def reRegisteringCallback(pid, rc):
+            fired.append(("old", pid, rc))
+            # Re-register the same pid from inside the exit callback: the
+            # child has already been reaped by the native waitid, so this
+            # raises 'No such process' - the exact window BUG-313 guards.
+            loop.add_child_handler(pid, lambda p, c: fired.append(("new", p, c)))
+
+        loop.add_child_handler(child.pid, reRegisteringCallback)
+
+        async def pump():
+            for _ in range(100):
+                if fired:
+                    return
+                await asyncio.sleep(0.02)
+
+        loop.run_until_complete(pump())
+        child.wait()
+        assert ("old", child.pid, 0) in fired
+        assert len(errors) == 1
+        assert "No such process" in str(errors[0]["exception"])
+
+        # The failed re-register must not have left a mapped handler.
+        assert loop.remove_child_handler(child.pid) is False
+
+        async def ok():
+            return 6
+
+        assert loop.run_until_complete(ok()) == 6
+    finally:
+        if child is not None and child.poll() is None:
+            child.kill()
+            child.wait()
+        loop.close()
+
+
+def test_add_child_handler_on_reaped_pid_raises():
+    """BUG-326: pidfd_open on a reaped pid returns -ESRCH; the libc-style
+    std.posix.errno decoder mis-read it as SUCCESS and truncated -errno
+    into a bogus pidfd (whose waitid then failed with EINVAL, stranding
+    the handler). Registering a watcher for a dead pid must raise
+    'No such process'."""
+    import subprocess
+    import time
+
+    import pytest
+
+    loop = talyn.Loop()
+    try:
+        child = subprocess.Popen(["true"])
+        child.wait()
+        time.sleep(0.05)  # let the kernel fully release the pid
+        with pytest.raises(RuntimeError, match="No such process"):
+            loop.add_child_handler(child.pid, lambda pid, rc: None)
+    finally:
+        loop.close()

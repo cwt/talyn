@@ -52,7 +52,12 @@ pub fn deinit(self: *ChildWatcher) void {
 
 pub fn add_child_handler(self: *ChildWatcher, pid: i32, callback: PyObject) !void {
     const rc = std.os.linux.syscall2(.pidfd_open, @as(usize, @intCast(pid)), 0);
-    const errno = std.posix.errno(rc);
+    // BUG-326: std.posix.errno is the libc-style decoder (rc == -1 plus the
+    // C errno TLS) and mis-decodes raw syscall returns - an ESRCH return
+    // (e.g. pidfd_open on a reaped pid) read as SUCCESS and @intCast
+    // truncated -errno into a bogus pidfd, whose waitid then failed with
+    // EINVAL and stranded the handler. Use the raw-syscall decoder.
+    const errno = utils.getSyscallErrno(rc);
     if (errno != .SUCCESS) {
         if (errno == .SRCH) {
             python_c.raise_python_runtime_error("No such process\x00");
@@ -249,22 +254,18 @@ fn on_child_exit(data: *const CallbackManager.CallbackData) !void {
         }
     }
 
-    // BUG-77 & BUG-157 & BUG-280: Finalize exactly once. If the handler
-    // was removed while this invocation was pending (e.g. by a Python
-    // re-entry during the user callback), we own the teardown.
-    if (handler.removed) {
-        teardown_child_handler(self, handler);
-        return;
-    }
-
-    if (self.handlers.fetchRemove(handler.pid)) |entry| {
-        const removed_handler = entry.value;
-        // Sanity: the entry we just removed should be the same
-        // pointer we're about to free.
-        if (removed_handler == handler) {
-            teardown_child_handler(self, handler);
+    // BUG-313 & BUG-77 & BUG-157 & BUG-280: Finalize exactly once. Only
+    // unmap the entry if it still points at THIS handler - a re-registration
+    // during the user callback replaces the map entry, and blindly
+    // fetchRemoving the pid would orphan the NEW handler (its armed op could
+    // then never be torn down) while skipping our own teardown. In all
+    // cases this exiting handler owns its teardown.
+    if (self.handlers.get(handler.pid)) |current| {
+        if (current == handler) {
+            _ = self.handlers.remove(handler.pid);
         }
     }
+    teardown_child_handler(self, handler);
 }
 
 pub fn traverse(self: *const ChildWatcher, visit: python_c.visitproc, arg: ?*anyopaque) c_int {

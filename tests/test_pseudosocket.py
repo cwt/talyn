@@ -192,3 +192,27 @@ def test_pseudosocket_close_is_idempotent():
             srv_sock.close()
 
     talyn.run(main())
+
+
+def test_pseudosocket_getsockname_after_close_raises():
+    """BUG-326 (pseudosocket site): getsockname on a torn-down transport's
+    fd must raise instead of returning a garbage address tuple (the
+    libc-style errno decoder used to mis-read the getsockname failure)."""
+
+    async def main():
+        server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_sock.bind(("127.0.0.1", 0))
+        server_sock.listen(1)
+        addr = server_sock.getsockname()
+
+        reader, writer = await asyncio.open_connection(*addr)
+        sock = writer.transport.get_extra_info("socket")
+        writer.close()
+        await writer.wait_closed()
+
+        # The transport released the fd; the errno failure must surface.
+        with pytest.raises(Exception):
+            sock.getsockname()
+        server_sock.close()
+
+    talyn.run(main())

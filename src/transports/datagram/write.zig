@@ -150,7 +150,9 @@ pub fn z_datagram_sendto(self: *DatagramTransport.DatagramTransportObject, args:
             var storage: std.posix.sockaddr.storage = undefined;
             var addrlen: std.posix.socklen_t = @sizeOf(std.posix.sockaddr.storage);
             const rc = std.os.linux.getsockname(self.fd, @ptrCast(&storage), &addrlen);
-            if (std.posix.errno(rc) == .SUCCESS) {
+            // BUG-326: raw-syscall errno decoding; std.posix.errno mis-decoded
+            // failures as SUCCESS and this read the uninitialized storage.
+            if (utils.getSyscallErrno(rc) == .SUCCESS) {
                 family = storage.family;
             }
         }

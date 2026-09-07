@@ -34,7 +34,9 @@ pub fn z_datagram_get_extra_info(self: *DatagramTransport.DatagramTransportObjec
         var storage: std.posix.sockaddr.storage = undefined;
         var addrlen: std.posix.socklen_t = @sizeOf(std.posix.sockaddr.storage);
         const rc = std.os.linux.getsockname(self.fd, @ptrCast(&storage), &addrlen);
-        if (std.posix.errno(rc) != .SUCCESS) return python_c.get_py_none();
+        // BUG-326: raw-syscall errno decoding; std.posix.errno mis-decoded
+        // failures as SUCCESS and this read the uninitialized storage.
+        if (utils.getSyscallErrno(rc) != .SUCCESS) return python_c.get_py_none();
         const address = switch (storage.family) {
             std.posix.AF.INET => blk: {
                 const sa: *align(1) const std.posix.sockaddr.in = @ptrCast(&storage);
