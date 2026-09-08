@@ -3,7 +3,7 @@ type: article
 title: Talyn Development Journey
 description: The complete historical narrative and timeline of developing Talyn, sorted chronologically from the latest release back to the project's inception.
 tags: [history, documentation, journey, roadmap]
-timestamp: 2026-08-24T15:08:18Z
+timestamp: 2026-09-08T03:25:00Z
 ---
 
 # Talyn Development Journey
@@ -11,6 +11,38 @@ timestamp: 2026-08-24T15:08:18Z
 Talyn is a production-grade, crash-resistant, and realistically fast `asyncio` event loop drop-in replacement for Python, powered by **Zig** and **io_uring**.
 
 This document chronicles the engineering narrative and technical milestones of Talyn in **reverse chronological order**—starting with our latest release and architectural breakthroughs, and stepping back through performance optimizations, cross-platform builds, and deep audits to the project's original genesis.
+
+---
+
+## v0.9.7 — Transport Memory Safety, Multi-Subsystem Production Hardening & Zero Open Bugs (BUG-305..330)
+
+**v0.9.7** resolves 26 tracked bugs ([BUG-305](bugs/305.md) through [BUG-330](bugs/330.md)) across the transport, DNS, signal, child watcher, server, and task subsystems, bringing the bug tracker to **330 bugs total (317 Fixed, 0 Open, 13 False Positive)**. This release permanently eliminates use-after-free and memory corruption defects under heavy `io_uring` submission queue (SQ) pressure, adopts caller sockets cleanly in `create_connection`, fixes raw Linux syscall return decoding, and upgrades the entire documentation suite to the Open Knowledge Format (OKF v0.2).
+
+### 1. Transport Memory Safety: Inlined List Headers & UAF Elimination (BUG-329, BUG-330)
+
+Under high `io_uring` write submission pressure and concurrent transport lifecycle churn, stream transports exhibited intermittent segmentation faults:
+- **glibc tcache UAF overwrite** ([BUG-330](bugs/330.md)): What initially presented as an iovec-shaped overwrite under SQ pressure was conclusively root-caused to glibc 2.32+ `tcache_entry` reuse. `WriteTransport.pending_buffers` and `pending_py_buffers` were separately heap-allocated 24-byte `ArrayList` structures freed during GC collection (exacerbated by `stream_traverse` visiting borrowed references `parent_transport` and `exception_handler`). Glibc's per-thread `tcache_key` cookie at offset 8 became `items.len` (`0x6f785a0ba2a8dbfe`), while the safe-linking pointer at offset 0 became `items.ptr`, triggering OOM or crashes on subsequent writes. Both `ArrayList` structures are now inlined directly into `WriteTransport`, eliminating heap allocations completely, and borrowed references have been stripped from `stream_traverse`.
+- **Buffer double-release on teardown** ([BUG-329](bugs/329.md)): `WriteTransport.deinit` previously released every entry in `pending_py_buffers`, including the consumed prefix `[0..pending_buffer_index)` already released upon completion. Each chunk's `Py_buffer` was released twice, causing refcount underflow and premature freeing of exported bytes objects. In addition, cancelled writes now unconditionally clear `write_in_flight` at the top of completion handling to avoid wedging the write drain.
+
+### 2. Socket Adoption & Peer EOF Delivery (BUG-328)
+
+In rapid connect/close workloads with `create_connection(sock=...)`, client transports previously left connections established after `transport.close()` because `owns_fd=false` skipped closing the socket descriptor. As a result, peer readers never observed EOF and accept queues overflowed, hanging subsequent connections. Talyn now mirrors CPython's selector transport behavior: the caller's descriptor is adopted via `dup()` and the caller's Python socket object is closed at adoption, ensuring immediate EOF delivery upon transport closure while preventing file descriptor reuse hazards (`EBADF`).
+
+### 3. Syscall Decoding, Watchers & Subsystems (BUG-305..307, BUG-313..315, BUG-326)
+
+- **Raw Syscall Return Decoding** ([BUG-326](bugs/326.md)): Five call sites using `std.posix.errno` were corrected to use `utils.getSyscallErrno`. `std.posix.errno` assumes libc-style return `-1` with thread-local `errno`, misreading negative kernel returns (`-errno`) as valid file descriptors or byte lengths (such as `pidfd_open` returning `-3` on already-reaped child processes).
+- **Child & FD Watcher Lifecycle** ([BUG-307](bugs/307.md), [BUG-313](bugs/313.md), [BUG-314](bugs/314.md), [BUG-315](bugs/315.md), [BUG-322](bugs/322.md)): Added deferred teardown for replaced child handlers to prevent UAF races with pending CQEs; maintained child watcher map consistency on duplicate registration; ensured handler teardown on non-transient `waitid` errors; cleaned up file watchers when `Soon.dispatch` fails; and replaced an `unreachable` in `z_loop_add_watcher` with best-effort rollback (Mandate 1 compliance).
+- **Teardown & Signal Safety** ([BUG-305](bugs/305.md), [BUG-306](bugs/306.md)): Free-threaded module cleanup unconditionally reclaims cached Python imports via atomic swaps (`release_python_imports`); signal registration in `link()` blocks signals prior to dummy handler installation, and `unlink()` disarms the signalfd mask before unblocking, closing signal loss race windows.
+- **DNS Resolver Redundancy & Idempotency** ([BUG-316](bugs/316.md), [BUG-317](bugs/317.md)): Preserved multi-nameserver query failover when an individual server fails; separated DNS record setup from callback dispatching so mid-dispatch failures maintain `resolved = true` and prevent duplicate callback execution.
+
+### 4. Open Knowledge Format (OKF v0.2) Upgrade
+
+Upgraded the entire documentation architecture to Google OKF v0.2, including standardized trust signals, semantic routing frontmatter, verified cross-concept relative links, and `.markdownlint.json` configuration.
+
+### Validation
+
+- `./scripts/test_all.sh --starburst --verbose`: Green on **python3.13, python3.14, python3.13t, python3.14t** (363 pytest cases + stdlib asyncio suites + 64 Zig unit tests).
+- AST linter: `zig build lint` passes with **0 violations** across all Zig and Python source files.
 
 ---
 

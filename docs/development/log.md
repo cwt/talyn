@@ -4,12 +4,25 @@ title: "Chronological Update Log — Talyn Documentation Bundle"
 description: "Tracks modifications, releases, and architectural changes across the Talyn documentation bundle."
 status: stable
 verified: human-reviewed
-timestamp: "2026-09-07T18:00:00Z"
+timestamp: "2026-09-08T03:25:00Z"
 ---
 
 # Chronological Update Log — Talyn Documentation Bundle
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
+
+## [2026-09-08] — v0.9.7 Release: Production Hardening, Transport Memory Safety & Zero Open Bugs (BUG-305..330)
+
+This milestone release resolves 26 tracked bugs (BUG-305 through BUG-330), bringing the bug tracker to 330 bugs total (317 Fixed, 0 Open, 13 False Positive) with 100% passing test suites across all 4 Python runtime targets:
+
+- **Transport Memory Safety (BUG-329, BUG-330)**: Inlined `ArrayList` structures directly into `WriteTransport` to eliminate glibc 2.32+ tcache UAF overwrite under SQ pressure; fixed consumed `Py_buffer` double-release in `WriteTransport.deinit`; cleared `write_in_flight` on cancellation.
+- **Socket Adoption (BUG-328)**: Adopted caller socket via `dup()` in `create_connection(sock=...)` and closed caller socket object, delivering EOF on transport close and eliminating hang races.
+- **Syscall Decoding & Watchers (BUG-307, BUG-313, BUG-314, BUG-315, BUG-319, BUG-322, BUG-326)**: Switched to `getSyscallErrno` for raw syscall return decoding; hardened child watcher lifecycles and error teardown; bounds-checked inotify events; replaced `unreachable` with best-effort rollback in `z_loop_add_watcher`.
+- **DNS Resolver Hardening (BUG-316 & residual, BUG-317)**: Preserved multi-nameserver query failover; separated DNS record setup from callback dispatching to enforce idempotency.
+- **Module & Signal Safety (BUG-305, BUG-306)**: Atomic import release on free-threaded module teardown; closed signal loss race windows during link/unlink.
+- **Documentation Upgrade**: Upgraded documentation bundle to Google Open Knowledge Format (OKF v0.2) with markdownlint configuration.
+- **Version Bump**: Bumped version to **0.9.7** in `pyproject.toml`, `build.zig.zon`, and AST linter banner.
+- **Tracker Status**: 330 bugs total (317 Fixed, 0 Open, 13 False Positive).
 
 ## [2026-09-07] — BUG-330 Root-Caused & Fixed: glibc tcache UAF on WriteTransport List Headers
 
