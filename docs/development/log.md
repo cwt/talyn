@@ -4,12 +4,23 @@ title: "Chronological Update Log — Talyn Documentation Bundle"
 description: "Tracks modifications, releases, and architectural changes across the Talyn documentation bundle."
 status: stable
 verified: human-reviewed
-timestamp: "2026-09-08T03:25:00Z"
+timestamp: "2026-09-22T16:00:00Z"
 ---
 
 # Chronological Update Log — Talyn Documentation Bundle
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
+
+## [2026-09-22] — v0.9.8 Release: Keyword-Argument Compatibility & DNS Teardown UAF (BUG-331, BUG-332)
+
+This milestone release resolves the two bugs filed after v0.9.7, bringing the bug tracker to 332 bugs total (319 Fixed, 0 Open, 13 False Positive) with 100% passing test suites across all 4 Python runtime targets:
+
+- **Keyword-Argument Dispatch (BUG-331)**: The new `TALYN-014/FASTCALL_MISSING_KEYWORDS` linter rule found 17 `METH_FASTCALL`-only registrations. The 15 CPython-parity methods (`getnameinfo`, the seven `sock_*` coroutines, `add_child_handler`, `remove_child_handler`, `add_signal_handler`, `add_reader`, `add_writer`, `DatagramTransport.sendto`/`set_write_buffer_limits`) now accept keywords through the 4-argument entry point and the new `python_c.merge_vector_call_args` helper (CPython-exact `TypeError` semantics for unknown keywords and duplicates); `_add_hook`/`_add_path_watcher` are explicitly exempted.
+- **DNS Teardown UAF (BUG-332)**: Cancelling a `getnameinfo` future and closing the loop aborted the process (SIGABRT) — `dns.deinit()` freed query state still referenced by io_uring cancel completions, which re-dispatched the already-consumed user callback. Fixed with the `ControlData.released` single-shot guard, deferred destruction (`DNS.deferred_release_head`, drained by `Loop.release()` after the post-`io.deinit()` callback pass), and a teardown guard in `ServerQueryData.cancel()`.
+- **Regression Tests**: Keyword-call coverage in `test_socket_ops.py` and the new `test_kwargs_dispatch.py`; subprocess cancel+close repro in `test_dns_cancel_teardown.py`; 370 passed, 1 skipped per interpreter plus all stdlib asyncio suites and 64 zig unit tests.
+- **Documentation**: New `TALYN-014` rule documented in `ast-linter.md`; `bugs/331.md` and `bugs/332.md` record the full site inventory, root causes, and fixes.
+- **Version Bump**: Bumped version to **0.9.8** in `pyproject.toml`, `build.zig.zon`, and AST linter banner.
+- **Tracker Status**: 332 bugs total (319 Fixed, 0 Open, 13 False Positive).
 
 ## [2026-09-08] — v0.9.7 Release: Production Hardening, Transport Memory Safety & Zero Open Bugs (BUG-305..330)
 

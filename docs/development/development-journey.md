@@ -3,7 +3,7 @@ type: article
 title: Talyn Development Journey
 description: The complete historical narrative and timeline of developing Talyn, sorted chronologically from the latest release back to the project's inception.
 tags: [history, documentation, journey, roadmap]
-timestamp: 2026-09-08T03:25:00Z
+timestamp: 2026-09-22T16:00:00Z
 ---
 
 # Talyn Development Journey
@@ -11,6 +11,30 @@ timestamp: 2026-09-08T03:25:00Z
 Talyn is a production-grade, crash-resistant, and realistically fast `asyncio` event loop drop-in replacement for Python, powered by **Zig** and **io_uring**.
 
 This document chronicles the engineering narrative and technical milestones of Talyn in **reverse chronological order**—starting with our latest release and architectural breakthroughs, and stepping back through performance optimizations, cross-platform builds, and deep audits to the project's original genesis.
+
+---
+
+## v0.9.8 — Keyword-Argument Compatibility & DNS Teardown UAF (BUG-331, BUG-332)
+
+**v0.9.8** resolves the two bugs filed after the v0.9.7 release ([BUG-331](bugs/331.md), [BUG-332](bugs/332.md)), bringing the bug tracker to **332 bugs total (319 Fixed, 0 Open, 13 False Positive)**. It restores CPython `asyncio` drop-in keyword-argument compatibility across the loop and transport API surface and eliminates a loop-teardown use-after-free in the DNS resolver.
+
+### 1. Keyword-Argument Dispatch Compatibility (BUG-331)
+
+The new `TALYN-014/FASTCALL_MISSING_KEYWORDS` offline linter rule scans every `PyMethodDef` table and found 17 methods registered `METH_FASTCALL` without `METH_KEYWORDS`, whose 3-argument `(self, args, nargs)` entry points rejected every keyword call with `TypeError: takes no keyword arguments`. CPython asyncio and uvloop declare these parameters positional-or-keyword, and `python-socks` (the engine behind `aiohttp-socks`) calls `loop.sock_connect(sock=..., address=...)`, so SOCKS connections failed on talyn (Wormhole `--tor`: `CONNECT 502`).
+
+- **15 parity sites fixed**: `getnameinfo`, all seven `sock_*` coroutines, `add_child_handler`, `remove_child_handler`, `add_signal_handler`, `add_reader`, `add_writer`, `DatagramTransport.sendto`, and `set_write_buffer_limits` now register `METH_FASTCALL | METH_KEYWORDS` and accept `knames` through the 4-argument entry point.
+- **CPython-exact merging**: the new `python_c.merge_vector_call_args` follows the `FASTCALL|KEYWORDS` vectorcall layout and raises `TypeError` for unknown keywords and positional/keyword duplicates; variadic callback arguments (`add_reader`/`add_writer`/`add_signal_handler`) stay positional-only.
+- **Two internal APIs exempted**: `_add_hook` and `_add_path_watcher` carry explicit `// TALYN-014-EXEMPT` markers (no CPython counterpart).
+- **Detector + regression tests**: TALYN-014 ships with five unit tests, plus keyword-call coverage in `test_socket_ops.py` and the new `test_kwargs_dispatch.py`.
+
+### 2. DNS Teardown Use-After-Free (BUG-332)
+
+Cancelling a `getnameinfo` future and awaiting it aborted the host process (SIGABRT, core dumped) during `loop.close()`: `dns.deinit()` released the query's `ControlData` (and its arena-owned `ServerQueryData`) while the query's io_uring ops were still queued, and the `io.deinit()` cancel completions then re-entered `ControlData.release()` on freed memory, re-dispatching the already-consumed user callback whose `GetNameInfoData` had been freed.
+
+- **Single-shot release**: `ControlData.released` makes `release()` idempotent, so user callbacks can only be dispatched once.
+- **Deferred destruction**: teardown parks released control data on an intrusive `DNS.deferred_release_head` list; `Loop.release()` destroys it only after the post-`io.deinit()` callback drain.
+- **No redundant cancels**: `ServerQueryData.cancel()` skips the `CancelByFd` queue once the ring is gone, eliminating the `queue cancel failed: LoopDeinitialized` warning.
+- **Regression test**: `tests/test_dns_cancel_teardown.py` runs the cancel + close sequence in a subprocess and asserts a clean exit.
 
 ---
 

@@ -15,7 +15,7 @@ Talyn prioritizes **correctness, complete system safety, and high usability** ov
 ## 🚀 Features
 
 - **Realistic Speed**: Designed to deliver solid and reliable I/O performance on Linux by leveraging `io_uring`'s native kernel-side asynchronous completion queues.
-- **Robust & Crash-Resistant**: Meticulously hardened against circular reference memory leaks, stack alignment faults, signal interrupt deadlocks, and use-after-free bugs (330 bugs identified and resolved across audit passes with 0 open bugs).
+- **Robust & Crash-Resistant**: Meticulously hardened against circular reference memory leaks, stack alignment faults, signal interrupt deadlocks, and use-after-free bugs (332 bugs identified and resolved across audit passes with 0 open bugs).
 - **Full Asyncio Compatibility**: Passes 100% of standard Python `asyncio`, `subprocess`, `transports`, and connection-lifecycle test suites.
 - **Offline AST Bug Hunter & Linter**: Enforces strict invariant safety rules (preventing memory leaks, discarded syscalls, panics, and UAFs) via a built-in, sub-15ms Zig and Python AST static analyzer (`zig build lint`).
 - **Open Knowledge Documentation**: Built with comprehensive architectural mandates, lessons learned, and bug tracking under Google Open Knowledge Format (OKF v0.2).
@@ -316,7 +316,7 @@ To honor the project's roots and Enrique's early work:
 
 ## 📖 Project Story & Documentation
 
-- **[Master Documentation Index](docs/index.md)** — Architectural mandates, bug tracker (330 resolved bugs), and lessons learned under OKF v0.2.
+- **[Master Documentation Index](docs/index.md)** — Architectural mandates, bug tracker (332 resolved bugs), and lessons learned under OKF v0.2.
 - **[Development Journey](docs/development/development-journey.md)** — The full story: from discovery to challenges, the shift from "ultra-fast" to "realistic fast and stable", and how Talyn was built.
 - **[Why Talyn?](docs/development/talyn-naming.md)** — The personal story and meaning behind the new name.
 
