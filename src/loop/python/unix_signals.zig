@@ -11,14 +11,16 @@ const LoopObject = Loop.Python.LoopObject;
 
 const Scheduling = @import("scheduling.zig");
 
-inline fn z_loop_add_signal_handler(self: *LoopObject, args: []?PyObject) !PyObject {
-    if (args.len < 2) {
+inline fn z_loop_add_signal_handler(self: *LoopObject, args: []?PyObject, knames: ?PyObject) !PyObject {
+    var merged: [2]?PyObject = undefined;
+    try python_c.merge_vector_call_args(args, knames, &.{ "sig", "callback" }, &merged);
+    if (merged[0] == null or merged[1] == null) {
         python_c.raise_python_value_error("Invalid number of arguments\x00");
         return error.PythonError;
     }
     const loop_data = utils.get_data_ptr(Loop, self);
 
-    const py_sig: PyObject = args[0].?;
+    const py_sig: PyObject = merged[0].?;
     if (!python_c.long_check(py_sig)) {
         python_c.raise_python_runtime_error("Invalid signal\x00");
         return error.PythonError;
@@ -39,7 +41,7 @@ inline fn z_loop_add_signal_handler(self: *LoopObject, args: []?PyObject) !PyObj
         errdefer python_c.py_decref(context);
 
         const allocator = loop_data.allocator;
-        const callback_info = try Scheduling.get_callback_info(allocator, args[2..]);
+        const callback_info = try Scheduling.get_callback_info(allocator, args[@min(args.len, 2)..]);
         errdefer {
             if (callback_info) |_args| {
                 for (_args) |arg| {
@@ -49,7 +51,7 @@ inline fn z_loop_add_signal_handler(self: *LoopObject, args: []?PyObject) !PyObj
             }
         }
 
-        py_callback = python_c.py_newref(args[1].?);
+        py_callback = python_c.py_newref(merged[1].?);
         errdefer python_c.py_decref(py_callback);
 
         if (python_c.PyCallable_Check(py_callback) <= 0) {
@@ -77,8 +79,8 @@ inline fn z_loop_add_signal_handler(self: *LoopObject, args: []?PyObject) !PyObj
     return python_c.get_py_none();
 }
 
-pub fn loop_add_signal_handler(self: ?*LoopObject, args: ?[*]?PyObject, nargs: isize) callconv(.c) ?PyObject {
-    return utils.execute_zig_function(z_loop_add_signal_handler, .{ self.?, args.?[0..@as(usize, @intCast(nargs))] });
+pub fn loop_add_signal_handler(self: ?*LoopObject, args: ?[*]?PyObject, nargs: isize, knames: ?PyObject) callconv(.c) ?PyObject {
+    return utils.execute_zig_function(z_loop_add_signal_handler, .{ self.?, args.?[0..@as(usize, @intCast(nargs))], knames });
 }
 
 pub fn loop_remove_signal_handler(self: ?*LoopObject, py_sig: ?PyObject) callconv(.c) ?PyObject {

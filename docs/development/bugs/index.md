@@ -1,8 +1,8 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 330 bugs discovered across audit passes."
-timestamp: "2026-09-07T17:45:00Z"
+description: "Individual bug entries for talyn, one file per bug. 332 bugs discovered across audit passes."
+timestamp: "2026-09-22T15:10:00Z"
 ---
 
 # Bugs — talyn
@@ -16,22 +16,22 @@ Sorted by bug number. See individual bug files for details.
 | Severity | Count |
 |---|---:|
 | Critical | 42 |
-| High | 97 |
-| Medium-High | 29 |
+| High | 98 |
+| Medium-High | 30 |
 | Medium | 63 |
 | Medium-Mid | 11 |
 | Medium-Low | 21 |
 | Low | 67 |
-| **Total** | **330** |
+| **Total** | **332** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
-| Fixed | 317 |
-| Open | 0 |
+| Fixed | 318 |
+| Open | 1 |
 | False Positive | 13 |
-| **Total** | **330** |
+| **Total** | **332** |
 
 ## All Bugs
 
@@ -366,3 +366,5 @@ Sorted by bug number. See individual bug files for details.
 | [328](328.md) | `create_connection(sock=)` never closes the caller's socket - wedged peers, accept-queue exhaustion, SYN-SENT hangs | High | Fixed |
 | [329](329.md) | WriteTransport double-releases consumed Py_buffers in deinit; write_in_flight stuck on cancellation | High | Fixed |
 | [330](330.md) | glibc tcache UAF corrupts WriteTransport ArrayList header | High | Fixed |
+| [331](331.md) | `METH_FASTCALL`-only registrations reject keyword arguments (missing `METH_KEYWORDS`) | Medium-High | Fixed |
+| [332](332.md) | Cancelled `getnameinfo` future aborts the process at loop close (double-dispatched DNS callback UAF) | High | Open |

@@ -148,8 +148,8 @@ fn datagram_init(self: ?*DatagramTransportObject, args: ?PyObject, kwargs: ?PyOb
     return utils.execute_zig_function(Constructors.z_datagram_init, .{ self.?, args, kwargs });
 }
 
-fn datagram_sendto(self: ?*DatagramTransportObject, args: ?[*]?PyObject, nargs: isize) callconv(.c) ?PyObject {
-    return WriteTransport.z_datagram_sendto(self.?, args.?[0..@as(usize, @intCast(nargs))]) catch |err| {
+fn datagram_sendto(self: ?*DatagramTransportObject, args: ?[*]?PyObject, nargs: isize, knames: ?PyObject) callconv(.c) ?PyObject {
+    return WriteTransport.z_datagram_sendto(self.?, args.?[0..@as(usize, @intCast(nargs))], knames) catch |err| {
         return utils.handle_zig_function_error(err, null);
     };
 }
@@ -195,8 +195,8 @@ fn datagram_get_extra_info(self: ?*DatagramTransportObject, args: ?[*]?PyObject,
     };
 }
 
-fn datagram_set_write_buffer_limits(self: ?*DatagramTransportObject, args: ?[*]?PyObject, nargs: isize) callconv(.c) ?PyObject {
-    _ = WriteTransport.z_datagram_set_write_buffer_limits(self.?, args.?[0..@as(usize, @intCast(nargs))]) catch |err| {
+fn datagram_set_write_buffer_limits(self: ?*DatagramTransportObject, args: ?[*]?PyObject, nargs: isize, knames: ?PyObject) callconv(.c) ?PyObject {
+    _ = WriteTransport.z_datagram_set_write_buffer_limits(self.?, args.?[0..@as(usize, @intCast(nargs))], knames) catch |err| {
         return utils.handle_zig_function_error(err, null);
     };
     return python_c.get_py_none();
@@ -217,12 +217,12 @@ fn datagram_get_write_buffer_limits(self: ?*DatagramTransportObject, _: ?PyObjec
 }
 
 const DatagramMethods: []const python_c.PyMethodDef = &[_]python_c.PyMethodDef{
-    .{ .ml_name = "sendto\x00", .ml_meth = @ptrCast(&datagram_sendto), .ml_doc = "Send a datagram.\x00", .ml_flags = python_c.METH_FASTCALL },
+    .{ .ml_name = "sendto\x00", .ml_meth = @ptrCast(&datagram_sendto), .ml_doc = "Send a datagram.\x00", .ml_flags = python_c.METH_FASTCALL | python_c.METH_KEYWORDS },
     .{ .ml_name = "close\x00", .ml_meth = @ptrCast(&datagram_close), .ml_doc = "Close the transport.\x00", .ml_flags = python_c.METH_NOARGS },
     .{ .ml_name = "abort\x00", .ml_meth = @ptrCast(&datagram_abort), .ml_doc = "Abort the transport.\x00", .ml_flags = python_c.METH_NOARGS },
     .{ .ml_name = "is_closing\x00", .ml_meth = @ptrCast(&datagram_is_closing), .ml_doc = "Return True if the transport is closing.\x00", .ml_flags = python_c.METH_NOARGS },
     .{ .ml_name = "get_extra_info\x00", .ml_meth = @ptrCast(&datagram_get_extra_info), .ml_doc = "Get extra transport info.\x00", .ml_flags = python_c.METH_FASTCALL | python_c.METH_KEYWORDS },
-    .{ .ml_name = "set_write_buffer_limits\x00", .ml_meth = @ptrCast(&datagram_set_write_buffer_limits), .ml_doc = "Set write buffer limits.\x00", .ml_flags = python_c.METH_FASTCALL },
+    .{ .ml_name = "set_write_buffer_limits\x00", .ml_meth = @ptrCast(&datagram_set_write_buffer_limits), .ml_doc = "Set write buffer limits.\x00", .ml_flags = python_c.METH_FASTCALL | python_c.METH_KEYWORDS },
     .{ .ml_name = "get_write_buffer_size\x00", .ml_meth = @ptrCast(&datagram_get_write_buffer_size), .ml_doc = "Get write buffer size.\x00", .ml_flags = python_c.METH_NOARGS },
     .{ .ml_name = "get_write_buffer_limits\x00", .ml_meth = @ptrCast(&datagram_get_write_buffer_limits), .ml_doc = "Get write buffer limits.\x00", .ml_flags = python_c.METH_NOARGS },
     .{ .ml_name = null, .ml_meth = null, .ml_doc = null, .ml_flags = 0 },

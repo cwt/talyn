@@ -136,17 +136,20 @@ fn loop_watchers_callback(data: *const CallbackManager.CallbackData) !void {
     }
 }
 
-inline fn z_loop_add_watcher(self: *LoopObject, args: []?PyObject, operation: Loop.Scheduling.IO.BlockingOperation) !PyObject {
+inline fn z_loop_add_watcher(self: *LoopObject, args: []?PyObject, knames: ?PyObject, operation: Loop.Scheduling.IO.BlockingOperation) !PyObject {
     if (Loop.Python.check_forked(self)) return error.PythonError;
     if (Loop.Python.check_thread(self)) return error.PythonError;
-    if (args.len < 2) {
+
+    var merged: [2]?PyObject = undefined;
+    try python_c.merge_vector_call_args(args, knames, &.{ "fd", "callback" }, &merged);
+    if (merged[0] == null or merged[1] == null) {
         python_c.raise_python_value_error("Invalid number of arguments\x00");
         return error.PythonError;
     }
 
     const loop_data = utils.get_data_ptr(Loop, self);
 
-    const py_fd: PyObject = args[0].?;
+    const py_fd: PyObject = merged[0].?;
     if (!python_c.long_check(py_fd)) {
         python_c.raise_python_runtime_error("Invalid file descriptor\x00");
         return error.PythonError;
@@ -167,7 +170,7 @@ inline fn z_loop_add_watcher(self: *LoopObject, args: []?PyObject, operation: Lo
         const context = python_c.PyContext_CopyCurrent() orelse return error.PythonError;
         errdefer python_c.py_decref(context);
 
-        const callback_info = try Scheduling.get_callback_info(allocator, args[2..]);
+        const callback_info = try Scheduling.get_callback_info(allocator, args[@min(args.len, 2)..]);
         errdefer {
             if (callback_info) |_args| {
                 for (_args) |arg| {
@@ -177,7 +180,7 @@ inline fn z_loop_add_watcher(self: *LoopObject, args: []?PyObject, operation: Lo
             }
         }
 
-        const py_callback = python_c.py_newref(args[1].?);
+        const py_callback = python_c.py_newref(merged[1].?);
         errdefer python_c.py_decref(py_callback);
 
         if (python_c.PyCallable_Check(py_callback) <= 0) {
@@ -280,12 +283,12 @@ inline fn z_loop_add_watcher(self: *LoopObject, args: []?PyObject, operation: Lo
     return python_c.get_py_none();
 }
 
-pub fn loop_add_reader(self: ?*LoopObject, args: ?[*]?PyObject, nargs: isize) callconv(.c) ?PyObject {
-    return utils.execute_zig_function(z_loop_add_watcher, .{ self.?, args.?[0..@as(usize, @intCast(nargs))], Loop.Scheduling.IO.BlockingOperation.WaitReadable });
+pub fn loop_add_reader(self: ?*LoopObject, args: ?[*]?PyObject, nargs: isize, knames: ?PyObject) callconv(.c) ?PyObject {
+    return utils.execute_zig_function(z_loop_add_watcher, .{ self.?, args.?[0..@as(usize, @intCast(nargs))], knames, Loop.Scheduling.IO.BlockingOperation.WaitReadable });
 }
 
-pub fn loop_add_writer(self: ?*LoopObject, args: ?[*]?PyObject, nargs: isize) callconv(.c) ?PyObject {
-    return utils.execute_zig_function(z_loop_add_watcher, .{ self.?, args.?[0..@as(usize, @intCast(nargs))], Loop.Scheduling.IO.BlockingOperation.WaitWritable });
+pub fn loop_add_writer(self: ?*LoopObject, args: ?[*]?PyObject, nargs: isize, knames: ?PyObject) callconv(.c) ?PyObject {
+    return utils.execute_zig_function(z_loop_add_watcher, .{ self.?, args.?[0..@as(usize, @intCast(nargs))], knames, Loop.Scheduling.IO.BlockingOperation.WaitWritable });
 }
 
 inline fn z_loop_remove_watcher(self: *LoopObject, py_fd: PyObject, operation: Loop.Scheduling.IO.BlockingOperation) !PyObject {

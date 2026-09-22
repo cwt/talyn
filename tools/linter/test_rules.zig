@@ -14,6 +14,7 @@ const missing_tp_alloc_pyobject_init = @import("rules/missing_tp_alloc_pyobject_
 const unparsed_pyobject_kwarg = @import("rules/unparsed_pyobject_kwarg.zig");
 const no_forced_optional_pyobject_unwrap = @import("rules/no_forced_optional_pyobject_unwrap.zig");
 const no_ptr_from_int_task_id = @import("rules/no_ptr_from_int_task_id.zig");
+const method_flags_missing_keywords = @import("rules/method_flags_missing_keywords.zig");
 
 fn checkSnippet(
     gpa: std.mem.Allocator,
@@ -200,4 +201,43 @@ test "TALYN-013: @ptrFromInt(task_id) in IO path" {
         \\const task: *BlockingTask = @ptrFromInt(task_id);
     , no_ptr_from_int_task_id.check);
     try std.testing.expectEqual(@as(usize, 0), diags_outside);
+}
+
+test "TALYN-014: METH_FASTCALL without METH_KEYWORDS" {
+    // Should flag: multi-line table entry, FASTCALL only
+    const diags_bad = try checkSnippet(std.testing.allocator, "src/loop/python/main.zig",
+        \\const M = [_]PyMethodDef{
+        \\    .{ .ml_name = "sock_connect\x00", .ml_flags = python_c.METH_FASTCALL },
+        \\};
+    , method_flags_missing_keywords.check);
+    try std.testing.expectEqual(@as(usize, 1), diags_bad);
+
+    // Should flag: single-line table entry, FASTCALL only
+    const diags_single = try checkSnippet(std.testing.allocator, "src/transports/datagram/main.zig",
+        \\const M = [_]PyMethodDef{ .{ .ml_name = "sendto\x00", .ml_flags = python_c.METH_FASTCALL } };
+    , method_flags_missing_keywords.check);
+    try std.testing.expectEqual(@as(usize, 1), diags_single);
+
+    // Should NOT flag: METH_KEYWORDS present
+    const diags_ok = try checkSnippet(std.testing.allocator, "src/loop/python/main.zig",
+        \\const M = [_]PyMethodDef{
+        \\    .{ .ml_name = "getaddrinfo\x00", .ml_flags = python_c.METH_FASTCALL | python_c.METH_KEYWORDS },
+        \\};
+    , method_flags_missing_keywords.check);
+    try std.testing.expectEqual(@as(usize, 0), diags_ok);
+
+    // Should NOT flag: exemption marker on the line above
+    const diags_exempt = try checkSnippet(std.testing.allocator, "src/loop/python/main.zig",
+        \\const M = [_]PyMethodDef{
+        \\    // TALYN-014-EXEMPT: internal API, no CPython counterpart
+        \\    .{ .ml_name = "_add_hook\x00", .ml_flags = python_c.METH_FASTCALL },
+        \\};
+    , method_flags_missing_keywords.check);
+    try std.testing.expectEqual(@as(usize, 0), diags_exempt);
+
+    // Should NOT flag: no PyMethodDef table in file
+    const diags_unrelated = try checkSnippet(std.testing.allocator, "src/utils/main.zig",
+        \\const flags = METH_FASTCALL;
+    , method_flags_missing_keywords.check);
+    try std.testing.expectEqual(@as(usize, 0), diags_unrelated);
 }

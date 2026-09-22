@@ -72,15 +72,18 @@ fn getnameinfo_callback(data: *const CallbackManager.CallbackData) !void {
     try Future.Python.Result.future_fast_set_result(future_data, py_res);
 }
 
-inline fn z_loop_getnameinfo(self: *LoopObject, args: []const ?PyObject) !*FutureObject {
+inline fn z_loop_getnameinfo(self: *LoopObject, args: []const ?PyObject, knames: ?PyObject) !*FutureObject {
     if (Loop.Python.check_forked(self)) return error.PythonError;
-    if (args.len < 1) {
+
+    var merged: [3]?PyObject = undefined;
+    try python_c.merge_vector_call_args(args, knames, &.{ "sockaddr", "flags", "dns_timeout" }, &merged);
+    if (merged[0] == null) {
         python_c.raise_python_value_error("sockaddr argument is required\x00");
         return error.PythonError;
     }
-    const py_addr = args[0].?;
-    const flags: i32 = if (args.len > 1) blk: {
-        const v = python_c.PyLong_AsLong(args[1].?);
+    const py_addr = merged[0].?;
+    const flags: i32 = if (merged[1]) |py_flags| blk: {
+        const v = python_c.PyLong_AsLong(py_flags);
         if (python_c.PyErr_Occurred() != null) return error.PythonError;
         break :blk @intCast(v);
     } else 0;
@@ -88,8 +91,7 @@ inline fn z_loop_getnameinfo(self: *LoopObject, args: []const ?PyObject) !*Futur
     const addr = try utils.Address.fromPyAddr(py_addr, null);
 
     const dns_timeout = blk: {
-        const py_timeout = if (args.len > 2) args[2] else null;
-        if (py_timeout) |pt| {
+        if (merged[2]) |pt| {
             break :blk try Resolv.parse_dns_timeout(pt);
         } else break :blk null;
     };
@@ -124,9 +126,9 @@ inline fn z_loop_getnameinfo(self: *LoopObject, args: []const ?PyObject) !*Futur
     return fut;
 }
 
-pub fn loop_getnameinfo(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t) callconv(.c) ?*FutureObject {
+pub fn loop_getnameinfo(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t, knames: ?PyObject) callconv(.c) ?*FutureObject {
     return utils.execute_zig_function(
         z_loop_getnameinfo,
-        .{ self.?, args.?[0..@as(usize, @intCast(nargs))] },
+        .{ self.?, args.?[0..@as(usize, @intCast(nargs))], knames },
     );
 }

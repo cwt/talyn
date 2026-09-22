@@ -77,12 +77,14 @@ fn buffer_watermark_check(self: *DatagramTransport.DatagramTransportObject, len:
     }
 }
 
-pub fn z_datagram_sendto(self: *DatagramTransport.DatagramTransportObject, args: []?PyObject) !?PyObject {
-    if (args.len < 1) {
+pub fn z_datagram_sendto(self: *DatagramTransport.DatagramTransportObject, args: []?PyObject, knames: ?PyObject) !?PyObject {
+    var merged: [2]?PyObject = undefined;
+    try python_c.merge_vector_call_args(args, knames, &.{ "data", "addr" }, &merged);
+    if (merged[0] == null) {
         python_c.raise_python_value_error("data argument is required\x00");
         return error.PythonError;
     }
-    const data = args[0].?;
+    const data = merged[0].?;
     if (self.closed) {
         python_c.raise_python_runtime_error("Transport is closed\x00");
         return error.PythonError;
@@ -141,8 +143,8 @@ pub fn z_datagram_sendto(self: *DatagramTransport.DatagramTransportObject, args:
     };
 
     // Check if addr argument is provided (sendto with explicit destination)
-    if (args.len > 1 and args[1] != null and !python_c.is_none(args[1].?)) {
-        const py_addr = args[1].?;
+    const py_addr: ?PyObject = if (merged[1]) |addr| (if (python_c.is_none(addr)) null else addr) else null;
+    if (py_addr) |addr| {
 
         // Determine socket family for address parsing
         var family: ?i32 = null;
@@ -157,7 +159,7 @@ pub fn z_datagram_sendto(self: *DatagramTransport.DatagramTransportObject, args:
             }
         }
 
-        sd.address = try utils.Address.fromPyAddr(py_addr, family);
+        sd.address = try utils.Address.fromPyAddr(addr, family);
         sd.msg.name = &sd.address.any;
         sd.msg.namelen = sd.address.getOsSockLen();
     }
@@ -183,10 +185,15 @@ pub fn z_datagram_sendto(self: *DatagramTransport.DatagramTransportObject, args:
     return python_c.get_py_none();
 }
 
-pub fn z_datagram_set_write_buffer_limits(self: *DatagramTransport.DatagramTransportObject, args: []?PyObject) !?PyObject {
-    if (args.len < 1) return error.InvalidArgs;
-    const py_high = args[0].?;
-    const py_low: ?PyObject = if (args.len > 1 and args[1] != null and !python_c.is_none(args[1].?)) args[1].? else null;
+pub fn z_datagram_set_write_buffer_limits(self: *DatagramTransport.DatagramTransportObject, args: []?PyObject, knames: ?PyObject) !?PyObject {
+    var merged: [2]?PyObject = undefined;
+    try python_c.merge_vector_call_args(args, knames, &.{ "high", "low" }, &merged);
+    if (merged[0] == null) {
+        python_c.raise_python_value_error("high argument is required\x00");
+        return error.PythonError;
+    }
+    const py_high = merged[0].?;
+    const py_low: ?PyObject = if (merged[1]) |l| (if (python_c.is_none(l)) null else l) else null;
 
     const high_val = python_c.PyLong_AsUnsignedLongLong(py_high);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;

@@ -15,6 +15,7 @@ const missing_tp_alloc_pyobject_init = @import("rules/missing_tp_alloc_pyobject_
 const unparsed_pyobject_kwarg = @import("rules/unparsed_pyobject_kwarg.zig");
 const no_forced_optional_pyobject_unwrap = @import("rules/no_forced_optional_pyobject_unwrap.zig");
 const no_ptr_from_int_task_id = @import("rules/no_ptr_from_int_task_id.zig");
+const method_flags_missing_keywords = @import("rules/method_flags_missing_keywords.zig");
 
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
@@ -78,6 +79,7 @@ pub fn main(init: std.process.Init) !void {
             try unparsed_pyobject_kwarg.check(&ast, full_path, arena, &diagnostics);
             try no_forced_optional_pyobject_unwrap.check(&ast, full_path, arena, &diagnostics);
             try no_ptr_from_int_task_id.check(&ast, full_path, arena, &diagnostics);
+            try method_flags_missing_keywords.check(&ast, full_path, arena, &diagnostics);
         }
     } else |err| {
         try w.print("Failed to open 'src' directory: {t}\n", .{err});
@@ -126,6 +128,7 @@ pub fn main(init: std.process.Init) !void {
             try unparsed_pyobject_kwarg.check(&ast, full_path, arena, &diagnostics);
             try no_forced_optional_pyobject_unwrap.check(&ast, full_path, arena, &diagnostics);
             try no_ptr_from_int_task_id.check(&ast, full_path, arena, &diagnostics);
+            try method_flags_missing_keywords.check(&ast, full_path, arena, &diagnostics);
         }
     } else |err| {
         try w.print("Failed to open 'tools/linter' directory: {t}\n", .{err});

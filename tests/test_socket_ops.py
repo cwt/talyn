@@ -236,3 +236,85 @@ def test_sock_ops_future_refcount_stability():
         assert delta == 0, f"future/loop reference drift over 10 cycles: {delta}"
 
     talyn.run(main())
+
+
+def test_sock_methods_accept_keyword_arguments():
+    """BUG-331: every sock_* coroutine must accept keyword arguments.
+
+    CPython asyncio (and uvloop) declare these parameters as
+    positional-or-keyword, and python-socks (aiohttp-socks) calls
+    ``loop.sock_connect(sock=..., address=...)``. talyn registered the
+    methods with METH_FASTCALL only, so any keyword call raised
+    ``TypeError: takes no keyword arguments``.
+    """
+
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server_sock.bind(("127.0.0.1", 0))
+        server_sock.listen(5)
+        server_sock.setblocking(False)
+        addr = server_sock.getsockname()
+
+        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client.setblocking(False)
+        try:
+            await loop.sock_connect(sock=client, address=addr)
+            conn, _ = await loop.sock_accept(sock=server_sock)
+            try:
+                await loop.sock_sendall(sock=client, data=b"ping")
+                assert await loop.sock_recv(sock=conn, n=4) == b"ping"
+
+                buf = bytearray(16)
+                await loop.sock_sendall(sock=client, data=b"pong")
+                n = await loop.sock_recv_into(sock=conn, buf=buf)
+                assert bytes(buf[:n]) == b"pong"
+            finally:
+                conn.close()
+
+            udp_recv = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            udp_recv.setblocking(False)
+            udp_recv.bind(("127.0.0.1", 0))
+            udp_send = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            udp_send.setblocking(False)
+            try:
+                await loop.sock_sendto(
+                    sock=udp_send,
+                    data=b"dgram",
+                    address=udp_recv.getsockname(),
+                )
+                data, _sender = await loop.sock_recvfrom(sock=udp_recv, bufsize=64)
+                assert data == b"dgram"
+            finally:
+                udp_send.close()
+                udp_recv.close()
+        finally:
+            client.close()
+            server_sock.close()
+
+    talyn.run(main())
+
+
+def test_getnameinfo_accepts_keyword_arguments():
+    """BUG-331: loop.getnameinfo must accept keyword arguments.
+
+    A negative dns_timeout is rejected before any DNS query is queued, so
+    keyword dispatch is asserted without depending on resolver state.
+    """
+
+    async def main():
+        loop = asyncio.get_running_loop()
+        try:
+            await loop.getnameinfo(
+                sockaddr=("127.0.0.1", 80),
+                flags=0,
+                dns_timeout=-1.0,
+            )
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("negative dns_timeout was not rejected")
+
+    talyn.run(main())

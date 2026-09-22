@@ -333,16 +333,21 @@ fn z_loop_add_path_watcher(self: *LoopObject, args: []const ?PyObject) !PyObject
     return @ptrCast(handle);
 }
 
-pub fn loop_add_child_handler(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t) callconv(.c) ?PyObject {
-    return utils.execute_zig_function(z_loop_add_child_handler, .{ self.?, args.?[0..@as(usize, @intCast(nargs))] });
+pub fn loop_add_child_handler(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t, knames: ?PyObject) callconv(.c) ?PyObject {
+    return utils.execute_zig_function(z_loop_add_child_handler, .{ self.?, args.?[0..@as(usize, @intCast(nargs))], knames });
 }
 
-fn z_loop_add_child_handler(self: *LoopObject, args: []const ?PyObject) !PyObject {
-    if (args.len < 2) return error.PythonError;
-    const pid_val = python_c.PyLong_AsLong(args[0].?);
+fn z_loop_add_child_handler(self: *LoopObject, args: []const ?PyObject, knames: ?PyObject) !PyObject {
+    var merged: [2]?PyObject = undefined;
+    try python_c.merge_vector_call_args(args, knames, &.{ "pid", "callback" }, &merged);
+    if (merged[0] == null or merged[1] == null) {
+        python_c.raise_python_value_error("pid and callback are required\x00");
+        return error.PythonError;
+    }
+    const pid_val = python_c.PyLong_AsLong(merged[0].?);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
     const pid: i32 = @intCast(pid_val);
-    const py_callback = args[1].?;
+    const py_callback = merged[1].?;
 
     const loop_data = utils.get_data_ptr(Loop, self);
     try loop_data.child_watcher.add_child_handler(pid, py_callback);
@@ -350,13 +355,18 @@ fn z_loop_add_child_handler(self: *LoopObject, args: []const ?PyObject) !PyObjec
     return python_c.get_py_none();
 }
 
-pub fn loop_remove_child_handler(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t) callconv(.c) ?PyObject {
-    return utils.execute_zig_function(z_loop_remove_child_handler, .{ self.?, args.?[0..@as(usize, @intCast(nargs))] });
+pub fn loop_remove_child_handler(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t, knames: ?PyObject) callconv(.c) ?PyObject {
+    return utils.execute_zig_function(z_loop_remove_child_handler, .{ self.?, args.?[0..@as(usize, @intCast(nargs))], knames });
 }
 
-fn z_loop_remove_child_handler(self: *LoopObject, args: []const ?PyObject) !PyObject {
-    if (args.len < 1) return error.PythonError;
-    const pid_val = python_c.PyLong_AsLong(args[0].?);
+fn z_loop_remove_child_handler(self: *LoopObject, args: []const ?PyObject, knames: ?PyObject) !PyObject {
+    var merged: [1]?PyObject = undefined;
+    try python_c.merge_vector_call_args(args, knames, &.{"pid"}, &merged);
+    if (merged[0] == null) {
+        python_c.raise_python_value_error("pid is required\x00");
+        return error.PythonError;
+    }
+    const pid_val = python_c.PyLong_AsLong(merged[0].?);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
     const pid: i32 = @intCast(pid_val);
 

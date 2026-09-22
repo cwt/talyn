@@ -551,6 +551,65 @@ pub inline fn parse_vector_call_kwargs(knames: ?*Python.PyObject, args_ptr: [*]?
     }
 }
 
+/// Merge positional arguments and keyword values into a fixed slot array.
+///
+/// CPython's `METH_FASTCALL | METH_KEYWORDS` vectorcall layout stores the
+/// keyword values immediately after the positional arguments, with `knames`
+/// holding the matching names tuple. Slots are filled positionally first,
+/// then by keyword; unknown keywords and arguments passed both positionally
+/// and by keyword raise `TypeError` exactly like CPython. Values stay
+/// borrowed references, matching the positional path.
+pub inline fn merge_vector_call_args(
+    args: []const ?*Python.PyObject,
+    knames: ?*Python.PyObject,
+    comptime names: []const []const u8,
+    out: *[names.len]?*Python.PyObject,
+) !void {
+    out.* = .{null} ** names.len;
+
+    const positional_len = @min(args.len, names.len);
+    for (args[0..positional_len], 0..) |arg, i| {
+        out[i] = arg;
+    }
+
+    if (knames) |kwargs| {
+        const kwargs_len = Python.PyTuple_Size(kwargs);
+        if (kwargs_len < 0) return error.PythonError;
+
+        const values = args.ptr[args.len..][0..@as(usize, @intCast(kwargs_len))];
+        loop: for (values, 0..) |value, i| {
+            const key = Python.PyTuple_GetItem(kwargs, @intCast(i)) orelse return error.PythonError;
+            inline for (names, out) |name, *slot| {
+                if (Python.PyUnicode_CompareWithASCIIString(key, @ptrCast(name)) == 0) {
+                    if (slot.* != null) {
+                        raise_keyword_type_error("got multiple values for argument '{s}'", key);
+                        return error.PythonError;
+                    }
+                    slot.* = value;
+                    continue :loop;
+                }
+            }
+
+            raise_keyword_type_error("unexpected keyword argument '{s}'", key);
+            return error.PythonError;
+        }
+    }
+}
+
+fn raise_keyword_type_error(comptime format: []const u8, key: *Python.PyObject) void {
+    var buf: [256]u8 = undefined;
+    var name_len: Python.Py_ssize_t = 0;
+    const name_ptr = Python.PyUnicode_AsUTF8AndSize(key, &name_len) orelse {
+        raise_python_type_error("invalid keyword argument");
+        return;
+    };
+    const message = std.fmt.bufPrintZ(&buf, format, .{name_ptr[0..@intCast(name_len)]}) catch {
+        raise_python_type_error("invalid keyword argument");
+        return;
+    };
+    raise_python_type_error(message);
+}
+
 pub inline fn raise_python_error(exception: *Python.PyObject, message: ?[:0]const u8) void {
     if (message) |msg| {
         Python.PyErr_SetString(exception, @ptrCast(msg));

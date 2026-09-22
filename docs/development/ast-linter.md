@@ -59,6 +59,9 @@ python3 tools/linter/rules/python_rules.py
 | `TALYN-009` | `MISSING_ERRDEFER_AFTER_FAST_NEW_FUTURE` | [BUG-187](bugs/187.md), [BUG-203](bugs/203.md) | `fast_new_future` returns a new Python reference that must have an `errdefer py_decref` to prevent leaks on error paths. |
 | `TALYN-010` | `UNINITIALIZED_PYOBJECT_FIELD_AFTER_TP_ALLOC` | [BUG-204](bugs/204.md), [BUG-087](bugs/087.md) | Optional `?PyObject` struct fields must be explicitly set to `null` after `tp_alloc` to prevent GC traversal of garbage pointers. |
 | `TALYN-011` | `UNPARSED_PYOBJECT_KWARG` | [BUG-189](bugs/189.md), [BUG-205](bugs/205.md) | Struct fields of type `?PyObject` must be covered by a `parse_vector_call_kwargs` call, or the corresponding Python keyword argument is silently ignored. |
+| `TALYN-012` | `NO_FORCED_OPTIONAL_PYOBJECT_UNWRAP` | [BUG-293](bugs/293.md) | Forced `.?` unwrap on nullable protocol fields in IO paths can call `PyObject_Call*(NULL)` after concurrent transport teardown — SIGSEGV. |
+| `TALYN-013` | `NO_PTR_FROM_INT_TASK_ID` | [BUG-290](bugs/290.md) | `@ptrFromInt(task_id)` casts a raw task-slot integer back to a `*BlockingTask` — integer-to-pointer use-after-free once the slot returns to the free pool. |
+| `TALYN-014` | `FASTCALL_MISSING_KEYWORDS` | [BUG-331](bugs/331.md) | `PyMethodDef` entries registered `METH_FASTCALL` without `METH_KEYWORDS` reject every keyword call with `TypeError: takes no keyword arguments`, breaking CPython asyncio / uvloop drop-in compatibility. Positional-only methods must opt out with a `// TALYN-014-EXEMPT: <reason>` comment. |
 
 ### Python AST Rules
 
@@ -86,7 +89,10 @@ tools/linter/
     ├── gc_type_clear.zig              # Rule TALYN-008
     ├── missing_errdefer_after_future.zig  # Rule TALYN-009
     ├── missing_tp_alloc_pyobject_init.zig # Rule TALYN-010
-    └── unparsed_pyobject_kwarg.zig    # Rule TALYN-011
+    ├── unparsed_pyobject_kwarg.zig    # Rule TALYN-011
+    ├── no_forced_optional_pyobject_unwrap.zig # Rule TALYN-012
+    ├── no_ptr_from_int_task_id.zig    # Rule TALYN-013
+    ├── method_flags_missing_keywords.zig # Rule TALYN-014
     └── python_rules.py       # Python AST rules (TALYN-PY01, TALYN-PY02)
 ```
 

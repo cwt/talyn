@@ -110,19 +110,22 @@ fn sock_accept_callback(data: *const CallbackManager.CallbackData) !void {
     success = true;
 }
 
-pub fn loop_sock_accept(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t) callconv(.c) ?*FutureObject {
-    return utils.execute_zig_function(z_loop_sock_accept, .{ self.?, args.?[0..@as(usize, @intCast(nargs))] });
+pub fn loop_sock_accept(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t, knames: ?PyObject) callconv(.c) ?*FutureObject {
+    return utils.execute_zig_function(z_loop_sock_accept, .{ self.?, args.?[0..@as(usize, @intCast(nargs))], knames });
 }
 
-fn z_loop_sock_accept(self: *LoopObject, args: []const ?PyObject) !*FutureObject {
+fn z_loop_sock_accept(self: *LoopObject, args: []const ?PyObject, knames: ?PyObject) !*FutureObject {
     if (Loop.Python.check_forked(self)) return error.PythonError;
     if (Loop.Python.check_thread(self)) return error.PythonError;
-    if (args.len < 1) {
+
+    var merged: [1]?PyObject = undefined;
+    try python_c.merge_vector_call_args(args, knames, &.{"sock"}, &merged);
+    if (merged[0] == null) {
         python_c.raise_python_value_error("socket is required\x00");
         return error.PythonError;
     }
 
-    const py_sock = args[0].?;
+    const py_sock = merged[0].?;
     const fileno_attr = python_c.PyObject_GetAttrString(py_sock, "fileno\x00") orelse return error.PythonError;
     defer python_c.py_decref(fileno_attr);
     const py_fd = python_c.PyObject_CallNoArgs(fileno_attr) orelse return error.PythonError;
@@ -218,20 +221,23 @@ fn sock_connect_callback(data: *const CallbackManager.CallbackData) !void {
     success = true;
 }
 
-pub fn loop_sock_connect(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t) callconv(.c) ?*FutureObject {
-    return utils.execute_zig_function(z_loop_sock_connect, .{ self.?, args.?[0..@as(usize, @intCast(nargs))] });
+pub fn loop_sock_connect(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t, knames: ?PyObject) callconv(.c) ?*FutureObject {
+    return utils.execute_zig_function(z_loop_sock_connect, .{ self.?, args.?[0..@as(usize, @intCast(nargs))], knames });
 }
 
-fn z_loop_sock_connect(self: *LoopObject, args: []const ?PyObject) !*FutureObject {
+fn z_loop_sock_connect(self: *LoopObject, args: []const ?PyObject, knames: ?PyObject) !*FutureObject {
     if (Loop.Python.check_forked(self)) return error.PythonError;
     if (Loop.Python.check_thread(self)) return error.PythonError;
-    if (args.len < 2) {
+
+    var merged: [2]?PyObject = undefined;
+    try python_c.merge_vector_call_args(args, knames, &.{ "sock", "address" }, &merged);
+    if (merged[0] == null or merged[1] == null) {
         python_c.raise_python_value_error("socket and address are required\x00");
         return error.PythonError;
     }
 
-    const py_sock = args[0].?;
-    const py_addr = args[1].?;
+    const py_sock = merged[0].?;
+    const py_addr = merged[1].?;
 
     const fileno_attr = python_c.PyObject_GetAttrString(py_sock, "fileno\x00") orelse return error.PythonError;
     defer python_c.py_decref(fileno_attr);
@@ -333,20 +339,23 @@ fn sock_recv_callback(data: *const CallbackManager.CallbackData) !void {
     success = true;
 }
 
-pub fn loop_sock_recv(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t) callconv(.c) ?*FutureObject {
-    return utils.execute_zig_function(z_loop_sock_recv, .{ self.?, args.?[0..@as(usize, @intCast(nargs))] });
+pub fn loop_sock_recv(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t, knames: ?PyObject) callconv(.c) ?*FutureObject {
+    return utils.execute_zig_function(z_loop_sock_recv, .{ self.?, args.?[0..@as(usize, @intCast(nargs))], knames });
 }
 
-fn z_loop_sock_recv(self: *LoopObject, args: []const ?PyObject) !*FutureObject {
+fn z_loop_sock_recv(self: *LoopObject, args: []const ?PyObject, knames: ?PyObject) !*FutureObject {
     if (Loop.Python.check_forked(self)) return error.PythonError;
     if (Loop.Python.check_thread(self)) return error.PythonError;
-    if (args.len < 2) {
+
+    var merged: [2]?PyObject = undefined;
+    try python_c.merge_vector_call_args(args, knames, &.{ "sock", "n" }, &merged);
+    if (merged[0] == null or merged[1] == null) {
         python_c.raise_python_value_error("socket and nbytes are required\x00");
         return error.PythonError;
     }
 
-    const py_sock = args[0].?;
-    const py_nbytes = args[1].?;
+    const py_sock = merged[0].?;
+    const py_nbytes = merged[1].?;
     const nbytes_sz = python_c.PyLong_AsSsize_t(py_nbytes);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
     // BUG-324: an unchecked @intCast panicked on negative nbytes
@@ -469,20 +478,23 @@ fn sock_sendall_callback(data: *const CallbackManager.CallbackData) !void {
     success = true;
 }
 
-pub fn loop_sock_sendall(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t) callconv(.c) ?*FutureObject {
-    return utils.execute_zig_function(z_loop_sock_sendall, .{ self.?, args.?[0..@as(usize, @intCast(nargs))] });
+pub fn loop_sock_sendall(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t, knames: ?PyObject) callconv(.c) ?*FutureObject {
+    return utils.execute_zig_function(z_loop_sock_sendall, .{ self.?, args.?[0..@as(usize, @intCast(nargs))], knames });
 }
 
-fn z_loop_sock_sendall(self: *LoopObject, args: []const ?PyObject) !*FutureObject {
+fn z_loop_sock_sendall(self: *LoopObject, args: []const ?PyObject, knames: ?PyObject) !*FutureObject {
     if (Loop.Python.check_forked(self)) return error.PythonError;
     if (Loop.Python.check_thread(self)) return error.PythonError;
-    if (args.len < 2) {
+
+    var merged: [2]?PyObject = undefined;
+    try python_c.merge_vector_call_args(args, knames, &.{ "sock", "data" }, &merged);
+    if (merged[0] == null or merged[1] == null) {
         python_c.raise_python_value_error("socket and data are required\x00");
         return error.PythonError;
     }
 
-    const py_sock = args[0].?;
-    const py_data = args[1].?;
+    const py_sock = merged[0].?;
+    const py_data = merged[1].?;
 
     const fileno_attr = python_c.PyObject_GetAttrString(py_sock, "fileno\x00") orelse return error.PythonError;
     defer python_c.py_decref(fileno_attr);
@@ -597,20 +609,23 @@ fn sock_recvfrom_callback(data: *const CallbackManager.CallbackData) !void {
     success = true;
 }
 
-pub fn loop_sock_recvfrom(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t) callconv(.c) ?*FutureObject {
-    return utils.execute_zig_function(z_loop_sock_recvfrom, .{ self.?, args.?[0..@as(usize, @intCast(nargs))] });
+pub fn loop_sock_recvfrom(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t, knames: ?PyObject) callconv(.c) ?*FutureObject {
+    return utils.execute_zig_function(z_loop_sock_recvfrom, .{ self.?, args.?[0..@as(usize, @intCast(nargs))], knames });
 }
 
-fn z_loop_sock_recvfrom(self: *LoopObject, args: []const ?PyObject) !*FutureObject {
+fn z_loop_sock_recvfrom(self: *LoopObject, args: []const ?PyObject, knames: ?PyObject) !*FutureObject {
     if (Loop.Python.check_forked(self)) return error.PythonError;
     if (Loop.Python.check_thread(self)) return error.PythonError;
-    if (args.len < 2) {
+
+    var merged: [2]?PyObject = undefined;
+    try python_c.merge_vector_call_args(args, knames, &.{ "sock", "bufsize" }, &merged);
+    if (merged[0] == null or merged[1] == null) {
         python_c.raise_python_value_error("socket and nbytes are required\x00");
         return error.PythonError;
     }
 
-    const py_sock = args[0].?;
-    const py_nbytes = args[1].?;
+    const py_sock = merged[0].?;
+    const py_nbytes = merged[1].?;
     const nbytes_sz = python_c.PyLong_AsSsize_t(py_nbytes);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
     // BUG-324: an unchecked @intCast panicked on negative nbytes
@@ -731,21 +746,24 @@ fn sock_sendto_callback(data: *const CallbackManager.CallbackData) !void {
     success = true;
 }
 
-pub fn loop_sock_sendto(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t) callconv(.c) ?*FutureObject {
-    return utils.execute_zig_function(z_loop_sock_sendto, .{ self.?, args.?[0..@as(usize, @intCast(nargs))] });
+pub fn loop_sock_sendto(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t, knames: ?PyObject) callconv(.c) ?*FutureObject {
+    return utils.execute_zig_function(z_loop_sock_sendto, .{ self.?, args.?[0..@as(usize, @intCast(nargs))], knames });
 }
 
-fn z_loop_sock_sendto(self: *LoopObject, args: []const ?PyObject) !*FutureObject {
+fn z_loop_sock_sendto(self: *LoopObject, args: []const ?PyObject, knames: ?PyObject) !*FutureObject {
     if (Loop.Python.check_forked(self)) return error.PythonError;
     if (Loop.Python.check_thread(self)) return error.PythonError;
-    if (args.len < 3) {
+
+    var merged: [3]?PyObject = undefined;
+    try python_c.merge_vector_call_args(args, knames, &.{ "sock", "data", "address" }, &merged);
+    if (merged[0] == null or merged[1] == null or merged[2] == null) {
         python_c.raise_python_value_error("socket, data and address are required\x00");
         return error.PythonError;
     }
 
-    const py_sock = args[0].?;
-    const py_data = args[1].?;
-    const py_addr = args[2].?;
+    const py_sock = merged[0].?;
+    const py_data = merged[1].?;
+    const py_addr = merged[2].?;
 
     const fileno_attr = python_c.PyObject_GetAttrString(py_sock, "fileno\x00") orelse return error.PythonError;
     defer python_c.py_decref(fileno_attr);
@@ -822,20 +840,23 @@ fn z_loop_sock_sendto(self: *LoopObject, args: []const ?PyObject) !*FutureObject
 // sock_recv_into
 // ============================================================
 
-pub fn loop_sock_recv_into(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t) callconv(.c) ?*FutureObject {
-    return utils.execute_zig_function(z_loop_sock_recv_into, .{ self.?, args.?[0..@as(usize, @intCast(nargs))] });
+pub fn loop_sock_recv_into(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t, knames: ?PyObject) callconv(.c) ?*FutureObject {
+    return utils.execute_zig_function(z_loop_sock_recv_into, .{ self.?, args.?[0..@as(usize, @intCast(nargs))], knames });
 }
 
-fn z_loop_sock_recv_into(self: *LoopObject, args: []const ?PyObject) !*FutureObject {
+fn z_loop_sock_recv_into(self: *LoopObject, args: []const ?PyObject, knames: ?PyObject) !*FutureObject {
     if (Loop.Python.check_forked(self)) return error.PythonError;
     if (Loop.Python.check_thread(self)) return error.PythonError;
-    if (args.len < 2) {
+
+    var merged: [2]?PyObject = undefined;
+    try python_c.merge_vector_call_args(args, knames, &.{ "sock", "buf" }, &merged);
+    if (merged[0] == null or merged[1] == null) {
         python_c.raise_python_value_error("socket and buffer are required\x00");
         return error.PythonError;
     }
 
-    const py_sock = args[0].?;
-    const py_buf = args[1].?;
+    const py_sock = merged[0].?;
+    const py_buf = merged[1].?;
 
     const fileno_attr = python_c.PyObject_GetAttrString(py_sock, "fileno\x00") orelse return error.PythonError;
     defer python_c.py_decref(fileno_attr);
