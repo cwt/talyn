@@ -172,6 +172,11 @@ pub fn release(self: *Loop) void {
     for (self.ready_tasks_queues) |*ready_tasks_queue| {
         CallbackManager.release_dynamic_ring_buffer(ready_tasks_queue);
     }
+
+    // BUG-332: only now can DNS control data released during teardown be
+    // destroyed - the cancel completions above still reference it.
+    self.dns.release_deferred();
+
     for (self.ready_tasks_queues) |*q| {
         q.deinit();
     }

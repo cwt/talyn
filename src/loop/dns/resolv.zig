@@ -132,7 +132,12 @@ const ServerQueryData = struct {
     pub inline fn cancel(self: *ServerQueryData) void {
         const socket_fd = self.socket_fd;
         if (socket_fd >= 0) {
-            _ = self.control_data.loop.io.queue(.{ .CancelByFd = @intCast(socket_fd) }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
+            // BUG-332: during loop teardown `io.deinit()`'s cancel_all already
+            // cancels every in-flight op; queueing another CancelByFd after the
+            // ring is gone would only log LoopDeinitialized.
+            if (self.control_data.loop.initialized) {
+                _ = self.control_data.loop.io.queue(.{ .CancelByFd = @intCast(socket_fd) }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
+            }
             _ = std.os.linux.close(socket_fd);
             self.socket_fd = -1;
         }
@@ -167,14 +172,31 @@ pub const ControlData = struct {
     tasks_finished: usize = 0,
     resolved: bool = false,
     record_evicted: bool = false,
+    /// BUG-332: single-shot guard. `dns.deinit()` releases the control data
+    /// directly, and the query's in-flight io_uring completions run later
+    /// (during `io.deinit()`) - without this guard a lost `finished` flag on
+    /// freed memory re-entered `release()` and re-dispatched every user
+    /// callback (double free of GetNameInfoData -> SIGABRT).
+    released: bool = false,
+    /// Intrusive list of control data whose destruction was deferred until
+    /// `Loop.release()` has drained the cancel completions (see DNS.defer_release).
+    next_deferred: ?*ControlData = null,
 
     node: ?Loop.DNS.PendingList.Node = null,
 
     comptime {
-        python_c.verify_gc_coverage(@This(), &.{ "record", "loop", "queries_data", "node" });
+        python_c.verify_gc_coverage(@This(), &.{ "record", "loop", "queries_data", "node", "next_deferred" });
+    }
+
+    pub fn destroy(self: *ControlData) void {
+        self.arena.deinit();
+        self.allocator.destroy(self);
     }
 
     pub fn release(self: *ControlData) void {
+        if (self.released) return;
+        self.released = true;
+
         const loop = self.loop;
         if (!self.resolved) {
             if (!self.record_evicted) {
@@ -196,8 +218,15 @@ pub const ControlData = struct {
             self.loop.dns.pending_queries.release_node(node);
             self.node = null;
         }
-        self.arena.deinit();
-        self.allocator.destroy(self);
+
+        // BUG-332: while the loop is tearing down, io_uring cancel completions
+        // for this query still dereference `self` and the arena-owned
+        // ServerQueryData. Defer destruction until the loop has drained them.
+        if (loop.initialized) {
+            self.destroy();
+        } else {
+            loop.dns.defer_release(self);
+        }
     }
 
     pub fn traverse(self: *const ControlData, visit: python_c.visitproc, arg: ?*anyopaque) c_int {

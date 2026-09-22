@@ -32,6 +32,11 @@ ipv6_supported: bool = false,
 
 pending_queries: PendingList = undefined,
 
+/// BUG-332: ControlData released during teardown is parked here instead of
+/// being destroyed immediately; `Loop.release()` drains it after the
+/// post-`io.deinit()` cancel completions have run.
+deferred_release_head: ?*Resolv.ControlData = null,
+
 pub fn init(self: *DNS, loop: *Loop) !void {
     self.loop = loop;
     self.arena = std.heap.ArenaAllocator.init(loop.allocator);
@@ -165,6 +170,25 @@ pub fn deinit(self: *DNS) void {
         n.data.release();
     }
     self.arena.deinit();
+}
+
+/// BUG-332: park a released ControlData until `Loop.release()` has finished
+/// draining the io_uring cancel completions that still reference it.
+pub fn defer_release(self: *DNS, control_data: *Resolv.ControlData) void {
+    control_data.next_deferred = self.deferred_release_head;
+    self.deferred_release_head = control_data;
+}
+
+/// Destroy every ControlData parked by `defer_release`. Called by
+/// `Loop.release()` after the post-`io.deinit()` callback drain.
+pub fn release_deferred(self: *DNS) void {
+    var node = self.deferred_release_head;
+    self.deferred_release_head = null;
+    while (node) |control_data| {
+        const next = control_data.next_deferred;
+        control_data.destroy();
+        node = next;
+    }
 }
 
 pub fn traverse(self: *const DNS, visit: python_c.visitproc, arg: ?*anyopaque) c_int {

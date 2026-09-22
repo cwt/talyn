@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 318 |
-| Open | 1 |
+| Fixed | 319 |
+| Open | 0 |
 | False Positive | 13 |
 | **Total** | **332** |
 
@@ -367,4 +367,4 @@ Sorted by bug number. See individual bug files for details.
 | [329](329.md) | WriteTransport double-releases consumed Py_buffers in deinit; write_in_flight stuck on cancellation | High | Fixed |
 | [330](330.md) | glibc tcache UAF corrupts WriteTransport ArrayList header | High | Fixed |
 | [331](331.md) | `METH_FASTCALL`-only registrations reject keyword arguments (missing `METH_KEYWORDS`) | Medium-High | Fixed |
-| [332](332.md) | Cancelled `getnameinfo` future aborts the process at loop close (double-dispatched DNS callback UAF) | High | Open |
+| [332](332.md) | Cancelled `getnameinfo` future aborts the process at loop close (double-dispatched DNS callback UAF) | High | Fixed |
