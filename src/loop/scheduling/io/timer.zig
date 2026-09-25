@@ -38,7 +38,7 @@ pub fn wait(ring: *std.os.linux.IoUring, set: *IO.BlockingTasksSet, data: WaitDa
         &data_ptr.timer_storage, 0,
         @intFromEnum(data.delay_type)
     );
-    sqe.flags |= std.os.linux.IOSQE_ASYNC;
+    _ = sqe;
 
     // Deferred submission — flushed by poll_blocking_events().
     return @intFromPtr(data_ptr);

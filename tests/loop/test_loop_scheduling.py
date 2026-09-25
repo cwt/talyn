@@ -449,3 +449,48 @@ def test_rapid_call_later_cancel_and_interleaved_io() -> None:
     finally:
         loop.close()
 
+
+def test_call_later_cancel_no_leak_or_degradation() -> None:
+    """Ensure cancelled timers do not leak handles or degrade latency (BUG-333)."""
+    import gc
+    import time
+
+    loop = Loop()
+    try:
+        def dummy_cb() -> None:
+            pass
+
+        # Warm up
+        for _ in range(10):
+            h = loop.call_later(300.0, dummy_cb)
+            h.cancel()
+        loop.call_soon(loop.stop)
+        loop.run_forever()
+
+        gc.collect()
+
+        durations = []
+        for _ in range(5):
+            t0 = time.perf_counter()
+            for _ in range(1000):
+                h = loop.call_later(300.0, dummy_cb)
+                h.cancel()
+            loop.call_soon(loop.stop)
+            loop.run_forever()
+            durations.append(time.perf_counter() - t0)
+
+        # Confirm stable performance: later batches should not be orders of magnitude slower
+        # Prior to the fix, latency degraded > 40x in just a few batches.
+        assert durations[-1] < 1.0, f"Timer cancellation degraded: {durations}"
+
+        # Confirm no TimerHandle leak
+        gc.collect()
+        leaked_handles = [
+            obj for obj in gc.get_objects()
+            if type(obj).__name__ == "Handle"
+        ]
+        assert len(leaked_handles) == 0, f"Leaked {len(leaked_handles)} Handle objects"
+    finally:
+        loop.close()
+
+

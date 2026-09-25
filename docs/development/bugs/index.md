@@ -368,3 +368,4 @@ Sorted by bug number. See individual bug files for details.
 | [330](330.md) | glibc tcache UAF corrupts WriteTransport ArrayList header | High | Fixed |
 | [331](331.md) | `METH_FASTCALL`-only registrations reject keyword arguments (missing `METH_KEYWORDS`) | Medium-High | Fixed |
 | [332](332.md) | Cancelled `getnameinfo` future aborts the process at loop close (double-dispatched DNS callback UAF) | High | Fixed |
+| [333](333.md) | `IOSQE_ASYNC` on `IORING_OP_TIMEOUT` causes `timeout_remove` failure, handle leaks, and quadratic latency degradation | High | Fixed |
