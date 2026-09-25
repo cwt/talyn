@@ -4,7 +4,7 @@ title: "Development Documentation — talyn"
 description: "Master index for the development bundle: priorities, lessons learned, bugs, architectural mandates, and project history."
 status: stable
 verified: human-reviewed
-timestamp: "2026-09-22T16:00:00Z"
+timestamp: "2026-09-25T16:25:00Z"
 ---
 
 # Development Documentation — talyn

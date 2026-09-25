@@ -3,7 +3,7 @@ type: article
 title: Talyn Development Journey
 description: The complete historical narrative and timeline of developing Talyn, sorted chronologically from the latest release back to the project's inception.
 tags: [history, documentation, journey, roadmap]
-timestamp: 2026-09-22T16:00:00Z
+timestamp: 2026-09-25T16:25:00Z
 ---
 
 # Talyn Development Journey
@@ -11,6 +11,21 @@ timestamp: 2026-09-22T16:00:00Z
 Talyn is a production-grade, crash-resistant, and realistically fast `asyncio` event loop drop-in replacement for Python, powered by **Zig** and **io_uring**.
 
 This document chronicles the engineering narrative and technical milestones of Talyn in **reverse chronological order**—starting with our latest release and architectural breakthroughs, and stepping back through performance optimizations, cross-platform builds, and deep audits to the project's original genesis.
+
+---
+
+## v0.9.9 — Kernel Timer Cancellation & io_uring Timeout Bloat Fix (BUG-333)
+
+**v0.9.9** resolves the timer cancellation defect ([BUG-333](bugs/333.md)) that caused long-running proxy services like `wormhole` to experience progressive slowdown over time, bringing the bug tracker to **333 bugs total (320 Fixed, 0 Open, 13 False Positive)**.
+
+### Kernel Timer Cancellation & io_uring Timeout Bloat (BUG-333)
+
+In workloads making heavy use of `asyncio.wait_for` (e.g. idle connection timeouts, request header deadlines) or throttlers, every cancelled timer failed to be removed from the kernel's `ctx->timeout_list` due to an erroneous `IOSQE_ASYNC` flag on `IORING_OP_TIMEOUT` and `IORING_OP_LINK_TIMEOUT`. Setting `IOSQE_ASYNC` offloaded timer arming to an `io-wq` worker thread, racing with synchronous `timeout_remove` and causing it to return `-ENOENT`. As a consequence, uncancelled timers accumulated in the kernel's timeout list, turning subsequent cancellations into expensive linear scans ($O(N)$ per cancel, $O(N^2)$ cumulative) spending >94% CPU time in `io_uring_enter`. Additionally, completion CQEs for cancelled timers were never posted to user space during the connection lifetime, leaking 100% of cancelled `talyn.Handle` objects and their contextvars.
+
+- **Flag Removal**: Removed `IOSQE_ASYNC` from `Timer.wait` (`src/loop/scheduling/io/timer.zig`) and from `link_timeout` operations in `read.zig` and `write.zig`.
+- **O(1) Cancellation**: Restored synchronous timer arming and immediate kernel cancellation, eliminating kernel `timeout_list` bloat.
+- **Zero Leaks**: All cancelled timer CQEs return `-ECANCELED` promptly to user space, decreffing the Python handle and recycling `BlockingTasksSet` slots.
+- **Performance Verification**: Latency across 5,000 cancellations stays perfectly flat at ~5ms per batch (over 400x faster than the bloated state) with 0 leaked handles.
 
 ---
 

@@ -4,12 +4,22 @@ title: "Chronological Update Log — Talyn Documentation Bundle"
 description: "Tracks modifications, releases, and architectural changes across the Talyn documentation bundle."
 status: stable
 verified: human-reviewed
-timestamp: "2026-09-22T16:00:00Z"
+timestamp: "2026-09-25T16:25:00Z"
 ---
 
 # Chronological Update Log — Talyn Documentation Bundle
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
+
+## [2026-09-25] — v0.9.9 Release: Kernel Timer Cancellation & io_uring Timeout Bloat Fix (BUG-333)
+
+This milestone release resolves the timer cancellation defect (BUG-333), bringing the bug tracker to 333 bugs total (320 Fixed, 0 Open, 13 False Positive) with 100% passing test suites across all 4 Python runtime targets:
+
+- **Kernel Timer Cancellation & Timeout Bloat (BUG-333)**: Removed `IOSQE_ASYNC` from `Timer.wait` (`src/loop/scheduling/io/timer.zig`) and `link_timeout` calls in `read.zig` and `write.zig`. This fixes `-ENOENT` failures on `timeout_remove`, prevents thousands of abandoned timers from accumulating in the Linux kernel `ctx->timeout_list`, eliminates the 40x–400x progressive latency degradation in long-running services (such as the `wormhole` forward proxy), and prevents 100% of cancelled `talyn.Handle` memory leaks.
+- **Regression Tests**: Added `test_call_later_cancel_no_leak_or_degradation` to `tests/loop/test_loop_scheduling.py` asserting zero handle leaks and flat $O(1)$ cancellation latency across thousands of timers; 371 passed, 1 skipped per interpreter plus all stdlib asyncio suites and 64 zig unit tests.
+- **Documentation**: Documented in `bugs/333.md`, `bugs/index.md`, and updated `development-journey.md`.
+- **Version Bump**: Bumped version to **0.9.9** in `pyproject.toml`, `build.zig.zon`, and AST linter banner.
+- **Tracker Status**: 333 bugs total (320 Fixed, 0 Open, 13 False Positive).
 
 ## [2026-09-22] — v0.9.8 Release: Keyword-Argument Compatibility & DNS Teardown UAF (BUG-331, BUG-332)
 

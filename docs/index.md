@@ -4,7 +4,7 @@ title: Talyn Documentation Index
 description: Master index for priorities, lessons learned, and architectural mandates.
 status: stable
 verified: human-reviewed
-timestamp: "2026-09-22T16:00:00Z"
+timestamp: "2026-09-25T16:25:00Z"
 ---
 
 # Talyn Documentation Index
