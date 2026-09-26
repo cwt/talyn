@@ -364,6 +364,131 @@ test "BUG-02: link_timeout failure rollback" {
     try std.testing.expectEqual(@as(u32, @intCast(capacity - 1)), ring.sq_ready());
 }
 
+test "BUG-334: link_timeout timespec must be heap-resident, not a dead stack pointer" {
+    const allocator = std.testing.allocator;
+    const loop = try allocator.create(Loop);
+    defer allocator.destroy(loop);
+
+    try loop.init(allocator, 1024);
+    defer loop.release();
+
+    const ring = &loop.io.ring;
+
+    // Drop the infrastructure SQEs so the last-SQE index below is unambiguous.
+    _ = try loop.io.flush_pending_sqes();
+
+    const set = try loop.io.get_blocking_tasks_set();
+    const payload = try allocator.alloc(u8, 64);
+    defer allocator.free(payload);
+    const iovs = try allocator.alloc(std.posix.iovec_const, 1);
+    defer allocator.free(iovs);
+    iovs[0] = .{ .base = payload.ptr, .len = payload.len };
+
+    const callback = CallbackManager.Callback{
+        .func = struct {
+            fn noop(_: *const CallbackManager.CallbackData) !void {}
+        }.noop,
+        .cleanup = null,
+        .data = .{ .user_data = null },
+    };
+    const timeout = std.os.linux.kernel_timespec{ .sec = 7, .nsec = 42 };
+
+    // The kernel dereferences sqe.addr of a LINK_TIMEOUT SQE at *submit* time,
+    // and submission is deferred past the queuing frame. So sqe.addr must land
+    // on the BlockingTask's persistent timer_storage inside task_data_pool,
+    // never on the caller's stack. Every case is rolled back (SQE popped from the
+    // SQ, task slot discarded) so the test leaves the ring and set pristine and
+    // never submits these SQEs to the kernel.
+    const Verify = struct {
+        fn run(ring_: *std.os.linux.IoUring, set_: *Scheduling.IO.BlockingTasksSet, task: *Scheduling.IO.BlockingTask, expected: std.os.linux.kernel_timespec) !void {
+            const sqe = &ring_.sq.sqes[(ring_.sq.sqe_tail -% 1) & ring_.sq.mask];
+
+            try std.testing.expectEqual(std.os.linux.IORING_OP.LINK_TIMEOUT, sqe.opcode);
+
+            const addr = sqe.addr;
+            const pool_start = @intFromPtr(&set_.task_data_pool[0]);
+            const pool_end = pool_start + Scheduling.IO.TotalTasksItems * @sizeOf(Scheduling.IO.BlockingTask);
+
+            try std.testing.expect(addr >= pool_start and addr < pool_end);
+            try std.testing.expectEqual(@intFromPtr(&task.timer_storage), addr);
+
+            // The value the kernel reads at submit time must still be the
+            // requested timeout, not whatever now occupies the reclaimed frame.
+            const readback: *const std.os.linux.kernel_timespec = @ptrFromInt(addr);
+            try std.testing.expectEqual(expected.sec, readback.sec);
+            try std.testing.expectEqual(expected.nsec, readback.nsec);
+
+            task.discard();
+        }
+    };
+
+    // The loop's persistent infrastructure reads (eventfd wake-up +
+    // signalfd) are live tasks in this same set; capture the baseline
+    // before the cases so queued-then-discarded tasks leave no residue.
+    const baseline_active = set.active_tasks;
+    const saved_slots = loop.reserved_slots;
+
+    {
+        const tail_before = ring.sq.sqe_tail;
+        const task_slot = try Scheduling.IO.Read.wait_ready(ring, set, .{
+            .callback = callback,
+            .fd = 0,
+            .timeout = timeout,
+        });
+        try Verify.run(ring, set, @ptrFromInt(task_slot), timeout);
+        ring.sq.sqe_tail = tail_before;
+    }
+    {
+        const tail_before = ring.sq.sqe_tail;
+        const task_slot = try Scheduling.IO.Read.perform(ring, set, .{
+            .callback = callback,
+            .fd = 0,
+            .data = .{ .buffer = payload },
+            .timeout = timeout,
+        });
+        try Verify.run(ring, set, @ptrFromInt(task_slot), timeout);
+        ring.sq.sqe_tail = tail_before;
+    }
+    {
+        const tail_before = ring.sq.sqe_tail;
+        const task_slot = try Scheduling.IO.Write.wait_ready(ring, set, .{
+            .callback = callback,
+            .fd = 0,
+            .timeout = timeout,
+        });
+        try Verify.run(ring, set, @ptrFromInt(task_slot), timeout);
+        ring.sq.sqe_tail = tail_before;
+    }
+    {
+        const tail_before = ring.sq.sqe_tail;
+        const task_slot = try Scheduling.IO.Write.perform(ring, set, .{
+            .callback = callback,
+            .fd = 0,
+            .data = payload,
+            .timeout = timeout,
+        });
+        try Verify.run(ring, set, @ptrFromInt(task_slot), timeout);
+        ring.sq.sqe_tail = tail_before;
+    }
+    {
+        const tail_before = ring.sq.sqe_tail;
+        const task_slot = try Scheduling.IO.Write.perform_with_iovecs(ring, set, .{
+            .callback = callback,
+            .fd = 0,
+            .data = iovs,
+            .timeout = timeout,
+        });
+        try Verify.run(ring, set, @ptrFromInt(task_slot), timeout);
+        ring.sq.sqe_tail = tail_before;
+    }
+
+    // Every queued SQE was rolled back and every task discarded — no
+    // slot, no reserved-slot and no submission-queue residue.
+    try std.testing.expectEqual(saved_slots, loop.reserved_slots);
+    try std.testing.expectEqual(baseline_active, set.active_tasks);
+    try std.testing.expectEqual(@as(u32, 0), ring.sq_ready());
+}
+
 test "BUG-117: registered-buffer fallback when io_uring buffer registration fails (low RLIMIT_MEMLOCK)" {
     // Force io_uring_register(IORING_REGISTER_BUFFERS) to fail by clamping the
     // pinned-memory soft limit below the 1 MiB RegisteredBufferPool needs, while

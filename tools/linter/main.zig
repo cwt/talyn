@@ -16,6 +16,7 @@ const unparsed_pyobject_kwarg = @import("rules/unparsed_pyobject_kwarg.zig");
 const no_forced_optional_pyobject_unwrap = @import("rules/no_forced_optional_pyobject_unwrap.zig");
 const no_ptr_from_int_task_id = @import("rules/no_ptr_from_int_task_id.zig");
 const method_flags_missing_keywords = @import("rules/method_flags_missing_keywords.zig");
+const sqe_pointer_lifetime = @import("rules/sqe_pointer_lifetime.zig");
 
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
@@ -80,6 +81,7 @@ pub fn main(init: std.process.Init) !void {
             try no_forced_optional_pyobject_unwrap.check(&ast, full_path, arena, &diagnostics);
             try no_ptr_from_int_task_id.check(&ast, full_path, arena, &diagnostics);
             try method_flags_missing_keywords.check(&ast, full_path, arena, &diagnostics);
+            try sqe_pointer_lifetime.check(&ast, full_path, arena, &diagnostics);
         }
     } else |err| {
         try w.print("Failed to open 'src' directory: {t}\n", .{err});
@@ -129,6 +131,7 @@ pub fn main(init: std.process.Init) !void {
             try no_forced_optional_pyobject_unwrap.check(&ast, full_path, arena, &diagnostics);
             try no_ptr_from_int_task_id.check(&ast, full_path, arena, &diagnostics);
             try method_flags_missing_keywords.check(&ast, full_path, arena, &diagnostics);
+            try sqe_pointer_lifetime.check(&ast, full_path, arena, &diagnostics);
         }
     } else |err| {
         try w.print("Failed to open 'tools/linter' directory: {t}\n", .{err});

@@ -34,6 +34,16 @@ When `link_timeout` failed (SQ full), `errdefer data_ptr.discard()` recycled the
 - **Fix:** Wrapped `link_timeout` calls in `catch` blocks. On failure, decrement `ring.sq.sqe_tail` by 1 to roll back the main SQE allocation before propagating the error.
 - **Lesson:** When allocating sequential resources that must be submitted or updated atomically, always handle errors by rolling back any partially completed allocations in the sequence.
 
+**Lesson 61 — `link_timeout` Timespec Must Be Heap-Owned (BUG-334)**
+All five `ring.link_timeout()` call sites passed `&data.timeout` — a pointer into the callee's by-value parameter. `link_timeout` stores that pointer in `sqe.addr`, which the kernel dereferences at *submit* time, and submission is deferred past the queuing frame. The kernel therefore armed the `LINK_TIMEOUT` from a reclaimed stack slot: a garbage `tv_sec` either made the timeout a no-op (operation and its `BlockingTask` slot never complete → resource leak) or fired instantly (`-ETIME`). BUG-333 had removed `IOSQE_ASYNC` from these same calls but left this hazard in place.
+- **Fix:** Copy the timespec into `BlockingTask.timer_storage` (heap-resident, inside `task_data_pool`) before calling `ring.link_timeout(&data_ptr.timer_storage, ...)` — the same treatment `Timer.wait` had applied to `IORING_OP_TIMEOUT`.
+- **Lesson:** Lesson 60 is not specific to buffers. **Any** pointer handed to a `ring.*` helper lands in an SQE field the kernel dereferences at submit time, and every one of them must point into `BlockingTask`-owned storage. Audit all `ring.*` call sites, not just the data-buffer ones. See [BUG-334](../bugs/334.md).
+
+**Lesson 62 — The SQE-Pointer Class Is Mechanically Detectable (BUG-335)**
+The follow-up audit of every `ring.*` SQE-prep site (after BUG-334) found one more latent instance: `Read.perform`'s zero-copy `.iovecs` branch pointed `msg_storage.iov` at the caller's — possibly stack-allocated — array (and was semantically dead: `MSG.ZEROCOPY` is transmit-only; no caller ever passed `.iovecs`). It was rejected instead of fixed, because a sound multi-iovec read needs the caller to own the msghdr anyway (`Read.recvmsg` already does). The durable protection is rule **TALYN-015/SQE_POINTER_LIFETIME** in the AST linter: it flags pointer-position arguments of SQE-prep calls that are addresses of, or captures rooted in, stack-frame storage, and stays silent for `BlockingTask`-owned (`&data_ptr.timer_storage`), loop-resident (`&set.loop...`), and pointer-parameter targets.
+- **Fix:** [BUG-335](../bugs/335.md) — reject the unsound dead branches; add the linter rule.
+- **Lesson:** When a bug class recurs three times (BUG-30, BUG-334, BUG-335), stop auditing by hand — encode the invariant as a structural rule so every future call site is checked mechanically.
+
 ---
 
 ### Kernel Feature Gating

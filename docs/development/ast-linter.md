@@ -62,6 +62,7 @@ python3 tools/linter/rules/python_rules.py
 | `TALYN-012` | `NO_FORCED_OPTIONAL_PYOBJECT_UNWRAP` | [BUG-293](bugs/293.md) | Forced `.?` unwrap on nullable protocol fields in IO paths can call `PyObject_Call*(NULL)` after concurrent transport teardown — SIGSEGV. |
 | `TALYN-013` | `NO_PTR_FROM_INT_TASK_ID` | [BUG-290](bugs/290.md) | `@ptrFromInt(task_id)` casts a raw task-slot integer back to a `*BlockingTask` — integer-to-pointer use-after-free once the slot returns to the free pool. |
 | `TALYN-014` | `FASTCALL_MISSING_KEYWORDS` | [BUG-331](bugs/331.md) | `PyMethodDef` entries registered `METH_FASTCALL` without `METH_KEYWORDS` reject every keyword call with `TypeError: takes no keyword arguments`, breaking CPython asyncio / uvloop drop-in compatibility. Positional-only methods must opt out with a `// TALYN-014-EXEMPT: <reason>` comment. |
+| `TALYN-015` | `SQE_POINTER_LIFETIME` | [BUG-334](bugs/334.md), [BUG-30](bugs/030.md), [BUG-335](bugs/335.md) | SQE-prep calls (`ring.timeout`, `ring.link_timeout`, `ring.connect`, `ring.accept`, `ring.recvmsg`, `ring.sendmsg`, `ring.read`, `ring.write`, `ring.read_fixed`, ...) store pointer arguments in `sqe.addr`, which the kernel dereferences at *submit* time while submission is deferred. Flags addresses of, or captures rooted in, stack-frame storage (by-value parameters, stack captures, non-heap locals) passed at those positions. Scope: `src/loop/scheduling/io/`. |
 
 ### Python AST Rules
 
@@ -93,6 +94,7 @@ tools/linter/
     ├── no_forced_optional_pyobject_unwrap.zig # Rule TALYN-012
     ├── no_ptr_from_int_task_id.zig    # Rule TALYN-013
     ├── method_flags_missing_keywords.zig # Rule TALYN-014
+    ├── sqe_pointer_lifetime.zig       # Rule TALYN-015
     └── python_rules.py       # Python AST rules (TALYN-PY01, TALYN-PY02)
 ```
 

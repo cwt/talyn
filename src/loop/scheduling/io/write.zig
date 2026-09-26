@@ -24,8 +24,15 @@ pub fn wait_ready(ring: *std.os.linux.IoUring, set: *IO.BlockingTasksSet, data: 
     sqe.flags |= if (data.fixed_file_index != null) std.os.linux.IOSQE_FIXED_FILE else 0;
 
     if (data.timeout) |*timeout| {
+        // BUG-334: ring.link_timeout() stores the timespec pointer in
+        // sqe.addr, which the kernel dereferences at *submit* time — not
+        // here. Submission is deferred (see queue_unlocked), so `timeout`
+        // (a pointer into this function's by-value `data` parameter) is
+        // dead stack by then. Copy into the BlockingTask's persistent
+        // timer_storage, exactly as Timer.wait does.
+        data_ptr.timer_storage = timeout.*;
         sqe.flags |= std.os.linux.IOSQE_IO_LINK;
-        _ = ring.link_timeout(0, timeout, 0) catch |err| {
+        _ = ring.link_timeout(0, &data_ptr.timer_storage, 0) catch |err| {
             ring.sq.sqe_tail -%= 1;
             return err;
         };
@@ -89,8 +96,12 @@ pub fn perform(ring: *std.os.linux.IoUring, set: *IO.BlockingTasksSet, data: Per
     };
 
     if (data.timeout) |*timeout| {
+        // BUG-334: see Write.wait_ready. The timespec must live in
+        // heap-resident storage because the kernel reads sqe.addr at
+        // submit time, which is deferred past this frame.
+        data_ptr.timer_storage = timeout.*;
         sqe.flags |= std.os.linux.IOSQE_IO_LINK;
-        _ = ring.link_timeout(0, timeout, 0) catch |err| {
+        _ = ring.link_timeout(0, &data_ptr.timer_storage, 0) catch |err| {
             ring.sq.sqe_tail -%= 1;
             return err;
         };
@@ -147,8 +158,12 @@ pub fn perform_with_iovecs(ring: *std.os.linux.IoUring, set: *IO.BlockingTasksSe
     sqe.flags |= ff_flag;
 
     if (data.timeout) |*timeout| {
+        // BUG-334: see Write.wait_ready. The timespec must live in
+        // heap-resident storage because the kernel reads sqe.addr at
+        // submit time, which is deferred past this frame.
+        data_ptr.timer_storage = timeout.*;
         sqe.flags |= std.os.linux.IOSQE_IO_LINK;
-        _ = ring.link_timeout(0, timeout, 0) catch |err| {
+        _ = ring.link_timeout(0, &data_ptr.timer_storage, 0) catch |err| {
             ring.sq.sqe_tail -%= 1;
             return err;
         };
