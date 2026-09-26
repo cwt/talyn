@@ -3,7 +3,7 @@ type: article
 title: Talyn Development Journey
 description: The complete historical narrative and timeline of developing Talyn, sorted chronologically from the latest release back to the project's inception.
 tags: [history, documentation, journey, roadmap]
-timestamp: 2026-09-25T16:25:00Z
+timestamp: 2026-09-26T11:30:00Z
 ---
 
 # Talyn Development Journey
@@ -11,6 +11,27 @@ timestamp: 2026-09-25T16:25:00Z
 Talyn is a production-grade, crash-resistant, and realistically fast `asyncio` event loop drop-in replacement for Python, powered by **Zig** and **io_uring**.
 
 This document chronicles the engineering narrative and technical milestones of Talyn in **reverse chronological order**—starting with our latest release and architectural breakthroughs, and stepping back through performance optimizations, cross-platform builds, and deep audits to the project's original genesis.
+
+---
+
+## v0.9.10 — link_timeout Dead-Stack Fix & SQE-Pointer Lifetime Audit (BUG-334, BUG-335)
+
+**v0.9.10** resolves the dead-stack pointer defect in every io_uring `link_timeout` site ([BUG-334](bugs/334.md)) and eliminates one more latent instance of the same class found by a full `ring.*` SQE-prep audit ([BUG-335](bugs/335.md)), bringing the bug tracker to **334 bugs total (321 Fixed, 0 Open, 13 False Positive)**.
+
+### Dead-Stack `link_timeout` Timeouts (BUG-334)
+
+All five `ring.link_timeout()` call sites (`Read.wait_ready`/`Read.perform` in `read.zig`, `Write.wait_ready`/`Write.perform`/`Write.perform_with_iovecs` in `write.zig`) passed a `kernel_timespec` pointer into the callee's by-value `data` parameter. The prep helper stores that pointer raw in `sqe.addr`, and the kernel dereferences it at **submit** time — not at queue time — while Talyn defers submission (`IO.queue_unlocked` batches SQEs until a cancel or a near-full queue). By then the queuing frame was dead, so the timeout armed from whatever bytes happened to occupy the reclaimed stack: a garbage `tv_sec` of realistic magnitude made the timeout a silent no-op (the DNS operation and its `BlockingTask` slot, registered-buffer lease and transport references never complete — one leaked query per attempt), while garbage `<= 0` cancelled the operation instantly (spurious `-ETIME` against healthy resolvers).
+
+- **Fix**: Copy the timespec into `BlockingTask.timer_storage` (heap-resident inside `task_data_pool`) before building the SQE, at all five sites — the same treatment `Timer.wait` already applied to `IORING_OP_TIMEOUT`. No new ownership paths: the existing `sqe_tail` rollback and `errdefer discard()` (BUG-02) keep the slot alive until the CQE arrives.
+- **Blast radius**: DNS name resolution — `getaddrinfo`/`getnameinfo` queries timed with `dns_timeout`; observed as resolution hangs or resolution failures against perfectly healthy resolvers.
+
+### SQE-Pointer Lifetime Audit & Static Guard (BUG-335, TALYN-015)
+
+Auditing every `ring.*` SQE-prep call site for the Lesson 60/61 class surfaced one more latent hazard: `Read.perform`'s zero-copy `.iovecs` branch pointed `msg_storage.iov` at the caller's — possibly stack-allocated — iovec array. It was also semantically dead (`MSG.ZEROCOPY` is transmit-only; no caller ever passed `.iovecs`), so both non-`.buffer` selectors now return `error.NotImplemented` instead of staging unsound kernel pointers, with a structural tripwire test locking `msg_storage` out of the read path. Every remaining reachable SQE pointer was verified to resolve to `BlockingTask`-owned, transport-owned, or loop-resident storage.
+
+The durable protection is the new **`TALYN-015/SQE_POINTER_LIFETIME`** AST-linter rule: it flags pointer-position arguments to SQE-prep calls that are addresses of — or captures rooted in — stack-frame storage, and validated positively against the historical BUG-334 pattern while staying silent for `BlockingTask`-owned (`&data_ptr.timer_storage`), loop-resident (`&set.loop...`), and pointer-parameter targets. Lesson 62 records the meta-lesson: when a bug class recurs three times (BUG-30 iovecs, BUG-334 timespecs, BUG-335 latent staging), encode the invariant mechanically instead of auditing by hand.
+
+- **Validation**: `zig build test` — 107/107 pass, including the BUG-334 regression test executing for the first time against a real Linux io_uring ring (asserts the last SQE is `LINK_TIMEOUT`, its `sqe.addr` lies inside `task_data_pool` and equals `&task.timer_storage`, and the timespec readback survives) and the BUG-335 tripwire. `zig build lint` — 0 violations in 131ms. `zig build` clean; `zig fmt` clean.
 
 ---
 

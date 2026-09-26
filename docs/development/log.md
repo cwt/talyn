@@ -4,12 +4,24 @@ title: "Chronological Update Log — Talyn Documentation Bundle"
 description: "Tracks modifications, releases, and architectural changes across the Talyn documentation bundle."
 status: stable
 verified: human-reviewed
-timestamp: "2026-09-25T16:25:00Z"
+timestamp: "2026-09-26T11:30:00Z"
 ---
 
 # Chronological Update Log — Talyn Documentation Bundle
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
+
+## [2026-09-26] — v0.9.10 Release: link_timeout Dead-Stack Fix & SQE-Pointer Lifetime Audit (BUG-334, BUG-335)
+
+This patch release resolves the dead-stack pointer defect in every io_uring `link_timeout` site and eliminates one latent instance of the same class, bringing the bug tracker to 334 bugs total (321 Fixed, 0 Open, 13 False Positive):
+
+- **Dead-Stack link_timeout (BUG-334, High)**: All five `ring.link_timeout()` sites in `src/loop/scheduling/io/read.zig` and `write.zig` passed a timespec pointer into the callee's by-value `data` parameter; with deferred submission the kernel armed the linked timeout from reclaimed stack bytes (no-op timeouts leaking DNS `BlockingTask` slots, or instant `-ETIME`). Fixed by copying the timespec into the heap-resident `BlockingTask.timer_storage`, matching `Timer.wait`.
+- **SQE-Pointer Audit & Prevention (BUG-335, Medium, latent)**: Full audit of every `ring.*` SQE-prep call site confirmed all reachable pointers resolve to BlockingTask/transport/loop-owned storage; `Read.perform`'s unsound (and unreachable) zero-copy `.iovecs` branch now returns `error.NotImplemented` with a structural tripwire test.
+- **New Linter Rule TALYN-015/SQE_POINTER_LIFETIME**: Flags addresses of — or captures rooted in — stack-frame storage passed at pointer positions of SQE-prep calls in `src/loop/scheduling/io`; validated positively against the historical BUG-334 pattern. Documented in `ast-linter.md`; Lesson 62 added to `lessons/04-io-uring-and-kernel.md`.
+- **Validation**: 107/107 Zig tests pass — the BUG-334 regression test ran for the first time against a real Linux io_uring ring (baseline `active_tasks` + per-case `sqe_tail` rollback corrections); `zig build lint` 0 violations; `zig fmt` clean.
+- **Documentation**: New `bugs/334.md` and `bugs/335.md`, updated `bugs/index.md`, `development-journey.md`, and `ast-linter.md`.
+- **Version Bump**: Bumped version to **0.9.10** in `pyproject.toml`, `build.zig.zon`, and AST linter banner.
+- **Tracker Status**: 334 bugs total (321 Fixed, 0 Open, 13 False Positive).
 
 ## [2026-09-25] — v0.9.9 Release: Kernel Timer Cancellation & io_uring Timeout Bloat Fix (BUG-333)
 
