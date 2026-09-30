@@ -40,6 +40,17 @@ pub fn callback_for_python_generic_callbacks(data: *const CallbackManager.Callba
         handle.finished = true;
     }
 
+    // BUG-336: this timer fired — its BlockingTask slot is freed and may
+    // be synchronously reused by Python below (the callback can schedule
+    // new call_later timers). Drop the stale ID before any Python runs so
+    // a later cancel() cannot CancelTimer the new occupant. Mirrors the
+    // finished-store above for thread_safe visibility.
+    if (thread_safe) {
+        @atomicStore(usize, &handle.blocking_task_id, 0, .release);
+    } else {
+        handle.blocking_task_id = 0;
+    }
+
     var cancelled: bool = data.cancelled();
     if (!cancelled) {
         // BUG-31: Use a CAS to atomically claim the right to proceed
@@ -250,7 +261,13 @@ pub inline fn fast_handle_cancel(self: *PythonHandleObject) !void {
         self.cancelled = true;
     }
 
-    const blocking_task_id = self.blocking_task_id;
+    // BUG-336: acquire the ID with the same visibility as `finished`
+    // above — the firing callback releases it, and a stale plain read
+    // could observe a recycled slot's ID on thread_safe handles.
+    const blocking_task_id = switch (thread_safe) {
+        false => self.blocking_task_id,
+        true => @atomicLoad(usize, &self.blocking_task_id, .acquire),
+    };
     if (blocking_task_id > 0) {
         const loop_data = self.loop_data.?;
 
