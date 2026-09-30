@@ -15,6 +15,9 @@ const unparsed_pyobject_kwarg = @import("rules/unparsed_pyobject_kwarg.zig");
 const no_forced_optional_pyobject_unwrap = @import("rules/no_forced_optional_pyobject_unwrap.zig");
 const no_ptr_from_int_task_id = @import("rules/no_ptr_from_int_task_id.zig");
 const method_flags_missing_keywords = @import("rules/method_flags_missing_keywords.zig");
+const stale_cancel_bulk = @import("rules/stale_cancel_bulk.zig");
+const clear_before_python = @import("rules/clear_before_python.zig");
+const timer_io_mixing = @import("rules/timer_io_mixing.zig");
 
 fn checkSnippet(
     gpa: std.mem.Allocator,
@@ -240,4 +243,101 @@ test "TALYN-014: METH_FASTCALL without METH_KEYWORDS" {
         \\const flags = METH_FASTCALL;
     , method_flags_missing_keywords.check);
     try std.testing.expectEqual(@as(usize, 0), diags_unrelated);
+}
+
+test "TALYN-016: bulk CancelIO over task_ids without removal" {
+    // Should flag: bulk cancel with no swapRemove/removeTaskId/fetchRemove
+    const diags_bad = try checkSnippet(std.testing.allocator, "src/loop/foo.zig",
+        \\fn deinit(self: *Mcs) void {
+        \\    for (self.task_ids.items) |task_id| {
+        \\        _ = queue(.{ .CancelIO = task_id }) catch continue;
+        \\    }
+        \\}
+    , stale_cancel_bulk.check);
+    try std.testing.expectEqual(@as(usize, 1), diags_bad);
+
+    // Should NOT flag: fixed pattern with removal helper present
+    const diags_ok = try checkSnippet(std.testing.allocator, "src/loop/foo.zig",
+        \\fn removeTaskId(mcs: *Mcs, task_id: usize) void {
+        \\    for (mcs.task_ids.items, 0..) |id, idx| {
+        \\        if (id == task_id) {
+        \\            _ = mcs.task_ids.swapRemove(idx);
+        \\            return;
+        \\        }
+        \\    }
+        \\}
+        \\fn deinit(self: *Mcs) void {
+        \\    for (self.task_ids.items) |task_id| {
+        \\        _ = queue(.{ .CancelIO = task_id }) catch continue;
+        \\    }
+        \\}
+    , stale_cancel_bulk.check);
+    try std.testing.expectEqual(@as(usize, 0), diags_ok);
+}
+
+test "TALYN-017: clear ID before Python in completion callback" {
+    // Should flag: Python call while ID field still holds the completed ID
+    const diags_bad = try checkSnippet(std.testing.allocator, "src/transports/streamserver/main.zig",
+        \\fn accept_callback(data: *const CallbackData) !void {
+        \\    const server: *Server = @ptrCast(@alignCast(data.user_data.?));
+        \\    const id = server.blocking_task_id;
+        \\    const protocol = PyObject_CallNoArgs(protocol_factory) orelse return error.PythonError;
+        \\    _ = protocol;
+        \\    _ = id;
+        \\}
+    , clear_before_python.check);
+    try std.testing.expectEqual(@as(usize, 1), diags_bad);
+
+    // Should NOT flag: removeTaskId release before Python (fixed BUG-336 pattern)
+    const diags_fixed = try checkSnippet(std.testing.allocator, "src/loop/python/io/client/create_connection.zig",
+        \\fn socket_connected_callback(data: *const CallbackData) !void {
+        \\    const completed_id = socket_data.task_id;
+        \\    removeTaskId(mcs, completed_id);
+        \\    const exc = PyObject_CallFunction(err, msg) orelse return error.PythonError;
+        \\    _ = exc;
+        \\}
+    , clear_before_python.check);
+    try std.testing.expectEqual(@as(usize, 0), diags_fixed);
+
+    // Should NOT flag: ID cleared before Python (safe reference)
+    const diags_ok = try checkSnippet(std.testing.allocator, "src/loop/python/io/watchers.zig",
+        \\fn loop_watchers_callback(data: *const CallbackData) !void {
+        \\    const watcher: *Watcher = @ptrCast(@alignCast(data.user_data.?));
+        \\    watcher.blocking_task_id = 0;
+        \\    try Soon.dispatch(loop_data, &callback);
+        \\}
+    , clear_before_python.check);
+    try std.testing.expectEqual(@as(usize, 0), diags_ok);
+
+    // Should NOT flag: no Python call in function
+    const diags_no_py = try checkSnippet(std.testing.allocator, "src/loop/fs_watcher.zig",
+        \\fn deinit(self: *FSWatcher) void {
+        \\    if (self.inotify_task_id > 0) {
+        \\        _ = self.loop.io.queue(.{ .CancelIO = self.inotify_task_id }) catch continue;
+        \\        self.inotify_task_id = 0;
+        \\    }
+        \\}
+    , clear_before_python.check);
+    try std.testing.expectEqual(@as(usize, 0), diags_no_py);
+}
+
+test "TALYN-018: timer ID mixed into task_ids list" {
+    // Should flag: task_ids append + WaitTimer without happy_timer_id separation
+    const diags_bad = try checkSnippet(std.testing.allocator, "src/loop/foo.zig",
+        \\fn submit(mcs: *Mcs) !void {
+        \\    const timer_id = try queue(.{ .WaitTimer = .{ .duration = d } });
+        \\    try mcs.task_ids.append(allocator, timer_id);
+        \\}
+    , timer_io_mixing.check);
+    try std.testing.expectEqual(@as(usize, 1), diags_bad);
+
+    // Should NOT flag: fixed pattern with happy_timer_id separation
+    const diags_ok = try checkSnippet(std.testing.allocator, "src/loop/python/io/client/create_connection.zig",
+        \\fn submit(mcs: *Mcs) !void {
+        \\    const timer_task_id = try queue(.{ .WaitTimer = .{ .duration = d } });
+        \\    mcs.happy_timer_id = timer_task_id;
+        \\    try mcs.task_ids.append(allocator, task_id);
+        \\}
+    , timer_io_mixing.check);
+    try std.testing.expectEqual(@as(usize, 0), diags_ok);
 }

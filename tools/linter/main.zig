@@ -17,6 +17,9 @@ const no_forced_optional_pyobject_unwrap = @import("rules/no_forced_optional_pyo
 const no_ptr_from_int_task_id = @import("rules/no_ptr_from_int_task_id.zig");
 const method_flags_missing_keywords = @import("rules/method_flags_missing_keywords.zig");
 const sqe_pointer_lifetime = @import("rules/sqe_pointer_lifetime.zig");
+const stale_cancel_bulk = @import("rules/stale_cancel_bulk.zig");
+const clear_before_python = @import("rules/clear_before_python.zig");
+const timer_io_mixing = @import("rules/timer_io_mixing.zig");
 
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
@@ -82,6 +85,9 @@ pub fn main(init: std.process.Init) !void {
             try no_ptr_from_int_task_id.check(&ast, full_path, arena, &diagnostics);
             try method_flags_missing_keywords.check(&ast, full_path, arena, &diagnostics);
             try sqe_pointer_lifetime.check(&ast, full_path, arena, &diagnostics);
+            try stale_cancel_bulk.check(&ast, full_path, arena, &diagnostics);
+            try clear_before_python.check(&ast, full_path, arena, &diagnostics);
+            try timer_io_mixing.check(&ast, full_path, arena, &diagnostics);
         }
     } else |err| {
         try w.print("Failed to open 'src' directory: {t}\n", .{err});
@@ -132,6 +138,9 @@ pub fn main(init: std.process.Init) !void {
             try no_ptr_from_int_task_id.check(&ast, full_path, arena, &diagnostics);
             try method_flags_missing_keywords.check(&ast, full_path, arena, &diagnostics);
             try sqe_pointer_lifetime.check(&ast, full_path, arena, &diagnostics);
+            try stale_cancel_bulk.check(&ast, full_path, arena, &diagnostics);
+            try clear_before_python.check(&ast, full_path, arena, &diagnostics);
+            try timer_io_mixing.check(&ast, full_path, arena, &diagnostics);
         }
     } else |err| {
         try w.print("Failed to open 'tools/linter' directory: {t}\n", .{err});
