@@ -487,6 +487,13 @@ const MultiConnectState = struct {
     // task_ids on completion; the timer ID lives here and is cleared when
     // the timer fires or is cancelled.
     happy_timer_id: ?usize = null,
+    /// Set when the connect round is torn down after a submit failure
+    /// while connects are still in flight (S4c/S4d). The future is already
+    /// resolved and mcs stays alive until the last completion; completions
+    /// must only close their fd and count down — never touch the future
+    /// (double-resolve leaks the exception ref and re-fires done
+    /// callbacks) and never create a transport.
+    aborted: bool = false,
     failed_count: usize,
     task_ids: std.ArrayList(usize),
     all_errors: bool,
@@ -630,6 +637,10 @@ fn schedule_remaining_connects_callback(data: *const CallbackManager.CallbackDat
     }
 
     mcs.timer_fired = true;
+    // S4a: liveness is happy_timer_id != null (cleared above); retire the
+    // historical scheduled flag with it so later `timer_scheduled and
+    // !timer_fired` checks cannot desync. All evaluate identically.
+    mcs.timer_scheduled = false;
 
     const connection_data = mcs.connection_data;
     const creation_data = connection_data.creation_data;
@@ -640,7 +651,21 @@ fn schedule_remaining_connects_callback(data: *const CallbackManager.CallbackDat
     const address_list = connection_data.address_list.?;
     for (address_list[1..]) |*addr| {
         submit_connect_for_address(mcs, addr, allocator, loop_data) catch |err| {
-            return set_future_exception(err, creation_data.future.?);
+            // S4c: fail fast, then abort the round. The first connect is
+            // still in flight and owns mcs until it completes — deinit here
+            // would leave its SocketData dangling (UAF in removeTaskId).
+            // Mark aborted (completions only close + count down, never
+            // touch the resolved future) and cancel the pending connects;
+            // the last completion tears mcs down.
+            set_future_exception(err, creation_data.future.?) catch |e| {
+                std.log.warn("abort set_future_exception failed: {s}", .{@errorName(e)});
+            };
+            mcs.aborted = true;
+            for (mcs.task_ids.items) |task_id| {
+                _ = Loop.Scheduling.IO.queue(&loop_data.io, .{ .CancelIO = task_id }) catch |e| std.log.warn("queue cancel failed: {s}", .{@errorName(e)});
+            }
+            if (mcs.pending == 0) mcs.deinit();
+            return;
         };
     }
 }
@@ -691,7 +716,21 @@ fn z_create_socket_connection(data: *SocketConnectionData) !void {
     }
 
     const mcs = try MultiConnectState.init(allocator, data, all_errors);
-    errdefer mcs.deinit();
+    errdefer {
+        if (mcs.pending == 0) {
+            mcs.deinit();
+        } else {
+            // S4d: connects are in flight — their SocketData borrows mcs,
+            // so deinit here would UAF in removeTaskId. Abort instead: the
+            // caller fails the future on this error path, completions only
+            // close + count down (see aborted), and the last one tears
+            // mcs down. Cancel the pending connects; they are live.
+            mcs.aborted = true;
+            for (mcs.task_ids.items) |task_id| {
+                _ = Loop.Scheduling.IO.queue(&loop_data.io, .{ .CancelIO = task_id }) catch |e| std.log.warn("queue cancel failed: {s}", .{@errorName(e)});
+            }
+        }
+    }
     mcs_owns_connection_data = true;
 
     var delay: f64 = 0.25;
@@ -717,8 +756,14 @@ fn z_create_socket_connection(data: *SocketConnectionData) !void {
     }
 
     if (address_list.len == 0) {
+        // S4b: nothing was ever submitted (pending == 0), so resolve the
+        // future first — exactly like the all-connects-failed path below —
+        // and then tear mcs down explicitly. A bare return would skip the
+        // errdefer (success path) and leak mcs + connection_data.
         python_c.raise_python_runtime_error("No addresses resolved");
-        return set_future_exception(error.PythonError, creation_data.future.?);
+        try set_future_exception(error.PythonError, creation_data.future.?);
+        mcs.deinit();
+        return;
     }
 
     const port: u16 = blk: {
@@ -850,6 +895,15 @@ fn socket_connected_callback(data: *const CallbackManager.CallbackData) !void {
     allocator.destroy(socket_data);
 
     mcs.pending -= 1;
+
+    // S4c/S4d: the round was aborted — the future is already resolved and
+    // mcs is owed to this last completion. Never touch the future or
+    // create a transport; just drop the fd and count down to teardown.
+    if (mcs.aborted) {
+        if (fd >= 0) _ = std.os.linux.close(fd);
+        if (!(mcs.timer_scheduled and !mcs.timer_fired) and mcs.pending == 0) mcs.deinit();
+        return;
+    }
 
     if (mcs.succeeded or data.cancelled()) {
         if (fd >= 0) _ = std.os.linux.close(fd);
