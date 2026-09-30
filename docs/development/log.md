@@ -4,12 +4,22 @@ title: "Chronological Update Log — Talyn Documentation Bundle"
 description: "Tracks modifications, releases, and architectural changes across the Talyn documentation bundle."
 status: stable
 verified: human-reviewed
-timestamp: "2026-09-26T11:30:00Z"
+timestamp: "2026-09-30T00:00:00Z"
 ---
 
 # Chronological Update Log — Talyn Documentation Bundle
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
+
+## [2026-09-30] — v0.9.11 Release: Factory-Scheduled Timer Misfire Fix (BUG-336)
+
+This patch release resolves the silent wrong-time execution defect where `call_later`/`call_at` timers scheduled inside a `create_connection` protocol factory fired immediately, bringing the bug tracker to 335 bugs total (322 Fixed, 0 Open, 13 False Positive):
+
+- **Stray CancelIO on Completed Connects (BUG-336, High)**: `socket_connected_callback`'s success path queued `CancelIO` for every id in `mcs.task_ids`, including the just-completed connect whose `BlockingTask` slot was already freed. The factory runs synchronously inside transport creation, so its timer reused that exact freed slot (task ids are raw slot pointers, no generation); `mcs.deinit()` then cancelled the stale id again, the kernel killed the new timer, and its callback fired in the same tick. Fixed by recording each `SocketData.task_id` and removing it on completion, tracking the happy-eyeballs timer separately (`MultiConnectState.happy_timer_id`), and cancelling only still-pending tasks.
+- **Regression Tests**: `test_create_connection_factory_call_later_not_fired_early` and `test_create_connection_factory_call_at_not_fired_early` in `tests/test_create_connection.py`.
+- **Documentation**: New `bugs/336.md`, updated `bugs/index.md` and `development-journey.md`.
+- **Version Bump**: Bumped version to **0.9.11** in `pyproject.toml`, `build.zig.zon`, and AST linter banner.
+- **Tracker Status**: 335 bugs total (322 Fixed, 0 Open, 13 False Positive).
 
 ## [2026-09-26] — v0.9.10 Release: link_timeout Dead-Stack Fix & SQE-Pointer Lifetime Audit (BUG-334, BUG-335)
 

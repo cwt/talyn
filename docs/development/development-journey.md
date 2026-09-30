@@ -3,7 +3,7 @@ type: article
 title: Talyn Development Journey
 description: The complete historical narrative and timeline of developing Talyn, sorted chronologically from the latest release back to the project's inception.
 tags: [history, documentation, journey, roadmap]
-timestamp: 2026-09-26T11:30:00Z
+timestamp: 2026-09-30T00:00:00Z
 ---
 
 # Talyn Development Journey
@@ -11,6 +11,19 @@ timestamp: 2026-09-26T11:30:00Z
 Talyn is a production-grade, crash-resistant, and realistically fast `asyncio` event loop drop-in replacement for Python, powered by **Zig** and **io_uring**.
 
 This document chronicles the engineering narrative and technical milestones of Talyn in **reverse chronological order**—starting with our latest release and architectural breakthroughs, and stepping back through performance optimizations, cross-platform builds, and deep audits to the project's original genesis.
+
+---
+
+## v0.9.11 — Factory-Scheduled Timer Misfire Fix (BUG-336)
+
+**v0.9.11** resolves the silent wrong-time execution defect where `call_later`/`call_at` timers scheduled inside a `create_connection` protocol factory fired immediately instead of after their delay ([BUG-336](bugs/336.md)), bringing the bug tracker to **335 bugs total (322 Fixed, 0 Open, 13 False Positive)**. Any asyncio program scheduling delayed callbacks from a connection factory — notably `asyncssh`, whose login watchdog (`call_later(login_timeout)`) runs inside `SSHClientConnection.__init__` — aborted healthy operations instantly under Talyn while behaving normally on uvloop and stdlib asyncio.
+
+### Stray CancelIO on Completed Connects (BUG-336)
+
+The reported suspect (`z_loop_delayed_call` in `src/loop/python/scheduling.zig`) was innocent: the `TimerHandle.when` deadline was always computed correctly (+15s), and the fault lay on the firing side. The `create_connection` success path queued `CancelIO` for every id in `MultiConnectState.task_ids` — including the just-completed connect whose `BlockingTask` slot `fetch_completed_tasks` had already freed. Task ids are raw slot pointers with no generation counter, and the protocol factory runs synchronously inside transport creation, so a factory-scheduled timer reused that exact freed slot; `mcs.deinit()` then queued `CancelIO` for the stale id a second time. The kernel cancelled the new timer, and because `handle.cancelled` was never set, its Python callback ran in the same tick with `loop.time()` frozen. The isolation signature was decisive: the `sock=` path (no connect tasks) was clean, deferring `call_later` via `call_soon` was clean, and of two factory timers only the first (slot-reusing) misfired.
+
+- **Fix**: each `SocketData` records its `task_id` and is removed from `task_ids` on completion (all paths); the happy-eyeballs timer moved out of `task_ids` into `MultiConnectState.happy_timer_id`, cleared when it fires or is cancelled; the success path cancels pending connects plus the still-armed timer explicitly; `deinit` cancels pending connects plus the still-armed timer. Cancel rounds now only target live tasks (Lesson 105: condition teardown cancellation on active state).
+- **Validation**: bug reproducer passes; short-delay factory timers fire on time; `test_create_connection_factory_call_later_not_fired_early` and `test_create_connection_factory_call_at_not_fired_early` added; full suite green via `scripts/test_all.sh --starburst --verbose` (373 passed, 1 skipped per interpreter × 4, all stdlib asyncio suites, 66/66 Zig tests, 0 linter violations).
 
 ---
 
