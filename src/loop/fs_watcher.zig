@@ -69,6 +69,14 @@ fn on_inotify_event(data: *const CallbackManager.CallbackData) !void {
         return;
     }
 
+    // BUG-336: this inotify wait is complete — its BlockingTask slot is
+    // freed and may be synchronously reused by Python below
+    // (dispatch_event runs arbitrary watch callbacks that can schedule
+    // call_later timers). Drop the stale ID before any Python runs; the
+    // re-arm at the end of this function installs the next wait's ID.
+    // deinit() therefore cannot CancelIO the new occupant.
+    self.inotify_task_id = 0;
+
     var buf: [4096]u8 align(@alignOf(std.os.linux.inotify_event)) = undefined;
     while (true) {
         const n = std.posix.read(self.inotify_fd, &buf) catch |err| switch (err) {

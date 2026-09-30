@@ -317,6 +317,12 @@ fn pidfd_exit_callback(data: *const CallbackManager.CallbackData) !void {
     var success = false;
     defer if (success) python_c.py_decref(@ptrCast(transport));
 
+    // BUG-336: this pidfd wait is complete — its BlockingTask slot is freed
+    // and may be synchronously reused by Python below (process_exited can
+    // schedule call_later timers and close the transport). Drop the stale ID
+    // before any Python runs so close() cannot CancelIO the new occupant.
+    transport.pidfd_task_id = 0;
+
     if (data.cancelled() or transport.closed) {
         success = true;
         return;
@@ -344,7 +350,6 @@ fn pidfd_exit_callback(data: *const CallbackManager.CallbackData) !void {
                 _ = std.os.linux.close(transport.pidfd);
                 transport.pidfd = -1;
             }
-            transport.pidfd_task_id = 0;
             python_c.py_xdecref(transport.popen);
             transport.popen = null;
             success = true;
@@ -360,7 +365,6 @@ fn pidfd_exit_callback(data: *const CallbackManager.CallbackData) !void {
             _ = std.os.linux.close(transport.pidfd);
             transport.pidfd = -1;
         }
-        transport.pidfd_task_id = 0;
         python_c.py_xdecref(transport.popen);
         transport.popen = null;
         success = true;
@@ -385,7 +389,6 @@ fn pidfd_exit_callback(data: *const CallbackManager.CallbackData) !void {
         _ = std.os.linux.close(transport.pidfd);
         transport.pidfd = -1;
     }
-    transport.pidfd_task_id = 0;
     python_c.py_xdecref(transport.popen);
     transport.popen = null;
     success = true;

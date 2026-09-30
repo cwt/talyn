@@ -15,6 +15,12 @@ const ChildHandler = struct {
     pidfd: std.posix.fd_t,
     callback: PyObject,
     task_id: usize = 0,
+    /// BUG-336: set when the wait op completes (on_child_exit entry). The
+    /// BlockingTask slot is freed at that point and may be reused by
+    /// Python-scheduled timers, so teardown paths must neither CancelIO
+    /// the stale task_id nor destroy the handler out from under the
+    /// executing callback — it owns the final teardown.
+    completed: bool = false,
     watcher: *ChildWatcher,
     /// BUG-280: set by remove_child_handler. The exit callback may already
     /// sit in the ready queue (Cancel cannot reach a completed op), so the
@@ -40,7 +46,12 @@ pub fn deinit(self: *ChildWatcher) void {
     while (it.next()) |entry| {
         const handler = entry.value_ptr.*;
         handler.removed = true;
-        if (handler.task_id != 0) {
+        if (handler.completed) {
+            // BUG-336: the op already completed (its callback is executing
+            // or queued with ownership); the slot may be reused already.
+            // Neither cancel the stale task_id nor destroy the handler —
+            // the callback invocation owns the final teardown.
+        } else if (handler.task_id != 0) {
             _ = self.loop.io.queue(.{ .CancelIO = handler.task_id }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
         } else {
             // Defensive: nothing in flight can reference it.
@@ -102,7 +113,11 @@ pub fn add_child_handler(self: *ChildWatcher, pid: i32, callback: PyObject) !voi
     if (self.handlers.fetchRemove(pid)) |old| {
         const old_handler = old.value;
         old_handler.removed = true;
-        if (old_handler.task_id != 0) {
+        if (old_handler.completed) {
+            // BUG-336: completed op — stale task_id may alias a reused
+            // slot, and the executing callback owns teardown. Neither
+            // cancel nor destroy here.
+        } else if (old_handler.task_id != 0) {
             _ = self.loop.io.queue(.{ .CancelIO = old_handler.task_id }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
         } else {
             // Defensive: nothing in flight can reference it.
@@ -128,7 +143,12 @@ pub fn remove_child_handler(self: *ChildWatcher, pid: i32) bool {
         const handler = entry.value;
         handler.removed = true;
 
-        if (handler.task_id != 0) {
+        if (handler.completed) {
+            // BUG-336: the op already completed with its callback queued
+            // or executing; that invocation owns the teardown. The stale
+            // task_id may alias a reused slot — never cancel it — and the
+            // handler must not be destroyed out from under the callback.
+        } else if (handler.task_id != 0) {
             // The WaitReadable may still be armed OR already completed
             // with its callback queued; either way that invocation now
             // owns the teardown.
@@ -143,19 +163,26 @@ pub fn remove_child_handler(self: *ChildWatcher, pid: i32) bool {
 }
 
 fn on_child_exit(data: *const CallbackManager.CallbackData) !void {
+    const handler: *ChildHandler = @ptrCast(@alignCast(data.user_data.?));
+    // BUG-336: this wait is complete — its BlockingTask slot is freed and
+    // may be synchronously reused by Python below (the child callback can
+    // schedule call_later timers, then remove/replace this very handler).
+    // Invalidate the ID and mark completion first so teardown paths
+    // neither CancelIO the new occupant nor destroy this handler early;
+    // this invocation owns the final teardown.
+    handler.task_id = 0;
+    handler.completed = true;
     if (data.cancelled()) {
         // BUG-280/BUG-307: cancellation now comes from remove_child_handler,
         // add_child_handler replacement, or watcher deinit - all of which
         // mark the handler removed and unmapped it, so this invocation owns
         // the teardown in every case. The `removed` check stays as a guard
         // against a future cancel source that doesn't mark (leak, not UAF).
-        const handler: *ChildHandler = @ptrCast(@alignCast(data.user_data.?));
         if (handler.removed) {
             teardown_child_handler(handler.watcher, handler);
         }
         return;
     }
-    const handler: *ChildHandler = @ptrCast(@alignCast(data.user_data.?));
     const self = handler.watcher;
 
     if (!self.loop.initialized) {
@@ -214,7 +241,8 @@ fn on_child_exit(data: *const CallbackManager.CallbackData) !void {
             return;
         }
         // Process might still be alive (though POLLIN triggered)?
-        // Re-arm
+        // Re-arm: a new op is in flight, so clear the BUG-336 completed
+        // marker set on entry — teardown paths must cancel this arm again.
         handler.task_id = try self.loop.io.queue(.{ .WaitReadable = .{
             .fd = handler.pidfd,
             .callback = .{
@@ -223,6 +251,7 @@ fn on_child_exit(data: *const CallbackManager.CallbackData) !void {
                 .data = .{ .user_data = handler },
             },
         } });
+        handler.completed = false;
         return;
     }
 

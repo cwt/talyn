@@ -164,6 +164,13 @@ fn accept_callback(data: *const CallbackManager.CallbackData) !void {
 
     defer python_c.py_decref(@ptrCast(server));
 
+    // BUG-336: this accept arm is complete — its BlockingTask slot is freed
+    // and may be synchronously reused by Python below (protocol_factory /
+    // connection_made can schedule call_later timers). Drop the stale ID
+    // before any Python runs so a later close() cannot CancelIO the new
+    // occupant; the deferred re-arm installs the next arm's ID.
+    server.blocking_task_id = 0;
+
     if (data.cancelled() or server.closed) return;
 
     // BUG-33: Track whether we should re-enqueue locally. The defer block must

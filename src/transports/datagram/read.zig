@@ -72,16 +72,30 @@ fn cleanup_read(ptr: ?*anyopaque) void {
     rd.alloc.destroy(rd);
 }
 
+fn release_old_read(rd: *ReadData) void {
+    // Release completed arm N's transport ref + struct WITHOUT touching
+    // read_task_id: the caller zeroes the stale ID on entry and queue_read()
+    // installs the new arm's ID afterwards. Routing through cleanup_read
+    // here would wipe the new live ID (and strand the new arm).
+    const transport = rd.transport;
+    python_c.py_decref(@ptrCast(transport));
+    rd.alloc.destroy(rd);
+}
+
 fn read_completed(data: *const CallbackManager.CallbackData) !void {
     const rd: *ReadData = @ptrCast(@alignCast(data.user_data.?));
-    var success = false;
-    defer if (success) cleanup_read(@ptrCast(@alignCast(rd)));
-
     const self = rd.transport;
     if (data.cancelled() or self.closed) {
-        success = true;
+        cleanup_read(@ptrCast(@alignCast(rd)));
         return;
     }
+
+    // BUG-336: this read arm is complete — its BlockingTask slot is freed
+    // and may be synchronously reused by Python below (datagram_received /
+    // error_received can schedule call_later timers and close the
+    // transport). Drop the stale ID before any Python runs.
+    self.read_task_id = 0;
+    defer release_old_read(rd);
 
     const io_uring_err = data.io_uring_err();
     if (io_uring_err != .SUCCESS) {
@@ -98,7 +112,6 @@ fn read_completed(data: *const CallbackManager.CallbackData) !void {
             python_c.py_decref(r);
         }
         try queue_read(self);
-        success = true;
         return;
     }
 
@@ -106,7 +119,6 @@ fn read_completed(data: *const CallbackManager.CallbackData) !void {
     if (nread == 0) {
         // Empty datagram — re-arm
         try queue_read(self);
-        success = true;
         return;
     }
 
@@ -142,5 +154,4 @@ fn read_completed(data: *const CallbackManager.CallbackData) !void {
 
     // Re-arm read
     try queue_read(self);
-    success = true;
 }

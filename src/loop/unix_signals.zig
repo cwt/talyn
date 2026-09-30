@@ -37,6 +37,13 @@ fn signal_handler(data: *const CallbackManager.CallbackData) !void {
     if (data.cancelled() or io_uring_err == .CANCELED) return;
 
     const loop: *Loop = @ptrCast(@alignCast(data.user_data.?));
+
+    // BUG-336: this signalfd read is complete — its BlockingTask slot is
+    // freed and may be synchronously reused by Python below (the dispatched
+    // signal callback can schedule call_later timers and re-enter
+    // add_signal_handler). Drop the stale ID before any Python runs; both
+    // re-arms below install the next read's ID.
+    loop.unix_signals.blocking_task_id = 0;
     if (io_uring_err != .SUCCESS) {
         const exception = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "Ls\x00", @as(c_long, @intFromEnum(io_uring_err)), "IO error during signal handling\x00") orelse return error.PythonError;
 
