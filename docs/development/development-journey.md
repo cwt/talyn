@@ -14,6 +14,14 @@ This document chronicles the engineering narrative and technical milestones of T
 
 ---
 
+## v0.9.12 — BUG-336-Class Sweep: Linter Rules + Ten Teardown Fixes
+
+**v0.9.12** extrapolates the BUG-336 stale-cancel pattern — cancelling an already-completed task hits a freed `BlockingTask` slot (raw pointer IDs, no generation) that synchronous Python may already have reused, killing the new occupant — across the codebase. The pattern is now encoded as three AST linter rules (**TALYN-016** `STALE_CANCEL_BULK`, **TALYN-017** `CLEAR_BEFORE_PYTHON`, **TALYN-018** `TIMER_IO_MIXING`), and every flagged site plus four deeper residuals from the same audit is fixed with the BUG-336 template (release-before-Python, cancel-only-if-live): streamserver accept, subprocess pidfd wait, datagram read arm, inotify wait, signalfd read, and the child watcher (which needed a `completed` flag so teardown neither cancels stale nor destroys the executing handler), followed by Handle/TimerHandle invalidation, one-CancelIO-per-generation in read/write close paths, `MultiConnectState` abort/empty-list/`timer_scheduled` residuals, and DNS cancel-flush-before-dispatch against the fd-number variant. Along the way the ReleaseFast suite caught a double-free the Debug build hid (framework `cleanup_read()` runs on error returns), confirming the project verifies on ReleaseFast only.
+
+- **Validation**: full suite green via `scripts/test_all.sh --starburst --verbose` (4 passed, 0 failed: 373 passed, 1 skipped per interpreter × 4, all stdlib asyncio suites, 66/66 Zig tests, 0 linter violations).
+
+---
+
 ## v0.9.11 — Factory-Scheduled Timer Misfire Fix (BUG-336)
 
 **v0.9.11** resolves the silent wrong-time execution defect where `call_later`/`call_at` timers scheduled inside a `create_connection` protocol factory fired immediately instead of after their delay ([BUG-336](bugs/336.md)), bringing the bug tracker to **335 bugs total (322 Fixed, 0 Open, 13 False Positive)**. Any asyncio program scheduling delayed callbacks from a connection factory — notably `asyncssh`, whose login watchdog (`call_later(login_timeout)`) runs inside `SSHClientConnection.__init__` — aborted healthy operations instantly under Talyn while behaving normally on uvloop and stdlib asyncio.

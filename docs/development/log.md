@@ -11,6 +11,17 @@ timestamp: "2026-09-30T00:00:00Z"
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
 
+## [2026-09-30] — v0.9.12 Release: BUG-336-Class Sweep — Linter Rules + Ten Teardown Fixes
+
+This release extrapolates the BUG-336 stale-cancel pattern across the codebase, encodes it as three new AST linter rules, and fixes every site the linter flags plus four deeper residuals found by the same audit:
+
+- **New Linter Rules TALYN-016/017/018**: `STALE_CANCEL_BULK` (bulk `CancelIO` over `task_ids` without completed-ID removal), `CLEAR_BEFORE_PYTHON` (completion callback runs Python while an ID slot is stale — must release before the first Python call; `defer`red cleanups don't count), and `TIMER_IO_MIXING` (timer IDs mixed into an IO cancel list without `happy_timer_id` separation). Registered in `tools/linter/main.zig`, snippet-tested (17/17), documented in `ast-linter.md`.
+- **Six TALYN-017 Fixes (same BUG-336 template: release-before-Python, cancel-only-if-live)**: streamserver `accept_callback`, subprocess `pidfd_exit_callback`, datagram `read_completed` (+ `release_old_read` split so re-arm never wipes the new live ID), fs watcher `on_inotify_event`, unix signals `signal_handler`, child watcher `on_child_exit` (new `completed` flag so teardown paths neither cancel stale nor destroy the executing handler; re-arm resets it).
+- **Four Follow-Up Fixes**: Handle/TimerHandle ID invalidated on fire + acquired on cancel (M3); one-CancelIO-per-generation via `cancelling` flags in read/write close paths (M4); `MultiConnectState` abort path + empty-list teardown + `timer_scheduled` retirement (S4); DNS `mark_resolved` cancels live servers only and flushes before dispatch (fd-number ABA).
+- **Datagram Double-Free Caught by ReleaseFast**: the first `read_completed` restructure released unconditionally via `defer`, but the framework runs the registered `cleanup_read()` on error returns — UAF segfault under ReleaseFast on all interpreters (Debug stayed silent). Restored success-gated release. Project policy confirmed: verify on ReleaseFast only.
+- **Version Bump**: Bumped version to **0.9.12** in `pyproject.toml`, `build.zig.zon`, and AST linter banner.
+- **Validation**: full `./scripts/test_all.sh --starburst --verbose` green — 4 passed, 0 failed (373 passed + 1 skipped per interpreter × 4, all stdlib asyncio suites, 66/66 Zig tests, 0 linter violations).
+
 ## [2026-09-30] — v0.9.11 Release: Factory-Scheduled Timer Misfire Fix (BUG-336)
 
 This patch release resolves the silent wrong-time execution defect where `call_later`/`call_at` timers scheduled inside a `create_connection` protocol factory fired immediately, bringing the bug tracker to 335 bugs total (322 Fixed, 0 Open, 13 False Positive):
