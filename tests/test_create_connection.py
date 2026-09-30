@@ -610,3 +610,64 @@ def test_create_connection_sock_close_eof_reaches_peer() -> None:
     finally:
         stop.set()
         listener.close()
+
+
+def test_create_connection_factory_call_later_not_fired_early() -> None:
+    """BUG-336: a call_later scheduled inside the protocol factory must not
+    fire early. The success path used to CancelIO already-completed connect
+    tasks whose freed slots were reused by the factory timer, killing it so
+    its callback ran in the same tick."""
+    host, port, stop = _start_echo_server()
+    try:
+
+        async def main() -> None:
+            loop = asyncio.get_running_loop()
+            fired: list[float] = []
+            handles: list[asyncio.TimerHandle] = []
+
+            def factory() -> EchoProtocol:
+                handles.append(loop.call_later(5, lambda: fired.append(loop.time())))
+                return EchoProtocol()
+
+            transport, _protocol = await loop.create_connection(factory, host, port)
+            try:
+                await asyncio.sleep(0.3)
+                assert not fired, f"factory-scheduled timer fired early: {fired}"
+            finally:
+                for handle in handles:
+                    handle.cancel()
+                transport.close()
+
+        talyn.run(main())
+    finally:
+        stop.set()
+
+
+def test_create_connection_factory_call_at_not_fired_early() -> None:
+    """BUG-336 (call_at variant): same guarantee for absolute deadlines."""
+    host, port, stop = _start_echo_server()
+    try:
+
+        async def main() -> None:
+            loop = asyncio.get_running_loop()
+            fired: list[float] = []
+            handles: list[asyncio.TimerHandle] = []
+
+            def factory() -> EchoProtocol:
+                handles.append(
+                    loop.call_at(loop.time() + 5, lambda: fired.append(loop.time()))
+                )
+                return EchoProtocol()
+
+            transport, _protocol = await loop.create_connection(factory, host, port)
+            try:
+                await asyncio.sleep(0.3)
+                assert not fired, f"factory-scheduled timer fired early: {fired}"
+            finally:
+                for handle in handles:
+                    handle.cancel()
+                transport.close()
+
+        talyn.run(main())
+    finally:
+        stop.set()

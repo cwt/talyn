@@ -1,7 +1,7 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 335 bugs discovered across audit passes."
+description: "Individual bug entries for talyn, one file per bug. 336 bugs discovered across audit passes."
 timestamp: "2026-09-22T15:10:00Z"
 ---
 
@@ -16,22 +16,22 @@ Sorted by bug number. See individual bug files for details.
 | Severity | Count |
 |---|---:|
 | Critical | 42 |
-| High | 99 |
+| High | 100 |
 | Medium-High | 30 |
 | Medium | 64 |
 | Medium-Mid | 11 |
 | Medium-Low | 21 |
 | Low | 67 |
-| **Total** | **334** |
+| **Total** | **335** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
-| Fixed | 321 |
+| Fixed | 322 |
 | Open | 0 |
 | False Positive | 13 |
-| **Total** | **334** |
+| **Total** | **335** |
 
 ## All Bugs
 
@@ -371,3 +371,4 @@ Sorted by bug number. See individual bug files for details.
 | [333](333.md) | `IOSQE_ASYNC` on `IORING_OP_TIMEOUT` causes `timeout_remove` failure, handle leaks, and quadratic latency degradation | High | Fixed |
 | [334](334.md) | `link_timeout` stores a pointer to a dead stack frame, so deferred submission arms the timeout from reclaimed memory | High | Fixed |
 | [335](335.md) | `Read.perform` zero-copy branch staged a kernel-dereferenced pointer at the caller's iovec array (latent BUG-30/BUG-334 class); rejected, TALYN-015 added | Medium | Fixed |
+| [336](336.md) | `call_later` timers scheduled inside a `create_connection` protocol factory fire immediately instead of after the delay | High | Fixed |

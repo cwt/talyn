@@ -478,6 +478,15 @@ const MultiConnectState = struct {
     succeeded: bool,
     timer_scheduled: bool,
     timer_fired: bool,
+    // BUG-336: the happy-eyeballs timer is tracked separately from the
+    // connect task_ids below. Cancelling a *completed* task is not just
+    // wasteful: its BlockingTask slot is already freed and may have been
+    // reused (e.g. by a factory-scheduled call_later timer queued during
+    // transport creation), so a stale CancelIO would kill the new occupant
+    // and its callback would fire immediately. Connect IDs are removed from
+    // task_ids on completion; the timer ID lives here and is cleared when
+    // the timer fires or is cancelled.
+    happy_timer_id: ?usize = null,
     failed_count: usize,
     task_ids: std.ArrayList(usize),
     all_errors: bool,
@@ -506,8 +515,15 @@ const MultiConnectState = struct {
         const loop_data = utils.get_data_ptr(Loop, loop);
         const allocator = loop_data.allocator;
 
+        // task_ids holds only still-pending connects (completed ones are
+        // removed in socket_connected_callback); the happy-eyeballs timer
+        // is cancelled separately below, if still armed.
         for (self.task_ids.items) |task_id| {
             _ = Loop.Scheduling.IO.queue(&loop_data.io, .{ .CancelIO = task_id }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
+        }
+        if (self.happy_timer_id) |timer_id| {
+            _ = Loop.Scheduling.IO.queue(&loop_data.io, .{ .CancelIO = timer_id }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
+            self.happy_timer_id = null;
         }
         self.task_ids.deinit(allocator);
         if (self.exceptions) |e| python_c.py_decref(e);
@@ -589,6 +605,7 @@ fn submit_connect_for_address(mcs: *MultiConnectState, address: *const utils.Add
         // so freeing here would double-free. See BUG-04 class of defects.
         return err;
     };
+    socket_data.task_id = task_id;
     try mcs.task_ids.append(allocator, task_id);
     mcs.pending += 1;
 }
@@ -602,6 +619,11 @@ fn schedule_remaining_connects_callback(data: *const CallbackManager.CallbackDat
     // here — while it is still alive — avoids the use-after-free where the
     // success path freed `mcs` (when the first connect won) and this callback
     // then ran on the freed `mcs`.
+    // BUG-336: the timer slot is freed before we run, so drop its id first.
+    // A later factory-scheduled timer may already reuse that slot; leaving
+    // the stale id behind would cancel the new occupant (deinit) or match
+    // it spuriously.
+    mcs.happy_timer_id = null;
     if (data.cancelled() or mcs.succeeded) {
         if (mcs.pending == 0) mcs.deinit();
         return;
@@ -738,7 +760,8 @@ fn z_create_socket_connection(data: *SocketConnectionData) !void {
                 .callback = callback,
             },
         });
-        try mcs.task_ids.append(allocator, timer_task_id);
+        // BUG-336: tracked separately from task_ids (see happy_timer_id).
+        mcs.happy_timer_id = timer_task_id;
         mcs.timer_scheduled = true;
     } else {
         // Submit all remaining immediately (no delay)
@@ -775,9 +798,24 @@ fn create_socket_connection(data: *const CallbackManager.CallbackData) !void {
 // -----------------------------------------------------------------
 // STEP#4: Socket connected (or failed to connect)
 
+/// Remove a completed task from the pending list (swap-remove). Completed
+/// tasks must never be cancelled: their slot is already freed and may be
+/// reused by unrelated later work (BUG-336).
+fn removeTaskId(mcs: *MultiConnectState, task_id: usize) void {
+    for (mcs.task_ids.items, 0..) |id, idx| {
+        if (id == task_id) {
+            _ = mcs.task_ids.swapRemove(idx);
+            return;
+        }
+    }
+}
+
 const SocketData = struct {
     multi_state: *MultiConnectState,
     socket_fd: std.posix.fd_t,
+    // io_uring task id of this connect request. Cleared from
+    // multi_state.task_ids when this request completes (BUG-336).
+    task_id: usize = 0,
     python_payload: CallbackManager.PythonPayload = .{},
 
     comptime {
@@ -797,6 +835,13 @@ fn socket_connected_callback(data: *const CallbackManager.CallbackData) !void {
     const socket_data: *SocketData = @ptrCast(@alignCast(data.user_data.?));
     const mcs = socket_data.multi_state;
     const fd = socket_data.socket_fd;
+    // BUG-336: this request is complete — drop its id so the success-path
+    // and deinit CancelIO rounds only hit still-pending connects. The freed
+    // slot can be reused (e.g. by a factory-scheduled call_later timer)
+    // before those cancels execute; cancelling the stale id would kill the
+    // new occupant and fire its callback immediately.
+    const completed_id = socket_data.task_id;
+    removeTaskId(mcs, completed_id);
 
     const creation_data = mcs.connection_data.creation_data;
     const loop = creation_data.loop.?;
@@ -877,8 +922,16 @@ fn socket_connected_callback(data: *const CallbackManager.CallbackData) !void {
     // Success — mark and create transport (synchronous)
     mcs.succeeded = true;
 
+    // task_ids holds only still-pending connects (the winner removed
+    // itself above). Cancel the still-armed happy-eyeballs timer as well
+    // so its callback runs the BUG-120 teardown path.
     for (mcs.task_ids.items) |task_id| {
         _ = loop_data.io.queue(.{ .CancelIO = task_id }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
+    }
+    if (mcs.timer_scheduled and !mcs.timer_fired) {
+        if (mcs.happy_timer_id) |timer_id| {
+            _ = loop_data.io.queue(.{ .CancelIO = timer_id }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
+        }
     }
 
     const fut = creation_data.future orelse {
