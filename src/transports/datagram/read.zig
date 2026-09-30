@@ -95,7 +95,11 @@ fn read_completed(data: *const CallbackManager.CallbackData) !void {
     // error_received can schedule call_later timers and close the
     // transport). Drop the stale ID before any Python runs.
     self.read_task_id = 0;
-    defer release_old_read(rd);
+    // Release the old arm only on success (re-arm) paths. On error paths
+    // the framework invokes the registered cleanup_read() — releasing here
+    // as well would double-free rd (UAF segfault).
+    var success = false;
+    defer if (success) release_old_read(rd);
 
     const io_uring_err = data.io_uring_err();
     if (io_uring_err != .SUCCESS) {
@@ -112,6 +116,7 @@ fn read_completed(data: *const CallbackManager.CallbackData) !void {
             python_c.py_decref(r);
         }
         try queue_read(self);
+        success = true;
         return;
     }
 
@@ -119,6 +124,7 @@ fn read_completed(data: *const CallbackManager.CallbackData) !void {
     if (nread == 0) {
         // Empty datagram — re-arm
         try queue_read(self);
+        success = true;
         return;
     }
 
@@ -154,4 +160,5 @@ fn read_completed(data: *const CallbackManager.CallbackData) !void {
 
     // Re-arm read
     try queue_read(self);
+    success = true;
 }
