@@ -280,8 +280,22 @@ fn mark_resolved_and_execute_user_callbacks(server_data: *ServerQueryData) !void
     errdefer control_data.resolved = false;
 
     for (control_data.queries_data) |*sd| {
+        // Cancel only live servers (finished ones already closed their
+        // fd to -1, so cancel() would no-op — same BUG-336 discipline as
+        // the connect task_ids: never target completed work).
+        if (sd.finished) continue;
         sd.cancel();
     }
+
+    // FD-number variant of BUG-336: the cancels above sit in the deferred
+    // submission queue while their fds are already closed, and the user
+    // callbacks dispatched below run synchronously before the next flush.
+    // A callback opening a socket can reuse a just-closed fd number, and
+    // the kernel would then cancel the NEW occupant's ops (CancelByFd
+    // matches by number at execution time). Submit the cancels now so
+    // they are consumed before any Python can reuse fd numbers. Cheap:
+    // no-op when the submission queue is empty.
+    _ = control_data.loop.io.flush_pending_sqes() catch |err| std.log.warn("DNS cancel flush failed: {s}", .{@errorName(err)});
 
     if (!control_data.record_evicted) {
         if (server_data.ptr_results.items.len > 0) {
