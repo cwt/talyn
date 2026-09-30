@@ -76,6 +76,10 @@ pub fn close(self: *ReadTransport) !void {
     }
 
     _ = try self.loop.io.queue(.{ .CancelIO = blocking_task_id });
+    // BUG-336: exactly one CancelIO per op generation — a second cancel
+    // after completion+slot-reuse would kill the new occupant. Mark
+    // cancelling so cancel() becomes idempotent (completion resets it).
+    self.cancelling = true;
     self.is_closing = true;
     self.connection_lost_callback = null;
 }
@@ -86,8 +90,10 @@ pub fn force_close(self: *ReadTransport) !void {
     self.is_closing = true;
     self.connection_lost_callback = null;
 
-    if (self.blocking_task_id > 0) {
+    if (self.blocking_task_id > 0 and !self.cancelling) {
         _ = try self.loop.io.queue(.{ .CancelIO = self.blocking_task_id });
+        // BUG-336: see close() — one CancelIO per op generation.
+        self.cancelling = true;
     }
 }
 

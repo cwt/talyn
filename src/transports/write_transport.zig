@@ -43,6 +43,10 @@ writev_count: usize = 0,
 is_closing: bool = false,
 closed: bool = false,
 initialized: bool = false,
+// BUG-336: exactly one CancelIO per op generation (mirrors
+// ReadTransport.cancelling). A second cancel after completion +
+// slot-reuse would kill the new occupant.
+cancelling: bool = false,
 fixed_file_index: ?u16 = null,
 blocking_task_id: usize = 0,
 
@@ -98,8 +102,10 @@ pub fn close(self: *WriteTransport) !void {
     self.is_closing = true;
     self.connection_lost_callback = null;
 
-    if (self.blocking_task_id > 0) {
+    if (self.blocking_task_id > 0 and !self.cancelling) {
         _ = try self.loop.io.queue(.{ .CancelIO = self.blocking_task_id });
+        // BUG-336: see field docs — one CancelIO per op generation.
+        self.cancelling = true;
     }
 
     if (!self.write_in_flight and self.buffer_size == 0) {
@@ -115,8 +121,9 @@ pub fn force_close(self: *WriteTransport) !void {
     self.is_closing = true;
     self.connection_lost_callback = null;
 
-    if (self.blocking_task_id > 0) {
+    if (self.blocking_task_id > 0 and !self.cancelling) {
         _ = try self.loop.io.queue(.{ .CancelIO = self.blocking_task_id });
+        self.cancelling = true;
         self.blocking_task_id = 0;
     }
 
@@ -238,12 +245,18 @@ fn submit_next_chunk(self: *WriteTransport) !void {
 
 fn cleanup_resources_callback(ptr: ?*anyopaque) void {
     const self: *WriteTransport = @ptrCast(@alignCast(ptr.?));
+    // BUG-336: op generation is over (mirrors the completion reset) so a
+    // later generation stays cancellable.
+    self.cancelling = false;
     python_c.py_decref(self.parent_transport);
 }
 
 fn write_operation_completed(data: *const CallbackManager.CallbackData) !void {
     const self: *WriteTransport = @ptrCast(@alignCast(data.user_data.?));
     self.blocking_task_id = 0;
+    // BUG-336: op generation is over — a later generation may be
+    // cancelled again (mirrors ReadTransport completion reset).
+    self.cancelling = false;
 
     var success = false;
     defer if (success) python_c.py_decref(self.parent_transport);
