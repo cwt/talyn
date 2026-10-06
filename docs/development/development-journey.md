@@ -3,7 +3,7 @@ type: article
 title: Talyn Development Journey
 description: The complete historical narrative and timeline of developing Talyn, sorted chronologically from the latest release back to the project's inception.
 tags: [history, documentation, journey, roadmap]
-timestamp: 2026-09-30T00:00:00Z
+timestamp: 2026-10-07T00:00:00Z
 ---
 
 # Talyn Development Journey
@@ -11,6 +11,27 @@ timestamp: 2026-09-30T00:00:00Z
 Talyn is a production-grade, crash-resistant, and realistically fast `asyncio` event loop drop-in replacement for Python, powered by **Zig** and **io_uring**.
 
 This document chronicles the engineering narrative and technical milestones of Talyn in **reverse chronological order**—starting with our latest release and architectural breakthroughs, and stepping back through performance optimizations, cross-platform builds, and deep audits to the project's original genesis.
+
+---
+
+## Dual Zig 0.16.0 & 0.17.0 Toolchain Compatibility (2026-10-07)
+
+Talyn achieved dual-toolchain compatibility, enabling building, linting, and running full test suites identically on both **Zig 0.16.0** (system default) and **Zig 0.17.0** from a single source tree without version branches leaking into domain logic.
+
+### The Zig 0.17 Migration Challenge
+
+Zig 0.17 introduced major breaking changes across the compiler and standard library:
+1. **Removal of `@cImport`**: Zig 0.17 completely removed the `@cImport` builtin. All C headers must be translated via `b.addTranslateC` in `build.zig`.
+2. **`@bitCast` Constraints**: `@bitCast` between non-packed structs (such as `std.posix.timespec` and `std.os.linux.kernel_timespec`) is forbidden in 0.17.
+3. **Std API Removals & Renames**: `std.fmt.bufPrintZ` was removed in favor of `std.fmt.bufPrintSentinel(..., 0)`; `std.meta.Int` was replaced by the `@Int` builtin; `.{v} ** N` array repetition was replaced by `@splat(v)`; `std.meta.fields` return types and `std.meta.declarations` shapes diverged.
+4. **AST Parser Changes**: `std.zig.Ast.parse` changed signature and token tags (`asterisk_asterisk` was removed from `Token.Tag`).
+
+### Architectural Solution: Portable Common Subset
+
+Rather than maintaining separate version forks, Talyn adopted a portable common-subset strategy:
+- **Build-Level C Translation**: Defined `src/c_python.h` containing all necessary C definitions and configured `build.zig` to translate it using `b.addTranslateC` for both compilers, maintaining strict adherence to TALYN-001.
+- **Strictly Confined Version Branching**: All compiler-specific branching is confined to `build.zig` (for `OptimizeMode` casing) and `tools/linter/` (for AST parsing options). Zero version checks leak into core domain code.
+- **Validation**: All 66 Zig unit tests, AST linter rules, and the complete 4-interpreter test matrix (`./scripts/test_all.sh --starburst --verbose`) pass with zero regressions on both Zig 0.16.0 and Zig 0.17.0.
 
 ---
 

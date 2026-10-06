@@ -21,6 +21,14 @@ const stale_cancel_bulk = @import("rules/stale_cancel_bulk.zig");
 const clear_before_python = @import("rules/clear_before_python.zig");
 const timer_io_mixing = @import("rules/timer_io_mixing.zig");
 
+fn parseAst(gpa: std.mem.Allocator, source: [:0]const u8) !std.zig.Ast {
+    if (@hasDecl(std.zig.Ast, "ParseOptions")) {
+        return std.zig.Ast.parse(gpa, source, .{});
+    } else {
+        return std.zig.Ast.parse(gpa, source, .zig);
+    }
+}
+
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
     const io = init.io;
@@ -64,7 +72,7 @@ pub fn main(init: std.process.Init) !void {
             defer gpa.free(null_terminated);
             @memcpy(null_terminated, content);
 
-            var ast = try std.zig.Ast.parse(gpa, null_terminated, .zig);
+            var ast = try parseAst(gpa, null_terminated);
             defer ast.deinit(gpa);
 
             total_ast_nodes += ast.nodes.len;
@@ -118,7 +126,7 @@ pub fn main(init: std.process.Init) !void {
             defer gpa.free(null_terminated);
             @memcpy(null_terminated, content);
 
-            var ast = try std.zig.Ast.parse(gpa, null_terminated, .zig);
+            var ast = try parseAst(gpa, null_terminated);
             defer ast.deinit(gpa);
 
             total_ast_nodes += ast.nodes.len;

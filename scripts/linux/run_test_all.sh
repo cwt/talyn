@@ -6,7 +6,7 @@ set -euo pipefail
 # host by Zig (fast, same binary the wheels carry), then test_all.sh is invoked
 # with --no-build so only the test suites execute under emulation.
 #
-# Requires the host to have zig 0.16.0 and the 4 Python devel header sets
+# Requires the host to have zig 0.16.0 or 0.17.0 and the 4 Python devel header sets
 # (python3.13/3.14 + free-threading variants), e.g. Fedora:
 #   sudo dnf install zig python3.13-devel python3.13-freethreading \
 #     python3.14-devel python3.14-freethreading-devel

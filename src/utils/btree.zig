@@ -15,7 +15,7 @@ pub fn BTree(comptime Key: type, comptime Value: type, comptime Degree: usize) t
             values: [Degree]Value,
             childs: [Degree + 1]?*Node,
 
-            nkeys: std.meta.Int(.unsigned, 1 + std.math.log2(Degree)),
+            nkeys: @Int(.unsigned, 1 + std.math.log2(Degree)),
         };
 
         allocator: std.mem.Allocator,
@@ -38,7 +38,7 @@ pub fn BTree(comptime Key: type, comptime Value: type, comptime Degree: usize) t
                 .parent = null,
                 .keys = undefined,
                 .values = undefined,
-                .childs = .{null} ** (Degree + 1),
+                .childs = @splat(null),
                 .nkeys = 0,
             };
             return new_node;

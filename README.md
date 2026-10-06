@@ -3,7 +3,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE.md)
 [![Python Compatibility](https://img.shields.io/badge/python-3.13%20%7C%203.14%20%7C%20Free--Threaded-blue.svg)](#-requirements)
 [![Linux Compatibility](https://img.shields.io/badge/linux-7.0+%20%7C%20Fedora%2043--44-orange.svg)](#-requirements)
-[![Zig Compatibility](https://img.shields.io/badge/zig-0.16.0-red.svg)](#-requirements)
+[![Zig Compatibility](https://img.shields.io/badge/zig-0.16.0%20%7C%200.17.0-red.svg)](#-requirements)
 [![PyPI Version](https://img.shields.io/pypi/v/talyn.svg)](https://pypi.org/project/talyn/)
 
 **Talyn** is a robust, exceptionally stable, and realistically fast `asyncio` event loop drop-in replacement for Python, powered by the asynchronous capabilities of **Zig** and **io_uring**.
@@ -28,7 +28,7 @@ Talyn prioritizes **correctness, complete system safety, and high usability** ov
 
 - **Python**: `>= 3.13` (Tested and verified under CPython `3.13`, `3.14`, `3.13t` (free-threaded), and `3.14t` (free-threaded))
 - **Linux Kernel**: `>= 7.0` (Verified on Linux Kernel `7.0.x`)
-- **Zig Compiler** (for source builds): `0.16.0` (Fedora packages)
+- **Zig Compiler** (for source builds): `0.16.0` or `0.17.0` (Fedora packages / upstream release)
 
 > [!NOTE]
 > **Tested Platform Verification**:
@@ -246,6 +246,32 @@ You can force Zig to compile for a specific target CPU microarchitecture (like `
 
 ```bash
 TALYN_OPTIMIZE=ReleaseFast TALYN_CPU=x86_64_v3 pip install .
+```
+
+#### 4. Zig Version Compatibility
+
+Talyn builds cleanly on both **Zig 0.16.0** and **Zig 0.17.0** from a single source tree.
+
+| Removed / Changed in 0.17 | Portable Form Used in Talyn |
+|---|---|
+| `@cImport` (removed) | `b.addTranslateC` via `src/c_python.h` module import |
+| `std.fmt.bufPrintZ` (removed) | `std.fmt.bufPrintSentinel(..., 0)` |
+| `std.meta.fields(T)[i].name` | `std.meta.fieldNames(T)` |
+| `.{v} ** N` array repetition | `@splat(v)` or `std.mem.zeroes` |
+| `std.meta.Int` | `@Int` builtin |
+| Non-packed struct `@bitCast` (`timespec`) | Explicit field assignment |
+| `std.zig.Ast.parse` signature | Portable `parseAst` wrapper branching on `@hasDecl(Ast, "ParseOptions")` |
+| `OptimizeMode.Debug` tag case | Comptime `@hasField(OptimizeMode, "debug")` selection in `build.zig` |
+
+All unit tests and full test suites pass under both toolchains:
+```bash
+# Zig 0.16.0
+zig build test
+./scripts/test_all.sh --starburst --verbose
+
+# Zig 0.17.0
+PATH=/opt/zig/0.17.0:$PATH zig build test
+PATH=/opt/zig/0.17.0:$PATH ./scripts/test_all.sh --starburst --verbose
 ```
 
 ---

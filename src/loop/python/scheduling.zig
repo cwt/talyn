@@ -183,7 +183,10 @@ inline fn z_loop_delayed_call(self: *LoopObject, args: []?PyObject, knames: ?PyO
         } else {
             var raw_ts: std.os.linux.timespec = undefined;
             _ = std.os.linux.clock_gettime(.MONOTONIC, &raw_ts);
-            time = @bitCast(raw_ts);
+            time = .{
+                .sec = @intCast(raw_ts.sec),
+                .nsec = @intCast(raw_ts.nsec),
+            };
             const delay_sec = @trunc(safe_ts);
             const frac = @max(0.0, safe_ts - delay_sec);
 

@@ -29,7 +29,10 @@ fn checkSnippet(
     defer arena_inst.deinit();
     const arena = arena_inst.allocator();
 
-    var ast = try std.zig.Ast.parse(arena, source, .zig);
+    var ast = if (@hasDecl(std.zig.Ast, "ParseOptions"))
+        try std.zig.Ast.parse(arena, source, .{})
+    else
+        try std.zig.Ast.parse(arena, source, .zig);
     defer ast.deinit(arena);
 
     var diags: std.ArrayList(Diagnostic) = .empty;

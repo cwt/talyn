@@ -504,11 +504,13 @@ test "validate_hostname invalid domains" {
 }
 
 test "validate_hostname edge cases" {
+    const a63: [63]u8 = @splat('a');
+    const a64: [64]u8 = @splat('a');
     const edge_cases = [_]struct { domain: []const u8, expected: bool }{
         .{ .domain = "a.com", .expected = true }, // Minimum valid length
         .{ .domain = "a-1.com", .expected = true }, // Hyphen with number
-        .{ .domain = "a" ** 63 ++ ".com", .expected = true }, // Maximum label length
-        .{ .domain = "a" ** 64 ++ ".com", .expected = false }, // Exceeds maximum label length
+        .{ .domain = &(a63 ++ ".com".*), .expected = true }, // Maximum label length
+        .{ .domain = &(a64 ++ ".com".*), .expected = false }, // Exceeds maximum label length
     };
 
     for (edge_cases) |case| {
@@ -629,6 +631,7 @@ test "build_reverse_name ipv4 and ipv6" {
 }
 
 test "parse_resolv_configuration overlong search domain does not panic" {
-    const long_domain = "search " ++ "a" ** 300 ++ "\n";
+    const a300: [300]u8 = @splat('a');
+    const long_domain = "search " ++ a300 ++ "\n";
     try std.testing.expectError(error.InvalidConfiguration, parse_resolv_configuration(std.testing.allocator, long_domain));
 }

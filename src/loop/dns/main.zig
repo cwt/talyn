@@ -244,7 +244,7 @@ test "get_cache_slot distributes hostnames across slots" {
         "example5.com",
     };
 
-    var slots = [_]*Cache{undefined} ** hostnames.len;
+    var slots: [hostnames.len]*Cache = undefined;
 
     for (hostnames, 0..) |hostname, i| {
         slots[i] = dns.get_cache_slot(hostname);
@@ -278,17 +278,19 @@ test "get_cache_slot handles different hostname lengths" {
         .pending_queries = PendingList.init(std.testing.allocator),
     };
 
+    const a63: [63]u8 = @splat('a');
+    const a255: [255]u8 = @splat('a');
     const hostnames = [_][]const u8{
         "a",
         "ab",
         "abc",
         "abcd",
         "abcde",
-        "a" ** 63,
-        "a" ** 255,
+        &a63,
+        &a255,
     };
 
-    var slots = [_]*Cache{undefined} ** hostnames.len;
+    var slots: [hostnames.len]*Cache = undefined;
 
     for (hostnames, 0..) |hostname, i| {
         slots[i] = dns.get_cache_slot(hostname);

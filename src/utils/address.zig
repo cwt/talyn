@@ -14,7 +14,7 @@ pub const Address = extern union {
                 .sa = .{
                     .addr = @as(u32, @bitCast(ip)),
                     .port = std.mem.nativeToBig(u16, port),
-                    .zero = .{0} ** 8,
+                    .zero = @splat(0),
                 },
             },
         };
@@ -151,8 +151,8 @@ pub const Address = extern union {
     }
 
     pub fn parseIp6(host: []const u8, port: u16) !Address {
-        var bytes: [16]u8 = .{0} ** 16;
-        var groups: [8]u16 = .{0} ** 8;
+        var bytes: [16]u8 = @splat(0);
+        var groups: [8]u16 = @splat(0);
         var group_i: usize = 0;
         var double_colon: bool = false;
         var double_colon_idx: usize = 0;

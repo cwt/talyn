@@ -19,7 +19,7 @@ fi
 for tool in zig; do
     if ! command -v "$tool" &>/dev/null; then
         echo "Error: '$tool' not found."
-        echo "Please install Zig 0.16.0 on this host."
+        echo "Please install Zig 0.16.0 or 0.17.0 on this host."
         exit 1
     fi
 done

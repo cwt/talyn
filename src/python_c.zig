@@ -1,17 +1,4 @@
-pub const _c = @cImport({
-    @cDefine("PY_SSIZE_T_CLEAN", {});
-    @cDefine("_FORTIFY_SOURCE", "0");
-    @cDefine("__USE_FORTIFY_LEVEL", "0");
-    // Don't define Py_GIL_DISABLED here - it causes @cImport to pull in
-    // inline functions that reference _Py_atomic_load_uint64_relaxed which
-    // is NOT exported from libpython. We use Py_IncRef/Py_DecRef (stable ABI)
-    // instead, which ARE exported and handle free-threading internally.
-    @cInclude("Python.h");
-    @cInclude("arpa/inet.h");
-    // Undefine Py_INCREF/Py_DECREF macros to prevent inline function inclusion
-    @cUndef("Py_INCREF");
-    @cUndef("Py_DECREF");
-});
+pub const _c = @import("c_python");
 
 pub const PyObject = _c.PyObject;
 pub const PyTypeObject = _c.PyTypeObject;
@@ -411,14 +398,13 @@ pub inline fn py_newref(op: anytype) @TypeOf(op) {
 
 pub fn py_visit(object: anytype, visit: Python.visitproc, arg: ?*anyopaque) c_int {
     const visit_ptr = visit.?;
-    const fields = comptime std.meta.fields(@typeInfo(@TypeOf(object)).pointer.child);
-    loop: inline for (fields) |field| {
-        const field_name = field.name;
-
+    const Child = @typeInfo(@TypeOf(object)).pointer.child;
+    loop: inline for (comptime std.meta.fieldNames(Child)) |field_name| {
         // Skip standard header
         if (comptime std.mem.eql(u8, field_name, "ob_base")) continue;
 
-        const value: ?*Python.PyObject = switch (@typeInfo(field.type)) {
+        const FieldType = @TypeOf(@field(@as(Child, undefined), field_name));
+        const value: ?*Python.PyObject = switch (@typeInfo(FieldType)) {
             .optional => |data| blk: {
                 switch (@typeInfo(data.child)) {
                     .pointer => |data2| {
@@ -473,10 +459,9 @@ pub fn traverse_pyobject_callback(ptr: ?*anyopaque, visit_ptr: ?*anyopaque, arg:
 
 pub fn verify_gc_coverage(comptime T: type, comptime excluded: []const []const u8) void {
     const info = @typeInfo(T);
-    const fields = if (info == .pointer) std.meta.fields(info.pointer.child) else std.meta.fields(T);
+    const Child = if (info == .pointer) info.pointer.child else T;
 
-    inline for (fields) |field| {
-        const field_name = field.name;
+    inline for (comptime std.meta.fieldNames(Child)) |field_name| {
         if (comptime std.mem.eql(u8, field_name, "ob_base")) continue;
 
         var is_excluded = false;
@@ -487,7 +472,8 @@ pub fn verify_gc_coverage(comptime T: type, comptime excluded: []const []const u
         }
         if (is_excluded) continue;
 
-        switch (@typeInfo(field.type)) {
+        const FieldType = @TypeOf(@field(@as(Child, undefined), field_name));
+        switch (@typeInfo(FieldType)) {
             .pointer => |p_info| {
                 const p_child = p_info.child;
                 if (p_child == Python.PyObject) continue;
@@ -518,7 +504,7 @@ pub inline fn parse_vector_call_kwargs(knames: ?*Python.PyObject, args_ptr: [*]?
         return error.InvalidLength;
     }
 
-    var _py_objects: [len]?*Python.PyObject = .{null} ** len;
+    var _py_objects: [len]?*Python.PyObject = @splat(null);
 
     if (knames) |kwargs| {
         const kwargs_len = Python.PyTuple_Size(kwargs);
@@ -565,7 +551,7 @@ pub inline fn merge_vector_call_args(
     comptime names: []const []const u8,
     out: *[names.len]?*Python.PyObject,
 ) !void {
-    out.* = .{null} ** names.len;
+    out.* = @splat(null);
 
     const positional_len = @min(args.len, names.len);
     for (args[0..positional_len], 0..) |arg, i| {
@@ -603,7 +589,7 @@ fn raise_keyword_type_error(comptime format: []const u8, key: *Python.PyObject) 
         raise_python_type_error("invalid keyword argument");
         return;
     };
-    const message = std.fmt.bufPrintZ(&buf, format, .{name_ptr[0..@intCast(name_len)]}) catch {
+    const message = std.fmt.bufPrintSentinel(&buf, format, .{name_ptr[0..@intCast(name_len)]}, 0) catch {
         raise_python_type_error("invalid keyword argument");
         return;
     };
@@ -631,25 +617,22 @@ pub inline fn raise_python_runtime_error(message: ?[:0]const u8) void {
 }
 
 pub inline fn initialize_object_fields(object: anytype, comptime exclude_fields: []const []const u8) void {
-    const fields = comptime std.meta.fields(@typeInfo(@TypeOf(object)).pointer.child);
-    loop: inline for (fields) |field| {
-        const field_name = field.name;
-
+    const Child = @typeInfo(@TypeOf(object)).pointer.child;
+    loop: inline for (comptime std.meta.fieldNames(Child)) |field_name| {
         inline for (exclude_fields) |exclude_field| {
             if (comptime std.mem.eql(u8, field_name, exclude_field)) {
                 continue :loop;
             }
         }
 
-        @field(object, field_name) = comptime std.mem.zeroes(field.type);
+        const FieldType = @TypeOf(@field(@as(Child, undefined), field_name));
+        @field(object, field_name) = comptime std.mem.zeroes(FieldType);
     }
 }
 
 pub fn deinitialize_object_fields(object: anytype, comptime exclude_fields: []const []const u8) void {
-    const fields = comptime std.meta.fields(@typeInfo(@TypeOf(object)).pointer.child);
-    loop: inline for (fields) |field| {
-        const field_name = field.name;
-
+    const Child = @typeInfo(@TypeOf(object)).pointer.child;
+    loop: inline for (comptime std.meta.fieldNames(Child)) |field_name| {
         if (comptime std.mem.eql(u8, field_name, "ob_base")) {
             continue;
         }
@@ -660,7 +643,8 @@ pub fn deinitialize_object_fields(object: anytype, comptime exclude_fields: []co
             }
         }
 
-        switch (@typeInfo(field.type)) {
+        const FieldType = @TypeOf(@field(@as(Child, undefined), field_name));
+        switch (@typeInfo(FieldType)) {
             .optional => |data| {
                 switch (@typeInfo(data.child)) {
                     .pointer => |data2| {

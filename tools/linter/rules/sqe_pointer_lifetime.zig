@@ -499,7 +499,12 @@ fn pendingParamAdd(
     if (type_start) |ts| {
         if (ts <= end) {
             const first = tags[ts];
-            is_pointer = first == .asterisk or first == .asterisk_asterisk or first == .l_bracket;
+            const Tag = @TypeOf(first);
+            const is_double_ptr = if (comptime @hasField(Tag, "asterisk_asterisk"))
+                first == .asterisk_asterisk
+            else
+                false;
+            is_pointer = first == .asterisk or is_double_ptr or first == .l_bracket;
         }
     }
     if (name) |n| try hdr.params.append(gpa, .{ .name = n, .is_pointer = is_pointer });

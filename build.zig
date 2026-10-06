@@ -1,11 +1,14 @@
 const std = @import("std");
 
+const OptimizeMode = std.builtin.OptimizeMode;
+const debug_mode: OptimizeMode = if (@hasField(OptimizeMode, "debug")) .debug else .Debug;
+
 fn create_build_step(
     b: *std.Build,
     name: []const u8,
     path: []const u8,
     target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
+    optimize: OptimizeMode,
     single_threaded: bool,
     modules_name: []const []const u8,
     modules: []const *std.Build.Module,
@@ -38,7 +41,7 @@ fn create_build_step(
     });
 
     // Enable Link-Time Optimization and section garbage collection for release builds
-    if (optimize != .Debug) {
+    if (optimize != debug_mode) {
         lib.lto = .thin;
         lib.link_gc_sections = true;
     }
@@ -107,6 +110,19 @@ pub fn build(b: *std.Build) void {
     const python_is_gil_disabled = b.option(bool, "python-gil-disabled", "Is GIL disabled") orelse detected_gil_disabled;
 
     // BUG-123: Use addTranslateC for signal.h instead of @cImport in unix_signals.zig.
+    // Dual 0.16.0 / 0.17.0: Use addTranslateC for Python C headers (@cImport removed in 0.17.0).
+    const c_python_header = b.addTranslateC(.{
+        .root_source_file = b.path("src/c_python.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    c_python_header.addIncludePath(.{
+        .cwd_relative = python_include_dir,
+    });
+    if (target.result.cpu.arch == .riscv64) {
+        c_python_header.defineCMacro("__riscv_float_abi_double", "1");
+    }
+    const c_python_module = c_python_header.createModule();
 
     const python_c_module = b.addModule("python_c", .{
         .root_source_file = b.path("src/python_c.zig"),
@@ -115,6 +131,7 @@ pub fn build(b: *std.Build) void {
         .single_threaded = !python_is_gil_disabled,
         .link_libc = true,
     });
+    python_c_module.addImport("c_python", c_python_module);
 
     if (python_is_gil_disabled) {
         python_c_module.addCMacro("Py_GIL_DISABLED", "1");

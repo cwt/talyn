@@ -122,9 +122,10 @@ pub fn initialize_python_imports() !void {
 pub fn release_python_imports() void {
     const decls = comptime std.meta.declarations(@This());
     inline for (decls) |decl| {
-        const T = @TypeOf(@field(@This(), decl.name));
+        const decl_name = if (comptime @typeInfo(@TypeOf(decl)) == .@"struct") decl.name else decl;
+        const T = @TypeOf(@field(@This(), decl_name));
         if (T != Atomic(?PyObject)) continue;
-        const field = &@field(@This(), decl.name);
+        const field = &@field(@This(), decl_name);
         // BUG-305: swap-extract instead of load-then-store so exactly one
         // caller (thread) receives the reference and drops it. Under
         // free-threading a load/store pair would let two threads both see

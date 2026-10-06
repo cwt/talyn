@@ -4,12 +4,27 @@ title: "Chronological Update Log — Talyn Documentation Bundle"
 description: "Tracks modifications, releases, and architectural changes across the Talyn documentation bundle."
 status: stable
 verified: human-reviewed
-timestamp: "2026-09-30T00:00:00Z"
+timestamp: "2026-10-07T00:00:00Z"
 ---
 
 # Chronological Update Log — Talyn Documentation Bundle
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
+
+## [2026-10-07] — Dual Zig 0.16.0 / 0.17.0 Toolchain Support
+
+Enables dual-toolchain compatibility for Talyn so that the entire project builds, lints, and passes all test suites on both **Zig 0.16.0** and **Zig 0.17.0** from a single source tree without version forks or runtime overhead:
+
+- **Translate-C Python API Module**: Converted Python C API imports from `@cImport` (which Zig 0.17 completely removed) to `b.addTranslateC` in `build.zig` via `src/c_python.h`, exposed as `pub const _c = @import("c_python");` in `src/python_c.zig`.
+- **Portable Standard Library Spellings**:
+  - Replaced `std.fmt.bufPrintZ` with `std.fmt.bufPrintSentinel(..., 0)` in `src/python_c.zig` and `src/loop/python/control.zig`.
+  - Replaced `std.meta.fields` inspection with `std.meta.fieldNames` and `@TypeOf(@field(...))` in `src/python_c.zig`.
+  - Replaced `.{v} ** N` array repetitions with `@splat(v)` across `src/python_c.zig`, `src/utils/address.zig`, `src/utils/btree.zig`, `src/loop/dns/resolv.zig`, `src/loop/dns/main.zig`, and `src/loop/dns/parsers.zig`.
+  - Replaced `std.meta.Int` with `@Int` builtin in `src/utils/btree.zig`.
+  - Replaced non-packed struct `@bitCast` on `timespec` with explicit `.sec` / `.nsec` field casts in `src/loop/python/scheduling.zig` and `src/loop/scheduling/io/timer.zig`.
+  - Handled `std.meta.declarations` return shape divergence across versions in `src/utils/python_imports.zig`.
+- **Linter & AST Compatibility**: Added `parseAst` helper branching on `@hasDecl(std.zig.Ast, "ParseOptions")` in `tools/linter/main.zig` and `tools/linter/test_rules.zig`. Guarded `.asterisk_asterisk` check with `@hasField` in `tools/linter/rules/sqe_pointer_lifetime.zig`.
+- **Validation**: 66/66 Zig unit tests, 0 linter violations, and `./scripts/test_all.sh --starburst --verbose` green (4 passed, 0 failed across Python 3.13, 3.14, 3.13t, and 3.14t) under both Zig 0.16.0 and Zig 0.17.0.
 
 ## [2026-09-30] — v0.9.12 Release: BUG-336-Class Sweep — Linter Rules + Ten Teardown Fixes
 
