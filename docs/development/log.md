@@ -24,6 +24,7 @@ Enables dual-toolchain compatibility for Talyn so that the entire project builds
   - Replaced non-packed struct `@bitCast` on `timespec` with explicit `.sec` / `.nsec` field casts in `src/loop/python/scheduling.zig` and `src/loop/scheduling/io/timer.zig`.
   - Handled `std.meta.declarations` return shape divergence across versions in `src/utils/python_imports.zig`.
 - **Linter & AST Compatibility**: Added `parseAst` helper branching on `@hasDecl(std.zig.Ast, "ParseOptions")` in `tools/linter/main.zig` and `tools/linter/test_rules.zig`. Guarded `.asterisk_asterisk` check with `@hasField` in `tools/linter/rules/sqe_pointer_lifetime.zig`.
+- **Container & Sandbox Compatibility**: Added `docs/development/containers-and-sandboxes.md` and README guidance covering `io_uring` support, seccomp profiles, and permissions across Docker, Podman, containerd, Kubernetes, and cloud sandboxes.
 - **Validation**: 66/66 Zig unit tests, 0 linter violations, and `./scripts/test_all.sh --starburst --verbose` green (4 passed, 0 failed across Python 3.13, 3.14, 3.13t, and 3.14t) under both Zig 0.16.0 and Zig 0.17.0.
 
 ## [2026-09-30] — v0.9.12 Release: BUG-336-Class Sweep — Linter Rules + Ten Teardown Fixes

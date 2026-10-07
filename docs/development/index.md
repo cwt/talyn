@@ -4,7 +4,7 @@ title: "Development Documentation — talyn"
 description: "Master index for the development bundle: priorities, lessons learned, bugs, architectural mandates, and project history."
 status: stable
 verified: human-reviewed
-timestamp: "2026-09-30T00:00:00Z"
+timestamp: "2026-10-07T00:00:00Z"
 ---
 
 # Development Documentation — talyn
@@ -44,6 +44,7 @@ This is the development bundle for Talyn. It covers project priorities, lessons 
 - [Reference & Misc](reference-and-misc.md)
 - [Audits and Profiling](audits-and-profiling.md)
 - [io_uring Security Hardening](hardening.md)
+- [io_uring in Containers and Sandboxes](containers-and-sandboxes.md)
 
 ## Project History
 

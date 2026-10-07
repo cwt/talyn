@@ -4,7 +4,7 @@ title: Talyn Documentation Index
 description: Master index for priorities, lessons learned, and architectural mandates.
 status: stable
 verified: human-reviewed
-timestamp: "2026-09-30T00:00:00Z"
+timestamp: "2026-10-07T00:00:00Z"
 ---
 
 # Talyn Documentation Index
@@ -43,6 +43,7 @@ Welcome to the Talyn TODO and project tracking documentation. This serves as the
 - [Reference & Misc](development/reference-and-misc.md)
 - [Audits and Profiling](development/audits-and-profiling.md)
 - [io_uring Security Hardening](development/hardening.md)
+- [io_uring in Containers and Sandboxes](development/containers-and-sandboxes.md)
 
 ## Performance & History
 
