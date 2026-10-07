@@ -270,8 +270,8 @@ zig build test
 ./scripts/test_all.sh --starburst --verbose
 
 # Zig 0.17.0
-PATH=/opt/zig/0.17.0:$PATH zig build test
-PATH=/opt/zig/0.17.0:$PATH ./scripts/test_all.sh --starburst --verbose
+PATH=/path/to/zig-0.17.0:$PATH zig build test
+PATH=/path/to/zig-0.17.0:$PATH ./scripts/test_all.sh --starburst --verbose
 ```
 
 ---

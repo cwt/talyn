@@ -29,5 +29,5 @@ Before implementing any changes, refactoring, or writing new code:
    - Non-packed struct `@bitCast` → explicit field initialization
 5. **Verification**: Always verify changes against **both** compilers:
    - Zig 0.16.0: `zig build test`
-   - Zig 0.17.0: `PATH=/opt/zig/0.17.0:$PATH zig build test`
+   - Zig 0.17.0: `PATH=/path/to/zig-0.17.0:$PATH zig build test`
 
