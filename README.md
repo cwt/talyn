@@ -285,6 +285,7 @@ Talyn builds cleanly on both **Zig 0.16.0** and **Zig 0.17.0** from a single sou
 | `OptimizeMode.Debug` tag case | Comptime `@hasField(OptimizeMode, "debug")` selection in `build.zig` |
 
 All unit tests and full test suites pass under both toolchains:
+
 ```bash
 # Zig 0.16.0
 zig build test

@@ -30,4 +30,3 @@ Before implementing any changes, refactoring, or writing new code:
 5. **Verification**: Always verify changes against **both** compilers:
    - Zig 0.16.0: `zig build test`
    - Zig 0.17.0: `PATH=/path/to/zig-0.17.0:$PATH zig build test`
-
