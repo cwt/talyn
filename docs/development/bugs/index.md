@@ -1,8 +1,8 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 336 bugs discovered across audit passes."
-timestamp: "2026-09-22T15:10:00Z"
+description: "Individual bug entries for talyn, one file per bug. 395 bugs (numbered 1–396) discovered across audit passes."
+timestamp: "2026-10-18T04:00:00Z"
 ---
 
 # Bugs — talyn
@@ -15,23 +15,23 @@ Sorted by bug number. See individual bug files for details.
 
 | Severity | Count |
 |---|---:|
-| Critical | 42 |
-| High | 100 |
-| Medium-High | 30 |
-| Medium | 64 |
+| Critical | 57 |
+| High | 128 |
+| Medium-High | 37 |
+| Medium | 72 |
 | Medium-Mid | 11 |
 | Medium-Low | 21 |
-| Low | 67 |
-| **Total** | **335** |
+| Low | 69 |
+| **Total** | **395** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
 | Fixed | 322 |
-| Open | 0 |
+| Open | 60 |
 | False Positive | 13 |
-| **Total** | **335** |
+| **Total** | **395** |
 
 ## All Bugs
 
@@ -372,3 +372,64 @@ Sorted by bug number. See individual bug files for details.
 | [334](334.md) | `link_timeout` stores a pointer to a dead stack frame, so deferred submission arms the timeout from reclaimed memory | High | Fixed |
 | [335](335.md) | `Read.perform` zero-copy branch staged a kernel-dereferenced pointer at the caller's iovec array (latent BUG-30/BUG-334 class); rejected, TALYN-015 added | Medium | Fixed |
 | [336](336.md) | `call_later` timers scheduled inside a `create_connection` protocol factory fire immediately instead of after the delay | High | Fixed |
+| [337](337.md) | `Cancel.perform_by_fd` passes `fd = -1` to `IORING_ASYNC_CANCEL_FD`, causing every `CancelByFd` SQE to fail with `-EBADF` | Critical | Open |
+| [338](338.md) | Synchronous error in `Resolv.prepare_data` or `Resolv.queue` schedules `user_callback` on `Soon` queue while also returning error to caller (UAF & double-free) | Critical | Open |
+| [339](339.md) | Self-assignment `py_xdecref` before `py_newref` on `cancel_msg_py_object` causes use-after-free on Task/Future cancellation | Critical | Open |
+| [340](340.md) | Dispatching `Future` done callbacks after `loop.close()` dereferences freed `ready_tasks_queues` (use-after-free) | Critical | Open |
+| [341](341.md) | GC `future_traverse` visits freed `PyObject` pointers after `run_python_future_set_callbacks` error (UAF) and `Future.release` leaks `exceptions_queue` items | Critical | Open |
+| [342](342.md) | Unconditional double-decref of `protocol` and conditional leak or double-decref of `transport` in `unix_connect_callback` | Critical | Open |
+| [343](343.md) | Double-close and triple-close of socket `fd` on error paths in `z_loop_create_unix_server` | Critical | Open |
+| [344](344.md) | Double-decref of `LoopObject` (`self`) on `Soon.dispatch` failure in `z_loop_create_connection` (`sock=` path) | Critical | Open |
+| [345](345.md) | `callback_for_python_generic_callbacks` sets `handle.cancelled = true` on normal execution, breaking `Handle.cancelled()` and causing `loop.add_signal_handler` callbacks to fire only once | Critical | Open |
+| [346](346.md) | `FDWatcher` (`add_reader`/`add_writer`) leaks `handle` references on cancel/error and leaves raised Python exceptions pending on thread state | Critical | Open |
+| [347](347.md) | Use-after-free and double-free in `HookHandle.cancel` and `PathWatcherHandle.cancel` after `loop.close()`, plus GC list corruption in `z_loop_add_hook` | Critical | Open |
+| [348](348.md) | `loop_close` unlocks `loop_data.mutex` before calling `loop_data.release()` and lacks `loop_data.initialized` guard | Critical | Open |
+| [349](349.md) | `parse_vector_call_kwargs` casts `kwargs_len` to `usize` before checking `if (kwargs_len < 0)` (Mandate #1 panic) | Critical | Open |
+| [350](350.md) | Uninitialized `fixed_buffer_index` (`0`) on `DatagramTransportObject` corrupts `RegisteredBufferPool` when `DatagramTransport` allocation fails | Critical | Open |
+| [351](351.md) | Stale `ReadTransport.blocking_task_id` during P15 batch dispatch cancels reused `BlockingTask` slots on `pause_reading()`/`close()`/`abort()`, and `ReadTransport.close()` omits `!self.cancelling` guard | Critical | Open |
+| [352](352.md) | 100% reference leak of all keyword arguments in `z_loop_create_datagram_endpoint` due to double `py_newref` | High | Open |
+| [353](353.md) | 100% reference leak of return values in `sock_sendto_callback`, `sock_recv_into_callback_with_buf`, `sock_connect_callback`, and `sock_sendall_callback` | High | Open |
+| [354](354.md) | Memory and `PyObject` reference leak of `SocketCreationData`, `SocketConnectionData`, `ServerCreationData`, and `ServerSocketData` on DNS failure or cancellation | High | Open |
+| [355](355.md) | Memory/reference leaks, missing Python exception before `set_future_exception`, and unresolved `Future` (infinite hang) in `create_endpoint.zig` DNS resolution callbacks | High | Open |
+| [356](356.md) | Leaked callback structs/buffers on `orelse return set_future_exception` and unresolved futures (infinite hang) on `try` / `cancelled()` across all 7 socket operations in `ops.zig` | High | Open |
+| [357](357.md) | Unresolved futures (infinite hang) when DNS `on_query_sent` fails on the last nameserver or `getaddrinfo_callback` / `getnameinfo_callback` error or cancel | High | Open |
+| [358](358.md) | `Resolv.build_queries` clobbers `server_data.dns_timeout` back to `null` via struct-literal assignment | High | Open |
+| [359](359.md) | Socket `fd` leak, `MultiConnectState` memory/reference leak, and unresolved future on error paths in `socket_connected_callback` | High | Open |
+| [360](360.md) | Uninitialized `sockaddr.storage` read in `sock_accept_callback` and `sock_recvfrom_callback` (`AF_UNIX`), plus null `pbuf.buf` pointer cast panic in `sock_sendall`, `sock_sendto`, and `sock_recv_into` | High | Open |
+| [361](361.md) | Unchecked `@intCast` and `@intFromFloat` panics on untrusted Python integer/float arguments across Loop, Socket, DNS, and PseudoSocket entry points (Mandate #1 violations) | High | Open |
+| [362](362.md) | `ChildWatcher` reads uninitialized `siginfo_t` when `waitid(WNOHANG)` returns `0` with no exited child and leaks `pidfd`, callback reference, and `ChildHandler` on `on_child_exit` error/shutdown paths | High | Open |
+| [363](363.md) | `dispatch_completion_batch` calls CPython APIs with a live exception set and aborts `Runner.start` before releasing buffers or re-arming reads | High | Open |
+| [364](364.md) | `BlockingTasksSet.free()` ignores `self.free_count`, permanently leaking ~80 KB `BlockingTasksSet` nodes into `busy_sets` every 1024 operations (plus `reserved_slots` leak on `Overflow`) | High | Open |
+| [365](365.md) | Allocator mismatch in `DNS.lookup` (freed via `DNS.arena` in `Cache.evict_record`) and unbounded `DNS.arena` memory growth across cache evictions and `ControlData` lifecycles | High | Open |
+| [366](366.md) | `SubprocessTransport` leaks `pidfd` when exit watcher is cancelled during `loop.close()` or `SubprocessTransport` deallocation | High | Open |
+| [367](367.md) | `DatagramTransport.close()` never calls `protocol.connection_lost(None)` and delays fixed-file unregistration until GC deallocation | High | Open |
+| [368](368.md) | `BTree` child pointer shifting leaves duplicate/dangling pointer at `childs[nkeys + 1]` causing use-after-free in `change_parent`, and `split_nodes` leaks `new_node1` on OOM | High | Open |
+| [369](369.md) | Re-entrant finalizer or GC access during `Future.release` and `future_clear` causes double-free/double-decref and null-unwrap panic in `future_result` | High | Open |
+| [370](370.md) | `Future.remove_done_callback` compares pointer identity (`@intFromPtr`) instead of Python equality (`Py_EQ`) and leaks removed callback/context references until `Future` deallocation | High | Open |
+| [371](371.md) | `Task.cancel()`, `Task.uncancel()`, and `Task.cancelling()` state machine bugs breaking Python 3.11+ `asyncio.TaskGroup` and `asyncio.timeout` | High | Open |
+| [372](372.md) | `KeyboardInterrupt` and `SystemExit` raised inside a `Task` are swallowed and double-set on `task.fut.exception` (plus `exc` reference leak in `wakeup_task`) | High | Open |
+| [373](373.md) | `Py_None` reference leaked on every coroutine step (`talyn_task_step_trampoline` / `talyn_task_throw_trampoline`) and every task registration (`register_asyncio_task`) | High | Open |
+| [374](374.md) | Reference leaks (`_asyncio_future_blocking`, `Py_False`) and unbroken `wake_up_task_callback` reference cycle in `handle_legacy_future_object` | High | Open |
+| [375](375.md) | `talyn/loop.py` SSL transport bugs: plaintext dropped on `SSLWantReadError`/`SSLWantWriteError`, ciphertext dropped via `os.write` on `BlockingIOError`, unflushed `_write_buffer` on `resume_writing`, and unclosed socket on handshake timeout error | High | Open |
+| [376](376.md) | `create_server` and `_create_ssl_server` never wire `srv.server_ref = server`, breaking `Server.wait_closed()` active connection tracking | High | Open |
+| [377](377.md) | `transport_write_lines` does not check `PyErr_Occurred()` after `PyIter_Next` returns `null`, returning `Py_None` with a live exception set (unfixed `BUG-298`) | High | Open |
+| [378](378.md) | `StreamTransport` lifecycle bugs: `close_transports` omits `transport.is_closing = true` and schedules `connection_lost` before write buffer drains, while `close()` + `abort()` invokes `protocol.connection_lost` twice | High | Open |
+| [379](379.md) | `WriteTransport` flow-control and `write_eof` bugs: `writing_low_water_mark` ignored until buffer hits 0, `write_eof()` silently dropped when `buffer_size > 0`, and `set_write_buffer_limits` rejects `None` and leaks positional refs | High | Open |
+| [380](380.md) | `Record.append_callback` unconditionally accesses `self.state.pending`, panicking when a second DNS lookup hits an existing `.ptr`, `.resolved`, or `.none` cache record | Medium-High | Open |
+| [381](381.md) | `CallbackManager` bugs: `release_dynamic_ring_buffer` calls `consume()` after `func()` and skips `cleanup` on error; `execute_*` passes un-incref'd `mod`/`cb` when `debug == false`; `DynamicRingBuffer.executed` is non-atomic | Medium-High | Open |
+| [382](382.md) | `UnixSignals` bugs: `unlink`/`deinit` install no-op `default_signal_handler` instead of `SIG_DFL` (breaking `SIGINT`/Ctrl+C after `loop.close()`), `@as(u6, @intCast(sig))` panics on `sig == 64` or short read, `Soon.dispatch` failure leaks `handle` ref, and `deinit` skips `CancelIO` | Medium-High | Open |
+| [383](383.md) | Missing `ring.fd >= 0` guards in `IO.deinit()`, `flush_pending_sqes()`, and `ensure_ring_for_current_thread()` (Mandate #6), lost fixed files on thread handoff, and early `self.index` release-store in `BlockingTasksSet.push()` (Mandate #5) | Medium-High | Open |
+| [384](384.md) | Multi-server DNS premature failure on negative responses (`SERVFAIL`/`NXDOMAIN`/`NODATA`), dual-stack `A`+`AAAA` first-packet race, and missing bare hostname in `get_hostname_array` for dotless names | Medium-High | Open |
+| [385](385.md) | `ControlData.traverse` omits `v.data.traverse()` on pending DNS user callbacks, and multiple IO callback state structs lack GC `traverse` wiring | Medium-High | Open |
+| [386](386.md) | Unchecked `.?` on `contextvars` and `py_callback` in `Handle` after `handle_clear` (Mandate #4), repeated `__init__` memory/ref leaks in `Loop`/`Future`/`Task`/`Handle`/`TimerHandle`, and stale `blocking_task_id` reuse window in `TimerHandle` | Medium-High | Open |
+| [387](387.md) | `FSWatcher` leaks `callback` reference and `wd` on `add_watch` error, disarms permanently on `on_inotify_event` error, and performs per-event `dupe` + $O(W^2)$ scan | Medium | Open |
+| [388](388.md) | `StreamTransport.get_extra_info` ignores positional `default` argument (`transport.get_extra_info('unknown', 'fallback')` returns `None`) | Medium | Open |
+| [389](389.md) | Python C-API error handling bugs: `PyObject_IsTrue(...) != 0` treating `-1` as `true`, returning `null` without setting Python exception, `setup_asyncgen_hooks` partial failure leak, and `z_loop_create_task` passing `name` to custom `task_factory` | Medium | Open |
+| [390](390.md) | Server and endpoint creation bugs: `create_server(factory, sock=s)` fails without positional `host` and leaks earlier `StreamServer`s on partial multi-bind failure; `create_datagram_endpoint` ignores `sock=`; `create_unix_server` creates blocking socket and unlinks abstract socket paths | Medium | Open |
+| [391](391.md) | `LoopObject.weakref_list` decref'd instead of `PyObject_ClearWeakRefs`, free-threaded `LoopType` reference leak in `loop_dealloc`, and module init error leaks in `src/lib.zig` | Medium | Open |
+| [392](392.md) | `LRUCache.put` dangling key slice on key overwrite, `Address.parseIp6` accepting `":::1"`, `execute_task_send` running coroutine on cancelled loop shutdown, `enter_or_leave_task` partial failure corrupting `_current_tasks`, and `talyn.install()` globally disabling Python GC on 3.13t/3.14t | Medium | Open |
+| [393](393.md) | `talyn/loop.py` & `talyn/runner.py` API compliance bugs: ignored `start_serving=False`, ignored `subprocess_exec` `**kwargs`, premature `_subprocess_popens.pop`, and incomplete `Runner.close()` | Medium | Open |
+| [394](394.md) | Build & AST linter bugs: missing `build_options` import on `utils_unit_tests` in `build.zig`, untested `sqe_pointer_lifetime` rule in `test_rules.zig`, and whole-file substring false negatives in linter rules | Medium | Open |
+| [395](395.md) | Dead code across the codebase: 5 `.orig` backup files, dead `RingBuffer(N)` in `callback_manager.zig`, dead `write_buf`/`read_buf` in `DatagramTransport`, dead `PseudoSocket` in `talyn/loop.py`, empty placeholder Zig files, and unused fields/helpers | Low | Open |
+| [396](396.md) | Duplicate code and unoptimized algorithms across the codebase: 5 copy-pasted SSL protocol classes & $O(N^2)$ buffer pops in `talyn/loop.py`, pre-cache heap allocations on DNS hits, per-hostname `getrandom` syscalls in `build_queries`, and duplicated linked-timeout SQE prep | Low | Open |
+
