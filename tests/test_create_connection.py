@@ -671,3 +671,34 @@ def test_create_connection_factory_call_at_not_fired_early() -> None:
         talyn.run(main())
     finally:
         stop.set()
+
+
+def test_create_connection_sock_loop_refcount_balanced() -> None:
+    """BUG-344: create_connection(sock=...) must keep LoopObject reference
+    count balanced across connection creation, error paths, and teardown."""
+    import gc
+    import sys
+
+    async def main() -> None:
+        loop = asyncio.get_running_loop()
+        gc.collect()
+        baseline_refs = sys.getrefcount(loop)
+
+        for _ in range(5):
+            a, b = socket.socketpair()
+            try:
+                transport, protocol = await loop.create_connection(
+                    EchoProtocol, sock=a
+                )
+                transport.close()
+                await asyncio.wait_for(protocol.disconnected, timeout=2.0)
+                del transport, protocol
+            finally:
+                a.close()
+                b.close()
+
+        await asyncio.sleep(0)
+        gc.collect()
+        assert sys.getrefcount(loop) == baseline_refs
+
+    talyn.run(main())

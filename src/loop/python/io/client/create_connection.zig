@@ -226,7 +226,6 @@ inline fn z_loop_create_connection(self: *LoopObject, args: []?PyObject, knames:
             python_c.py_decref(@ptrCast(transport_creation_data.future));
             python_c.py_xdecref(transport_creation_data.py_sock);
         }
-        errdefer python_c.py_decref(@ptrCast(self));
 
         const callback = CallbackManager.Callback{
             .func = &create_transport_and_set_future_result,
