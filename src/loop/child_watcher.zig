@@ -162,6 +162,54 @@ pub fn remove_child_handler(self: *ChildWatcher, pid: i32) bool {
     return false;
 }
 
+/// BUG-362: single finalize for a handler whose exit path could not
+/// dispatch its callback — unmaps (guarded by the BUG-313 identity check)
+/// and releases pidfd, callback ref, and struct exactly once.
+fn finalize_child_handler(self: *ChildWatcher, handler: *ChildHandler) void {
+    if (self.handlers.get(handler.pid)) |current| {
+        if (current == handler) {
+            _ = self.handlers.remove(handler.pid);
+        }
+    }
+    teardown_child_handler(self, handler);
+}
+
+/// BUG-362: interprets a waitid siginfo captured under WEXITED|WNOHANG.
+/// Returns the child's return code, or `null` when the kernel reports no
+/// state change (si_signo == 0 — a spurious success for a child that is
+/// still running, whose siginfo_t the kernel leaves unwritten). Callers
+/// must re-arm in that case instead of dispatching the fabricated status
+/// the pre-fix switch produced from uninitialized/zeroed fields.
+fn classify_child_siginfo(siginfo: *const std.os.linux.siginfo_t) ?i32 {
+    if (@intFromEnum(siginfo.signo) == 0) {
+        return null;
+    }
+    const CLD_EXITED = 1;
+    const CLD_KILLED = 2;
+    const CLD_DUMPED = 3;
+    return switch (siginfo.code) {
+        CLD_EXITED => siginfo.fields.common.second.sigchld.status,
+        CLD_KILLED, CLD_DUMPED => -siginfo.fields.common.second.sigchld.status,
+        else => 0,
+    };
+}
+
+/// Arms a fresh WaitReadable op for a handler whose previous wait found
+/// nothing to do (spurious WNOHANG return, EINTR, EAGAIN). The BUG-336
+/// `completed` marker set on callback entry must be cleared again — the
+/// new op is in flight and teardown paths must be able to cancel it.
+fn rearm_child_handler(self: *ChildWatcher, handler: *ChildHandler) !void {
+    handler.task_id = try self.loop.io.queue(.{ .WaitReadable = .{
+        .fd = handler.pidfd,
+        .callback = .{
+            .func = &on_child_exit,
+            .cleanup = null,
+            .data = .{ .user_data = handler },
+        },
+    } });
+    handler.completed = false;
+}
+
 fn on_child_exit(data: *const CallbackManager.CallbackData) !void {
     const handler: *ChildHandler = @ptrCast(@alignCast(data.user_data.?));
     // BUG-336: this wait is complete — its BlockingTask slot is freed and
@@ -185,6 +233,13 @@ fn on_child_exit(data: *const CallbackManager.CallbackData) !void {
     }
     const self = handler.watcher;
 
+    // BUG-362 (audit note): this branch is unreachable in the current
+    // design - release_claimed sets `initialized = false` and only then
+    // drains pending callbacks, but every drain dispatch forces
+    // `cancelled = true`, and the cancelled branch above already owns the
+    // teardown before this check. Touching `self.handlers` here would
+    // risk use-after-free against ChildWatcher.deinit's map teardown, so
+    // this stays a plain early-return.
     if (!self.loop.initialized) {
         return;
     }
@@ -201,7 +256,15 @@ fn on_child_exit(data: *const CallbackManager.CallbackData) !void {
     }
 
     // Get exit status
-    var siginfo: std.os.linux.siginfo_t = undefined;
+    // BUG-362: with WNOHANG the kernel may successfully return without
+    // any state change (the child is still running), leaving the siginfo
+    // fields unwritten. `undefined` + the missing signo check read
+    // uninitialized stack bytes as the child's exit status AND consumed
+    // the handler without re-arming, so the real exit could never be
+    // reported. Zero-fill instead, and re-arm when signo is 0 (true for
+    // both kernel behaviours: si_signo cleared, or the struct left
+    // untouched).
+    var siginfo = std.mem.zeroes(std.os.linux.siginfo_t);
     const res = res: {
         while (true) {
             const r = std.os.linux.waitid(.PIDFD, handler.pidfd, &siginfo, std.os.linux.W.EXITED | std.os.linux.W.NOHANG, null);
@@ -232,46 +295,45 @@ fn on_child_exit(data: *const CallbackManager.CallbackData) !void {
             // arrive for it), so this invocation owns the final teardown:
             // unmap - only if the entry is still ours, per the BUG-313
             // identity guard - and release pidfd, callback ref, and struct.
-            if (self.handlers.get(handler.pid)) |current| {
-                if (current == handler) {
-                    _ = self.handlers.remove(handler.pid);
-                }
-            }
-            teardown_child_handler(self, handler);
+            // BUG-362: reuse the single finalize helper (unmap with the
+            // BUG-313 identity guard + full teardown).
+            finalize_child_handler(self, handler);
             return;
         }
         // Process might still be alive (though POLLIN triggered)?
         // Re-arm: a new op is in flight, so clear the BUG-336 completed
         // marker set on entry — teardown paths must cancel this arm again.
-        handler.task_id = try self.loop.io.queue(.{ .WaitReadable = .{
-            .fd = handler.pidfd,
-            .callback = .{
-                .func = &on_child_exit,
-                .cleanup = null,
-                .data = .{ .user_data = handler },
-            },
-        } });
-        handler.completed = false;
+        try rearm_child_handler(self, handler);
         return;
     }
 
-    const CLD_EXITED = 1;
-    const CLD_KILLED = 2;
-    const CLD_DUMPED = 3;
-
-    const returncode: i32 = switch (siginfo.code) {
-        CLD_EXITED => siginfo.fields.common.second.sigchld.status,
-        CLD_KILLED, CLD_DUMPED => -siginfo.fields.common.second.sigchld.status,
-        else => 0,
+    // BUG-362: WNOHANG with no state change (child still running). The
+    // kernel wrote nothing useful into siginfo — re-arm instead of
+    // dispatching a fabricated exit status and consuming the handler.
+    const returncode = classify_child_siginfo(&siginfo) orelse {
+        try rearm_child_handler(self, handler);
+        return;
     };
 
-    // Dispatch to Python
-    const py_pid = python_c.PyLong_FromLong(handler.pid) orelse return error.PythonError;
+    // Dispatch to Python. BUG-362: PyLong/PyTuple allocation failures
+    // used to `return error.PythonError` with `completed` already true,
+    // so ChildWatcher.deinit skipped the handler and leaked pidfd, the
+    // callback reference and the struct — finalize on every error exit.
+    const py_pid = python_c.PyLong_FromLong(handler.pid) orelse {
+        finalize_child_handler(self, handler);
+        return error.PythonError;
+    };
     defer python_c.py_decref(py_pid);
-    const py_rc = python_c.PyLong_FromLong(returncode) orelse return error.PythonError;
+    const py_rc = python_c.PyLong_FromLong(returncode) orelse {
+        finalize_child_handler(self, handler);
+        return error.PythonError;
+    };
     defer python_c.py_decref(py_rc);
 
-    const py_args = python_c.PyTuple_Pack(2, py_pid, py_rc) orelse return error.PythonError;
+    const py_args = python_c.PyTuple_Pack(2, py_pid, py_rc) orelse {
+        finalize_child_handler(self, handler);
+        return error.PythonError;
+    };
     defer python_c.py_decref(py_args);
 
     if (python_c.PyObject_Call(handler.callback, py_args, null)) |py_res| {
@@ -302,12 +364,7 @@ fn on_child_exit(data: *const CallbackManager.CallbackData) !void {
     // fetchRemoving the pid would orphan the NEW handler (its armed op could
     // then never be torn down) while skipping our own teardown. In all
     // cases this exiting handler owns its teardown.
-    if (self.handlers.get(handler.pid)) |current| {
-        if (current == handler) {
-            _ = self.handlers.remove(handler.pid);
-        }
-    }
-    teardown_child_handler(self, handler);
+    finalize_child_handler(self, handler);
 }
 
 pub fn traverse(self: *const ChildWatcher, visit: python_c.visitproc, arg: ?*anyopaque) c_int {
@@ -317,4 +374,77 @@ pub fn traverse(self: *const ChildWatcher, visit: python_c.visitproc, arg: ?*any
         if (vret != 0) return vret;
     }
     return 0;
+}
+
+test "BUG-362: waitid under WNOHANG on a still-running child succeeds with signo 0" {
+    // waitid(P_PIDFD, <child>, WEXITED|WNOHANG) while the child is still
+    // running yields exactly the kernel sentinel the on_child_exit guard
+    // must re-arm on: a SUCCESS return whose siginfo_t the kernel does
+    // NOT fill in (the fields stay as the caller zeroed them). The
+    // pre-fix code read these unwritten bytes as the child's exit status
+    // and consumed the handler, so the real exit could never be reported
+    // afterwards. Self-PIDFD cannot serve as the live party (waiting on
+    // oneself fails with ECHILD), so fork a real child.
+    const fork_rc = std.os.linux.fork();
+    if (utils.getSyscallErrno(fork_rc) != .SUCCESS) return error.SkipZigTest;
+    if (fork_rc == 0) {
+        // Child: stay alive until the parent SIGKILLs us.
+        var ts = std.os.linux.timespec{ .sec = 30, .nsec = 0 };
+        _ = std.os.linux.nanosleep(&ts, null);
+        std.os.linux.exit(0);
+    }
+    const child_pid: i32 = @intCast(fork_rc);
+    // Safety net: reap the child on any failure path (normally the
+    // final waitid below consumes it, making both calls no-ops).
+    defer {
+        _ = std.os.linux.kill(child_pid, .KILL);
+        var ws: u32 = 0;
+        _ = std.os.linux.waitpid(child_pid, &ws, 0);
+    }
+
+    const rc = std.os.linux.syscall2(.pidfd_open, @as(usize, @intCast(child_pid)), 0);
+    try std.testing.expectEqual(std.posix.E.SUCCESS, utils.getSyscallErrno(rc));
+    const pidfd: std.posix.fd_t = @intCast(rc);
+    defer _ = std.os.linux.close(pidfd);
+
+    var siginfo = std.mem.zeroes(std.os.linux.siginfo_t);
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        std.os.linux.waitid(.PIDFD, pidfd, &siginfo, std.os.linux.W.EXITED | std.os.linux.W.NOHANG, null),
+    );
+    // The sentinel: SUCCESS with no state change; the kernel wrote
+    // nothing into siginfo (signo stays zeroed).
+    try std.testing.expectEqual(@as(u32, 0), @intFromEnum(siginfo.signo));
+    try std.testing.expectEqual(@as(i32, 0), siginfo.code);
+    // The guard classifies this as "no state change" instead of
+    // fabricating a return code.
+    try std.testing.expectEqual(@as(?i32, null), classify_child_siginfo(&siginfo));
+
+    // The child's real exit must still be deliverable afterwards.
+    _ = std.os.linux.kill(child_pid, .KILL);
+    var pollfds = [_]std.os.linux.pollfd{.{ .fd = pidfd, .events = std.os.linux.POLL.IN, .revents = 0 }};
+    const nready = try std.posix.poll(&pollfds, 5000);
+    try std.testing.expectEqual(@as(usize, 1), nready);
+    try std.testing.expect(pollfds[0].revents & std.os.linux.POLL.IN != 0);
+
+    var exit_siginfo = std.mem.zeroes(std.os.linux.siginfo_t);
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        std.os.linux.waitid(.PIDFD, pidfd, &exit_siginfo, std.os.linux.W.EXITED | std.os.linux.W.NOHANG, null),
+    );
+    try std.testing.expectEqual(@as(u32, @intFromEnum(std.os.linux.SIG.CHLD)), @intFromEnum(exit_siginfo.signo));
+    try std.testing.expectEqual(@as(i32, @intFromEnum(std.os.linux.CLD.KILLED)), exit_siginfo.code);
+    try std.testing.expectEqual(@as(?i32, -9), classify_child_siginfo(&exit_siginfo));
+}
+
+test "BUG-362: an exited child's siginfo passes the guard and maps to its status" {
+    var siginfo = std.mem.zeroes(std.os.linux.siginfo_t);
+    siginfo.signo = .CHLD;
+    siginfo.code = @intFromEnum(std.os.linux.CLD.EXITED);
+    siginfo.fields.common.second.sigchld.status = 7;
+    try std.testing.expectEqual(@as(?i32, 7), classify_child_siginfo(&siginfo));
+
+    siginfo.code = @intFromEnum(std.os.linux.CLD.KILLED);
+    siginfo.fields.common.second.sigchld.status = 9;
+    try std.testing.expectEqual(@as(?i32, -9), classify_child_siginfo(&siginfo));
 }

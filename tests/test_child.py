@@ -363,3 +363,49 @@ def test_bug361_add_child_handler_pid_bounds():
             loop.add_child_handler(2**40, noop_callback)
 
     talyn.run(main())
+
+
+def test_bug362_zombie_registration_reports_exit():
+    """BUG-362: registering a handler for a child that already exited (a
+    zombie the parent has not reaped) must report the REAL siginfo exit
+    status. The pidfd is readable at arm time, so on_child_exit runs an
+    immediate waitid — it must read the kernel's filled siginfo (signo ==
+    SIGCHLD), not uninitialized stack bytes, and finalize the handler.
+
+    The other half of BUG-362 (WNOHANG success with NO state change —
+    signo == 0, siginfo left unwritten) is covered by the Zig unit tests
+    in child_watcher.zig: pidfd POLLIN semantics only wake on terminal
+    states, so that branch is not reachable deterministically from
+    Python.
+    """
+    proc = subprocess.Popen(["true"])
+
+    def is_zombie(pid):
+        with open(f"/proc/{pid}/stat") as f:
+            return f.read().rsplit(")", 1)[1].split()[0] == "Z"
+
+    # Wait for the child to become a zombie. Do NOT call proc.poll(): a
+    # single WNOHANG wait would reap the zombie and defeat the scenario.
+    deadline = time.time() + 5
+    while time.time() < deadline and not is_zombie(proc.pid):
+        time.sleep(0.01)
+    assert is_zombie(proc.pid)
+
+    async def main():
+        loop = asyncio.get_running_loop()
+        on_exit = loop.create_future()
+
+        def done(p, returncode):
+            if not on_exit.done():
+                on_exit.set_result((p, returncode))
+
+        loop.add_child_handler(proc.pid, done)
+        assert (await asyncio.wait_for(on_exit, timeout=5)) == (proc.pid, 0)
+
+    talyn.run(main())
+
+    # talyn's waitid reaped the child; absorb the Popen bookkeeping.
+    try:
+        proc.poll()
+    except subprocess.ChildProcessError:
+        pass
