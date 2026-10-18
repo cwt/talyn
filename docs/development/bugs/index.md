@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 358 |
-| Open | 24 |
+| Fixed | 359 |
+| Open | 23 |
 | False Positive | 13 |
 | **Total** | **395** |
 
@@ -408,7 +408,7 @@ Sorted by bug number. See individual bug files for details.
 | [370](370.md) | `Future.remove_done_callback` compares pointer identity (`@intFromPtr`) instead of Python equality (`Py_EQ`) and leaks removed callback/context references until `Future` deallocation | High | Fixed |
 | [371](371.md) | `Task.cancel()`, `Task.uncancel()`, and `Task.cancelling()` state machine bugs breaking Python 3.11+ `asyncio.TaskGroup` and `asyncio.timeout` | High | Fixed |
 | [372](372.md) | `KeyboardInterrupt` and `SystemExit` raised inside a `Task` are swallowed and double-set on `task.fut.exception` (plus `exc` reference leak in `wakeup_task`) | High | Fixed |
-| [373](373.md) | `Py_None` reference leaked on every coroutine step (`talyn_task_step_trampoline` / `talyn_task_throw_trampoline`) and every task registration (`register_asyncio_task`) | High | Open |
+| [373](373.md) | `Py_None` reference leaked on every coroutine step (`talyn_task_step_trampoline` / `talyn_task_throw_trampoline`) and every task registration (`register_asyncio_task`) | High | Fixed |
 | [374](374.md) | Reference leaks (`_asyncio_future_blocking`, `Py_False`) and unbroken `wake_up_task_callback` reference cycle in `handle_legacy_future_object` | High | Open |
 | [375](375.md) | `talyn/loop.py` SSL transport bugs: plaintext dropped on `SSLWantReadError`/`SSLWantWriteError`, ciphertext dropped via `os.write` on `BlockingIOError`, unflushed `_write_buffer` on `resume_writing`, and unclosed socket on handshake timeout error | High | Open |
 | [376](376.md) | `create_server` and `_create_ssl_server` never wire `srv.server_ref = server`, breaking `Server.wait_closed()` active connection tracking | High | Open |

@@ -54,12 +54,23 @@ pub fn get(comptime name: []const u8) PyObject {
 /// registry must never fail task creation.
 pub fn register_asyncio_task(task: PyObject) void {
     if (register_task_func.load(.acquire)) |func| {
-        _ = python_c.PyObject_CallOneArg(func, task) orelse python_c.PyErr_Clear();
+        const ret = python_c.PyObject_CallOneArg(func, task) orelse {
+            python_c.PyErr_Clear();
+            return;
+        };
+        // BUG-373: the registrar's return value (Py_None or a patched
+        // result) is owned — it was discarded, leaking one reference
+        // per task registration.
+        python_c.py_decref(ret);
     }
     if (py_register_task_func.load(.acquire)) |func| {
         if (register_task_func.load(.acquire)) |cfunc| {
             if (cfunc != func) {
-                _ = python_c.PyObject_CallOneArg(func, task) orelse python_c.PyErr_Clear();
+                const ret = python_c.PyObject_CallOneArg(func, task) orelse {
+                    python_c.PyErr_Clear();
+                    return;
+                };
+                python_c.py_decref(ret);
             }
         }
     }

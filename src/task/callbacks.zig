@@ -546,6 +546,10 @@ fn _execute_task_throw(task: *Task.PythonTaskObject, task_exception: ?PyObject) 
     if (trampoline_ret == null) {
         return error.PythonError;
     }
+    // BUG-373: the trampoline returns get_py_none() — an owned
+    // reference — which was discarded, leaking one per coroutine throw
+    // step.
+    python_c.py_decref(trampoline_ret.?);
 
     var exception: ?PyObject = null;
     const gen_ret: python_c.PySendResult = @intCast(send_result);
@@ -638,6 +642,10 @@ fn _execute_task_send(task: *Task.PythonTaskObject) !void {
     if (trampoline_ret == null) {
         return error.PythonError;
     }
+    // BUG-373: the trampoline returns get_py_none() — an owned
+    // reference — which was discarded, leaking one per coroutine send
+    // step.
+    python_c.py_decref(trampoline_ret.?);
 
     var exception: ?PyObject = null;
     const gen_ret: python_c.PySendResult = @intCast(send_result);
