@@ -1,4 +1,5 @@
 import asyncio
+import weakref
 from typing import Any
 
 
@@ -10,6 +11,15 @@ class Server:
         self._servers = servers
         self._active_count = 0
         self._waiters: list[asyncio.Future[None]] = []
+        # BUG-376: every underlying StreamServer must know its Python-level
+        # wrapper (through a weakref — a strong ref here would form a
+        # Server -> _servers -> server_ref -> Server cycle) so accepted
+        # connections call _attach() and _detach() on us. Without this,
+        # _active_count stayed 0 for every TCP and SSL server and
+        # Server.wait_closed() resolved immediately while client
+        # connections were still active.
+        for srv in servers or []:
+            srv.set_server_ref(weakref.ref(self))
 
     def _attach(self) -> None:
         self._active_count += 1

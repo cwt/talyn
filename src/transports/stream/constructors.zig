@@ -253,6 +253,7 @@ inline fn z_stream_new(@"type": *python_c.PyTypeObject) !*StreamTransportObject 
     instance.protocol_max_read_constant = null;
     instance.loop = null;
     instance.socket = null;
+    instance.server_ref = null;
     instance.peername = null;
     instance.sockname = null;
 

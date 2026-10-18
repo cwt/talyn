@@ -245,6 +245,29 @@ fn accept_callback(data: *const CallbackManager.CallbackData) !void {
     owns_fd = false;
     defer python_c.py_decref(@ptrCast(transport));
 
+    // BUG-376: resolve the weakref to the Python Server wrapper installed
+    // by Server.__init__ (it may already be gone — then tracking is a
+    // no-op) so the accepted transport reports back. The transport keeps
+    // the only extra strong ref to the Server (bound to be released by
+    // the detach-once block), so the weakref avoids pinning the wrapper.
+    if (server.server_ref) |wref| {
+        var resolved: ?PyObject = null;
+        if (python_c.PyObject_CallNoArgs(wref)) |resolved_obj| {
+            resolved = resolved_obj;
+        } else {
+            python_c.PyErr_Clear();
+        }
+        if (resolved) |srv| {
+            defer python_c.py_decref(srv);
+            transport.server_ref = python_c.py_newref(srv);
+
+            const attach = python_c.PyObject_GetAttrString(srv, "_attach\x00") orelse return error.PythonError;
+            defer python_c.py_decref(attach);
+            const r = python_c.PyObject_CallNoArgs(attach) orelse return error.PythonError;
+            python_c.py_decref(r);
+        }
+    }
+
     const connection_made = python_c.PyObject_GetAttrString(protocol, "connection_made\x00") orelse return error.PythonError;
     defer python_c.py_decref(connection_made);
 
@@ -362,6 +385,20 @@ fn streamserver_get_loop(self: ?*StreamServerObject, _: ?PyObject) callconv(.c) 
     return python_c.get_py_none();
 }
 
+/// BUG-376: attach the wrapper Python Server object (talyn.server.Server)
+/// so accepted connections bump its _active_count (via _attach at accept
+/// and _detach at connection_lost). The wrapper has no __dict__, so this
+/// METH_O setter is the only way Python can install the reference.
+fn streamserver_set_server_ref(self: ?*StreamServerObject, srv: ?PyObject) callconv(.c) ?PyObject {
+    const instance = self.?;
+    const new_ref = srv.?;
+    python_c.py_incref(new_ref);
+    const old = instance.server_ref;
+    instance.server_ref = new_ref;
+    if (old) |o| python_c.py_decref(o);
+    return python_c.get_py_none();
+}
+
 fn streamserver_get_socket(self: ?*StreamServerObject, _: ?PyObject) callconv(.c) ?PyObject {
     const instance = self.?;
     if (instance.server_fd < 0) {
@@ -404,6 +441,12 @@ const PythonStreamServerMethods: []const python_c.PyMethodDef = &[_]python_c.PyM
         .ml_meth = @ptrCast(&streamserver_get_loop),
         .ml_doc = "Return the event loop.\x00",
         .ml_flags = python_c.METH_NOARGS,
+    },
+    python_c.PyMethodDef{
+        .ml_name = "set_server_ref\x00",
+        .ml_meth = @ptrCast(&streamserver_set_server_ref),
+        .ml_doc = "BUG-376: install the Python Server wrapper this server reports connections to.\x00",
+        .ml_flags = python_c.METH_O,
     },
     python_c.PyMethodDef{
         .ml_name = "_get_socket\x00",

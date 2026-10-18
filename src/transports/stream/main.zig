@@ -15,119 +15,35 @@ const Write = @import("write.zig");
 
 const PythonStreamMethods: []const python_c.PyMethodDef = &[_]python_c.PyMethodDef{
     // -------------------------- lifecycle --------------------------
-    python_c.PyMethodDef{
-        .ml_name = "close\x00",
-        .ml_meth = @ptrCast(&Lifecyle.transport_close),
-        .ml_doc = "Close the transport\x00",
-        .ml_flags = python_c.METH_NOARGS
-    },
-    python_c.PyMethodDef{
-        .ml_name = "_force_close\x00",
-        .ml_meth = @ptrCast(&Lifecyle.transport_force_close),
-        .ml_doc = "Force close the transport\x00",
-        .ml_flags = python_c.METH_O
-    },
-    python_c.PyMethodDef{
-        .ml_name = "is_closing\x00",
-        .ml_meth = @ptrCast(&Lifecyle.transport_is_closing),
-        .ml_doc = "Return True if the transport is closing or is closed\x00",
-        .ml_flags = python_c.METH_NOARGS
-    },
+    python_c.PyMethodDef{ .ml_name = "close\x00", .ml_meth = @ptrCast(&Lifecyle.transport_close), .ml_doc = "Close the transport\x00", .ml_flags = python_c.METH_NOARGS },
+    python_c.PyMethodDef{ .ml_name = "_force_close\x00", .ml_meth = @ptrCast(&Lifecyle.transport_force_close), .ml_doc = "Force close the transport\x00", .ml_flags = python_c.METH_O },
+    python_c.PyMethodDef{ .ml_name = "is_closing\x00", .ml_meth = @ptrCast(&Lifecyle.transport_is_closing), .ml_doc = "Return True if the transport is closing or is closed\x00", .ml_flags = python_c.METH_NOARGS },
 
     // -------------------------- read --------------------------
-    python_c.PyMethodDef{
-        .ml_name = "is_reading\x00",
-        .ml_meth = @ptrCast(&Read.transport_is_reading),
-        .ml_doc = "Return True if the transport is receiving new data.\x00",
-        .ml_flags = python_c.METH_NOARGS
-    },
-    python_c.PyMethodDef{
-        .ml_name = "pause_reading\x00",
-        .ml_meth = @ptrCast(&Read.transport_pause_reading),
-        .ml_doc = "Pause the receiving end of the transport.\x00",
-        .ml_flags = python_c.METH_NOARGS
-    },
-    python_c.PyMethodDef{
-        .ml_name = "resume_reading\x00",
-        .ml_meth = @ptrCast(&Read.transport_resume_reading),
-        .ml_doc = "Resume the receiving end of the transport.\x00",
-        .ml_flags = python_c.METH_NOARGS
-    },
+    python_c.PyMethodDef{ .ml_name = "is_reading\x00", .ml_meth = @ptrCast(&Read.transport_is_reading), .ml_doc = "Return True if the transport is receiving new data.\x00", .ml_flags = python_c.METH_NOARGS },
+    python_c.PyMethodDef{ .ml_name = "pause_reading\x00", .ml_meth = @ptrCast(&Read.transport_pause_reading), .ml_doc = "Pause the receiving end of the transport.\x00", .ml_flags = python_c.METH_NOARGS },
+    python_c.PyMethodDef{ .ml_name = "resume_reading\x00", .ml_meth = @ptrCast(&Read.transport_resume_reading), .ml_doc = "Resume the receiving end of the transport.\x00", .ml_flags = python_c.METH_NOARGS },
 
     // -------------------------- write --------------------------
-    python_c.PyMethodDef{
-        .ml_name = "abort\x00",
-        .ml_meth = @ptrCast(&Lifecyle.transport_abort),
-        .ml_doc = "Close the transport immediately.\x00",
-        .ml_flags = python_c.METH_NOARGS
-    },
-    python_c.PyMethodDef{
-        .ml_name = "can_write_eof\x00",
-        .ml_meth = @ptrCast(&Write.transport_can_write_eof),
-        .ml_doc = "Return True if the transport supports write_eof(), False if not.\x00",
-        .ml_flags = python_c.METH_NOARGS
-    },
-    python_c.PyMethodDef{
-        .ml_name = "get_write_buffer_size\x00",
-        .ml_meth = @ptrCast(&Write.transport_get_write_buffer_size),
-        .ml_doc = "Return the current size of the output buffer used by the transport.\x00",
-        .ml_flags = python_c.METH_NOARGS
-    },
-    python_c.PyMethodDef{
-        .ml_name = "set_write_buffer_limits\x00",
-        .ml_meth = @ptrCast(&Write.transport_set_write_buffer_limits),
-        .ml_doc = "Set the high and low watermarks for write flow control.\x00",
-        .ml_flags = python_c.METH_FASTCALL | python_c.METH_KEYWORDS
-    },
-    python_c.PyMethodDef{
-        .ml_name = "get_write_buffer_limits\x00",
-        .ml_meth = @ptrCast(&Write.transport_get_write_buffer_limits),
-        .ml_doc = "Get the high and low watermarks for write flow control.\x00",
-        .ml_flags = python_c.METH_NOARGS
-    },
-    python_c.PyMethodDef{
-        .ml_name = "write\x00",
-        .ml_meth = @ptrCast(&Write.transport_write),
-        .ml_doc = "Write some data bytes to the transport.\x00",
-        .ml_flags = python_c.METH_O
-    },
-    python_c.PyMethodDef{
-        .ml_name = "writelines\x00",
-        .ml_meth = @ptrCast(&Write.transport_write_lines),
-        .ml_doc = "Write a list (or any iterable) of data bytes to the transport.\x00",
-        .ml_flags = python_c.METH_O
-    },
-    python_c.PyMethodDef{
-        .ml_name = "write_eof\x00",
-        .ml_meth = @ptrCast(&Write.transport_write_eof),
-        .ml_doc = "Close the write end of the transport after flushing all buffered data.\x00",
-        .ml_flags = python_c.METH_NOARGS
-    },
+    python_c.PyMethodDef{ .ml_name = "abort\x00", .ml_meth = @ptrCast(&Lifecyle.transport_abort), .ml_doc = "Close the transport immediately.\x00", .ml_flags = python_c.METH_NOARGS },
+    python_c.PyMethodDef{ .ml_name = "can_write_eof\x00", .ml_meth = @ptrCast(&Write.transport_can_write_eof), .ml_doc = "Return True if the transport supports write_eof(), False if not.\x00", .ml_flags = python_c.METH_NOARGS },
+    python_c.PyMethodDef{ .ml_name = "get_write_buffer_size\x00", .ml_meth = @ptrCast(&Write.transport_get_write_buffer_size), .ml_doc = "Return the current size of the output buffer used by the transport.\x00", .ml_flags = python_c.METH_NOARGS },
+    python_c.PyMethodDef{ .ml_name = "set_write_buffer_limits\x00", .ml_meth = @ptrCast(&Write.transport_set_write_buffer_limits), .ml_doc = "Set the high and low watermarks for write flow control.\x00", .ml_flags = python_c.METH_FASTCALL | python_c.METH_KEYWORDS },
+    python_c.PyMethodDef{ .ml_name = "get_write_buffer_limits\x00", .ml_meth = @ptrCast(&Write.transport_get_write_buffer_limits), .ml_doc = "Get the high and low watermarks for write flow control.\x00", .ml_flags = python_c.METH_NOARGS },
+    python_c.PyMethodDef{ .ml_name = "write\x00", .ml_meth = @ptrCast(&Write.transport_write), .ml_doc = "Write some data bytes to the transport.\x00", .ml_flags = python_c.METH_O },
+    python_c.PyMethodDef{ .ml_name = "writelines\x00", .ml_meth = @ptrCast(&Write.transport_write_lines), .ml_doc = "Write a list (or any iterable) of data bytes to the transport.\x00", .ml_flags = python_c.METH_O },
+    python_c.PyMethodDef{ .ml_name = "write_eof\x00", .ml_meth = @ptrCast(&Write.transport_write_eof), .ml_doc = "Close the write end of the transport after flushing all buffered data.\x00", .ml_flags = python_c.METH_NOARGS },
 
     // -------------------------- extra_info --------------------------
-    python_c.PyMethodDef{
-        .ml_name = "get_extra_info\x00",
-        .ml_meth = @ptrCast(&ExtraInfo.transport_get_extra_info),
-        .ml_doc = "Return information about the transport or underlying resources it uses.\x00",
-        .ml_flags = python_c.METH_FASTCALL | python_c.METH_KEYWORDS
-    },
+    python_c.PyMethodDef{ .ml_name = "get_extra_info\x00", .ml_meth = @ptrCast(&ExtraInfo.transport_get_extra_info), .ml_doc = "Return information about the transport or underlying resources it uses.\x00", .ml_flags = python_c.METH_FASTCALL | python_c.METH_KEYWORDS },
 
     // -------------------------- protocol swap (for start_tls) --------------------------
-    python_c.PyMethodDef{
-        .ml_name = "set_protocol\x00",
-        .ml_meth = @ptrCast(&Constructors.stream_set_protocol),
-        .ml_doc = "Set a new protocol for this transport.\x00",
-        .ml_flags = python_c.METH_O
-    },
+    python_c.PyMethodDef{ .ml_name = "set_protocol\x00", .ml_meth = @ptrCast(&Constructors.stream_set_protocol), .ml_doc = "Set a new protocol for this transport.\x00", .ml_flags = python_c.METH_O },
 
-    python_c.PyMethodDef{
-        .ml_name = null, .ml_meth = null, .ml_doc = null, .ml_flags = 0
-    }
+    python_c.PyMethodDef{ .ml_name = null, .ml_meth = null, .ml_doc = null, .ml_flags = 0 },
 };
 
-pub const ProtocolType = enum(c_int) {
-    Legacy, Buffered
-};
+pub const ProtocolType = enum(c_int) { Legacy, Buffered };
 
 pub const StreamTransportObject = extern struct {
     ob_base: python_c.PyObject,
@@ -155,6 +71,12 @@ pub const StreamTransportObject = extern struct {
     protocol_connection_lost: ?PyObject,
     protocol_pause_writing: ?PyObject,
     protocol_resume_writing: ?PyObject,
+
+    // BUG-376: the listening StreamServer that accepted this transport
+    // (owned reference). Server._detach() is invoked on its behalf once
+    // at connection_lost so Python-level Server.wait_closed() tracks
+    // live client connections.
+    server_ref: ?PyObject = null,
 
     writing_high_water_mark: usize,
     writing_low_water_mark: usize,
@@ -201,9 +123,7 @@ var stream_spec = python_c.PyType_Spec{
 pub var StreamType: *python_c.PyTypeObject = undefined;
 
 pub fn create_type() !void {
-    const type_stream_transport = python_c.PyType_FromSpecWithBases(
-        @constCast(&stream_spec), utils.PythonImports.get("asyncio_transport")
-    ) orelse return error.PythonError;
+    const type_stream_transport = python_c.PyType_FromSpecWithBases(@constCast(&stream_spec), utils.PythonImports.get("asyncio_transport")) orelse return error.PythonError;
     StreamType = @ptrCast(type_stream_transport);
 
     _ = python_c.PyObject_SetAttrString(@ptrCast(StreamType), "_start_tls_compatible\x00", @constCast(&python_c._Py_TrueStruct));

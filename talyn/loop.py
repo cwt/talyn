@@ -1526,10 +1526,8 @@ class Loop(_Loop):
             path,
             backlog=backlog,
         )
-        server = Server(self, [srv])
-        if hasattr(srv, "server_ref"):
-            srv.server_ref = server
-        return server
+        # Server.__init__ installs the weakref server wrapper (BUG-376).
+        return Server(self, [srv])
 
     async def _create_ssl_unix_server(
         self,
@@ -1629,10 +1627,8 @@ class Loop(_Loop):
             path,
             backlog=backlog,
         )
-        server = Server(self, [srv])
-        if hasattr(srv, "server_ref"):
-            srv.server_ref = server
-        return server
+        # Server.__init__ installs the weakref server wrapper (BUG-376).
+        return Server(self, [srv])
 
     async def subprocess_exec(
         self,
