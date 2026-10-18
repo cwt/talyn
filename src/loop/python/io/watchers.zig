@@ -39,6 +39,8 @@ fn loop_watcher_python_wrapper_traverse(ptr: ?*anyopaque, visit_ptr: ?*anyopaque
 }
 
 fn loop_watcher_python_wrapper_cleanup(ptr: ?*anyopaque) void {
+    const watcher: *Loop.FDWatcher = @ptrCast(@alignCast(ptr.?));
+    python_c.py_decref(@ptrCast(watcher.handle));
     loop_watchers_cleanup_callback(ptr);
 }
 
@@ -48,16 +50,60 @@ fn loop_watcher_python_wrapper_callback(data: *const CallbackManager.CallbackDat
     const fd = watcher.fd;
 
     if (data.cancelled() or fd < 0) {
+        python_c.py_decref(@ptrCast(watcher.handle));
         loop_watchers_cleanup_callback(watcher);
         return;
     }
+
+    watcher.blocking_task_id = 0;
 
     var temp_data = data.*;
     temp_data.user_data = watcher.handle;
     temp_data.set_python(&watcher.handle.python_payload);
 
     Handle.callback_for_python_generic_callbacks(&temp_data) catch |err| {
-        utils.handle_zig_function_error(err, {});
+        // BUG-346: decref the reference added for this Soon callback,
+        // since callback_for_python_generic_callbacks only decrefs on success.
+        python_c.py_decref(@ptrCast(watcher.handle));
+
+        // Extract and route Python exception to loop.call_exception_handler
+        const loop_obj = utils.get_parent_ptr(Loop.Python.LoopObject, loop_data);
+        var py_exc: ?PyObject = null;
+        if (python_c.PyErr_Occurred() != null) {
+            py_exc = python_c.PyErr_GetRaisedException();
+        }
+        defer {
+            if (py_exc) |exc| python_c.py_decref(exc);
+        }
+
+        if (py_exc) |exc| {
+            if (python_c.PyErr_GivenExceptionMatches(exc, python_c.PyExc_KeyboardInterrupt.?) != 0 or
+                python_c.PyErr_GivenExceptionMatches(exc, python_c.PyExc_SystemExit.?) != 0)
+            {
+                python_c.PyErr_SetRaisedException(exc);
+                return error.PythonError;
+            }
+
+            if (python_c.PyDict_New()) |ctx| {
+                defer python_c.py_decref(ctx);
+                if (python_c.PyUnicode_FromString("Exception in callback\x00")) |msg| {
+                    defer python_c.py_decref(msg);
+                    _ = python_c.PyDict_SetItemString(ctx, "message\x00", msg);
+                }
+                _ = python_c.PyDict_SetItemString(ctx, "exception\x00", exc);
+                _ = python_c.PyDict_SetItemString(ctx, "handle\x00", @ptrCast(watcher.handle));
+
+                if (python_c.PyObject_CallMethod(@ptrCast(loop_obj), "call_exception_handler\x00", "O\x00", ctx)) |ret| {
+                    python_c.py_decref(ret);
+                } else {
+                    python_c.PyErr_Clear();
+                }
+            } else {
+                python_c.PyErr_Clear();
+            }
+        } else {
+            utils.handle_zig_function_error(err, {});
+        }
     };
 
     const mutex = &loop_data.mutex;
@@ -118,6 +164,8 @@ fn loop_watchers_callback(data: *const CallbackManager.CallbackData) !void {
         };
 
         watcher.blocking_task_id = 0; // Clear blocking task ID since it is no longer in-flight in io_uring
+        python_c.py_incref(@ptrCast(handle));
+        errdefer python_c.py_decref(@ptrCast(handle));
         Loop.Scheduling.Soon.dispatch(loop_data, &callback) catch |err| {
             // BUG-315: a failed dispatch used to strand the watcher in the
             // reader/writer B-tree - its io op had already completed, so
@@ -128,7 +176,6 @@ fn loop_watchers_callback(data: *const CallbackManager.CallbackData) !void {
             @call(.always_inline, loop_watchers_cleanup_callback, .{watcher});
             return;
         };
-        python_c.py_incref(@ptrCast(handle));
     } else {
         @call(.always_inline, loop_watchers_cleanup_callback, .{watcher});
         return;

@@ -354,3 +354,87 @@ def test_remove_reader_while_callback_pending() -> None:
         loop.close()
         os.close(w)
         os.close(r)
+
+
+def test_bug346_reader_callback_exception_handled_and_rearmed() -> None:
+    """Ensure exceptions in reader callbacks are passed to exception_handler and watcher rearms (BUG-346)."""
+    loop = Loop()
+    r, w = os.pipe2(os.O_NONBLOCK)
+    try:
+        handled_exceptions = []
+        call_count = 0
+
+        def custom_handler(target_loop: Loop, context: dict) -> None:
+            handled_exceptions.append(context)
+
+        loop.set_exception_handler(custom_handler)
+
+        def reader_callback() -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # Do not read data so FD stays readable, raise exception
+                raise ValueError("reader_boom")
+            else:
+                os.read(r, 100)
+                loop.stop()
+
+        loop.add_reader(r, reader_callback)
+        os.write(w, b"hello")
+
+        loop.call_later(2.0, loop.stop)  # Timeout guard
+        loop.run_forever()
+
+        assert len(handled_exceptions) == 1, f"Expected 1 handled exception, got {len(handled_exceptions)}"
+        assert isinstance(handled_exceptions[0].get("exception"), ValueError)
+        assert handled_exceptions[0].get("message") == "Exception in callback"
+        assert call_count >= 2, f"Expected watcher to rearm and fire again, got {call_count} calls"
+
+        assert loop.remove_reader(r) is True
+    finally:
+        loop.close()
+        os.close(w)
+        os.close(r)
+
+
+def test_bug346_reader_callback_exception_no_handle_leak() -> None:
+    """Ensure handle reference is not leaked when reader raises or is removed (BUG-346)."""
+    import gc
+
+    gc.collect()
+    initial_handles = set(id(obj) for obj in gc.get_objects() if type(obj).__name__ == "Handle")
+
+    loop = Loop()
+    r, w = os.pipe2(os.O_NONBLOCK)
+    try:
+        def quiet_handler(target_loop: Loop, context: dict) -> None:
+            pass
+
+        loop.set_exception_handler(quiet_handler)
+
+        def failing_callback() -> None:
+            os.read(r, 1)
+            raise RuntimeError("callback failure")
+
+        loop.add_reader(r, failing_callback)
+
+        for _ in range(5):
+            os.write(w, b"x")
+            loop.call_soon(loop.stop)
+            loop.run_forever()
+
+        loop.remove_reader(r)
+        loop.call_soon(loop.stop)
+        loop.run_forever()
+        gc.collect()
+
+        leaked_handles = [
+            obj for obj in gc.get_objects()
+            if type(obj).__name__ == "Handle" and id(obj) not in initial_handles
+        ]
+        assert len(leaked_handles) == 0, f"Leaked {len(leaked_handles)} Handle objects"
+    finally:
+        loop.close()
+        os.close(w)
+        os.close(r)
+
