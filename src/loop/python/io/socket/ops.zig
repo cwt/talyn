@@ -217,7 +217,10 @@ fn sock_connect_callback(data: *const CallbackManager.CallbackData) !void {
     }
 
     const future_data = utils.get_data_ptr(Future, scd.future);
-    try Future.Python.Result.future_fast_set_result(future_data, python_c.get_py_none());
+    // BUG-353: future_fast_set_result takes its own reference; pass the
+    // borrowed None — get_py_none() increfed it and leaked one Py_None
+    // per sock_connect call.
+    try Future.Python.Result.future_fast_set_result(future_data, python_c.get_py_none_without_incref());
     success = true;
 }
 
@@ -474,7 +477,8 @@ fn sock_sendall_callback(data: *const CallbackManager.CallbackData) !void {
 
     // Success
     const future_data = utils.get_data_ptr(Future, sd.future);
-    try Future.Python.Result.future_fast_set_result(future_data, python_c.get_py_none());
+    // BUG-353: pass the borrowed None (see sock_connect_callback).
+    try Future.Python.Result.future_fast_set_result(future_data, python_c.get_py_none_without_incref());
     success = true;
 }
 
@@ -742,6 +746,8 @@ fn sock_sendto_callback(data: *const CallbackManager.CallbackData) !void {
     // exception instead.
     const py_res = python_c.PyLong_FromLong(@intCast(io_uring_res)) orelse
         return set_future_exception(error.PythonError, sd.future);
+    // BUG-353: future_fast_set_result takes its own reference — drop ours.
+    defer python_c.py_decref(py_res);
     try Future.Python.Result.future_fast_set_result(future_data, py_res);
     success = true;
 }
@@ -952,6 +958,8 @@ fn sock_recv_into_callback_with_buf(data: *const CallbackManager.CallbackData) !
     // exception instead.
     const py_nread = python_c.PyLong_FromLong(@intCast(nread)) orelse
         return set_future_exception(error.PythonError, rd.future);
+    // BUG-353: future_fast_set_result takes its own reference — drop ours.
+    defer python_c.py_decref(py_nread);
     try Future.Python.Result.future_fast_set_result(future_data, py_nread);
     success = true;
 }

@@ -318,3 +318,96 @@ def test_getnameinfo_accepts_keyword_arguments():
             raise AssertionError("negative dns_timeout was not rejected")
 
     talyn.run(main())
+
+
+def test_bug353_no_result_reference_leaks():
+    """BUG-353: sock_sendto/sock_recv_into leaked each PyLong result object
+    (PyLong_FromLong never decref'd) and sock_connect/sock_sendall leaked
+    one Py_None per call (get_py_none() + future_fast_set_result's own
+    incref)."""
+    import gc
+    import sys
+
+    import faulthandler
+    faulthandler.dump_traceback_later(40, exit=True)
+
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server_sock.bind(("127.0.0.1", 0))
+        server_sock.listen(8)
+        server_sock.setblocking(False)
+        addr = server_sock.getsockname()
+
+        udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        udp.bind(("127.0.0.1", 0))
+        udp_addr = udp.getsockname()
+        udp.setblocking(False)
+
+        async def echo_server():
+            for _ in range(101):  # 1 warmup + 100 measured iterations
+                client, _ = await loop.sock_accept(server_sock)
+                try:
+                    data = await loop.sock_recv(client, 1024)
+                    if data:
+                        await loop.sock_sendall(client, data)
+                finally:
+                    client.close()
+
+        server_task = loop.create_task(echo_server())
+
+        payload = b"x" * 300  # 300 > small-int cache: fresh PyLong per op
+        buf = bytearray(1024)
+
+        # Warmup: one full iteration so lazy machinery reaches steady
+        # state, then measure.
+        async def one_iteration() -> None:
+            c = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            c.setblocking(False)
+            await loop.sock_connect(c, addr)          # Py_None result
+            await loop.sock_sendall(c, payload)       # Py_None result
+            n = await loop.sock_recv(c, 1024)
+            assert n == payload
+            c.close()
+            await loop.sock_sendto(udp, payload, udp_addr)   # PyLong(300) result
+            got = await loop.sock_recv_into(udp, buf)        # PyLong result
+            assert got == 300
+
+        await one_iteration()
+        await asyncio.sleep(0.05)
+        gc.collect()
+
+        none_before = sys.getrefcount(None)
+        blocks_before = sys.getallocatedblocks()
+
+        for _ in range(100):
+            await one_iteration()
+
+        await server_task
+        server_sock.close()
+        udp.close()
+        # Free-threaded GC sweeps deallocations over multiple rounds —
+        # flush them all before measuring.
+        for _ in range(5):
+            await asyncio.sleep(0.02)
+            gc.collect()
+
+        none_after = sys.getrefcount(None)
+        blocks_after = sys.getallocatedblocks()
+
+        # Py_None is immortal on 3.12+ (increfs are no-ops), so the None
+        # leak is invisible to refcounts there — kept as a canary only.
+        assert none_after == none_before, (
+            f"Py_None leaked: {none_before} -> {none_after}"
+        )
+        # Pre-fix, every iteration leaked the PyLong result objects of
+        # sock_sendto and sock_recv_into (~2 blocks/iter; calibrated at
+        # +196 blocks for 100 iterations vs ~0 with the fix). Threshold at
+        # 3/4 of the leak rate for deferred-dealloc noise headroom.
+        assert blocks_after - blocks_before < 150, (
+            f"result PyLong objects leaked: {blocks_before} -> {blocks_after} blocks"
+        )
+
+    talyn.run(main())
