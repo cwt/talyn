@@ -56,7 +56,6 @@ fn loop_watcher_python_wrapper_callback(data: *const CallbackManager.CallbackDat
     temp_data.user_data = watcher.handle;
     temp_data.set_python(&watcher.handle.python_payload);
 
-    watcher.handle.cancelled = false;
     Handle.callback_for_python_generic_callbacks(&temp_data) catch |err| {
         utils.handle_zig_function_error(err, {});
     };

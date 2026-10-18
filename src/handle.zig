@@ -5,6 +5,10 @@ const CallbackManager = @import("callback_manager");
 const Loop = @import("loop/main.zig");
 const utils = @import("utils");
 
+pub const STATE_PENDING: u8 = 0;
+pub const STATE_EXECUTED: u8 = 1;
+pub const STATE_CANCELLED: u8 = 2;
+
 pub const PythonHandleObject = extern struct {
     ob_base: python_c.PyObject,
 
@@ -16,8 +20,7 @@ pub const PythonHandleObject = extern struct {
     py_callback_len: usize,
 
     blocking_task_id: usize,
-    cancelled: bool,
-    finished: bool,
+    state: u8,
     thread_safe: bool,
     python_payload: CallbackManager.PythonPayload = .{},
 };
@@ -34,46 +37,34 @@ pub fn release_python_generic_callback(ptr: ?*anyopaque) void {
 pub fn callback_for_python_generic_callbacks(data: *const CallbackManager.CallbackData) !void {
     const handle: *PythonHandleObject = @ptrCast(@alignCast(data.user_data.?));
     const thread_safe = handle.thread_safe;
-    if (thread_safe) {
-        @atomicStore(bool, &handle.finished, true, .release);
-    } else {
-        handle.finished = true;
-    }
 
-    // BUG-336: this timer fired — its BlockingTask slot is freed and may
-    // be synchronously reused by Python below (the callback can schedule
-    // new call_later timers). Drop the stale ID before any Python runs so
-    // a later cancel() cannot CancelTimer the new occupant. Mirrors the
-    // finished-store above for thread_safe visibility.
     if (thread_safe) {
+        if (data.cancelled()) {
+            _ = @cmpxchgStrong(u8, &handle.state, STATE_PENDING, STATE_CANCELLED, .acq_rel, .acquire);
+            python_c.py_decref(@ptrCast(handle));
+            return;
+        }
+
+        // BUG-31 & BUG-345: Atomically claim the right to execute.
+        // If state was STATE_PENDING, transition to STATE_EXECUTED.
+        // If fast_handle_cancel won earlier, state is STATE_CANCELLED and CAS fails.
+        const cmpxchg = @cmpxchgStrong(u8, &handle.state, STATE_PENDING, STATE_EXECUTED, .acq_rel, .acquire);
+        if (cmpxchg != null) {
+            python_c.py_decref(@ptrCast(handle));
+            return;
+        }
+
+        // BUG-336: this timer fired — drop the stale ID before any Python runs so
+        // a later cancel() cannot CancelTimer the new occupant.
         @atomicStore(usize, &handle.blocking_task_id, 0, .release);
     } else {
-        handle.blocking_task_id = 0;
-    }
-
-    var cancelled: bool = data.cancelled();
-    if (!cancelled) {
-        // BUG-31: Use a CAS to atomically claim the right to proceed
-        // (or skip). Pairs with the CAS in `fast_handle_cancel`. The
-        // first to win the CAS gets to act; the second sees
-        // `cancelled=true` and skips. This closes the TOCTOU race
-        // between the cancel setting `cancelled=true` and the callback
-        // reading it.
-        if (thread_safe) {
-            const cmpxchg = @cmpxchgStrong(bool, &handle.cancelled, false, true, .acq_rel, .acquire);
-            cancelled = cmpxchg != null;
-        } else {
-            if (handle.cancelled) {
-                cancelled = true;
-            } else {
-                handle.cancelled = true;
-            }
+        if (data.cancelled() or handle.state == STATE_CANCELLED) {
+            python_c.py_decref(@ptrCast(handle));
+            return;
         }
-    }
 
-    if (cancelled) {
-        python_c.py_decref(@ptrCast(handle));
-        return;
+        handle.state = STATE_EXECUTED;
+        handle.blocking_task_id = 0;
     }
 
     const py_context = handle.contextvars.?;
@@ -131,8 +122,7 @@ pub inline fn fast_new_handle(contextvars: PyObject, loop_data: *Loop, py_callba
     }
 
     instance.blocking_task_id = 0;
-    instance.cancelled = false;
-    instance.finished = false;
+    instance.state = STATE_PENDING;
     instance.thread_safe = thread_safe;
     instance.python_payload = .{
         .module_ptr = @ptrCast(utils.get_parent_ptr(Loop.Python.LoopObject, loop_data)),
@@ -213,7 +203,7 @@ inline fn z_handle_init(self: *PythonHandleObject, args: ?PyObject, kwargs: ?PyO
     }
 
     self.contextvars = python_c.py_newref(py_context.?);
-    self.cancelled = false;
+    self.state = STATE_PENDING;
     self.thread_safe = false;
 
     return 0;
@@ -229,41 +219,20 @@ fn handle_get_context(self: ?*PythonHandleObject, _: ?PyObject) callconv(.c) ?Py
 
 pub inline fn fast_handle_cancel(self: *PythonHandleObject) !void {
     const thread_safe = self.thread_safe;
-    const finished = switch (thread_safe) {
-        false => self.finished,
-        true => @atomicLoad(bool, &self.finished, .acquire),
-    };
-    if (finished) {
-        return;
-    }
-
-    // BUG-31: The previous check-then-act pattern had a TOCTOU race: we
-    // read `cancelled` here, and if it was false, we'd queue the cancel
-    // and set `cancelled=true` later. But between the read and the
-    // store, the callback could start executing on the loop's main
-    // thread, read `cancelled=false`, and proceed with the work — the
-    // cancel then set `cancelled=true` too late.
-    //
-    // The fix: claim the cancellation atomically with a CAS. The
-    // callback also uses a CAS to claim the right to proceed (see
-    // `callback_for_python_generic_callbacks`). The first to win the
-    // CAS gets to act; the second sees `cancelled=true` and skips.
-    // This ensures mutual exclusion without holding the io_uring lock
-    // for the duration of the callback, which would be expensive.
     if (thread_safe) {
-        const cmpxchg = @cmpxchgStrong(bool, &self.cancelled, false, true, .acq_rel, .acquire);
+        // BUG-31 & BUG-345: Atomically claim cancellation.
+        // If state was STATE_PENDING, transition to STATE_CANCELLED.
+        // If it was already STATE_EXECUTED or STATE_CANCELLED, cmpxchg fails and cancel has no effect.
+        const cmpxchg = @cmpxchgStrong(u8, &self.state, STATE_PENDING, STATE_CANCELLED, .acq_rel, .acquire);
         if (cmpxchg != null) {
-            // Already cancelled or already finished — nothing to do.
             return;
         }
     } else {
-        if (self.cancelled) return;
-        self.cancelled = true;
+        if (self.state != STATE_PENDING) return;
+        self.state = STATE_CANCELLED;
     }
 
-    // BUG-336: acquire the ID with the same visibility as `finished`
-    // above — the firing callback releases it, and a stale plain read
-    // could observe a recycled slot's ID on thread_safe handles.
+    // BUG-336: acquire the ID with the same visibility
     const blocking_task_id = switch (thread_safe) {
         false => self.blocking_task_id,
         true => @atomicLoad(usize, &self.blocking_task_id, .acquire),
@@ -289,12 +258,12 @@ fn handle_cancel(self: ?*PythonHandleObject, _: ?PyObject) callconv(.c) ?PyObjec
 
 fn handle_cancelled(self: ?*PythonHandleObject, _: ?PyObject) callconv(.c) ?PyObject {
     const instance = self.?;
-    const cancelled = switch (instance.thread_safe) {
-        false => instance.cancelled,
-        true => @atomicLoad(bool, &instance.cancelled, .acquire),
+    const state = switch (instance.thread_safe) {
+        false => instance.state,
+        true => @atomicLoad(u8, &instance.state, .acquire),
     };
 
-    return python_c.PyBool_FromLong(@intCast(@intFromBool(cancelled)));
+    return python_c.PyBool_FromLong(@intCast(@intFromBool(state == STATE_CANCELLED)));
 }
 
 const PythonhandleMethods: []const python_c.PyMethodDef = &[_]python_c.PyMethodDef{ python_c.PyMethodDef{ .ml_name = "cancel\x00", .ml_meth = @ptrCast(&handle_cancel), .ml_doc = "Cancel the callback. If the callback has already been canceled or executed, this method has no effect.\x00", .ml_flags = python_c.METH_NOARGS }, python_c.PyMethodDef{ .ml_name = "cancelled\x00", .ml_meth = @ptrCast(&handle_cancelled), .ml_doc = "Return True if the callback was cancelled.\x00", .ml_flags = python_c.METH_NOARGS }, python_c.PyMethodDef{ .ml_name = "get_context\x00", .ml_meth = @ptrCast(&handle_get_context), .ml_doc = "Return the contextvars.Context object associated with the handle.\x00", .ml_flags = python_c.METH_NOARGS }, python_c.PyMethodDef{ .ml_name = null, .ml_meth = null, .ml_doc = null, .ml_flags = 0 } };

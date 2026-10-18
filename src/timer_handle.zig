@@ -31,8 +31,7 @@ pub inline fn fast_new_timer_handle(
     }
 
     instance.handle.blocking_task_id = 0;
-    instance.handle.cancelled = false;
-    instance.handle.finished = false;
+    instance.handle.state = Handle.STATE_PENDING;
     instance.handle.thread_safe = false;
     instance.handle.python_payload = .{
         .module_ptr = @ptrCast(utils.get_parent_ptr(Loop.Python.LoopObject, loop_data)),

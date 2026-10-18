@@ -284,3 +284,34 @@ def test_bug306_kill_immediately_after_add_is_never_lost() -> None:
             )
         finally:
             loop.close()
+
+
+def test_bug345_signal_handler_fires_multiple_times() -> None:
+    """Ensure signal handler callback executes on multiple signal deliveries (BUG-345)."""
+    loop = Loop()
+    try:
+        count = 0
+
+        def handler() -> None:
+            nonlocal count
+            count += 1
+            if count >= 3:
+                loop.stop()
+
+        loop.add_signal_handler(signal.SIGUSR1, handler)
+
+        def send_signal(iteration: int) -> None:
+            os.kill(os.getpid(), signal.SIGUSR1)
+            if iteration < 3:
+                loop.call_later(0.02, send_signal, iteration + 1)
+
+        loop.call_soon(send_signal, 1)
+        # Timeout guardrail
+        loop.call_later(5.0, loop.stop)
+        loop.run_forever()
+
+        assert count == 3, f"Expected signal handler to fire 3 times, fired {count} times"
+        assert loop.remove_signal_handler(signal.SIGUSR1)
+    finally:
+        loop.close()
+

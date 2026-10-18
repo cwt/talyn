@@ -494,3 +494,96 @@ def test_call_later_cancel_no_leak_or_degradation() -> None:
         loop.close()
 
 
+def test_bug345_handle_cancelled_status_after_execution() -> None:
+    """Ensure handle.cancelled() returns False after normal callback execution."""
+    loop = Loop()
+    try:
+        executed = []
+
+        def callback() -> None:
+            executed.append(1)
+
+        h = loop.call_soon(callback)
+        assert not h.cancelled(), "Handle should not be cancelled before execution"
+
+        loop.call_soon(loop.stop)
+        loop.run_forever()
+
+        assert len(executed) == 1, "Callback should have executed"
+        assert not h.cancelled(), "Handle.cancelled() must return False after normal execution"
+
+        # Subsequent cancel() has no effect
+        h.cancel()
+        assert not h.cancelled(), "Handle.cancelled() must still return False after late cancel"
+    finally:
+        loop.close()
+
+
+def test_bug345_timer_handle_cancelled_status_after_execution() -> None:
+    """Ensure timer handle.cancelled() returns False after normal execution."""
+    loop = Loop()
+    try:
+        executed = []
+
+        def callback() -> None:
+            executed.append(1)
+            loop.stop()
+
+        th = loop.call_later(0.01, callback)
+        assert not th.cancelled(), "TimerHandle should not be cancelled before execution"
+
+        loop.run_forever()
+
+        assert len(executed) == 1, "Timer callback should have executed"
+        assert not th.cancelled(), "TimerHandle.cancelled() must return False after normal execution"
+
+        th.cancel()
+        assert not th.cancelled(), "TimerHandle.cancelled() must still return False after late cancel"
+    finally:
+        loop.close()
+
+
+def test_bug345_handle_cancel_before_execution() -> None:
+    """Ensure handle.cancelled() returns True when cancelled before execution."""
+    loop = Loop()
+    try:
+        executed = []
+
+        def callback() -> None:
+            executed.append(1)
+
+        h = loop.call_soon(callback)
+        h.cancel()
+        assert h.cancelled(), "Handle.cancelled() must return True after cancel()"
+
+        loop.call_soon(loop.stop)
+        loop.run_forever()
+
+        assert len(executed) == 0, "Cancelled callback should not execute"
+        assert h.cancelled(), "Handle.cancelled() must stay True after loop runs"
+    finally:
+        loop.close()
+
+
+def test_bug345_call_soon_threadsafe_cancelled_status() -> None:
+    """Ensure threadsafe handle.cancelled() behaves correctly."""
+    loop = Loop()
+    try:
+        executed = []
+
+        def callback() -> None:
+            executed.append(1)
+
+        h = loop.call_soon_threadsafe(callback)
+        assert not h.cancelled()
+
+        loop.call_soon(loop.stop)
+        loop.run_forever()
+
+        assert len(executed) == 1
+        assert not h.cancelled()
+    finally:
+        loop.close()
+
+
+
