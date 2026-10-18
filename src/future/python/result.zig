@@ -82,6 +82,19 @@ pub fn future_exception(self: ?*PythonFutureObject, _: ?PyObject) callconv(.c) ?
 }
 
 pub inline fn future_fast_set_exception(self: *PythonFutureObject, obj: *Future, exception: PyObject) !void {
+    // BUG-372: reject non-pending futures (CPython raises
+    // InvalidStateError for the same condition) — a re-set overwrote
+    // the previous payload reference and dispatched the done callbacks
+    // machinery twice. The payload slot is also released when a
+    // future is somehow re-targeted while still pending.
+    if (obj.status != .pending) {
+        python_c.PyErr_SetString(
+            utils.PythonImports.get("invalid_state_exc"),
+            "Exception already setted\x00",
+        );
+        return error.PythonError;
+    }
+    python_c.py_xdecref(self.exception);
     self.exception = python_c.py_newref(exception);
     try Future.Callback.call_done_callbacks(obj, .finished);
 }

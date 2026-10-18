@@ -582,6 +582,19 @@ pub fn execute_task_throw(data: *const CallbackManager.CallbackData) !void {
     @call(.always_inline, _execute_task_throw, .{ task, python_c.py_newref(task.exception.?) }) catch |err| {
         utils.handle_zig_function_error(err, {});
 
+        // BUG-372: failed_execution re-installs SystemExit /
+        // KeyboardInterrupt on the thread state and returns
+        // error.PythonError so the runner aborts the tick. Fetching the
+        // exception here CLEARED the fatal and returned success — the
+        // loop never stopped. Propagate instead.
+        if (python_c.PyErr_Occurred()) |t| {
+            if (python_c.PyErr_GivenExceptionMatches(t, python_c.PyExc_KeyboardInterrupt) > 0 or
+                python_c.PyErr_GivenExceptionMatches(t, python_c.PyExc_SystemExit) > 0)
+            {
+                return error.PythonError;
+            }
+        }
+
         // BUG-273: on the error exits below the executor's cleanup_task
         // already releases the dispatch-owned reference - a local decref
         // here double-freed the task. Only the set_exception-success
@@ -661,6 +674,15 @@ pub fn execute_task_send(data: *const CallbackManager.CallbackData) !void {
     @call(.always_inline, _execute_task_send, .{task}) catch |err| {
         utils.handle_zig_function_error(err, {});
 
+        // BUG-372: fatal-propagation gate (see execute_task_throw).
+        if (python_c.PyErr_Occurred()) |t| {
+            if (python_c.PyErr_GivenExceptionMatches(t, python_c.PyExc_KeyboardInterrupt) > 0 or
+                python_c.PyErr_GivenExceptionMatches(t, python_c.PyExc_SystemExit) > 0)
+            {
+                return error.PythonError;
+            }
+        }
+
         // BUG-273: mirror of execute_task_throw - error exits must rely on
         // the executor's cleanup_task for the dispatch-owned reference;
         // only the success fall-through self-releases.
@@ -688,7 +710,20 @@ fn wakeup_task(fut: ?*Future.Python.FutureObject, ptr: ?*anyopaque) !void {
         _execute_task_throw(task, python_c.py_newref(exception)) catch |err| {
             utils.handle_zig_function_error(err, {});
 
+            // BUG-372: fatal-propagation gate (see execute_task_throw).
+            if (python_c.PyErr_Occurred()) |t| {
+                if (python_c.PyErr_GivenExceptionMatches(t, python_c.PyExc_KeyboardInterrupt) > 0 or
+                    python_c.PyErr_GivenExceptionMatches(t, python_c.PyExc_SystemExit) > 0)
+                {
+                    return error.PythonError;
+                }
+            }
+
             const exc = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
+            // BUG-372: both wakeup_task catch blocks lacked the releease
+            // of the fetch reference (the two executor hooks own one via
+            // defer).
+            defer python_c.py_decref(exc);
 
             const future_data = utils.get_data_ptr(Future, &task.fut);
             try Future.Python.Result.future_fast_set_exception(&task.fut, future_data, exc);
@@ -700,7 +735,20 @@ fn wakeup_task(fut: ?*Future.Python.FutureObject, ptr: ?*anyopaque) !void {
     _execute_task_send(task) catch |err| {
         utils.handle_zig_function_error(err, {});
 
+        // BUG-372: fatal-propagation gate (see execute_task_throw).
+        if (python_c.PyErr_Occurred()) |t| {
+            if (python_c.PyErr_GivenExceptionMatches(t, python_c.PyExc_KeyboardInterrupt) > 0 or
+                python_c.PyErr_GivenExceptionMatches(t, python_c.PyExc_SystemExit) > 0)
+            {
+                return error.PythonError;
+            }
+        }
+
         const exc = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
+        // BUG-372: both wakeup_task catch blocks lacked the release of
+        // the fetch reference (the two executor hooks own one via
+        // defer).
+        defer python_c.py_decref(exc);
 
         const future_data = utils.get_data_ptr(Future, &task.fut);
         try Future.Python.Result.future_fast_set_exception(&task.fut, future_data, exc);
