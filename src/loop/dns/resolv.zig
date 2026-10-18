@@ -23,7 +23,13 @@ pub const DnsTimeout = struct {
 
 pub fn timeout_from_secs(timeout_secs: f64) ?DnsTimeout {
     if (!std.math.isFinite(timeout_secs) or timeout_secs < 0.0) return null;
-    const max_secs: f64 = @floatFromInt(std.math.maxInt(u64) - 1_000_000);
+    // BUG-361: clamp to an i64-representable second count — values above
+    // maxInt(i64) parsed fine here but panicked later at the kernel
+    // timespec conversion (dns_timeout_to_kernel_timespec narrows sec to
+    // i64). 2^62 seconds (≈146 Myr) is already "effectively forever",
+    // and being exactly representable avoids the f64 ulp rounding that
+    // would push the value back out of the i64 range at 2^63.
+    const max_secs: f64 = @floatFromInt(std.math.maxInt(i64) / 2);
     const safe_secs = @min(timeout_secs, max_secs);
     const sec_f = @floor(safe_secs);
     const sec: u64 = @intFromFloat(sec_f);

@@ -251,3 +251,44 @@ def test_pseudosocket_setsockopt_out_of_range_raises():
             server_sock.close()
 
     talyn.run(main())
+
+
+def test_bug361_getsockopt_bounds():
+    """BUG-361: getsockopt narrowed level/optname with unchecked @intCast —
+    out-of-range values panicked (Debug/ReleaseSafe) or silently truncated
+    (ReleaseFast). Must raise ValueError instead, like setsockopt
+    already does since BUG-324."""
+    import pytest
+
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_sock.bind(("127.0.0.1", 0))
+        server_sock.listen(1)
+        addr = server_sock.getsockname()
+
+        def run_server():
+            client, _ = server_sock.accept()
+            client.close()
+
+        server_task = loop.run_in_executor(None, run_server)
+
+        reader, writer = await asyncio.open_connection(*addr)
+        sock = writer.transport.get_extra_info("socket")
+        assert sock is not None
+
+        with pytest.raises(ValueError):
+            sock.getsockopt(2**45, 1)
+        with pytest.raises(ValueError):
+            sock.getsockopt(socket.SOL_SOCKET, 2**45)
+
+        # The socket stays usable after the rejected calls.
+        assert sock.getsockopt(socket.SOL_SOCKET, socket.SO_TYPE) > 0
+
+        writer.close()
+        await writer.wait_closed()
+        await server_task
+        server_sock.close()
+
+    talyn.run(main())

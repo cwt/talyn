@@ -198,6 +198,12 @@ inline fn z_loop_create_unix_server(self: *LoopObject, args: []?PyObject, knames
     const backlog: c_int = if (py_backlog) |b| blk: {
         const b_val = python_c.PyLong_AsInt(b);
         if (b_val == -1 and python_c.PyErr_Occurred() != null) return error.PythonError;
+        // BUG-361: a negative backlog panicked the u32 narrowing at the
+        // listen() call below.
+        if (b_val < 0) {
+            python_c.raise_python_value_error("backlog must be non-negative\x00");
+            return error.PythonError;
+        }
         break :blk @intCast(b_val);
     } else 100;
 

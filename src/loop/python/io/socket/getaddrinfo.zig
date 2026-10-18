@@ -164,6 +164,11 @@ inline fn z_loop_getaddrinfo(self: *LoopObject, args: []const ?PyObject, knames:
             if (python_c.is_none(p)) break :blk 0;
             const v = python_c.PyLong_AsInt(p);
             if (v == -1 and python_c.PyErr_Occurred() != null) return error.PythonError;
+            // BUG-361: negative/huge ports panicked the u16 narrowing.
+            if (v < 0 or v > 65535) {
+                python_c.raise_python_value_error("port must be 0-65535\x00");
+                return error.PythonError;
+            }
             break :blk @intCast(v);
         }
         break :blk 0;
@@ -172,17 +177,20 @@ inline fn z_loop_getaddrinfo(self: *LoopObject, args: []const ?PyObject, knames:
     const family: i32 = if (py_family) |f| blk: {
         const v = python_c.PyLong_AsLong(f);
         if (python_c.PyErr_Occurred() != null) return error.PythonError;
-        break :blk @intCast(v);
+        // BUG-361: unchecked i64 to i32 narrowing panicked.
+        break :blk try utils.checkedNarrow(i32, v, "invalid family\x00");
     } else 0;
     const socket_type: i32 = if (py_type) |t| blk: {
         const v = python_c.PyLong_AsLong(t);
         if (python_c.PyErr_Occurred() != null) return error.PythonError;
-        break :blk @intCast(v);
+        // BUG-361: unchecked i64 to i32 narrowing panicked.
+        break :blk try utils.checkedNarrow(i32, v, "invalid socket_type\x00");
     } else 0;
     const proto: i32 = if (py_proto) |pr| blk: {
         const v = python_c.PyLong_AsLong(pr);
         if (python_c.PyErr_Occurred() != null) return error.PythonError;
-        break :blk @intCast(v);
+        // BUG-361: unchecked i64 to i32 narrowing panicked.
+        break :blk try utils.checkedNarrow(i32, v, "invalid proto\x00");
     } else 0;
 
     var dns_timeout: ?Resolv.DnsTimeout = null;

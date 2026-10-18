@@ -110,7 +110,8 @@ inline fn z_loop_getnameinfo(self: *LoopObject, args: []const ?PyObject, knames:
     const flags: i32 = if (merged[1]) |py_flags| blk: {
         const v = python_c.PyLong_AsLong(py_flags);
         if (python_c.PyErr_Occurred() != null) return error.PythonError;
-        break :blk @intCast(v);
+        // BUG-361: unchecked i64 to i32 narrowing panicked.
+        break :blk try utils.checkedNarrow(i32, v, "invalid flags\x00");
     } else 0;
 
     const addr = try utils.Address.fromPyAddr(py_addr, null);

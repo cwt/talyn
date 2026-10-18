@@ -178,6 +178,11 @@ fn get_addr_tuple(addr: PyObject) !struct { host: []const u8, port: u16 } {
     const host_ptr = python_c.PyUnicode_AsUTF8AndSize(py_host, &c_size) orelse return error.PythonError;
     const port_val = python_c.PyLong_AsInt(py_port);
     if (port_val == -1 and python_c.PyErr_Occurred() != null) return error.PythonError;
+    // BUG-361: negative/huge ports panicked the u16 narrowing.
+    if (port_val < 0 or port_val > 65535) {
+        python_c.raise_python_value_error("port must be 0-65535\x00");
+        return error.PythonError;
+    }
     return .{
         .host = host_ptr[0..@intCast(c_size)],
         .port = @intCast(port_val),
@@ -295,7 +300,9 @@ fn z_create_endpoint(dcd: *DatagramCreationData) !void {
     if (dcd.py_family) |f| {
         const f_val = python_c.PyLong_AsLong(f);
         if (python_c.PyErr_Occurred() != null) return error.PythonError;
-        family = @intCast(f_val);
+        // BUG-361: negative/out-of-range families panicked the u32
+        // narrowing.
+        family = try utils.checkedNarrow(u32, f_val, "invalid address family\x00");
     } else if (dcd.remote_addresses) |addrs| {
         family = addrs[0].any.family;
     } else if (dcd.local_addresses) |addrs| {

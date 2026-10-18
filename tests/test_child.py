@@ -345,3 +345,21 @@ def test_child_handler_external_reap_teardown():
             child.kill()
             child.wait()
         loop.close()
+
+
+def test_bug361_add_child_handler_pid_bounds():
+    """BUG-361: add_child_handler narrowed the pid with unchecked
+    @intCast — out-of-range pids panicked or truncated to a random pid.
+    Must raise ValueError instead."""
+    import pytest
+
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        def noop_callback(pid, rc):
+            raise AssertionError("callback must never be registered")
+
+        with pytest.raises(ValueError):
+            loop.add_child_handler(2**40, noop_callback)
+
+    talyn.run(main())

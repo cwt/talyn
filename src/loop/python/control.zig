@@ -222,14 +222,18 @@ fn z_loop_add_hook(self: *LoopObject, args: []const ?PyObject) !PyObject {
     if (args.len < 2) return error.PythonError;
     const hook_type_val = python_c.PyLong_AsLong(args[0].?);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
-    const hook_type_int: c_int = @intCast(hook_type_val);
+    // BUG-361: unchecked narrowing panicked on out-of-range hook types.
+    const hook_type_int: c_int = try utils.checkedNarrow(c_int, hook_type_val, "invalid hook type\x00");
     const py_callback = args[1].?;
 
     const hook_type: Loop.HookType = switch (hook_type_int) {
         0 => .prepare,
         1 => .check,
         2 => .idle,
-        else => return error.PythonError,
+        else => {
+            python_c.raise_python_value_error("invalid hook type\x00");
+            return error.PythonError;
+        },
     };
 
     if (python_c.PyType_Ready(&HookHandleType) < 0) return error.PythonError;
@@ -321,7 +325,8 @@ fn z_loop_add_path_watcher(self: *LoopObject, args: []const ?PyObject) !PyObject
 
     const mask_val = python_c.PyLong_AsUnsignedLong(py_mask);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
-    const mask: u32 = @intCast(mask_val);
+    // BUG-361: unchecked narrowing panicked on out-of-range masks.
+    const mask: u32 = try utils.checkedNarrow(u32, mask_val, "invalid watcher mask\x00");
 
     var path_buf: [4096]u8 = undefined;
     var path_len: python_c.Py_ssize_t = 0;
@@ -356,7 +361,8 @@ fn z_loop_add_child_handler(self: *LoopObject, args: []const ?PyObject, knames: 
     }
     const pid_val = python_c.PyLong_AsLong(merged[0].?);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
-    const pid: i32 = @intCast(pid_val);
+    // BUG-361: unchecked narrowing panicked on out-of-range pids.
+    const pid: i32 = try utils.checkedNarrow(i32, pid_val, "invalid pid\x00");
     const py_callback = merged[1].?;
 
     const loop_data = utils.get_data_ptr(Loop, self);
@@ -378,7 +384,8 @@ fn z_loop_remove_child_handler(self: *LoopObject, args: []const ?PyObject, kname
     }
     const pid_val = python_c.PyLong_AsLong(merged[0].?);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
-    const pid: i32 = @intCast(pid_val);
+    // BUG-361: unchecked narrowing panicked on out-of-range pids.
+    const pid: i32 = try utils.checkedNarrow(i32, pid_val, "invalid pid\x00");
 
     const loop_data = utils.get_data_ptr(Loop, self);
     const removed = loop_data.child_watcher.remove_child_handler(pid);

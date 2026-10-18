@@ -179,8 +179,17 @@ fn pseudosocket_getsockopt(self: ?*PseudoSocketObject, args: ?PyObject) callconv
         python_c.raise_python_value_error("getsockopt() invalid level/optname\x00");
         return null;
     }
-    const level: i32 = @intCast(raw_level);
-    const optname: u32 = @intCast(raw_optname);
+    // BUG-361: unchecked narrowing panicked (Debug/ReleaseSafe) or
+    // silently truncated (ReleaseFast) for out-of-range values; raise
+    // ValueError instead (mirrors the setsockopt fix above).
+    const level: i32 = std.math.cast(i32, raw_level) orelse {
+        python_c.raise_python_value_error("getsockopt() level out of range\x00");
+        return null;
+    };
+    const optname: u32 = std.math.cast(u32, raw_optname) orelse {
+        python_c.raise_python_value_error("getsockopt() optname out of range\x00");
+        return null;
+    };
     var buf: [256]u8 = undefined;
     var buflen: std.c.socklen_t = 256;
     if (argc >= 3) {

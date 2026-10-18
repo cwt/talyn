@@ -179,6 +179,12 @@ inline fn z_loop_create_connection(self: *LoopObject, args: []?PyObject, knames:
             };
             return error.PythonError;
         }
+        // BUG-361: PyLong_AsLongLong yields an i64 — narrowing to fd_t
+        // (i32) panicked on out-of-range values; reject instead.
+        if (fd > std.math.maxInt(std.posix.fd_t)) {
+            python_c.raise_python_value_error("Invalid fd\x00");
+            return error.PythonError;
+        }
 
         const transport_creation_data = try allocator.create(TransportCreationData);
         errdefer allocator.destroy(transport_creation_data);
@@ -800,6 +806,11 @@ fn z_create_socket_connection(data: *SocketConnectionData) !void {
         const value = python_c.PyLong_AsInt(py_port);
         if (value == -1) {
             if (python_c.PyErr_Occurred()) |_| return error.PythonError;
+        }
+        // BUG-361: negative/huge ports panicked the u16 narrowing.
+        if (value < 0 or value > 65535) {
+            python_c.raise_python_value_error("port must be 0-65535\x00");
+            return error.PythonError;
         }
         break :blk @intCast(value);
     };

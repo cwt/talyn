@@ -144,6 +144,12 @@ inline fn z_loop_create_server(self: *LoopObject, args: []?PyObject, knames: ?Py
             };
             return error.PythonError;
         }
+        // BUG-361: PyLong_AsLongLong yields an i64 — narrowing to fd_t
+        // (i32) panicked on out-of-range values; reject instead.
+        if (fd > std.math.maxInt(std.posix.fd_t)) {
+            python_c.raise_python_value_error("Invalid fd\x00");
+            return error.PythonError;
+        }
 
         const getsockname_func = python_c.PyObject_GetAttrString(sock, "getsockname\x00") orelse return error.PythonError;
         defer python_c.py_decref(getsockname_func);
@@ -157,13 +163,18 @@ inline fn z_loop_create_server(self: *LoopObject, args: []?PyObject, knames: ?Py
         const family = python_c.PyLong_AsLong(py_family_attr);
         if (family == -1 and python_c.PyErr_Occurred() != null) return error.PythonError;
 
-        const addr: utils.Address = switch (@as(i32, @intCast(family))) {
+        // BUG-361: sock.family is a Python attribute - unchecked i64 to
+        // i32 narrowing panicked on out-of-range values.
+        const family_i32: i32 = try utils.checkedNarrow(i32, family, "invalid address family\x00");
+        const addr: utils.Address = switch (family_i32) {
             std.posix.AF.INET => blk: {
                 if (python_c.PyTuple_Check(py_addr) == 0) return error.InvalidAddress;
                 const py_ip = python_c.PyTuple_GetItem(py_addr, 0) orelse return error.PythonError;
                 const py_port_item = python_c.PyTuple_GetItem(py_addr, 1) orelse return error.PythonError;
                 const port_val = python_c.PyLong_AsInt(py_port_item);
                 if (port_val == -1 and python_c.PyErr_Occurred() != null) return error.PythonError;
+                // BUG-361: negative/huge ports panicked the u16 narrowing.
+                if (port_val < 0 or port_val > 65535) return error.InvalidAddress;
 
                 var ip_bytes: [4]u8 = undefined;
                 const ip_str = python_c.PyUnicode_AsUTF8AndSize(py_ip, null) orelse return error.PythonError;
@@ -192,6 +203,8 @@ inline fn z_loop_create_server(self: *LoopObject, args: []?PyObject, knames: ?Py
                 const py_port_item = python_c.PyTuple_GetItem(py_addr, 1) orelse return error.PythonError;
                 const port_val = python_c.PyLong_AsInt(py_port_item);
                 if (port_val == -1 and python_c.PyErr_Occurred() != null) return error.PythonError;
+                // BUG-361: negative/huge ports panicked the u16 narrowing.
+                if (port_val < 0 or port_val > 65535) return error.InvalidAddress;
 
                 const ip_str = python_c.PyUnicode_AsUTF8AndSize(py_ip, null) orelse return error.PythonError;
                 break :blk try utils.Address.parseIp6(ip_str[0..std.mem.len(ip_str)], @intCast(port_val));
@@ -412,6 +425,11 @@ fn z_create_server_socket(server_data: *ServerSocketData) !void {
         if (creation_data.py_port) |p| {
             const val = python_c.PyLong_AsInt(p);
             if (val == -1 and python_c.PyErr_Occurred() != null) return error.PythonError;
+            // BUG-361: negative/huge ports panicked the u16 narrowing.
+            if (val < 0 or val > 65535) {
+                python_c.raise_python_value_error("port must be 0-65535\x00");
+                return error.PythonError;
+            }
             break :blk @intCast(val);
         }
         break :blk 0;
@@ -420,13 +438,20 @@ fn z_create_server_socket(server_data: *ServerSocketData) !void {
     const requested_family: ?i32 = if (creation_data.py_family) |f| blk: {
         const val = python_c.PyLong_AsLong(f);
         if (val == -1 and python_c.PyErr_Occurred() != null) return error.PythonError;
-        break :blk @intCast(val);
+        // BUG-361: unchecked i64 to i32 narrowing panicked.
+        break :blk try utils.checkedNarrow(i32, val, "invalid address family\x00");
     } else null;
 
     const backlog: c_int = blk: {
         if (creation_data.py_backlog) |b| {
             const b_val = python_c.PyLong_AsInt(b);
             if (b_val == -1 and python_c.PyErr_Occurred() != null) return error.PythonError;
+            // BUG-361: a negative backlog panicked the u32 narrowing at
+            // the listen() call below.
+            if (b_val < 0) {
+                python_c.raise_python_value_error("backlog must be non-negative\x00");
+                return error.PythonError;
+            }
             break :blk @intCast(b_val);
         }
         break :blk 100;

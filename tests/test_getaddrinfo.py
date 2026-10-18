@@ -201,3 +201,38 @@ def test_bug357_failed_resolution_resolves_future_promptly() -> None:
             assert time.monotonic() - t0 < 30.0
 
     talyn.run(main())
+
+
+def test_bug361_getaddrinfo_getnameinfo_bounds():
+    """BUG-361: getaddrinfo/getnameinfo narrowed family/type/proto/flags
+    with unchecked @intCast — huge values panicked (or truncated to a
+    silently-different op). They must raise ValueError instead, and a
+    giant dns_timeout must clamp to the kernel-representable range
+    instead of panicking at the timespec conversion."""
+    import pytest
+
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        with pytest.raises(ValueError):
+            await loop.getaddrinfo("localhost", 70000)
+        with pytest.raises(ValueError):
+            await loop.getaddrinfo("localhost", -5)
+        with pytest.raises(ValueError):
+            await loop.getaddrinfo("localhost", 80, family=2**40)
+        with pytest.raises(ValueError):
+            await loop.getaddrinfo("localhost", 80, type=2**40)
+        with pytest.raises(ValueError):
+            await loop.getaddrinfo("localhost", 80, proto=2**40)
+        with pytest.raises(ValueError):
+            await loop.getnameinfo(("127.0.0.1", 80), flags=2**40)
+
+        # A gigantic dns_timeout both parses and survives the kernel
+        # timespec conversion (i64-sec clamp).
+        res = await asyncio.wait_for(
+            loop.getaddrinfo("localhost", 80, dns_timeout=1e20),
+            timeout=5,
+        )
+        assert len(res) >= 1
+
+    talyn.run(main())

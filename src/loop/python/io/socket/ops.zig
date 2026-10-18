@@ -195,13 +195,17 @@ fn z_loop_sock_accept(self: *LoopObject, args: []const ?PyObject, knames: ?PyObj
     defer python_c.py_decref(py_fd);
     const fd_long = python_c.PyLong_AsLong(py_fd);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
-    const fd: std.posix.fd_t = @intCast(fd_long);
+    // BUG-361: PyLong_AsLong yields an i64 - narrowing to fd_t panicked
+    // on out-of-range values; raise ValueError instead (Mandate #1).
+    const fd: std.posix.fd_t = try utils.checkedNarrow(std.posix.fd_t, fd_long, "invalid file descriptor\x00");
 
     const family_attr = python_c.PyObject_GetAttrString(py_sock, "family\x00") orelse return error.PythonError;
     defer python_c.py_decref(family_attr);
     const family_long = python_c.PyLong_AsLong(family_attr);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
-    const family: i32 = @intCast(family_long);
+    // BUG-361: see the fd narrowing above - sock.family is a Python
+    // attribute like any other and must not be trusted.
+    const family: i32 = try utils.checkedNarrow(i32, family_long, "invalid address family\x00");
 
     const loop_data = utils.get_data_ptr(Loop, self);
     const fut = try Future.Python.Constructors.fast_new_future(self);
@@ -323,13 +327,17 @@ fn z_loop_sock_connect(self: *LoopObject, args: []const ?PyObject, knames: ?PyOb
     defer python_c.py_decref(py_fd);
     const fd_long = python_c.PyLong_AsLong(py_fd);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
-    const fd: std.posix.fd_t = @intCast(fd_long);
+    // BUG-361: PyLong_AsLong yields an i64 - narrowing to fd_t panicked
+    // on out-of-range values; raise ValueError instead (Mandate #1).
+    const fd: std.posix.fd_t = try utils.checkedNarrow(std.posix.fd_t, fd_long, "invalid file descriptor\x00");
 
     const py_family = python_c.PyObject_GetAttrString(py_sock, "family\x00") orelse return error.PythonError;
     defer python_c.py_decref(py_family);
     const family_long = python_c.PyLong_AsLong(py_family);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
-    const family: i32 = @intCast(family_long);
+    // BUG-361: see the fd narrowing above - sock.family is a Python
+    // attribute like any other and must not be trusted.
+    const family: i32 = try utils.checkedNarrow(i32, family_long, "invalid address family\x00");
 
     const addr = try AddressUtils.fromPyAddr(py_addr, family);
 
@@ -466,7 +474,9 @@ fn z_loop_sock_recv(self: *LoopObject, args: []const ?PyObject, knames: ?PyObjec
     defer python_c.py_decref(py_fd);
     const fd_long = python_c.PyLong_AsLong(py_fd);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
-    const fd: std.posix.fd_t = @intCast(fd_long);
+    // BUG-361: PyLong_AsLong yields an i64 - narrowing to fd_t panicked
+    // on out-of-range values; raise ValueError instead (Mandate #1).
+    const fd: std.posix.fd_t = try utils.checkedNarrow(std.posix.fd_t, fd_long, "invalid file descriptor\x00");
 
     const loop_data = utils.get_data_ptr(Loop, self);
     const fut = try Future.Python.Constructors.fast_new_future(self);
@@ -610,7 +620,9 @@ fn z_loop_sock_sendall(self: *LoopObject, args: []const ?PyObject, knames: ?PyOb
     defer python_c.py_decref(py_fd);
     const fd_long = python_c.PyLong_AsLong(py_fd);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
-    const fd: std.posix.fd_t = @intCast(fd_long);
+    // BUG-361: PyLong_AsLong yields an i64 - narrowing to fd_t panicked
+    // on out-of-range values; raise ValueError instead (Mandate #1).
+    const fd: std.posix.fd_t = try utils.checkedNarrow(std.posix.fd_t, fd_long, "invalid file descriptor\x00");
 
     var pbuf: python_c.Py_buffer = undefined;
     if (python_c.PyObject_GetBuffer(py_data, &pbuf, python_c.PyBUF_SIMPLE) < 0) {
@@ -804,7 +816,9 @@ fn z_loop_sock_recvfrom(self: *LoopObject, args: []const ?PyObject, knames: ?PyO
     defer python_c.py_decref(py_fd);
     const fd_long = python_c.PyLong_AsLong(py_fd);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
-    const fd: std.posix.fd_t = @intCast(fd_long);
+    // BUG-361: PyLong_AsLong yields an i64 - narrowing to fd_t panicked
+    // on out-of-range values; raise ValueError instead (Mandate #1).
+    const fd: std.posix.fd_t = try utils.checkedNarrow(std.posix.fd_t, fd_long, "invalid file descriptor\x00");
 
     const loop_data = utils.get_data_ptr(Loop, self);
     const fut = try Future.Python.Constructors.fast_new_future(self);
@@ -946,13 +960,17 @@ fn z_loop_sock_sendto(self: *LoopObject, args: []const ?PyObject, knames: ?PyObj
     defer python_c.py_decref(py_fd);
     const fd_long = python_c.PyLong_AsLong(py_fd);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
-    const fd: std.posix.fd_t = @intCast(fd_long);
+    // BUG-361: PyLong_AsLong yields an i64 - narrowing to fd_t panicked
+    // on out-of-range values; raise ValueError instead (Mandate #1).
+    const fd: std.posix.fd_t = try utils.checkedNarrow(std.posix.fd_t, fd_long, "invalid file descriptor\x00");
 
     const py_family = python_c.PyObject_GetAttrString(py_sock, "family\x00") orelse return error.PythonError;
     defer python_c.py_decref(py_family);
     const family_long = python_c.PyLong_AsLong(py_family);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
-    const family: i32 = @intCast(family_long);
+    // BUG-361: see the fd narrowing above - sock.family is a Python
+    // attribute like any other and must not be trusted.
+    const family: i32 = try utils.checkedNarrow(i32, family_long, "invalid address family\x00");
 
     const addr = try AddressUtils.fromPyAddr(py_addr, family);
 
@@ -1047,7 +1065,9 @@ fn z_loop_sock_recv_into(self: *LoopObject, args: []const ?PyObject, knames: ?Py
     defer python_c.py_decref(py_fd);
     const fd_long = python_c.PyLong_AsLong(py_fd);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
-    const fd: std.posix.fd_t = @intCast(fd_long);
+    // BUG-361: PyLong_AsLong yields an i64 - narrowing to fd_t panicked
+    // on out-of-range values; raise ValueError instead (Mandate #1).
+    const fd: std.posix.fd_t = try utils.checkedNarrow(std.posix.fd_t, fd_long, "invalid file descriptor\x00");
 
     var pbuf: python_c.Py_buffer = undefined;
     if (python_c.PyObject_GetBuffer(py_buf, &pbuf, python_c.PyBUF_WRITABLE) < 0) {

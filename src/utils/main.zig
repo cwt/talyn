@@ -146,6 +146,19 @@ pub fn getSyscallErrno(rc: usize) std.posix.E {
     return .SUCCESS;
 }
 
+// BUG-361: Python-supplied integers arrive as C longs (PyLong_AsLong,
+// PyLong_AsUnsignedLong) but the kernel APIs take narrower types.
+// Narrowing with @intCast panicked (Debug/ReleaseSafe) or silently
+// truncated (ReleaseFast) on out-of-range values - Architectural
+// Mandate #1 forbids panics on untrusted input, so these validators
+// raise ValueError instead.
+pub inline fn checkedNarrow(comptime T: type, value: anytype, what: [:0]const u8) !T {
+    return std.math.cast(T, value) orelse {
+        python_c.raise_python_value_error(what);
+        return error.PythonError;
+    };
+}
+
 /// Map a `socket()` (or similar fd-creating) syscall errno to a Zig error.
 ///
 /// `EMFILE` ("too many open files", per-process) and `ENFILE` (system-wide)

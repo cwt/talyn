@@ -150,3 +150,22 @@ def test_path_watcher_cancel_after_loop_close():
         h.cancel()
         h.cancel()
 
+
+
+def test_bug361_path_watcher_mask_bounds():
+    """BUG-361: _add_path_watcher narrowed the inotify mask with unchecked
+    @intCast — values beyond u32 panicked (Debug/ReleaseSafe) or truncated
+    to mask 0 (ReleaseFast, silently matching every event class). Must
+    raise ValueError instead."""
+    import pytest
+
+    def unused_cb(mask, cookie, name):
+        raise AssertionError("watcher must never be registered")
+
+    async def main():
+        loop = asyncio.get_running_loop()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with pytest.raises(ValueError):
+                loop._add_path_watcher(tmpdir, 2**40, unused_cb)
+
+    talyn.run(main())

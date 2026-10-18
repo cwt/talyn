@@ -813,3 +813,25 @@ def test_bug359_cancelled_connect_failure_no_mcs_leak() -> None:
 
     talyn.run(main())
     gc.collect()
+
+
+def test_bug361_connect_port_bounds():
+    """BUG-361: create_connection narrowed the port with @intCast —
+    negative/huge ports panicked (Debug/ReleaseSafe) or silently
+    truncated (ReleaseFast). Must raise ValueError instead."""
+    import pytest
+
+    class ConnectProbeProtocol(asyncio.Protocol):
+        pass
+
+    def connect_probe_factory() -> ConnectProbeProtocol:
+        return ConnectProbeProtocol()
+
+    async def main():
+        loop = asyncio.get_running_loop()
+        with pytest.raises(ValueError):
+            await loop.create_connection(connect_probe_factory, "127.0.0.1", 70000)
+        with pytest.raises(ValueError):
+            await loop.create_connection(connect_probe_factory, "127.0.0.1", -1)
+
+    talyn.run(main())

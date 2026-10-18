@@ -617,3 +617,59 @@ def test_bug360_empty_buffer_socket_ops():
         cli2.close()
 
     talyn.run(main())
+
+
+def test_bug361_socket_integer_bounds():
+    """BUG-361: Python-supplied integers were narrowed with unchecked
+    @intCast — out-of-range ports/ fds panicked (Debug/ReleaseSafe) or
+    silently truncated (ReleaseFast). All socket entry points now raise
+    ValueError instead (Mandate #1: no panics on untrusted input)."""
+    import pytest
+
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(4)
+        srv.setblocking(False)
+
+        udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        udp.bind(("127.0.0.1", 0))
+        udp.setblocking(False)
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setblocking(False)
+
+        # Port accepted by PyLong but rejected by the u16 narrowing:
+        for bad_port in (70000, -1):
+            with pytest.raises(ValueError):
+                await loop.sock_connect(sock, ("127.0.0.1", bad_port))
+            with pytest.raises(ValueError):
+                await loop.sock_sendto(udp, b"x", ("127.0.0.1", bad_port))
+
+        # An out-of-range fd reported by a crafted fileno():
+        class HugeFdSock:
+            def fileno(self):
+                return 2**40
+
+        for op in ("sendall", "recv", "recv_into", "recvfrom", "connect", "accept"):
+            with pytest.raises(ValueError):
+                if op == "sendall":
+                    await loop.sock_sendall(HugeFdSock(), b"x")
+                elif op == "recv":
+                    await loop.sock_recv(HugeFdSock(), 16)
+                elif op == "recv_into":
+                    await loop.sock_recv_into(HugeFdSock(), bytearray(16))
+                elif op == "recvfrom":
+                    await loop.sock_recvfrom(HugeFdSock(), bufsize=16)
+                elif op == "connect":
+                    await loop.sock_connect(HugeFdSock(), srv.getsockname())
+                else:
+                    await loop.sock_accept(HugeFdSock())
+
+        srv.close()
+        udp.close()
+        sock.close()
+
+    talyn.run(main())

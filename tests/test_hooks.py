@@ -149,3 +149,23 @@ def test_hook_cancel_after_loop_close():
 
 
 
+
+
+def test_bug361_add_hook_bounds():
+    """BUG-361: _add_hook narrowed the hook type with unchecked @intCast —
+    out-of-range values panicked (Debug/ReleaseSafe) or silently truncated
+    to another (valid!) hook type (ReleaseFast). Must raise ValueError."""
+    import pytest
+
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        def hook_cb():
+            raise AssertionError("hook must never be registered")
+
+        with pytest.raises(ValueError):
+            loop._add_hook(2**40, hook_cb)
+        with pytest.raises(ValueError):
+            loop._add_hook(-7, hook_cb)
+
+    talyn.run(main())

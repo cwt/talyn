@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 346 |
-| Open | 36 |
+| Fixed | 347 |
+| Open | 35 |
 | False Positive | 13 |
 | **Total** | **395** |
 
@@ -396,7 +396,7 @@ Sorted by bug number. See individual bug files for details.
 | [358](358.md) | `Resolv.build_queries` clobbers `server_data.dns_timeout` back to `null` via struct-literal assignment | High | Fixed |
 | [359](359.md) | Socket `fd` leak, `MultiConnectState` memory/reference leak, and unresolved future on error paths in `socket_connected_callback` | High | Fixed |
 | [360](360.md) | Uninitialized `sockaddr.storage` read in `sock_accept_callback` and `sock_recvfrom_callback` (`AF_UNIX`), plus null `pbuf.buf` pointer cast panic in `sock_sendall`, `sock_sendto`, and `sock_recv_into` | High | Fixed |
-| [361](361.md) | Unchecked `@intCast` and `@intFromFloat` panics on untrusted Python integer/float arguments across Loop, Socket, DNS, and PseudoSocket entry points (Mandate #1 violations) | High | Open |
+| [361](361.md) | Unchecked `@intCast` and `@intFromFloat` panics on untrusted Python integer/float arguments across Loop, Socket, DNS, and PseudoSocket entry points (Mandate #1 violations) | High | Fixed |
 | [362](362.md) | `ChildWatcher` reads uninitialized `siginfo_t` when `waitid(WNOHANG)` returns `0` with no exited child and leaks `pidfd`, callback reference, and `ChildHandler` on `on_child_exit` error/shutdown paths | High | Open |
 | [363](363.md) | `dispatch_completion_batch` calls CPython APIs with a live exception set and aborts `Runner.start` before releasing buffers or re-arming reads | High | Open |
 | [364](364.md) | `BlockingTasksSet.free()` ignores `self.free_count`, permanently leaking ~80 KB `BlockingTasksSet` nodes into `busy_sets` every 1024 operations (plus `reserved_slots` leak on `Overflow`) | High | Open |

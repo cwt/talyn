@@ -203,7 +203,8 @@ inline fn z_loop_add_watcher(self: *LoopObject, args: []?PyObject, knames: ?PyOb
 
     const fd_val = python_c.PyLong_AsLong(py_fd);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
-    const fd: std.posix.fd_t = @intCast(fd_val);
+    // BUG-361: unchecked narrowing panicked on out-of-range fds.
+    const fd: std.posix.fd_t = try utils.checkedNarrow(std.posix.fd_t, fd_val, "Invalid file descriptor\x00");
     if (fd < 0) {
         python_c.raise_python_value_error("Invalid file descriptor\x00");
         return error.PythonError;
@@ -347,7 +348,8 @@ inline fn z_loop_remove_watcher(self: *LoopObject, py_fd: PyObject, operation: L
 
     const fd_val = python_c.PyLong_AsLong(py_fd);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
-    const fd: std.posix.fd_t = @intCast(fd_val);
+    // BUG-361: unchecked narrowing panicked on out-of-range fds.
+    const fd: std.posix.fd_t = try utils.checkedNarrow(std.posix.fd_t, fd_val, "Invalid file descriptor\x00");
     if (fd < 0) {
         python_c.raise_python_value_error("Invalid file descriptor\x00");
         return error.PythonError;

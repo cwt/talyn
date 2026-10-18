@@ -567,3 +567,32 @@ def test_bug355_dns_failure_resolves_future_no_leak() -> None:
         )
 
     talyn.run(main())
+
+
+def test_bug361_datagram_endpoint_port_bounds():
+    """BUG-361: create_datagram_endpoint narrowed addresses' ports with
+    unchecked @intCast — negative/huge ports panicked or truncated.
+    Must raise ValueError instead (Mandate #1: no panics)."""
+    import pytest
+
+    class EndpointProbe(asyncio.DatagramProtocol):
+        def connection_made(self, transport):
+            self.on_con_made = asyncio.get_running_loop().create_future()
+            self.on_con_made.set_result(True)
+
+    async def main():
+        loop = asyncio.get_running_loop()
+        with pytest.raises(ValueError):
+            await loop.create_datagram_endpoint(
+                EndpointProbe, local_addr=("127.0.0.1", 70000)
+            )
+        with pytest.raises(ValueError):
+            await loop.create_datagram_endpoint(
+                EndpointProbe, local_addr=("127.0.0.1", -5)
+            )
+        with pytest.raises(ValueError):
+            await loop.create_datagram_endpoint(
+                EndpointProbe, remote_addr=("127.0.0.1", 70000)
+            )
+
+    talyn.run(main())

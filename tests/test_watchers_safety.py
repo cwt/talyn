@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 import talyn
@@ -62,3 +64,25 @@ def test_add_reader_then_immediate_close_no_uaf():
     )
     assert result.returncode == 0, f"crashed: rc={result.returncode}\n{result.stderr[-2000:]}"
     assert "DONE" in result.stdout
+
+
+def test_bug361_watcher_fd_bounds():
+    """BUG-361: add_reader/add_writer/remove_reader narrowed fds with
+    unchecked @intCast — out-of-range values panicked (Debug/ReleaseSafe)
+    or silently truncated (ReleaseFast). Must raise ValueError instead."""
+    import pytest
+
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        def on_ready():
+            raise AssertionError("watcher must never be registered")
+
+        with pytest.raises(ValueError):
+            loop.add_reader(2**40, on_ready)
+        with pytest.raises(ValueError):
+            loop.add_writer(2**40, on_ready)
+        with pytest.raises(ValueError):
+            loop.remove_reader(2**40)
+
+    talyn.run(main())

@@ -212,3 +212,47 @@ def test_create_server_sock_malformed_ipv4_rejected() -> None:
             real.close()
 
     talyn.run(main())
+
+
+def test_bug361_create_server_bounds():
+    """BUG-361: create_server narrowed user port/backlog/family with
+    unchecked @intCast — out-of-range values panicked (Debug/ReleaseSafe)
+    or silently truncated (ReleaseFast). Must raise ValueError instead,
+    and a crafted sock with a huge fileno() must be rejected too."""
+    import pytest
+
+    class ServerProbeProtocol(asyncio.BaseProtocol):
+        pass
+
+    def server_probe_factory() -> ServerProbeProtocol:
+        return ServerProbeProtocol()
+
+    class HugeFdSock:
+        def fileno(self):
+            return 2**40
+
+        def getsockname(self):
+            return ("127.0.0.1", 0)
+
+        family = socket.AF_INET
+
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        with pytest.raises(ValueError):
+            await loop.create_server(server_probe_factory, "127.0.0.1", 70000)
+        with pytest.raises(ValueError):
+            await loop.create_server(server_probe_factory, "127.0.0.1", 0, backlog=-1)
+        with pytest.raises(ValueError):
+            await loop.create_server(
+                server_probe_factory, "127.0.0.1", 0, family=2**40
+            )
+        with pytest.raises(ValueError):
+            await loop.create_server(server_probe_factory, sock=HugeFdSock())
+
+        # A healthy server still comes up afterwards.
+        server = await loop.create_server(server_probe_factory, "127.0.0.1", 0)
+        server.close()
+        await server.wait_closed()
+
+    talyn.run(main())
