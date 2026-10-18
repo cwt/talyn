@@ -46,8 +46,14 @@ inline fn fast_task_cancel(task: *PythonTaskObject, data: *Future, cancel_msg_py
     task.cancel_requests +|= 1;
 
     if (task.fut_waiter) |fut_waiter| {
+        // BUG-371: if the waiter resolved in the same tick, its cancel
+        // returns false (already finished). The cancellation must NOT
+        // be dropped: fall through so wakeup_task throws the
+        // CancelledError into the coroutine instead of delivering the
+        // result (CPython does the same and keeps a second
+        // asyncio.timeout() working after cancellation races).
         const ret = try cancel_future_waiter(fut_waiter, cancel_msg_py_object);
-        return ret;
+        if (ret) return true;
     }
 
     task.must_cancel = true;
@@ -84,16 +90,22 @@ pub fn task_uncancel(self: ?*PythonTaskObject) callconv(.c) ?PyObject {
     const instance = self.?;
     const new_cancel_requests = instance.cancel_requests -| 1;
     instance.cancel_requests = new_cancel_requests;
-    instance.must_cancel = (new_cancel_requests > 0);
+    // BUG-371: uncancel may only CLEAR must_cancel when the request
+    // count reaches zero (CPython: `task_must_cancel = 0`). Re-arming
+    // it here injected an extra unrequested CancelledError into the
+    // next await inside cleanup/finally code of nested
+    // asyncio.timeout() blocks.
+    if (new_cancel_requests == 0) {
+        instance.must_cancel = false;
+    }
     return python_c.PyLong_FromUnsignedLongLong(@intCast(new_cancel_requests));
 }
 
 pub fn task_cancelling(self: ?*PythonTaskObject) callconv(.c) ?PyObject {
     const instance = self.?;
-
-    const future_data = utils.get_data_ptr(Future, &instance.fut);
-    return switch (future_data.status) {
-        .canceled, .finished => python_c.PyLong_FromUnsignedLongLong(0),
-        else => python_c.PyLong_FromUnsignedLongLong(@intCast(instance.cancel_requests)),
-    };
+    // BUG-371: cancelling() reports the request count unconditionally
+    // (CPython behavior) — asyncio.TaskGroup inspects it from done
+    // callbacks AFTER the task finished, to distinguish internal from
+    // external cancellations.
+    return python_c.PyLong_FromUnsignedLongLong(@intCast(instance.cancel_requests));
 }
