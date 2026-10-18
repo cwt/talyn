@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 362 |
-| Open | 20 |
+| Fixed | 363 |
+| Open | 19 |
 | False Positive | 13 |
 | **Total** | **395** |
 
@@ -412,7 +412,7 @@ Sorted by bug number. See individual bug files for details.
 | [374](374.md) | Reference leaks (`_asyncio_future_blocking`, `Py_False`) and unbroken `wake_up_task_callback` reference cycle in `handle_legacy_future_object` | High | Fixed |
 | [375](375.md) | `talyn/loop.py` SSL transport bugs: plaintext dropped on `SSLWantReadError`/`SSLWantWriteError`, ciphertext dropped via `os.write` on `BlockingIOError`, unflushed `_write_buffer` on `resume_writing`, and unclosed socket on handshake timeout error | High | Fixed |
 | [376](376.md) | `create_server` and `_create_ssl_server` never wire `srv.server_ref = server`, breaking `Server.wait_closed()` active connection tracking | High | Fixed |
-| [377](377.md) | `transport_write_lines` does not check `PyErr_Occurred()` after `PyIter_Next` returns `null`, returning `Py_None` with a live exception set (unfixed `BUG-298`) | High | Open |
+| [377](377.md) | `transport_write_lines` does not check `PyErr_Occurred()` after `PyIter_Next` returns `null`, returning `Py_None` with a live exception set (unfixed `BUG-298`) | High | Fixed |
 | [378](378.md) | `StreamTransport` lifecycle bugs: `close_transports` omits `transport.is_closing = true` and schedules `connection_lost` before write buffer drains, while `close()` + `abort()` invokes `protocol.connection_lost` twice | High | Open |
 | [379](379.md) | `WriteTransport` flow-control and `write_eof` bugs: `writing_low_water_mark` ignored until buffer hits 0, `write_eof()` silently dropped when `buffer_size > 0`, and `set_write_buffer_limits` rejects `None` and leaks positional refs | High | Open |
 | [380](380.md) | `Record.append_callback` unconditionally accesses `self.state.pending`, panicking when a second DNS lookup hits an existing `.ptr`, `.resolved`, or `.none` cache record | Medium-High | Open |

@@ -174,6 +174,15 @@ pub fn transport_write_lines(self: ?*StreamTransportObject, py_buffers: ?PyObjec
         };
     }
 
+    // BUG-377 (BUG-298 revisited): PyIter_Next returns null BOTH for a
+    // finished iterator AND for a raising one. When the generator raised,
+    // returning Py_None here would leave the exception live on the thread
+    // state (SystemError at the call boundary in debug builds; silent
+    // exception corruption in release builds).
+    if (python_c.PyErr_Occurred() != null) {
+        return null;
+    }
+
     if (new_buffer_size >= instance.writing_high_water_mark) {
         if (instance.is_writing) {
             instance.is_writing = false;
