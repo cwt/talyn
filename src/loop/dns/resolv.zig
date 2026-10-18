@@ -764,6 +764,12 @@ fn build_queries(
         .queries = queries,
         .results = .empty,
         .ptr_results = .empty,
+        // BUG-358: the struct-literal assignment reset dns_timeout back to
+        // its `null` field default, silently discarding the user-configured
+        // timeout for every response read (queue_read_package) and every
+        // subsequent query send (queue_send_query) — they all fell back to
+        // the 5-second default.
+        .dns_timeout = dns_timeout,
     };
 }
 
@@ -1407,4 +1413,56 @@ test "synchronous error in prepare_data does not schedule user_callback onto Soo
     try std.testing.expectEqual(@as(usize, 0), invoked);
 }
 
+test "BUG-358: build_queries preserves the configured dns_timeout" {
+    const allocator = std.testing.allocator;
+    const loop = try allocator.create(Loop);
+    defer allocator.destroy(loop);
+    try loop.init(allocator, 64);
+    defer loop.release();
 
+    var cache: Cache = undefined;
+    cache.init(allocator);
+    defer cache.deinit();
+
+    const control_data = try allocator.create(ControlData);
+    defer allocator.destroy(control_data);
+    control_data.* = ControlData{
+        .allocator = allocator,
+        .arena = std.heap.ArenaAllocator.init(allocator),
+        .loop = loop,
+        .user_callbacks = .empty,
+        .record = undefined,
+        .queries_data = undefined,
+        .tasks_finished = 0,
+        .resolved = false,
+        .record_evicted = false,
+        .node = null,
+    };
+    defer control_data.arena.deinit();
+
+    var hostname_storage: [1]Hostname = undefined;
+    hostname_storage[0] = .{ .hostname = undefined, .hostname_len = 0, .original_hostname_len = 0 };
+    const host = "example.com";
+    @memcpy(hostname_storage[0].hostname[0..host.len], host);
+    hostname_storage[0].hostname_len = @intCast(host.len);
+    hostname_storage[0].original_hostname_len = @intCast(host.len);
+    const hostnames_array: HostnamesArray = .{ .array = hostname_storage[0..], .len = 1 };
+
+    var server_data: ServerQueryData = undefined;
+
+    // UDP connect() to loopback never sends a packet — safe in tests.
+    const server_address = utils.Address.initIp4(.{ 127, 0, 0, 1 }, 5353);
+    const timeout: ?DnsTimeout = .{ .sec = 1, .nsec = 500_000_000 };
+
+    try build_queries(allocator, loop, control_data, &server_data, false, hostnames_array, &server_address, null, timeout);
+
+    // BUG-358: the struct-literal assignment clobbered dns_timeout back to
+    // null, silently discarding the user-configured timeout for every
+    // response read and subsequent query send.
+    try std.testing.expectEqual(timeout, server_data.dns_timeout);
+
+    // The test owns the built query state (on success the queue flow owns
+    // it): release the query slots and the UDP socket.
+    allocator.free(server_data.queries);
+    _ = std.os.linux.close(server_data.socket_fd);
+}

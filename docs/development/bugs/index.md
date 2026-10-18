@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 343 |
-| Open | 39 |
+| Fixed | 344 |
+| Open | 38 |
 | False Positive | 13 |
 | **Total** | **395** |
 
@@ -393,7 +393,7 @@ Sorted by bug number. See individual bug files for details.
 | [355](355.md) | Memory/reference leaks, missing Python exception before `set_future_exception`, and unresolved `Future` (infinite hang) in `create_endpoint.zig` DNS resolution callbacks | High | Fixed |
 | [356](356.md) | Leaked callback structs/buffers on `orelse return set_future_exception` and unresolved futures (infinite hang) on `try` / `cancelled()` across all 7 socket operations in `ops.zig` | High | Fixed |
 | [357](357.md) | Unresolved futures (infinite hang) when DNS `on_query_sent` fails on the last nameserver or `getaddrinfo_callback` / `getnameinfo_callback` error or cancel | High | Fixed |
-| [358](358.md) | `Resolv.build_queries` clobbers `server_data.dns_timeout` back to `null` via struct-literal assignment | High | Open |
+| [358](358.md) | `Resolv.build_queries` clobbers `server_data.dns_timeout` back to `null` via struct-literal assignment | High | Fixed |
 | [359](359.md) | Socket `fd` leak, `MultiConnectState` memory/reference leak, and unresolved future on error paths in `socket_connected_callback` | High | Open |
 | [360](360.md) | Uninitialized `sockaddr.storage` read in `sock_accept_callback` and `sock_recvfrom_callback` (`AF_UNIX`), plus null `pbuf.buf` pointer cast panic in `sock_sendall`, `sock_sendto`, and `sock_recv_into` | High | Open |
 | [361](361.md) | Unchecked `@intCast` and `@intFromFloat` panics on untrusted Python integer/float arguments across Loop, Socket, DNS, and PseudoSocket entry points (Mandate #1 violations) | High | Open |
