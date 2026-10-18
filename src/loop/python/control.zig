@@ -414,12 +414,35 @@ pub fn loop_close(self: ?*LoopObject, _: ?PyObject) callconv(.c) ?PyObject {
         mutex.lock();
         defer mutex.unlock();
 
+        // BUG-348: `Loop.__new__` without `__init__` (or a second
+        // `close()`) leaves `loop_data` uninitialized or already released
+        // — locking its mutex and running `release()` on it is undefined.
+        // Mirror the `initialized` guard in `loop_clear`.
+        if (!loop_data.initialized) {
+            return python_c.get_py_none();
+        }
+
         if (loop_data.running) {
             python_c.raise_python_runtime_error("Loop is running\x00");
             return null;
         }
+
+        // BUG-348: claim the teardown atomically. Every mutator of the
+        // shared state (`call_soon_threadsafe`, `loop_traverse`,
+        // `add_hook`) validates `loop_data.initialized` while holding
+        // this same mutex, so clearing it here — under the lock — closes
+        // the race window that previously let a concurrent dispatch
+        // append to `ready_tasks_queues` while `release()` was draining
+        // and freeing it.
+        //
+        // The mutex is deliberately NOT held across the teardown body:
+        // draining the ready queues can decref stream transports whose
+        // dealloc re-locks it (`io.release_buffer` /
+        // `unregister_fixed_file`), deadlocking the non-recursive
+        // spinlock. Release the claim first, then tear down unlocked.
+        loop_data.initialized = false;
     }
 
-    loop_data.release();
+    loop_data.release_claimed();
     return python_c.get_py_none();
 }

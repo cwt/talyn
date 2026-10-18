@@ -131,6 +131,17 @@ pub fn release(self: *Loop) void {
         python_c.raise_python_runtime_error("Loop is running, can't be deallocated\x00");
         return;
     }
+    self.release_claimed();
+}
+
+/// Teardown body of `release` WITHOUT the initialized/running guards.
+/// BUG-348: `loop_close` claims the teardown by clearing `initialized`
+/// while holding the loop mutex, then calls this directly — the mutex
+/// must NOT be held across the teardown because draining the ready
+/// queues can run transport deallocs whose cleanup re-locks the same
+/// non-recursive spinlock (`io.release_buffer` / `unregister_fixed_file`)
+/// — a guaranteed self-deadlock under free-threading.
+pub fn release_claimed(self: *Loop) void {
     self.initialized = false;
 
     self.dns.deinit();
@@ -223,6 +234,10 @@ pub fn add_hook(self: *Loop, hook_type: HookType, callback: CallbackManager.Call
     const mutex = &self.mutex;
     mutex.lock();
     defer mutex.unlock();
+
+    // BUG-348: a hook added after the teardown claim would be appended to
+    // lists `release()` is concurrently freeing.
+    if (!self.initialized) return error.LoopClosed;
 
     const hooks = switch (hook_type) {
         .prepare => &self.prepare_hooks,

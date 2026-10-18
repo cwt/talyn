@@ -86,11 +86,14 @@ pub fn loop_traverse(self: ?*LoopObject, visit: python_c.visitproc, arg: ?*anyop
     const vret1 = python_c.py_visit(py_loop, visit, arg);
     if (vret1 != 0) return vret1;
 
-    if (!loop_data.initialized) return 0;
-
+    // BUG-348: check `initialized` INSIDE the mutex — checking before the
+    // lock raced with `loop_close`'s teardown claim, letting the traverse
+    // below walk `ready_tasks_queues` while `release()` was freeing them.
     const mutex = &loop_data.mutex;
     mutex.lock();
     defer mutex.unlock();
+
+    if (!loop_data.initialized) return 0;
 
     // Visit ready tasks queues
     for (loop_data.ready_tasks_queues) |*queue| {

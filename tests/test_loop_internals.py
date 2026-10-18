@@ -1096,3 +1096,101 @@ def test_dispatch_protocol_callbacks_forward_real_exception() -> None:
         assert captured[0]["exception"].__traceback__ is not None
 
     talyn.run(main())
+
+
+# ---------------------------------------------------------------------------
+# BUG-348: loop_close unlocked loop_data.mutex before loop_data.release()
+# and lacked a loop_data.initialized guard. A concurrent
+# call_soon_threadsafe (or free-threaded GC loop_traverse) could observe
+# initialized == true and mutate ready_tasks_queues while release() was
+# draining and freeing it.
+# ---------------------------------------------------------------------------
+
+def test_loop_close_uninitialized_new_only() -> None:
+    # `Loop.__new__` without `__init__` must be a safe no-op under close()
+    # (previously locked an uninitialized mutex and ran release() on it).
+    # Call the native close directly: the Python subclass wrapper touches
+    # `__init__`-only attributes before reaching the C layer.
+    from talyn.loop import _Loop
+
+    loop = _Loop.__new__(_Loop)
+    _Loop.close(loop)
+    assert _Loop.is_closed(loop)
+    # Idempotent: closing again must not raise or corrupt state.
+    _Loop.close(loop)
+    assert _Loop.is_closed(loop)
+
+
+def test_loop_close_idempotent() -> None:
+    loop = Loop()
+    assert not loop.is_closed()
+    loop.close()
+    assert loop.is_closed()
+    loop.close()
+    assert loop.is_closed()
+
+
+def test_loop_close_race_with_call_soon_threadsafe() -> None:
+    # Thread B hammers call_soon_threadsafe while thread A closes the loop.
+    # Each dispatch must EITHER succeed (loop still open) OR raise
+    # RuntimeError("Loop is closed") — never crash, hang, or corrupt the
+    # ready_tasks_queues (which would surface as a segfault/abort here).
+    import gc
+    import threading
+
+    loop = Loop()
+    errors: list[BaseException] = []
+    accepted = 0
+    rejected = 0
+
+    def cb() -> None:
+        pass
+
+    # Warmup: dispatches accepted before the race begins.
+    for _ in range(100):
+        loop.call_soon_threadsafe(cb)
+    accepted += 100
+
+    def dispatcher() -> None:
+        nonlocal accepted, rejected
+        for i in range(2_000_000):
+            try:
+                loop.call_soon_threadsafe(cb)
+            except RuntimeError as exc:
+                # Closing from the closer thread must surface exactly as a
+                # "Loop is closed" RuntimeError on this thread.
+                if "closed" not in str(exc):
+                    errors.append(exc)
+                rejected += 1
+                return
+            except BaseException as exc:  # pragma: no cover - diagnostic only
+                errors.append(exc)
+                return
+            else:
+                accepted += 1
+            # On free-threaded builds, run gc.collect() so loop_traverse
+            # races directly with loop_close's release() as well.
+            if i % 64 == 0:
+                gc.collect()
+        errors.append(AssertionError("loop.close() never observed by dispatcher"))
+
+    def closer() -> None:
+        try:
+            loop.close()
+        except BaseException as exc:  # pragma: no cover - diagnostic only
+            errors.append(exc)
+
+    dispatcher_thread = threading.Thread(target=dispatcher)
+    closer_thread = threading.Thread(target=closer)
+    dispatcher_thread.start()
+    closer_thread.start()
+    closer_thread.join(timeout=30)
+    # The dispatcher exits once it observes the "Loop is closed" error.
+    dispatcher_thread.join(timeout=30)
+
+    assert not dispatcher_thread.is_alive(), "dispatcher thread hung"
+    assert not closer_thread.is_alive(), "closer thread hung"
+    assert errors == []
+    assert accepted >= 100, "call_soon_threadsafe never got to run"
+    assert rejected == 1
+    assert loop.is_closed()
