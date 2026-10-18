@@ -38,7 +38,11 @@ const AcceptData = struct {
     socket_fd: std.posix.fd_t,
     family: i32,
     allocator: std.mem.Allocator,
-    addr: std.posix.sockaddr.storage = undefined,
+    // BUG-360: zero-fill the storage — the kernel writes only as many
+    // bytes as the peer address needs (an unnamed AF_UNIX client writes
+    // just the 2-byte family), so anything left undefined leaks previous
+    // allocator contents into the Python-side address object.
+    addr: std.posix.sockaddr.storage = std.mem.zeroes(std.posix.sockaddr.storage),
     addrlen: std.posix.socklen_t = @sizeOf(std.posix.sockaddr.storage),
 };
 
@@ -89,8 +93,20 @@ fn sock_accept_callback(data: *const CallbackManager.CallbackData) !void {
         _ = std.os.linux.close(client_fd);
     };
 
-    // Convert addr to Python tuple
-    const py_addr = AddressUtils.toPyAddr(utils.Address.initPosix(@ptrCast(&ad.addr))) catch |err| {
+    // Convert addr to Python tuple.
+    // BUG-360: honour the kernel's addrlen the way CPython does — an
+    // unnamed AF_UNIX peer writes only the 2-byte family (the zeroed
+    // path stays unread), and that must surface as '' like
+    // socket.accept does, not as garbage bytes.
+    const unnamed_unix = ad.family == std.posix.AF.UNIX and
+        ad.addrlen <= @offsetOf(std.posix.sockaddr.un, "path");
+    const py_addr = if (unnamed_unix) blk: {
+        const empty = python_c.PyUnicode_FromStringAndSize("", 0) orelse {
+            ensure_exception(error.PythonError);
+            return set_future_exception(error.PythonError, ad.future);
+        };
+        break :blk empty;
+    } else AddressUtils.toPyAddr(utils.Address.initPosix(@ptrCast(&ad.addr))) catch |err| {
         ensure_exception(err);
         return set_future_exception(err, ad.future);
     };
@@ -602,12 +618,28 @@ fn z_loop_sock_sendall(self: *LoopObject, args: []const ?PyObject, knames: ?PyOb
     }
     defer python_c.PyBuffer_Release(&pbuf);
 
+    const data_len: usize = @intCast(pbuf.len);
+
+    // BUG-360: for empty data, (a) a fresh empty bytearray() carries
+    // pbuf.buf == null, so the [*]const u8 cast below would trip the
+    // null-pointer safety check, and (b) io_uring rejects zero-length
+    // write SQEs (EFAULT). CPython's sock_sendall(b'') performs no
+    // syscall at all, so resolve the future immediately.
+    if (data_len == 0 or pbuf.buf == null) {
+        const fut = try Future.Python.Constructors.fast_new_future(self);
+        errdefer python_c.py_decref(@ptrCast(fut));
+        const future_data = utils.get_data_ptr(Future, fut);
+        // BUG-353: future_fast_set_result takes its own reference; pass
+        // the borrowed None.
+        try Future.Python.Result.future_fast_set_result(future_data, python_c.get_py_none_without_incref());
+        return fut;
+    }
+
     const loop_data = utils.get_data_ptr(Loop, self);
     const fut = try Future.Python.Constructors.fast_new_future(self);
     errdefer python_c.py_decref(@ptrCast(fut));
 
-    // Copy data to local buffer for async send
-    const data_len: usize = @intCast(pbuf.len);
+    // Copy data to local buffer for async send.
     const data_buf = try loop_data.allocator.alloc(u8, data_len);
     errdefer loop_data.allocator.free(data_buf);
     @memcpy(data_buf, @as([*]const u8, @ptrCast(pbuf.buf))[0..data_len]);
@@ -654,7 +686,9 @@ const SockRecvFromData = struct {
     buf: []u8,
     msg: std.posix.msghdr = undefined,
     iov: std.posix.iovec = undefined,
-    addr: std.posix.sockaddr.storage = undefined,
+    // BUG-360: zero-filled — with namelen = 0 the kernel writes nothing
+    // here at all (see sock_recvfrom_callback).
+    addr: std.posix.sockaddr.storage = std.mem.zeroes(std.posix.sockaddr.storage),
 };
 
 fn cleanup_recvfrom(ptr: ?*anyopaque) void {
@@ -706,13 +740,25 @@ fn sock_recvfrom_callback(data: *const CallbackManager.CallbackData) !void {
     };
     defer python_c.py_decref(py_data);
 
-    const py_addr = AddressUtils.toPyAddr(utils.Address.initPosix(@ptrCast(&rd.addr))) catch |err| {
-        // BUG-356: resolve the future — the cleanup defer releases the
-        // receive buffer; a bare error return hung the awaiter forever.
-        ensure_exception(err);
-        return set_future_exception(err, rd.future);
-    };
-    defer python_c.py_decref(py_addr);
+    // BUG-360: mirror CPython's socket.recvfrom: when the kernel left
+    // msg.namelen at 0 (an unnamed/unbound AF_UNIX datagram sender), the
+    // address buffer was never written at all and the source address is
+    // *None*, not a fabricated one from never-initialized storage.
+    var py_addr: PyObject = undefined;
+    var own_addr = false;
+    if (rd.msg.namelen == 0) {
+        // BUG-353: Py_None is immortal on 3.12+; borrow it.
+        py_addr = python_c.get_py_none_without_incref();
+    } else {
+        py_addr = AddressUtils.toPyAddr(utils.Address.initPosix(@ptrCast(&rd.addr))) catch |err| {
+            // BUG-356: resolve the future — the cleanup defer releases the
+            // receive buffer; a bare error return hung the awaiter forever.
+            ensure_exception(err);
+            return set_future_exception(err, rd.future);
+        };
+        own_addr = true;
+    }
+    defer if (own_addr) python_c.py_decref(py_addr);
 
     const result_tuple = python_c.PyTuple_Pack(2, py_data, py_addr) orelse {
         ensure_exception(error.PythonError);
@@ -923,7 +969,10 @@ fn z_loop_sock_sendto(self: *LoopObject, args: []const ?PyObject, knames: ?PyObj
     const data_len: usize = @intCast(pbuf.len);
     const data_buf = try loop_data.allocator.alloc(u8, data_len);
     errdefer loop_data.allocator.free(data_buf);
-    @memcpy(data_buf, @as([*]const u8, @ptrCast(pbuf.buf))[0..data_len]);
+    // BUG-360: an empty buffer has pbuf.buf == null — see sock_sendall.
+    if (data_len > 0 and pbuf.buf != null) {
+        @memcpy(data_buf, @as([*]const u8, @ptrCast(pbuf.buf))[0..data_len]);
+    }
 
     const sd = try loop_data.allocator.create(SockSendToData);
     errdefer loop_data.allocator.destroy(sd);
@@ -946,7 +995,10 @@ fn z_loop_sock_sendto(self: *LoopObject, args: []const ?PyObject, knames: ?PyObj
         .name = &sd.addr.any,
         .namelen = sd.addr.getOsSockLen(),
         .iov = @ptrCast(&sd.iov),
-        .iovlen = 1,
+        // BUG-360: zero-length payloads must keep a msg_iovlen of 0 —
+        // io_uring's send path rejects a zero-length iovec (EFAULT) but
+        // delivers an empty datagram through the syscall semantics.
+        .iovlen = if (data_buf.len == 0) 0 else 1,
         .control = null,
         .controllen = 0,
         .flags = 0,
@@ -1000,6 +1052,21 @@ fn z_loop_sock_recv_into(self: *LoopObject, args: []const ?PyObject, knames: ?Py
     var pbuf: python_c.Py_buffer = undefined;
     if (python_c.PyObject_GetBuffer(py_buf, &pbuf, python_c.PyBUF_WRITABLE) < 0) {
         return error.PythonError;
+    }
+    // BUG-360: an empty buffer object (e.g. bytearray()) has pbuf.buf ==
+    // null; casting that to [*]u8 trips the null-pointer safety check
+    // (and queues a zero-length recv the caller never meant to run).
+    // CPython short-circuits empty buffers to 0 without a syscall —
+    // mirror that here.
+    if (pbuf.len == 0 or pbuf.buf == null) {
+        python_c.PyBuffer_Release(&pbuf);
+        const fut = try Future.Python.Constructors.fast_new_future(self);
+        errdefer python_c.py_decref(@ptrCast(fut));
+        const zero = python_c.PyLong_FromLong(0) orelse return error.PythonError;
+        defer python_c.py_decref(zero);
+        const zero_data = utils.get_data_ptr(Future, fut);
+        try Future.Python.Result.future_fast_set_result(zero_data, zero);
+        return fut;
     }
     // We can't release the buffer here because io_uring needs it until callback.
     // So we need to store it in rd.

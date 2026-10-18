@@ -10,7 +10,10 @@ The test verifies correctness is preserved after the flag removal.
 """
 
 import asyncio
+import os
+import shutil
 import socket
+import tempfile
 
 import talyn
 
@@ -487,5 +490,130 @@ def test_bug356_accept_recvfrom_no_leak():
 
         server_sock.close()
         udp.close()
+
+    talyn.run(main())
+
+
+def test_bug360_unnamed_unix_accept_and_unbound_recvfrom():
+    """BUG-360: AcceptData.addr/SockRecvFromData.addr were `undefined` and
+    the kernel may write far fewer bytes than sizeof(sockaddr.storage) —
+    an unnamed AF_UNIX accept client writes just the 2-byte family (the
+    path kept stale allocator bytes) and an unbound AF_UNIX datagram
+    sender writes nothing at all (namelen = 0). The storages are now
+    zero-filled and the callbacks honour the written length with
+    CPython's semantics: sock_accept of an unnamed client yields '',
+    sock_recvfrom from an unnamed sender yields None."""
+
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        # --- sock_accept of an unnamed AF_UNIX client must yield '' ---
+        tmpdir = tempfile.mkdtemp()
+        try:
+            path = os.path.join(tmpdir, "bug360.sock")
+
+            server_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            server_sock.bind(path)
+            server_sock.listen(4)
+            server_sock.setblocking(False)
+
+            client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            # Leave the client unnamed (default, never bind() it).
+            client.connect(path)
+            conn, addr = await loop.sock_accept(server_sock)
+            assert addr == "", f"unnamed AF_UNIX accept yielded {addr!r}"
+            client.close()
+            conn.close()
+            server_sock.close()
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+        # --- sock_recvfrom from an unbound AF_UNIX sender must yield None ---
+        tmpdir = tempfile.mkdtemp()
+        try:
+            rx_path = os.path.join(tmpdir, "bug360recv.sock")
+
+            server_sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+            server_sock.bind(rx_path)
+            server_sock.setblocking(False)
+
+            sender = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+            # Unbound sender — the kernel leaves msg.namelen at 0.
+            await loop.sock_sendto(sender, b"bug360", rx_path)
+            data, sender_addr = await loop.sock_recvfrom(server_sock, bufsize=1024)
+            assert data == b"bug360"
+            assert sender_addr is None, (
+                f"unnamed AF_UNIX recvfrom yielded {sender_addr!r}, expected None"
+            )
+            sender.close()
+            server_sock.close()
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    talyn.run(main())
+
+
+def test_bug360_empty_buffer_socket_ops():
+    """BUG-360: an empty bytearray() carries pbuf.buf == null; casting it
+    to [*]u8 tripped the null-pointer safety check in sock_sendall,
+    sock_sendto and sock_recv_into. sock_sendall/sock_sendto now tolerate
+    empty buffers, and sock_recv_into mirrors CPython by resolving 0
+    without a syscall (leaving already-queued data untouched)."""
+
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        # Stream pair: empty sendall resolves None (CPython performs no
+        # syscall for sendall(b''); io_uring rejects zero-length write
+        # SQEs with EFAULT, so nothing is queued).
+        srv, cli = socket.socketpair()
+        srv.setblocking(False)
+        cli.setblocking(False)
+        result = await loop.sock_sendall(cli, bytearray())
+        assert result is None
+        # The stream keeps working after the empty sendall.
+        srv.send(b"pong")
+        buf = bytearray(16)
+        n = await loop.sock_recv_into(cli, buf)
+        assert n == 4 and bytes(buf[:4]) == b"pong"
+        srv.close()
+        cli.close()
+
+        # Datagram pair over a real path: empty sendto mirrors CPython
+        # and still delivers a zero-byte datagram (addressed sendmsg with
+        # a zero-length iov — msg_iovlen is kept at 0 since io_uring's
+        # send path rejects zero-length iovecs with EFAULT).
+        tmpdir = tempfile.mkdtemp()
+        try:
+            dpath = os.path.join(tmpdir, "bug360dgram.sock")
+            dsrv = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+            dsrv.bind(dpath)
+            dsrv.setblocking(False)
+            dcli = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+            dcli.setblocking(False)
+            await loop.sock_sendto(dcli, bytearray(), dpath)
+            data, sender_addr = await loop.sock_recvfrom(dsrv, bufsize=16)
+            assert data == b"", f"empty datagram arrived as {data!r}"
+            assert sender_addr is None, (
+                f"unnamed AF_UNIX datagram sender yielded {sender_addr!r}, expected None"
+            )
+            dcli.close()
+            dsrv.close()
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+        # Empty recv_into resolves 0 without a null-pointer panic and
+        # without consuming the data the peer already queued.
+        srv2, cli2 = socket.socketpair()
+        srv2.setblocking(False)
+        cli2.setblocking(False)
+        srv2.send(b"x")
+        n = await loop.sock_recv_into(cli2, bytearray())
+        assert n == 0, f"empty recv_into yielded {n!r}, expected 0"
+        buf2 = bytearray(16)
+        n = await loop.sock_recv_into(cli2, buf2)
+        assert n == 1 and buf2[0] == ord("x")
+        srv2.close()
+        cli2.close()
 
     talyn.run(main())
