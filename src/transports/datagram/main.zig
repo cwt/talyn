@@ -255,3 +255,64 @@ pub fn create_type() !void {
     if (DatagramTransportType != null) return;
     DatagramTransportType = @ptrCast(python_c.PyType_FromSpecWithBases(@constCast(&datagram_spec), utils.PythonImports.get("asyncio_datagram_transport")) orelse return error.PythonError);
 }
+
+test "BUG-350: tp_alloc-zeroed datagram transport must not release buffer slot 0" {
+    // CPython's PyType_GenericAlloc zero-initializes the object, so the Zig
+    // field defaults (`fixed_buffer_index = -1`, `fd = -1`) never apply.
+    // Pre-fix, datagram_new left fixed_buffer_index == 0 — a VALID
+    // RegisteredBufferPool slot — and any error-path cleanup with a live
+    // `loop` released slot 0 while another transport was using it.
+    if (python_c._c.Py_IsInitialized() == 0) {
+        _ = python_c._c.Py_Initialize();
+    }
+
+    // Minimal PyTypeObject for tp_alloc (what PyType_GenericAlloc needs).
+    var fake_type: python_c.PyTypeObject = std.mem.zeroes(python_c.PyTypeObject);
+    fake_type.tp_basicsize = @sizeOf(DatagramTransportObject);
+    fake_type.tp_flags = python_c.Py_TPFLAGS_DEFAULT | python_c.Py_TPFLAGS_HAVE_GC;
+    fake_type.tp_alloc = @ptrCast(&python_c._c.PyType_GenericAlloc);
+
+    const instance: *DatagramTransportObject = @ptrCast(@alignCast(Constructors.datagram_new(@ptrCast(&fake_type), null, null) orelse return error.PythonError));
+
+    // BUG-350 constructor sentinels:
+    try std.testing.expectEqual(@as(std.posix.fd_t, -1), instance.fd);
+    try std.testing.expectEqual(@as(i32, -1), instance.fixed_buffer_index);
+
+    // Live loop data on a fabricated LoopObject: init_configuration sets
+    // `self.loop` before any fallible step, so a pre-lease failure leaves
+    // the object with a non-null loop exactly like this.
+    var loop_obj: Loop.Python.LoopObject = undefined;
+    @memset(std.mem.asBytes(&loop_obj), 0);
+    const loop_data = utils.get_data_ptr(Loop, &loop_obj);
+    try loop_data.init(std.testing.allocator, 64);
+    defer loop_data.release();
+    instance.loop = @ptrCast(&loop_obj);
+
+    // Hold one pool slot, as an unrelated live transport would.
+    const held = loop_data.io.buffer_pool.lease() orelse return error.NoBufferSlots;
+
+    // Error-path cleanup on the never-initialized transport must be a
+    // pool no-op.
+    cleanup_resources(instance);
+    try std.testing.expectEqual(@as(i32, -1), instance.fixed_buffer_index);
+
+    // The pool must still hand out every remaining slot exactly once.
+    var seen: [Loop.Scheduling.IO.RegisteredBufferPool.SlotCount]bool = @splat(false);
+    seen[held.index] = true;
+    var leases: [Loop.Scheduling.IO.RegisteredBufferPool.SlotCount]u16 = undefined;
+    var n: usize = 0;
+    while (n < Loop.Scheduling.IO.RegisteredBufferPool.SlotCount) : (n += 1) {
+        const leased = loop_data.io.buffer_pool.lease() orelse break;
+        try std.testing.expect(!seen[leased.index]); // no slot handed out twice
+        seen[leased.index] = true;
+        leases[n] = leased.index;
+    }
+    // SlotCount - 1 remaining slots after the held lease; a spurious
+    // release(0) pre-fix would yield SlotCount leases with index 0 twice.
+    try std.testing.expectEqual(Loop.Scheduling.IO.RegisteredBufferPool.SlotCount - 1, n);
+    try std.testing.expect(seen[0]); // slot 0 was still available exactly once
+
+    // Restore the pool state (release everything but keep the held slot;
+    // the loop release below tears the pool down anyway).
+    for (leases[0..n]) |index| loop_data.io.buffer_pool.release(index);
+}

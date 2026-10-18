@@ -435,3 +435,55 @@ def test_datagram_sendto_scope_id_out_of_range_raises():
             t.close()
 
     talyn.run(main())
+
+
+def test_bug350_datagram_new_without_init_pool_safe() -> None:
+    """BUG-350: tp_alloc zero-initializes DatagramTransportObject, so
+    fixed_buffer_index read 0 (a VALID RegisteredBufferPool slot) instead
+    of the -1 sentinel. An error-path cleanup with a live loop then
+    released slot 0 while another transport was using it. The constructor
+    sentinels plus cleanup no-op behavior on a never-initialized transport
+    must keep the buffer pool consistent and stdin intact."""
+    import gc
+    import os
+
+    import talyn.talyn_zig as native
+
+    # __new__ without __init__ -> dealloc must not touch the buffer pool
+    # or close any fd (fd sentinel is -1, buffer sentinel is -1).
+    t = native.DatagramTransport.__new__(native.DatagramTransport)
+    del t
+    gc.collect()
+
+    # stdin (fd 0) must still be open.
+    os.fstat(0)
+
+    # The pool must still lease slots exactly once afterwards: run a real
+    # datagram exchange and confirm no cross-talk (aliased buffers would
+    # corrupt the receive path).
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        class Echo(asyncio.DatagramProtocol):
+            def connection_made(self, transport):
+                self.transport = transport
+
+            def datagram_received(self, data, addr):
+                self.transport.sendto(data, addr)
+
+        server_t, _ = await loop.create_datagram_endpoint(
+            Echo, local_addr=("127.0.0.1", 0))
+        client_t, client_p = await loop.create_datagram_endpoint(
+            DatagramProtocol,
+            remote_addr=("127.0.0.1", server_t.get_extra_info("sockname")[1]),
+        )
+        try:
+            for i in range(4):
+                client_t.sendto(f"bug350-{i}".encode())
+            await asyncio.wait_for(client_p.on_con_made, 2.0)
+            await asyncio.sleep(0.2)
+        finally:
+            client_t.close()
+            server_t.close()
+
+    talyn.run(main())

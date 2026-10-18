@@ -8,7 +8,12 @@ const Loop = @import("../../loop/main.zig");
 pub fn datagram_new(@"type": ?*python_c.PyTypeObject, _: ?PyObject, _: ?PyObject) callconv(.c) ?PyObject {
     const instance: *DatagramTransport.DatagramTransportObject = @ptrCast(@"type".?.tp_alloc.?(@"type".?, 0) orelse return null);
     python_c.initialize_object_fields(instance, &.{"ob_base"});
+    // BUG-350: tp_alloc zero-initializes the struct, so the Zig field
+    // default `fixed_buffer_index = -1` never applies. 0 is a VALID
+    // RegisteredBufferPool slot — an error-path cleanup would release
+    // slot 0 belonging to another transport.
     instance.fd = -1;
+    instance.fixed_buffer_index = -1;
     instance.closed = true;
     return @ptrCast(instance);
 }
@@ -52,6 +57,13 @@ pub fn init_configuration(
 
     self.loop = python_c.py_newref(@as(*python_c.PyObject, @ptrCast(loop)));
     self.fd = fd;
+    // BUG-350: from this point on, a failure must unwind with clean
+    // sentinels — `fixed_buffer_index == 0` (tp_alloc zero-init) is a
+    // valid RegisteredBufferPool slot and `buffer_len` could still hold a
+    // previous buffer on a re-init, so reset them before any fallible step.
+    self.fixed_buffer_index = -1;
+    self.buffer_ptr = null;
+    self.buffer_len = 0;
     self.buffer_size = 0;
     self.writing_high_water_mark = std.math.maxInt(usize) / 2;
     self.writing_low_water_mark = std.math.maxInt(usize) / 2;
@@ -116,6 +128,13 @@ pub fn new_datagram_transport(
     fd: std.posix.fd_t,
 ) !*DatagramTransport.DatagramTransportObject {
     const self: *DatagramTransport.DatagramTransportObject = @ptrCast(DatagramTransport.DatagramTransportType.?.tp_alloc.?(DatagramTransport.DatagramTransportType.?, 0) orelse return error.PythonError);
+    // BUG-350: tp_alloc zero-initializes the object — without explicit
+    // sentinels, a failure inside init_configuration before the buffer
+    // lease completes would run cleanup_resources with fd == 0 (closing
+    // stdin!) and fixed_buffer_index == 0 (releasing pool slot 0 owned by
+    // another transport).
+    self.fd = -1;
+    self.fixed_buffer_index = -1;
     // BUG-283: mirror datagram_dealloc's resource release on failure.
     // Bare tp_free leaked the loop strong-ref, the fixed-file table slot,
     // and the registered-buffer lease / heap buffer whenever
