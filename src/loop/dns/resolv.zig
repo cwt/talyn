@@ -369,6 +369,16 @@ fn on_query_sent(data: *const CallbackManager.CallbackData) !void {
     const control_data = server_data.control_data;
 
     if (io_uring_err != .SUCCESS or control_data.resolved or data.cancelled()) {
+        // BUG-357: mirror the BUG-317 pattern from the response-read error
+        // path — when the send fails on the LAST outstanding nameserver
+        // (e.g. ENETUNREACH while offline), release() below would dispatch
+        // the user callbacks as cancelled, leaving getaddrinfo/getnameinfo
+        // futures pending forever. Mark the record resolved first so the
+        // callbacks run (and fail the futures cleanly with the empty
+        // record).
+        if (should_fail_resolution_on_server_finish(control_data)) {
+            try mark_resolved_and_execute_user_callbacks(server_data);
+        }
         server_data.release();
         return;
     }

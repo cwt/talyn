@@ -25,6 +25,22 @@ const GetNameInfoData = struct {
     }
 };
 
+/// BUG-357: resolve a still-pending future with an exception (see
+/// getaddrinfo.zig for rationale).
+fn resolve_future_error(future: *FutureObject, msg: [:0]const u8) !void {
+    const future_data = utils.get_data_ptr(Future, future);
+    if (future_data.status != .pending) return;
+    if (python_c.PyErr_Occurred() == null) {
+        const exc = python_c.PyObject_CallFunction(python_c.PyExc_RuntimeError, "s\x00", msg.ptr) orelse return error.PythonError;
+        defer python_c.py_decref(exc);
+        try Future.Python.Result.future_fast_set_exception(future, future_data, exc);
+        return;
+    }
+    const pending = python_c.PyErr_GetRaisedException() orelse return;
+    defer python_c.py_decref(pending);
+    try Future.Python.Result.future_fast_set_exception(future, future_data, pending);
+}
+
 fn getnameinfo_callback(data: *const CallbackManager.CallbackData) !void {
     const gnid: *GetNameInfoData = @ptrCast(@alignCast(data.user_data.?));
     defer {
@@ -35,37 +51,46 @@ fn getnameinfo_callback(data: *const CallbackManager.CallbackData) !void {
     const loop_data = utils.get_data_ptr(Loop, gnid.loop);
 
     if (data.cancelled()) {
+        // BUG-357: resolve the future instead of leaving the awaiter
+        // hanging forever.
+        try resolve_future_error(gnid.future, "DNS resolution cancelled\x00");
         return;
     }
 
     var buf: [128]u8 = undefined;
-    const rev_name = try Parsers.build_reverse_name(gnid.addr, &buf);
+    const rev_name = Parsers.build_reverse_name(gnid.addr, &buf) catch |err| {
+        try resolve_future_error(gnid.future, "Failed to build reverse name\x00");
+        return err;
+    };
     const cache_slot = loop_data.dns.get_cache_slot(rev_name);
     const record = cache_slot.get(rev_name) orelse {
-        const exc = python_c.PyObject_CallFunction(python_c.PyExc_RuntimeError, "s\x00", "Failed to resolve name\x00") orelse return error.PythonError;
-        defer python_c.py_decref(exc);
-        const future_data = utils.get_data_ptr(Future, gnid.future);
-        try Future.Python.Result.future_fast_set_exception(gnid.future, future_data, exc);
+        try resolve_future_error(gnid.future, "Failed to resolve name\x00");
         return;
     };
 
     const hostname = switch (record.state) {
         .ptr => |name| name,
         else => {
-            const exc = python_c.PyObject_CallFunction(python_c.PyExc_RuntimeError, "s\x00", "Reverse DNS failed\x00") orelse return error.PythonError;
-            defer python_c.py_decref(exc);
-            const future_data = utils.get_data_ptr(Future, gnid.future);
-            try Future.Python.Result.future_fast_set_exception(gnid.future, future_data, exc);
+            try resolve_future_error(gnid.future, "Reverse DNS failed\x00");
             return;
         },
     };
 
-    const py_host = python_c.PyUnicode_FromStringAndSize(hostname.ptr, @intCast(hostname.len)) orelse return error.PythonError;
+    const py_host = python_c.PyUnicode_FromStringAndSize(hostname.ptr, @intCast(hostname.len)) orelse {
+        try resolve_future_error(gnid.future, "Failed to build nameinfo result\x00");
+        return error.PythonError;
+    };
     defer python_c.py_decref(py_host);
-    const py_port = python_c.PyLong_FromLong(@intCast(gnid.addr.getPort())) orelse return error.PythonError;
+    const py_port = python_c.PyLong_FromLong(@intCast(gnid.addr.getPort())) orelse {
+        try resolve_future_error(gnid.future, "Failed to build nameinfo result\x00");
+        return error.PythonError;
+    };
     defer python_c.py_decref(py_port);
 
-    const py_res = python_c.PyTuple_Pack(2, py_host, py_port) orelse return error.PythonError;
+    const py_res = python_c.PyTuple_Pack(2, py_host, py_port) orelse {
+        try resolve_future_error(gnid.future, "Failed to build nameinfo result\x00");
+        return error.PythonError;
+    };
     defer python_c.py_decref(py_res);
 
     const future_data = utils.get_data_ptr(Future, gnid.future);

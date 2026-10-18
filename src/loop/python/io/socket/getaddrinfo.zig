@@ -28,6 +28,25 @@ const GetAddrInfoData = struct {
     }
 };
 
+/// BUG-357: resolve a still-pending future with an exception. Used by the
+/// getaddrinfo/getnameinfo completion callbacks, which previously returned
+/// silently on cancellation or error paths, leaving the awaiting coroutine
+/// hanging forever.
+fn resolve_future_error(future: *FutureObject, msg: [:0]const u8) !void {
+    const future_data = utils.get_data_ptr(Future, future);
+    if (future_data.status != .pending) return;
+    if (python_c.PyErr_Occurred() == null) {
+        const exc = python_c.PyObject_CallFunction(python_c.PyExc_RuntimeError, "s\x00", msg.ptr) orelse return error.PythonError;
+        defer python_c.py_decref(exc);
+        try Future.Python.Result.future_fast_set_exception(future, future_data, exc);
+        return;
+    }
+    // A Python exception is already pending: route it to the future.
+    const pending = python_c.PyErr_GetRaisedException() orelse return;
+    defer python_c.py_decref(pending);
+    try Future.Python.Result.future_fast_set_exception(future, future_data, pending);
+}
+
 fn getaddrinfo_callback(data: *const CallbackManager.CallbackData) !void {
     const gaid: *GetAddrInfoData = @ptrCast(@alignCast(data.user_data.?));
     defer {
@@ -39,19 +58,28 @@ fn getaddrinfo_callback(data: *const CallbackManager.CallbackData) !void {
     const loop_data = utils.get_data_ptr(Loop, gaid.loop);
 
     if (data.cancelled()) {
+        // BUG-357: the dispatch was cancelled (e.g. on_query_sent failed
+        // on the last nameserver) — resolve the future instead of leaving
+        // the awaiter hanging forever.
+        try resolve_future_error(gaid.future, "DNS resolution cancelled\x00");
         return;
     }
 
-    const address_list = try loop_data.dns.lookup(gaid.host, null, gaid.dns_timeout) orelse {
+    const address_list = loop_data.dns.lookup(gaid.host, null, gaid.dns_timeout) catch |err| {
+        // BUG-357: resolve the future on lookup errors too.
+        try resolve_future_error(gaid.future, "Failed to resolve host\x00");
+        return err;
+    } orelse {
         // This shouldn't happen if we are called back after Resolv.queue
-        const exc = python_c.PyObject_CallFunction(python_c.PyExc_RuntimeError, "s\x00", "Failed to resolve host\x00") orelse return error.PythonError;
-        defer python_c.py_decref(exc);
-        const future_data = utils.get_data_ptr(Future, gaid.future);
-        try Future.Python.Result.future_fast_set_exception(gaid.future, future_data, exc);
+        try resolve_future_error(gaid.future, "Failed to resolve host\x00");
         return;
     };
 
-    const py_tuple = try build_result_tuple(address_list, gaid.port, gaid.family, gaid.socket_type, gaid.proto);
+    const py_tuple = build_result_tuple(address_list, gaid.port, gaid.family, gaid.socket_type, gaid.proto) catch |err| {
+        // BUG-357: resolve the future on result-construction errors.
+        try resolve_future_error(gaid.future, "Failed to build addrinfo result\x00");
+        return err;
+    };
     defer python_c.py_decref(py_tuple);
 
     const future_data = utils.get_data_ptr(Future, gaid.future);

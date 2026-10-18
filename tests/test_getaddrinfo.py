@@ -155,3 +155,49 @@ def test_getaddrinfo_nonexistent_domain_does_not_poison_cache() -> None:
 
     talyn.run(main())
 
+
+
+def test_bug357_failed_resolution_resolves_future_promptly() -> None:
+    """BUG-357: when the DNS query send fails on the last nameserver (or
+    the result-construction fails), getaddrinfo_callback /
+    getnameinfo_callback returned without resolving the future - the
+    awaiting coroutine hung forever. Every failure path must resolve the
+    future with an exception, promptly."""
+    import time
+
+    import talyn
+
+    async def main() -> None:
+        loop = asyncio.get_running_loop()
+
+        # Unresolvable host: every attempt must RAISE promptly (the
+        # sandbox resolver fails fast; the contract is a bounded wait).
+        for i in range(5):
+            t0 = time.monotonic()
+            try:
+                await asyncio.wait_for(
+                    loop.getaddrinfo("nonexistent.invalid", 80), 30.0)
+                raise AssertionError("getaddrinfo unexpectedly succeeded")
+            except asyncio.TimeoutError:
+                raise AssertionError(
+                    f"getaddrinfo future left pending (hang) on iteration {i}")
+            except Exception:
+                pass  # the expected resolution failure
+            assert time.monotonic() - t0 < 30.0
+
+        # getnameinfo for an address without a PTR record: same contract.
+        for i in range(5):
+            t0 = time.monotonic()
+            try:
+                await asyncio.wait_for(
+                    loop.getnameinfo(("127.0.0.1", 8080)), 30.0)
+                # 127.0.0.1 may legitimately resolve via the resolver; only
+                # a hang is a failure.
+            except asyncio.TimeoutError:
+                raise AssertionError(
+                    f"getnameinfo future left pending (hang) on iteration {i}")
+            except Exception:
+                pass
+            assert time.monotonic() - t0 < 30.0
+
+    talyn.run(main())
