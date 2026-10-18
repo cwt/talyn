@@ -63,6 +63,12 @@ inline fn z_future_add_done_callback(
         }),
         else => {
             const loop_data = future_data.loop;
+            if (!loop_data.initialized) {
+                python_c.py_decref(context.?);
+                python_c.py_decref(py_callback);
+                python_c.raise_python_runtime_error("Event loop is closed\x00");
+                return error.PythonError;
+            }
             const handle = blk: {
                 errdefer {
                     python_c.py_decref(context.?);

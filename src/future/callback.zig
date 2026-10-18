@@ -234,6 +234,13 @@ pub fn call_done_callbacks(self: *Future, new_status: Future.FutureStatus) !void
         return;
     }
 
+    if (!self.loop.initialized) {
+        self.loop.reserved_slots -= 1;
+        release_callbacks_queue(&self.callbacks_queue);
+        python_c.raise_python_runtime_error("Event loop is closed\x00");
+        return error.PythonError;
+    }
+
     self.python_payload = .{
         .module_ptr = null,
         .callback_ptr = null,

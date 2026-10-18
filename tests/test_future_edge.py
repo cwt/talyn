@@ -13,3 +13,30 @@ def test_future_without_loop_inside_running_loop() -> None:
         assert loop.run_until_complete(test())
     finally:
         loop.close()
+
+
+def test_future_callbacks_after_loop_close_raises_runtime_error() -> None:
+    """BUG-340: resolving/cancelling a Future with done callbacks or adding a
+    done callback to a completed Future after loop.close() must raise
+    RuntimeError('Event loop is closed') instead of dereferencing freed
+    ready_tasks_queues."""
+    import pytest
+
+    def noop(_fut) -> None:
+        pass
+
+    loop = Loop()
+    fut_with_cb = loop.create_future()
+    fut_with_cb.add_done_callback(noop)
+
+    done_fut = loop.create_future()
+    done_fut.set_result(42)
+
+    loop.close()
+
+    with pytest.raises(RuntimeError, match="closed"):
+        fut_with_cb.set_result(1)
+
+    with pytest.raises(RuntimeError, match="closed"):
+        done_fut.add_done_callback(noop)
+
