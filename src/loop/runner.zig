@@ -235,6 +235,18 @@ fn fetch_completed_tasks(self: *Loop, blocking_ready_tasks: []std.os.linux.io_ur
                         if (self.completion_batch.push(record)) {
                             v.data.set_batch_dispatched(true);
                             read_transport.batch_dispatched = true;
+                            // BUG-351: the BlockingTask slot is freed below
+                            // (deinit) while dispatch_completion_batch runs
+                            // protocol.data_received()/buffer_updated() long
+                            // before read_operation_completed resets the id
+                            // in call_once. A pause_reading()/close()/abort()
+                            // inside the protocol callback would queue
+                            // CancelIO on the freed — and possibly already
+                            // reused — slot (BUG-336 class). Clear at harvest
+                            // so the transport is idle for the whole dispatch
+                            // window.
+                            read_transport.blocking_task_id = 0;
+                            read_transport.cancelling = false;
                         }
                     }
                     // Push failure or null protocol = fall through to normal callback.

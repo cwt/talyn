@@ -75,11 +75,16 @@ pub fn close(self: *ReadTransport) !void {
         return;
     }
 
-    _ = try self.loop.io.queue(.{ .CancelIO = blocking_task_id });
-    // BUG-336: exactly one CancelIO per op generation — a second cancel
-    // after completion+slot-reuse would kill the new occupant. Mark
-    // cancelling so cancel() becomes idempotent (completion resets it).
-    self.cancelling = true;
+    if (!self.cancelling) {
+        _ = try self.loop.io.queue(.{ .CancelIO = blocking_task_id });
+        // BUG-336: exactly one CancelIO per op generation — a second cancel
+        // after completion+slot-reuse would kill the new occupant. Mark
+        // cancelling so cancel() becomes idempotent (completion resets it).
+        // BUG-351: close() previously skipped this guard and queued a
+        // SECOND CancelIO when pause_reading() had already cancelled this
+        // op generation.
+        self.cancelling = true;
+    }
     self.is_closing = true;
     self.connection_lost_callback = null;
 }
@@ -136,8 +141,15 @@ pub fn read_operation_completed(data: *const CallbackManager.CallbackData) !void
     const io_uring_err = data.io_uring_err();
     const io_uring_res = data.io_uring_res();
 
-    self.blocking_task_id = 0;
-    self.cancelling = false;
+    // BUG-351: for batch-dispatched reads the id was already cleared at
+    // harvest (fetch_completed_tasks), and a re-arm queued during dispatch
+    // (resume_reading inside data_received) owns the field now — clearing
+    // it here would orphan that in-flight read. Non-batch completions have
+    // no such window; keep clearing for them.
+    if (!data.batch_dispatched()) {
+        self.blocking_task_id = 0;
+        self.cancelling = false;
+    }
     self.batch_dispatched = data.batch_dispatched();
 
     var bytes_read: usize = 0;
@@ -216,6 +228,89 @@ pub inline fn cancel(self: *ReadTransport) !void {
     _ = try self.loop.io.queue(.{ .CancelIO = blocking_task_id });
 
     self.cancelling = true;
+}
+
+fn testBug351ReadCallback(_: *ReadTransport, _: []const u8, _: std.os.linux.E) anyerror!void {}
+
+fn testBug351ConnectionLost(_: PyObject, _: PyObject) anyerror!void {}
+
+test "BUG-351: ReadTransport.close() after cancel() must not queue a second CancelIO" {
+    const allocator = std.testing.allocator;
+    const loop = try allocator.create(Loop);
+    defer allocator.destroy(loop);
+
+    try loop.init(allocator, 64);
+    defer loop.release();
+
+    // A dummy parent transport: the close()/cancel() paths with an
+    // in-flight task id never dereference it.
+    var dummy_parent: python_c.PyObject = std.mem.zeroes(python_c.PyObject);
+
+    var rt: ReadTransport = undefined;
+    try rt.init(loop, -1, &testBug351ReadCallback, @ptrCast(&dummy_parent), @ptrCast(&dummy_parent), &testBug351ConnectionLost, false);
+    defer rt.deinit();
+
+    // Simulate an in-flight read.
+    rt.blocking_task_id = 0xDEADBEEF;
+
+    _ = try loop.io.flush_pending_sqes();
+    const tail_before = loop.io.ring.sq.sqe_tail;
+
+    // pause_reading() -> cancel(): queues exactly one CancelIO.
+    try rt.cancel();
+    try std.testing.expect(rt.cancelling);
+    const tail_after_cancel = loop.io.ring.sq.sqe_tail;
+    try std.testing.expect(tail_after_cancel != tail_before);
+
+    // BUG-351: close() previously queued a SECOND CancelIO for the same
+    // op generation (reaching the freed/reused slot once the first cancel
+    // completed). It must now be idempotent.
+    try rt.close();
+    try std.testing.expectEqual(tail_after_cancel, loop.io.ring.sq.sqe_tail);
+    try std.testing.expect(rt.is_closing);
+}
+
+test "BUG-351: batch-dispatched read completion must not clobber a re-armed blocking_task_id" {
+    // The parent transport is decref'd by read_operation_completed, so it
+    // must be a real PyObject.
+    if (python_c._c.Py_IsInitialized() == 0) {
+        _ = python_c._c.Py_Initialize();
+    }
+    const parent = python_c.PyLong_FromLong(1) orelse return error.PythonError;
+    // One extra ref: the non-batch call below decrefs a second time.
+    python_c.py_incref(parent);
+
+    const allocator = std.testing.allocator;
+    const loop = try allocator.create(Loop);
+    defer allocator.destroy(loop);
+
+    try loop.init(allocator, 64);
+    defer loop.release();
+
+    var rt: ReadTransport = undefined;
+    try rt.init(loop, -1, &testBug351ReadCallback, parent, parent, &testBug351ConnectionLost, false);
+    defer rt.deinit();
+    rt.buffer_to_read = rt.buffer;
+
+    // Batch-dispatched completion (data_received ran via
+    // dispatch_completion_batch). During the dispatch the protocol called
+    // resume_reading(), which queued a NEW read and owns the id now.
+    var batch_data = CallbackManager.CallbackData.init_io(&rt, 16, .SUCCESS);
+    batch_data.set_batch_dispatched(true);
+    rt.blocking_task_id = 0x1234;
+
+    try ReadTransport.read_operation_completed(&batch_data);
+    // Pre-fix: unconditionally reset to 0, orphaning the in-flight read.
+    try std.testing.expectEqual(@as(usize, 0x1234), rt.blocking_task_id);
+    try std.testing.expectEqual(true, rt.batch_dispatched);
+
+    // Non-batch completions have no such window and must still clear.
+    var direct_data = CallbackManager.CallbackData.init_io(&rt, 8, .SUCCESS);
+    try ReadTransport.read_operation_completed(&direct_data);
+    try std.testing.expectEqual(@as(usize, 0), rt.blocking_task_id);
+    try std.testing.expectEqual(false, rt.batch_dispatched);
+
+    python_c.py_decref(parent);
 }
 
 const ReadTransport = @This();

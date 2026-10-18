@@ -17,6 +17,13 @@ pub inline fn queue_read_operation(transport: *StreamTransportObject, read_trans
         return;
     }
 
+    // BUG-351: a read queued during batch dispatch (resume_reading called
+    // inside data_received) must not be doubled by the completing
+    // callback's re-arm below.
+    if (read_transport.blocking_task_id != 0) {
+        return;
+    }
+
     switch (protocol_type) {
         .Buffered => {
             const protocol_get_buffer = transport.protocol_get_buffer orelse {
