@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 349 |
-| Open | 33 |
+| Fixed | 350 |
+| Open | 32 |
 | False Positive | 13 |
 | **Total** | **395** |
 
@@ -399,7 +399,7 @@ Sorted by bug number. See individual bug files for details.
 | [361](361.md) | Unchecked `@intCast` and `@intFromFloat` panics on untrusted Python integer/float arguments across Loop, Socket, DNS, and PseudoSocket entry points (Mandate #1 violations) | High | Fixed |
 | [362](362.md) | `ChildWatcher` reads uninitialized `siginfo_t` when `waitid(WNOHANG)` returns `0` with no exited child and leaks `pidfd`, callback reference, and `ChildHandler` on `on_child_exit` error/shutdown paths | High | Fixed |
 | [363](363.md) | `dispatch_completion_batch` calls CPython APIs with a live exception set and aborts `Runner.start` before releasing buffers or re-arming reads | High | Fixed |
-| [364](364.md) | `BlockingTasksSet.free()` ignores `self.free_count`, permanently leaking ~80 KB `BlockingTasksSet` nodes into `busy_sets` every 1024 operations (plus `reserved_slots` leak on `Overflow`) | High | Open |
+| [364](364.md) | `BlockingTasksSet.free()` ignores `self.free_count`, permanently leaking ~80 KB `BlockingTasksSet` nodes into `busy_sets` every 1024 operations (plus `reserved_slots` leak on `Overflow`) | High | Fixed |
 | [365](365.md) | Allocator mismatch in `DNS.lookup` (freed via `DNS.arena` in `Cache.evict_record`) and unbounded `DNS.arena` memory growth across cache evictions and `ControlData` lifecycles | High | Open |
 | [366](366.md) | `SubprocessTransport` leaks `pidfd` when exit watcher is cancelled during `loop.close()` or `SubprocessTransport` deallocation | High | Open |
 | [367](367.md) | `DatagramTransport.close()` never calls `protocol.connection_lost(None)` and delays fixed-file unregistration until GC deallocation | High | Open |

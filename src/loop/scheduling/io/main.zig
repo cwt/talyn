@@ -238,7 +238,14 @@ pub const BlockingTasksSet = struct {
             slot_idx = self.free_slots[self.free_count];
         } else {
             const index = self.index;
-            if (index == TotalTasksItems) return error.Overflow;
+            if (index == TotalTasksItems) {
+                // BUG-364: undo the reservation taken above — the
+                // loop-global counter would otherwise drift upward on
+                // every full-set push (the saved-slots parity tracked in
+                // loop/main.zig's blocking-task tests).
+                self.loop.reserved_slots -= 1;
+                return error.Overflow;
+            }
             slot_idx = index;
             @atomicStore(u16, &self.index, index + 1, .release);
         }
@@ -279,13 +286,23 @@ pub const BlockingTasksSet = struct {
         self.active_tasks = active_tasks;
     }
 
+    /// Whether this set still has room for at least one new task.
+    /// BUG-364: the previous check compared only the bump index against
+    /// the capacity and ignored `free_slots` — a set whose 1024 slots
+    /// had all been allocated, but of which ~1023 were long since
+    /// released into the free list, was reported as full. Any set hosting
+    /// a long-lived task (eventfd/signalfd read, server socket, idle
+    /// connection) then never reached `active_tasks == 0`, stayed
+    /// stranded in busy_sets, and every 1024 operations caused
+    /// get_blocking_tasks_set to allocate a fresh ~80 KB node instead of
+    /// reusing the recycled slots.
     pub inline fn free(self: *BlockingTasksSet) bool {
-        if (self.index == TotalTasksItems) {
-            self.disattached = true;
-            return false;
+        if (self.index - self.free_count < TotalTasksItems) {
+            return true;
         }
 
-        return true;
+        self.disattached = true;
+        return false;
     }
 
     pub fn traverse(self: *const BlockingTasksSet, visit: python_c.visitproc, arg: ?*anyopaque) c_int {
@@ -974,3 +991,20 @@ fn checkKernelVersion() !std.SemanticVersion {
 }
 
 const IO = @This();
+
+test "BUG-364: free() reports capacity once slots are recycled into the free list" {
+    var set: BlockingTasksSet = .{};
+    set.index = TotalTasksItems;
+
+    // Genuinely full: every bump-allocated slot is live.
+    try std.testing.expectEqual(false, set.free());
+
+    // A long-lived task (eventfd/signalfd read, server socket, idle
+    // connection) keeps active_tasks >= 1 while the other 1023 tasks
+    // complete and push their slots into free_slots. Pre-fix, free()
+    // compared only the bump index and still reported the set as full,
+    // stranding the whole ~80 KB node in busy_sets and forcing a fresh
+    // node allocation every 1024 operations.
+    set.free_count = TotalTasksItems - 1;
+    try std.testing.expectEqual(true, set.free());
+}
