@@ -175,3 +175,43 @@ def test_abstract_unix_socket_peername():
             srv.close()
 
     talyn.run(main())
+
+
+def test_create_unix_connection_protocol_refcount() -> None:
+    """BUG-342: unix_connect_callback must not double-decref the protocol
+    instance returned by protocol_factory."""
+    import gc
+    import sys
+
+    path = _unix_path()
+    proto = asyncio.Protocol()
+    initial_refcnt = sys.getrefcount(proto)
+
+    def make_proto() -> asyncio.Protocol:
+        return proto
+
+    try:
+
+        async def main() -> None:
+            loop = asyncio.get_running_loop()
+            server = await loop.create_unix_server(EchoProtocol, path)
+            transport, returned_proto = await loop.create_unix_connection(
+                make_proto, path
+            )
+            assert returned_proto is proto
+            assert sys.getrefcount(proto) > initial_refcnt
+            transport.close()
+            server.close()
+            await server.wait_closed()
+            await asyncio.sleep(0)
+
+        talyn.run(main())
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+    gc.collect()
+    assert sys.getrefcount(proto) == initial_refcnt
+

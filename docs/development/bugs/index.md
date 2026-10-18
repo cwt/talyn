@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 327 |
-| Open | 55 |
+| Fixed | 328 |
+| Open | 54 |
 | False Positive | 13 |
 | **Total** | **395** |
 
@@ -377,7 +377,7 @@ Sorted by bug number. See individual bug files for details.
 | [339](339.md) | Self-assignment `py_xdecref` before `py_newref` on `cancel_msg_py_object` causes use-after-free on Task/Future cancellation | Critical | Fixed |
 | [340](340.md) | Dispatching `Future` done callbacks after `loop.close()` dereferences freed `ready_tasks_queues` (use-after-free) | Critical | Fixed |
 | [341](341.md) | GC `future_traverse` visits freed `PyObject` pointers after `run_python_future_set_callbacks` error (UAF) and `Future.release` leaks `exceptions_queue` items | Critical | Fixed |
-| [342](342.md) | Unconditional double-decref of `protocol` and conditional leak or double-decref of `transport` in `unix_connect_callback` | Critical | Open |
+| [342](342.md) | Unconditional double-decref of `protocol` and conditional leak or double-decref of `transport` in `unix_connect_callback` | Critical | Fixed |
 | [343](343.md) | Double-close and triple-close of socket `fd` on error paths in `z_loop_create_unix_server` | Critical | Open |
 | [344](344.md) | Double-decref of `LoopObject` (`self`) on `Soon.dispatch` failure in `z_loop_create_connection` (`sock=` path) | Critical | Open |
 | [345](345.md) | `callback_for_python_generic_callbacks` sets `handle.cancelled = true` on normal execution, breaking `Handle.cancelled()` and causing `loop.add_signal_handler` callbacks to fire only once | Critical | Open |

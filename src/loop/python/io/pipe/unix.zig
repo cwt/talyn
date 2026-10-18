@@ -72,16 +72,18 @@ fn unix_connect_callback(data: *const CallbackManager.CallbackData) !void {
     // BUG-284: on any failure below, the half-built transport never took
     // the fd - close it here or it leaks forever.
     var fd_consumed = false;
-    errdefer {
+    defer {
         if (!fd_consumed) _ = std.os.linux.close(fd);
     }
 
     const protocol = python_c.PyObject_CallNoArgs(ucd.protocol_factory) orelse return set_future_exception(error.PythonError, ucd.future);
     defer python_c.py_decref(protocol);
 
-    const transport = try Stream.Constructors.new_stream_transport(protocol, @ptrCast(ucd.loop), fd, false);
+    const transport = Stream.Constructors.new_stream_transport(protocol, @ptrCast(ucd.loop), fd, false) catch |err| {
+        return set_future_exception(err, ucd.future);
+    };
     fd_consumed = true;
-    errdefer python_c.py_decref(@ptrCast(transport));
+    defer python_c.py_decref(@ptrCast(transport));
 
     const connection_made = python_c.PyObject_GetAttrString(protocol, "connection_made\x00") orelse return set_future_exception(error.PythonError, ucd.future);
     defer python_c.py_decref(connection_made);
@@ -91,10 +93,6 @@ fn unix_connect_callback(data: *const CallbackManager.CallbackData) !void {
 
     const result_tuple = python_c.PyTuple_Pack(2, @as(PyObject, @ptrCast(transport)), protocol) orelse return set_future_exception(error.PythonError, ucd.future);
     defer python_c.py_decref(result_tuple);
-
-    // Decref local references as PyTuple_Pack increments them
-    python_c.py_decref(@ptrCast(transport));
-    python_c.py_decref(protocol);
 
     const future_data = utils.get_data_ptr(Future, ucd.future);
     try Future.Python.Result.future_fast_set_result(future_data, result_tuple);
