@@ -200,3 +200,49 @@ def test_subprocess_exec_pid_out_of_range_raises() -> None:
             )
 
     talyn.run(main())
+
+
+def test_bug366_pidfd_closed_on_loop_close() -> None:
+    """BUG-366: spawning a subprocess and letting the loop close before
+    the child exits must not leak the exit watcher's pidfd.
+
+    The teardown cancels the pending WatchReadable op; pre-fix,
+    ``pidfd_exit_callback`` took the cancelled branch and returned
+    without closing the pidfd, ``cleanup_pidfd`` only decref'd the
+    transport, and ``subprocess_dealloc`` never closed it either — six
+    spawns left six stray descriptors in the process table.
+
+    The count is taken over ``anon_inode:[pidfd]`` descriptors directly
+    (a plain fd count would also pick up the abandoned transport's
+    child pipes, which are outside this bug's scope).
+    """
+    import os
+
+    def pidfd_count() -> int:
+        count = 0
+        with os.scandir("/proc/self/fd") as entries:
+            for entry in entries:
+                try:
+                    if "pidfd" in os.readlink(entry.path):
+                        count += 1
+                except OSError:
+                    pass
+        return count
+
+    for _ in range(6):
+        async def main() -> SubprocessProtocolStub:
+            loop = asyncio.get_running_loop()
+            transport, protocol = await loop.subprocess_exec(
+                SubprocessProtocolStub, "/usr/bin/sleep", "5"
+            )
+            # Abandon the transport: the child never exits inside the
+            # run, so the exit watcher is torn down with the loop.
+            _ = protocol
+            return transport
+
+        talyn.run(main())
+
+    leaked = pidfd_count()
+    assert leaked == 0, (
+        f"subprocess pidfds leaked on loop close: {leaked} stray descriptors"
+    )

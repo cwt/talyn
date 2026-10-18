@@ -20,6 +20,18 @@ pub const SubprocessTransportObject = extern struct {
     closed: bool,
 };
 
+/// BUG-366: closes the transport's pidfd if it is still open and clears
+/// the field. Safe to call from every exit path (cancelled callback,
+/// watcher cleanup, dealloc): the >= 0 guard makes double-close
+/// impossible, and the watcher holds a transport reference throughout
+/// its execution, so a concurrent dealloc cannot interleave.
+inline fn close_pidfd(transport: *SubprocessTransportObject) void {
+    if (transport.pidfd >= 0) {
+        _ = std.os.linux.close(transport.pidfd);
+        transport.pidfd = -1;
+    }
+}
+
 fn subprocess_dealloc(self: ?*SubprocessTransportObject) callconv(.c) void {
     const instance = self.?;
     python_c.PyObject_GC_UnTrack(@ptrCast(instance));
@@ -35,6 +47,10 @@ fn subprocess_dealloc(self: ?*SubprocessTransportObject) callconv(.c) void {
             }
         }
     }
+    // BUG-366: final safety net - any watcher exit path that missed the
+    // close (cancelled callback, cleanup) must not leak the descriptor
+    // into process death.
+    close_pidfd(instance);
     python_c.py_xdecref(instance.loop);
     python_c.py_xdecref(instance.protocol);
     python_c.py_xdecref(instance.popen);
@@ -248,6 +264,11 @@ pub fn create_type() !void {
 
 fn cleanup_pidfd(ptr: ?*anyopaque) void {
     const transport: *SubprocessTransportObject = @ptrCast(@alignCast(ptr.?));
+    // BUG-366: the watcher is being destroyed without executing (teardown
+    // drain) — the pidfd must be closed here or it leaks until dealloc
+    // (which only closes it as a BUG-366 safety net now, but this buffer
+    // frees the descriptor as early as possible).
+    close_pidfd(transport);
     python_c.py_decref(@ptrCast(transport));
 }
 
@@ -324,6 +345,13 @@ fn pidfd_exit_callback(data: *const CallbackManager.CallbackData) !void {
     transport.pidfd_task_id = 0;
 
     if (data.cancelled() or transport.closed) {
+        // BUG-366: close the pidfd before dropping the transport
+        // reference — nothing after the callback/cleanup can close it
+        // (dealloc used to not), so a cancelled watcher (loop close while
+        // the subprocess is still running) leaked the descriptor forever.
+        // subprocess_close() already closed it for the `closed` half —
+        // the >= 0 guard makes this a no-op there.
+        close_pidfd(transport);
         success = true;
         return;
     }
