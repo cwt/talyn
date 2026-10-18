@@ -158,8 +158,10 @@ fn datagram_close(self: ?*DatagramTransportObject, _: ?PyObject) callconv(.c) ?P
     const instance = self.?;
     if (!instance.closed) {
         instance.closed = true;
+        var loop_obj_ptr: ?*LoopObject = null;
         if (instance.loop) |loop| {
             const loop_obj: *LoopObject = @ptrCast(@alignCast(loop));
+            loop_obj_ptr = loop_obj;
             const loop_data = utils.get_data_ptr(Loop, loop_obj);
             if (loop_data.initialized) {
                 if (instance.read_task_id != 0) {
@@ -168,14 +170,88 @@ fn datagram_close(self: ?*DatagramTransportObject, _: ?PyObject) callconv(.c) ?P
                 if (instance.fd >= 0) {
                     _ = loop_data.io.queue(.{ .CancelByFd = @intCast(instance.fd) }) catch |err| std.log.warn("queue cancel failed: {s}", .{@errorName(err)});
                 }
+                // BUG-367: unregister the fixed file BEFORE closing the fd —
+                // the fixed table holds a kernel fget reference on the
+                // struct file, so closing the userspace fd alone kept the
+                // kernel socket alive (and the UDP port bound) until
+                // dealloc's cleanup_resources ran, making an immediate
+                // re-bind of the same port fail with EADDRINUSE.
+                if (instance.fixed_file_index != 0) {
+                    loop_data.io.unregister_fixed_file(instance.fixed_file_index);
+                    instance.fixed_file_index = 0;
+                }
             }
         }
         if (instance.fd >= 0) {
             _ = std.os.linux.close(instance.fd);
             instance.fd = -1;
         }
+        // BUG-367: asyncio DatagramTransport contract — close() must
+        // schedule protocol.connection_lost(None). The callback was cached
+        // by set_protocol but never dispatched anywhere.
+        if (loop_obj_ptr) |loop_obj| {
+            schedule_datagram_connection_lost(instance, loop_obj);
+        }
     }
     return python_c.get_py_none();
+}
+
+/// BUG-367: delivers protocol.connection_lost(None) for a closing
+/// datagram transport. Mirrors the stream transport's
+/// lifecycle.close_transports: dispatch synchronously when the loop is
+/// already closed, otherwise via loop.call_soon. Callback failures are
+/// routed to the loop's exception handler and never propagate into
+/// close().
+fn schedule_datagram_connection_lost(
+    instance: *DatagramTransportObject,
+    loop_obj: *LoopObject,
+) void {
+    const connection_lost = instance.protocol_connection_lost orelse return;
+
+    const is_closed_attr = python_c.PyObject_GetAttrString(@ptrCast(loop_obj), "is_closed\x00") orelse {
+        python_c.PyErr_Clear();
+        return;
+    };
+    defer python_c.py_decref(is_closed_attr);
+    const is_closed_py = python_c.PyObject_CallNoArgs(is_closed_attr) orelse {
+        python_c.PyErr_Clear();
+        return;
+    };
+    defer python_c.py_decref(is_closed_py);
+
+    const none = python_c.get_py_none();
+    if (python_c.PyObject_IsTrue(is_closed_py) != 0) {
+        const ret = python_c.PyObject_CallOneArg(connection_lost, none);
+        if (ret) |v| {
+            python_c.py_decref(v);
+        } else {
+            const exc = python_c.PyErr_GetRaisedException();
+            if (exc) |e| {
+                defer python_c.py_decref(e);
+                const ctx = python_c.PyDict_New();
+                if (ctx) |c| {
+                    defer python_c.py_decref(c);
+                    const msg = python_c.PyUnicode_FromString("Exception in datagram connection_lost callback\x00");
+                    if (msg) |m| {
+                        defer python_c.py_decref(m);
+                        _ = python_c.PyDict_SetItemString(c, "message\x00", m);
+                    }
+                    _ = python_c.PyDict_SetItemString(c, "exception\x00", e);
+                    const ret2 = python_c.PyObject_CallMethod(@ptrCast(loop_obj), "call_exception_handler\x00", "O\x00", c);
+                    if (ret2) |r2| python_c.py_decref(r2) else python_c.PyErr_Clear();
+                }
+            }
+        }
+        return;
+    }
+
+    const call_soon = python_c.PyObject_GetAttrString(@ptrCast(loop_obj), "call_soon\x00") orelse {
+        python_c.PyErr_Clear();
+        return;
+    };
+    defer python_c.py_decref(call_soon);
+    const ret = python_c.PyObject_CallFunctionObjArgs(call_soon, connection_lost, none, @as(?*python_c.PyObject, null));
+    if (ret) |v| python_c.py_decref(v) else python_c.PyErr_Clear();
 }
 
 fn datagram_abort(self: ?*DatagramTransportObject, _: ?PyObject) callconv(.c) ?PyObject {
