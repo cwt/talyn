@@ -422,8 +422,9 @@ fn failed_execution(task: *Task.PythonTaskObject) !void {
 
     const cancelled_error = utils.PythonImports.get("cancelled_error_exc");
     if (exc_match(exception, cancelled_error) > 0) {
+        const new_exc = python_c.py_newref(exception);
         python_c.py_xdecref(fut.cancelled_exc);
-        fut.cancelled_exc = python_c.py_newref(exception);
+        fut.cancelled_exc = new_exc;
         _ = Future.Python.Cancel.future_fast_cancel(fut, future_data, null) catch |err| {
             utils.handle_zig_function_error(err, {});
 

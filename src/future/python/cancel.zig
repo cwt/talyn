@@ -13,8 +13,9 @@ pub inline fn future_fast_cancel(instance: *PythonFutureObject, data: *Future, c
     }
 
     if (cancel_msg_py_object) |pyobj| {
+        const new_msg = python_c.py_newref(pyobj);
         python_c.py_xdecref(instance.cancel_msg_py_object);
-        instance.cancel_msg_py_object = python_c.py_newref(pyobj);
+        instance.cancel_msg_py_object = new_msg;
     }
 
     try Future.Callback.call_done_callbacks(data, .canceled);

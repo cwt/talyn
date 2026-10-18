@@ -295,3 +295,28 @@ def test_task_constructor_failure_does_not_double_release() -> None:
         )
     finally:
         coro.close()
+
+
+def test_task_self_cancel_dynamic_message_no_uaf() -> None:
+    """BUG-339: when a task cancels itself with a dynamically allocated
+    message (refcount == 1) and then returns so set_result invokes
+    future_fast_cancel(&task.fut, future_data, task.fut.cancel_msg_py_object),
+    cancel_msg_py_object must not be freed before being re-referenced."""
+    import asyncio
+
+    loop = Loop()
+    try:
+        async def self_cancelling(idx: int):
+            task = asyncio.current_task()
+            assert task is not None
+            task.cancel(f"dynamic-cancel-message-{idx}-" + ("x" * 64))
+            return idx
+
+        for i in range(50):
+            t = loop.create_task(self_cancelling(i))
+            with pytest.raises(asyncio.CancelledError) as exc_info:
+                loop.run_until_complete(t)
+            assert f"dynamic-cancel-message-{i}-" in str(exc_info.value)
+    finally:
+        loop.close()
+
