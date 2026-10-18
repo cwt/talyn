@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 323 |
-| Open | 59 |
+| Fixed | 324 |
+| Open | 58 |
 | False Positive | 13 |
 | **Total** | **395** |
 
@@ -373,7 +373,7 @@ Sorted by bug number. See individual bug files for details.
 | [335](335.md) | `Read.perform` zero-copy branch staged a kernel-dereferenced pointer at the caller's iovec array (latent BUG-30/BUG-334 class); rejected, TALYN-015 added | Medium | Fixed |
 | [336](336.md) | `call_later` timers scheduled inside a `create_connection` protocol factory fire immediately instead of after the delay | High | Fixed |
 | [337](337.md) | `Cancel.perform_by_fd` passes `fd = -1` to `IORING_ASYNC_CANCEL_FD`, causing every `CancelByFd` SQE to fail with `-EBADF` | Critical | Fixed |
-| [338](338.md) | Synchronous error in `Resolv.prepare_data` or `Resolv.queue` schedules `user_callback` on `Soon` queue while also returning error to caller (UAF & double-free) | Critical | Open |
+| [338](338.md) | Synchronous error in `Resolv.prepare_data` or `Resolv.queue` schedules `user_callback` on `Soon` queue while also returning error to caller (UAF & double-free) | Critical | Fixed |
 | [339](339.md) | Self-assignment `py_xdecref` before `py_newref` on `cancel_msg_py_object` causes use-after-free on Task/Future cancellation | Critical | Open |
 | [340](340.md) | Dispatching `Future` done callbacks after `loop.close()` dereferences freed `ready_tasks_queues` (use-after-free) | Critical | Open |
 | [341](341.md) | GC `future_traverse` visits freed `PyObject` pointers after `run_python_future_set_callbacks` error (UAF) and `Future.release` leaks `exceptions_queue` items | Critical | Open |

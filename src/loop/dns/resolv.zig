@@ -847,6 +847,10 @@ fn prepare_data(
     };
 
     errdefer {
+        // BUG-338: On synchronous error, the caller's errdefer cleans up the
+        // callback context (gaid/gnid/scd). Clear user_callbacks so release()
+        // does not also schedule the callback onto ready_tasks_queues.
+        control_data.user_callbacks.clearRetainingCapacity();
         control_data.release();
     }
 
@@ -919,6 +923,14 @@ pub fn queue(
 
     var queries_sent: usize = 0;
     errdefer {
+        // BUG-338: Synchronous failure returns an error to the caller, whose
+        // errdefer frees the callback context. Prevent release() (now or on
+        // later CQE drain) from dispatching user_callbacks onto Soon.
+        control_data.user_callbacks.clearRetainingCapacity();
+        if (!control_data.record_evicted) {
+            control_data.record.discard();
+            control_data.record_evicted = true;
+        }
         for (control_data.queries_data[0..queries_sent]) |*server_data| {
             server_data.cancel();
         }
@@ -1341,3 +1353,48 @@ test "should_fail_resolution_on_server_finish decision table (BUG-317)" {
     control_data.resolved = true;
     try std.testing.expect(!should_fail_resolution_on_server_finish(control_data));
 }
+
+test "synchronous error in prepare_data does not schedule user_callback onto Soon queue (BUG-338)" {
+    const allocator = std.testing.allocator;
+
+    const loop = try allocator.create(Loop);
+    defer allocator.destroy(loop);
+    try loop.init(allocator, 64);
+
+    var cache: Cache = undefined;
+    cache.init(allocator);
+    defer cache.deinit();
+
+    var invoked: usize = 0;
+    const Tracker = struct {
+        fn cb(data: *const CallbackManager.CallbackData) anyerror!void {
+            const count: *usize = @ptrCast(@alignCast(data.user_data.?));
+            count.* += 1;
+        }
+        fn cleanup(user_data: ?*anyopaque) void {
+            const count: *usize = @ptrCast(@alignCast(user_data.?));
+            count.* += 1;
+        }
+    };
+
+    const callback = CallbackManager.Callback{
+        .func = &Tracker.cb,
+        .cleanup = &Tracker.cleanup,
+        .data = .{ .user_data = &invoked },
+    };
+
+    try std.testing.expectError(
+        error.InvalidHostname,
+        queue(&cache, loop, "abc", &callback, .{
+            .servers = &[_]utils.Address{},
+            .search = &[_][]u8{},
+        }, true, null, null),
+    );
+
+    // Release the loop (which drains ready_tasks_queues); the callback must
+    // not have been queued or invoked.
+    loop.release();
+    try std.testing.expectEqual(@as(usize, 0), invoked);
+}
+
+
