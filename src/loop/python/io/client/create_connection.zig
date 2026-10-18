@@ -944,6 +944,12 @@ fn socket_connected_callback(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
 
     if (io_uring_err != .SUCCESS or io_uring_res < 0) {
+        // BUG-359: close the failed socket immediately — the fallible
+        // exception bookkeeping below must not be able to skip the close
+        // (cleanup_socket_connected_callback only destroys the struct; it
+        // does not close the fd).
+        if (fd >= 0) _ = std.os.linux.close(fd);
+
         if (mcs.all_errors) {
             const errno_val = if (io_uring_res < 0) -io_uring_res else @intFromEnum(io_uring_err);
             const exc = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "is\x00", @as(c_int, @intCast(errno_val)), "Connect call failed\x00") orelse return error.PythonError;
@@ -952,12 +958,19 @@ fn socket_connected_callback(data: *const CallbackManager.CallbackData) !void {
         }
 
         mcs.failed_count += 1;
-        if (fd >= 0) _ = std.os.linux.close(fd);
 
         if (mcs.pending == 0) {
             if (mcs.timer_scheduled and !mcs.timer_fired) {
+                // The happy-eyeballs timer callback owns the final
+                // teardown in this state.
                 return;
             }
+
+            // BUG-359: whatever happens below (including errors), mcs
+            // must be torn down exactly once — any early return here
+            // previously leaked MultiConnectState and every owned
+            // reference.
+            defer mcs.deinit();
 
             const future = creation_data.future.?;
             const future_data = utils.get_data_ptr(Future, future);
@@ -974,7 +987,11 @@ fn socket_connected_callback(data: *const CallbackManager.CallbackData) !void {
                 const exc_group = python_c.PyObject_CallFunctionObjArgs(exc_group_cls, msg, mcs.exceptions.?, @as(?*python_c.PyObject, null)) orelse return error.PythonError;
                 defer python_c.py_decref(exc_group);
 
-                try Future.Python.Result.future_fast_set_exception(@ptrCast(future), future_data, exc_group);
+                // BUG-359: a cancelled/finished future raised
+                // InvalidStateError here and skipped mcs.deinit().
+                if (future_data.status == .pending) {
+                    try Future.Python.Result.future_fast_set_exception(@ptrCast(future), future_data, exc_group);
+                }
             } else {
                 const errno_val = if (io_uring_res < 0) -io_uring_res else @intFromEnum(io_uring_err);
                 const exc = python_c.PyObject_CallFunction(
@@ -990,14 +1007,15 @@ fn socket_connected_callback(data: *const CallbackManager.CallbackData) !void {
                         future_data,
                         exc,
                     );
-                    mcs.deinit();
                     return error.PythonError;
                 };
                 defer python_c.py_decref(exc);
-                try Future.Python.Result.future_fast_set_exception(@ptrCast(future), future_data, exc);
+                // BUG-359: see the all_errors branch — never leak mcs on a
+                // non-pending future.
+                if (future_data.status == .pending) {
+                    try Future.Python.Result.future_fast_set_exception(@ptrCast(future), future_data, exc);
+                }
             }
-
-            mcs.deinit();
         }
         return;
     }

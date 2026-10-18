@@ -751,3 +751,65 @@ def test_bug354_no_dns_failure_leak() -> None:
         )
 
     talyn.run(main())
+
+
+def test_bug359_cancelled_connect_failure_no_mcs_leak() -> None:
+    """BUG-359: socket_connected_callback's connect-failure finalization
+    must tear down MultiConnectState exactly once, no matter what happens
+    while building/resolving the future — the socket fd is closed before
+    the fallible C-API calls, mcs.deinit() is deferred past every early
+    return, and a cancelled future is never resolved a second time.
+
+    Reproduces the reported trigger: the connection future is cancelled
+    (via call_soon, before the refused-CQE poll) and the ECONNREFUSED
+    completion then finalizes the round against a cancelled future."""
+    import gc
+    import sys
+
+    class ProbeProtocol(asyncio.Protocol):
+        pass
+
+    def probe_factory() -> ProbeProtocol:
+        return ProbeProtocol()
+
+    def closed_port() -> int:
+        sock = socket.socket()
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+        sock.close()
+        return port
+
+    async def main() -> None:
+        loop = asyncio.get_running_loop()
+
+        # Warmup (also fixes allocator state).
+        task = loop.create_task(loop.create_connection(probe_factory, "127.0.0.1", closed_port()))
+        loop.call_soon(task.cancel)
+        await asyncio.sleep(0.1)
+        gc.collect()
+
+        rc_before = sys.getrefcount(probe_factory)
+
+        for _ in range(15):
+            # call_soon(task.cancel) runs in the same ready-queue pass as
+            # the coroutine's first step, so the future is cancelled
+            # before the loop polls the CQE — the refusal finalizes
+            # against a cancelled future (the BUG-359 trigger).
+            task = loop.create_task(loop.create_connection(probe_factory, "127.0.0.1", closed_port()))
+            loop.call_soon(task.cancel)
+            await asyncio.sleep(0.05)
+        await asyncio.sleep(0.2)
+        gc.collect()
+
+        rc_after = sys.getrefcount(probe_factory)
+        assert rc_after == rc_before, (
+            f"MultiConnectState leaked on the cancelled-failure path "
+            f"(factory refcount {rc_before} -> {rc_after})"
+        )
+        # The failed/cancelled futures must not leave a Python exception
+        # dangling in the interpreter (the finalization used to raise
+        # InvalidStateError through the C layer before tearing down).
+        assert sys.exc_info() == (None, None, None)
+
+    talyn.run(main())
+    gc.collect()
