@@ -508,10 +508,15 @@ pub inline fn parse_vector_call_kwargs(knames: ?*Python.PyObject, args_ptr: [*]?
 
     if (knames) |kwargs| {
         const kwargs_len = Python.PyTuple_Size(kwargs);
-        const args = args_ptr[0..@as(usize, @intCast(kwargs_len))];
+        // BUG-349: `PyTuple_Size` returns -1 on error. The negative check
+        // must run BEFORE the `@intCast` to `usize` — casting -1 panics in
+        // Debug/ReleaseSafe and slices out-of-bounds memory in ReleaseFast
+        // (Architectural Mandate #1: no panics in the IO path).
         if (kwargs_len < 0) {
             return error.PythonError;
-        } else if (kwargs_len <= len) {
+        }
+        const args = args_ptr[0..@as(usize, @intCast(kwargs_len))];
+        if (kwargs_len <= len) {
             loop: for (args, 0..) |arg, i| {
                 const key = Python.PyTuple_GetItem(kwargs, @intCast(i)) orelse return error.PythonError;
                 inline for (names, &_py_objects) |name, *obj| {
@@ -722,6 +727,70 @@ test "BUG-206: deinitialize_object_fields handles optional pointers to structs w
     var holder: TestHolder = .{ .dummy = null };
     deinitialize_object_fields(&holder, &.{});
     try std.testing.expect(holder.dummy == null);
+}
+
+test "BUG-349: parse_vector_call_kwargs checks PyTuple_Size error before usize cast" {
+    // Initialize the CPython runtime so real PyObjects can be created.
+    if (Python._c.Py_IsInitialized() == 0) {
+        _ = Python._c.Py_Initialize();
+    }
+
+    // A non-tuple object makes `PyTuple_Size` return -1 (with SystemError
+    // set). Pre-fix, `parse_vector_call_kwargs` executed
+    // `@intCast(-1)` to `usize` before the `< 0` check — a panic in
+    // Debug/ReleaseSafe and an out-of-bounds slice in ReleaseFast.
+    const not_a_tuple = Python.PyLong_FromLong(7) orelse return error.PythonError;
+    defer Python.py_decref(not_a_tuple);
+    Python.PyErr_Clear();
+
+    var slot_a: ?*Python.PyObject = null;
+    var slot_b: ?*Python.PyObject = null;
+    var args: [1]?*Python.PyObject = .{null};
+
+    const result = parse_vector_call_kwargs(
+        not_a_tuple,
+        &args,
+        &.{ "a", "b" },
+        &.{ &slot_a, &slot_b },
+    );
+
+    try std.testing.expectError(error.PythonError, result);
+    // The error path must not have populated any slots.
+    try std.testing.expect(slot_a == null);
+    try std.testing.expect(slot_b == null);
+    Python.PyErr_Clear();
+}
+
+test "BUG-349: parse_vector_call_kwargs still parses valid keyword tuples" {
+    // Guard the reordered logic against regressions: a valid single-keyword
+    // tuple must still be matched into the right slot. Note the convention:
+    // `knames` carries the key names and values sit at `args_ptr[0..n]`.
+    if (Python._c.Py_IsInitialized() == 0) {
+        _ = Python._c.Py_Initialize();
+    }
+
+    const value = Python.PyUnicode_FromString("kw-value\x00") orelse return error.PythonError;
+    defer Python.py_decref(value);
+    const key_name = Python.PyUnicode_FromString("b\x00") orelse return error.PythonError;
+    defer Python.py_decref(key_name);
+    const knames = Python._c.PyTuple_Pack(1, key_name) orelse return error.PythonError;
+    defer Python.py_decref(knames);
+
+    var slot_a: ?*Python.PyObject = null;
+    var slot_b: ?*Python.PyObject = null;
+    var args: [2]?*Python.PyObject = .{ value, null };
+
+    try parse_vector_call_kwargs(
+        knames,
+        &args,
+        &.{ "a", "b" },
+        &.{ &slot_a, &slot_b },
+    );
+
+    try std.testing.expect(slot_a == null);
+    try std.testing.expect(slot_b == value);
+    Python.py_decref(slot_b.?);
+    Python.PyErr_Clear();
 }
 
 const Python = @This();

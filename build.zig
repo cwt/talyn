@@ -270,6 +270,20 @@ pub fn build(b: *std.Build) void {
     const run_callback_manager_unit_tests = b.addRunArtifact(callback_manager_unit_tests);
     const run_utils_unit_tests = b.addRunArtifact(utils_unit_tests);
 
+    const python_c_unit_tests = b.addTest(.{
+        .name = "python_c",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/python_c.zig"),
+            .target = target,
+            .optimize = optimize,
+            .single_threaded = !python_is_gil_disabled,
+            .imports = &.{
+                .{ .name = "c_python", .module = c_python_module },
+            },
+        }),
+    });
+    const run_python_c_unit_tests = b.addRunArtifact(python_c_unit_tests);
+
     if (asan) {
         talyn_module_unit_tests.root_module.sanitize_c = .full;
         callback_manager_unit_tests.root_module.sanitize_c = .full;
@@ -280,10 +294,12 @@ pub fn build(b: *std.Build) void {
         talyn_module_unit_tests.root_module.addObjectFile(.{ .cwd_relative = lib });
         callback_manager_unit_tests.root_module.addObjectFile(.{ .cwd_relative = lib });
         utils_unit_tests.root_module.addObjectFile(.{ .cwd_relative = lib });
+        python_c_unit_tests.root_module.addObjectFile(.{ .cwd_relative = lib });
 
         talyn_module_unit_tests.linker_allow_shlib_undefined = true;
         callback_manager_unit_tests.linker_allow_shlib_undefined = true;
         utils_unit_tests.linker_allow_shlib_undefined = true;
+        python_c_unit_tests.linker_allow_shlib_undefined = true;
     }
 
     const linter_exe = b.addExecutable(.{
@@ -311,6 +327,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_talyn_module_unit_tests.step);
     test_step.dependOn(&run_callback_manager_unit_tests.step);
     test_step.dependOn(&run_utils_unit_tests.step);
+    test_step.dependOn(&run_python_c_unit_tests.step);
 
     const lint_step = b.step("lint", "Run offline AST linter");
     lint_step.dependOn(&run_linter.step);
