@@ -15,6 +15,19 @@ const AddressUtils = utils.Address;
 
 const set_future_exception = Future.Python.Result.set_future_exception;
 
+/// BUG-356: `set_future_exception` STEALS the pending Python exception
+/// (`PyErr_GetRaisedException`); if none is set it silently does nothing
+/// and the future stays pending forever (infinite hang on `await`).
+fn ensure_exception(err: anyerror) void {
+    if (python_c.PyErr_Occurred() == null) {
+        if (err == error.PythonError) {
+            python_c.raise_python_runtime_error("Socket operation failed");
+        } else {
+            utils.handle_zig_function_error(err, {});
+        }
+    }
+}
+
 // ============================================================
 // sock_accept
 // ============================================================
@@ -40,22 +53,33 @@ fn sock_accept_callback(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
     const io_uring_res = data.io_uring_res();
     const ad: *AcceptData = @ptrCast(@alignCast(data.user_data.?));
-    var success = false;
-    defer if (success) cleanup_accept(@ptrCast(ad));
+    // BUG-356: unconditional cleanup — every exit path (success, failure,
+    // cancellation) releases the callback state. The manager-side
+    // `.cleanup` is nulled (it only ran on error returns, which double-
+    // freed with an unconditional defer).
+    defer cleanup_accept(@ptrCast(ad));
 
     if (data.cancelled()) {
-        success = true;
+        // BUG-356: resolve the future instead of leaving the awaiter
+        // hanging.
+        const future_data = utils.get_data_ptr(Future, ad.future);
+        if (future_data.status == .pending) {
+            python_c.raise_python_runtime_error("Socket operation cancelled");
+            return set_future_exception(error.PythonError, ad.future);
+        }
         return;
     }
 
     if (io_uring_err != .SUCCESS or io_uring_res < 0) {
         const errno_val = if (io_uring_res < 0) -io_uring_res else @intFromEnum(io_uring_err);
-        const exc = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "is\x00", @as(c_int, @intCast(errno_val)), "Accept call failed\x00") orelse return set_future_exception(error.PythonError, ad.future);
+        const exc = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "is\x00", @as(c_int, @intCast(errno_val)), "Accept call failed\x00") orelse {
+            ensure_exception(error.PythonError);
+            return set_future_exception(error.PythonError, ad.future);
+        };
         defer python_c.py_decref(exc);
 
         const future_data = utils.get_data_ptr(Future, ad.future);
         try Future.Python.Result.future_fast_set_exception(ad.future, future_data, exc);
-        success = true;
         return;
     }
 
@@ -66,10 +90,16 @@ fn sock_accept_callback(data: *const CallbackManager.CallbackData) !void {
     };
 
     // Convert addr to Python tuple
-    const py_addr = try AddressUtils.toPyAddr(utils.Address.initPosix(@ptrCast(&ad.addr)));
+    const py_addr = AddressUtils.toPyAddr(utils.Address.initPosix(@ptrCast(&ad.addr))) catch |err| {
+        ensure_exception(err);
+        return set_future_exception(err, ad.future);
+    };
     defer python_c.py_decref(py_addr);
 
-    const py_client_fd = python_c.PyLong_FromLong(client_fd) orelse return error.PythonError;
+    const py_client_fd = python_c.PyLong_FromLong(client_fd) orelse {
+        ensure_exception(error.PythonError);
+        return set_future_exception(error.PythonError, ad.future);
+    };
     defer python_c.py_decref(py_client_fd);
 
     const socket_class = utils.PythonImports.get("socket_class");
@@ -79,7 +109,10 @@ fn sock_accept_callback(data: *const CallbackManager.CallbackData) !void {
         std.posix.AF.INET6 => utils.PythonImports.get("py_af_inet6"),
         std.posix.AF.UNIX => utils.PythonImports.get("py_af_unix"),
         else => blk: {
-            const py_val = python_c.PyLong_FromLong(ad.family) orelse return error.PythonError;
+            const py_val = python_c.PyLong_FromLong(ad.family) orelse {
+                ensure_exception(error.PythonError);
+                return set_future_exception(error.PythonError, ad.future);
+            };
             break :blk py_val;
         },
     };
@@ -91,23 +124,37 @@ fn sock_accept_callback(data: *const CallbackManager.CallbackData) !void {
 
     // Create Python socket object
     // socket.socket(family, type, proto, fileno=fd)
-    const kwargs = python_c.PyDict_New() orelse return error.PythonError;
+    const kwargs = python_c.PyDict_New() orelse {
+        ensure_exception(error.PythonError);
+        return set_future_exception(error.PythonError, ad.future);
+    };
     defer python_c.py_decref(kwargs);
     _ = python_c.PyDict_SetItemString(kwargs, "fileno\x00", py_client_fd);
 
-    const args = python_c.PyTuple_Pack(2, py_family, py_type) orelse return error.PythonError;
+    const args = python_c.PyTuple_Pack(2, py_family, py_type) orelse {
+        ensure_exception(error.PythonError);
+        return set_future_exception(error.PythonError, ad.future);
+    };
     defer python_c.py_decref(args);
 
-    const py_sock = python_c.PyObject_Call(socket_class, args, kwargs) orelse return set_future_exception(error.PythonError, ad.future);
+    const py_sock = python_c.PyObject_Call(socket_class, args, kwargs) orelse {
+        // BUG-356: resolve the future (the accepted fd is closed by the
+        // owns_fd defer above) instead of leaking it and hanging the
+        // awaiter.
+        ensure_exception(error.PythonError);
+        return set_future_exception(error.PythonError, ad.future);
+    };
     owns_fd = false;
     defer python_c.py_decref(py_sock);
 
-    const result_tuple = python_c.PyTuple_Pack(2, py_sock, py_addr) orelse return error.PythonError;
+    const result_tuple = python_c.PyTuple_Pack(2, py_sock, py_addr) orelse {
+        ensure_exception(error.PythonError);
+        return set_future_exception(error.PythonError, ad.future);
+    };
     defer python_c.py_decref(result_tuple);
 
     const future_data = utils.get_data_ptr(Future, ad.future);
     try Future.Python.Result.future_fast_set_result(future_data, result_tuple);
-    success = true;
 }
 
 pub fn loop_sock_accept(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t, knames: ?PyObject) callconv(.c) ?*FutureObject {
@@ -160,17 +207,19 @@ fn z_loop_sock_accept(self: *LoopObject, args: []const ?PyObject, knames: ?PyObj
         python_c.py_decref(@ptrCast(ad.loop));
     }
 
-    _ = try loop_data.io.queue(.{ .SocketAccept = .{
-        .socket_fd = fd,
-        .addr = @ptrCast(&ad.addr),
-        .addrlen = &ad.addrlen,
-        .flags = @as(u32, @intCast(std.posix.SOCK.NONBLOCK | std.posix.SOCK.CLOEXEC)),
-        .callback = .{
-            .func = &sock_accept_callback,
-            .cleanup = &cleanup_accept,
-            .data = .{ .user_data = ad },
+    _ = try loop_data.io.queue(.{
+        .SocketAccept = .{
+            .socket_fd = fd,
+            .addr = @ptrCast(&ad.addr),
+            .addrlen = &ad.addrlen,
+            .flags = @as(u32, @intCast(std.posix.SOCK.NONBLOCK | std.posix.SOCK.CLOEXEC)),
+            .callback = .{
+                .func = &sock_accept_callback,
+                .cleanup = null, // BUG-356: the callback cleans up unconditionally (defer)
+                .data = .{ .user_data = ad },
+            },
         },
-    } });
+    });
 
     return fut;
 }
@@ -197,22 +246,33 @@ fn sock_connect_callback(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
     const io_uring_res = data.io_uring_res();
     const scd: *SockConnectData = @ptrCast(@alignCast(data.user_data.?));
-    var success = false;
-    defer if (success) cleanup_connect(@ptrCast(scd));
+    // BUG-356: unconditional cleanup — every exit path (success,
+    // failure, cancellation) releases the callback state. The
+    // manager-side `.cleanup` is nulled (it only ran on error returns,
+    // which would double-free with an unconditional defer).
+    defer cleanup_connect(@ptrCast(scd));
 
     if (data.cancelled()) {
-        success = true;
+        // BUG-356: resolve the future instead of leaving the awaiter
+        // hanging.
+        const future_data = utils.get_data_ptr(Future, scd.future);
+        if (future_data.status == .pending) {
+            python_c.raise_python_runtime_error("Socket operation cancelled");
+            return set_future_exception(error.PythonError, scd.future);
+        }
         return;
     }
 
     if (io_uring_err != .SUCCESS and io_uring_err != .ALREADY) {
         const errno_val = if (io_uring_res < 0) -io_uring_res else @intFromEnum(io_uring_err);
-        const exc = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "is\x00", @as(c_int, @intCast(errno_val)), "Connect call failed\x00") orelse return set_future_exception(error.PythonError, scd.future);
+        const exc = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "is\x00", @as(c_int, @intCast(errno_val)), "Connect call failed\x00") orelse {
+            ensure_exception(error.PythonError);
+            return set_future_exception(error.PythonError, scd.future);
+        };
         defer python_c.py_decref(exc);
 
         const future_data = utils.get_data_ptr(Future, scd.future);
         try Future.Python.Result.future_fast_set_exception(scd.future, future_data, exc);
-        success = true;
         return;
     }
 
@@ -221,7 +281,6 @@ fn sock_connect_callback(data: *const CallbackManager.CallbackData) !void {
     // borrowed None — get_py_none() increfed it and leaked one Py_None
     // per sock_connect call.
     try Future.Python.Result.future_fast_set_result(future_data, python_c.get_py_none_without_incref());
-    success = true;
 }
 
 pub fn loop_sock_connect(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t, knames: ?PyObject) callconv(.c) ?*FutureObject {
@@ -277,16 +336,18 @@ fn z_loop_sock_connect(self: *LoopObject, args: []const ?PyObject, knames: ?PyOb
         python_c.py_decref(@ptrCast(scd.loop));
     }
 
-    _ = try loop_data.io.queue(.{ .SocketConnect = .{
-        .socket_fd = fd,
-        .addr = &scd.addr.any,
-        .len = scd.addr.getOsSockLen(),
-        .callback = .{
-            .func = &sock_connect_callback,
-            .cleanup = &cleanup_connect,
-            .data = .{ .user_data = scd },
+    _ = try loop_data.io.queue(.{
+        .SocketConnect = .{
+            .socket_fd = fd,
+            .addr = &scd.addr.any,
+            .len = scd.addr.getOsSockLen(),
+            .callback = .{
+                .func = &sock_connect_callback,
+                .cleanup = null, // BUG-356: the callback cleans up unconditionally (defer)
+                .data = .{ .user_data = scd },
+            },
         },
-    } });
+    });
 
     return fut;
 }
@@ -314,32 +375,45 @@ fn sock_recv_callback(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
     const io_uring_res = data.io_uring_res();
     const rd: *SockRecvData = @ptrCast(@alignCast(data.user_data.?));
-    var success = false;
-    defer if (success) cleanup_recv(@ptrCast(rd));
+    // BUG-356: unconditional cleanup — every exit path (success,
+    // failure, cancellation) releases the callback state. The
+    // manager-side `.cleanup` is nulled (it only ran on error returns,
+    // which would double-free with an unconditional defer).
+    defer cleanup_recv(@ptrCast(rd));
 
     if (data.cancelled()) {
-        success = true;
+        // BUG-356: resolve the future instead of leaving the awaiter
+        // hanging.
+        const future_data = utils.get_data_ptr(Future, rd.future);
+        if (future_data.status == .pending) {
+            python_c.raise_python_runtime_error("Socket operation cancelled");
+            return set_future_exception(error.PythonError, rd.future);
+        }
         return;
     }
 
     if (io_uring_err != .SUCCESS) {
         const errno_val = @intFromEnum(io_uring_err);
-        const exc = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "is\x00", @as(c_int, @intCast(errno_val)), "Recv call failed\x00") orelse return set_future_exception(error.PythonError, rd.future);
+        const exc = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "is\x00", @as(c_int, @intCast(errno_val)), "Recv call failed\x00") orelse {
+            ensure_exception(error.PythonError);
+            return set_future_exception(error.PythonError, rd.future);
+        };
         defer python_c.py_decref(exc);
 
         const future_data = utils.get_data_ptr(Future, rd.future);
         try Future.Python.Result.future_fast_set_exception(rd.future, future_data, exc);
-        success = true;
         return;
     }
 
     const nread: usize = @intCast(@max(io_uring_res, 0));
-    const py_data = python_c.PyBytes_FromStringAndSize(rd.buf.ptr, @intCast(nread)) orelse return error.PythonError;
+    const py_data = python_c.PyBytes_FromStringAndSize(rd.buf.ptr, @intCast(nread)) orelse {
+        ensure_exception(error.PythonError);
+        return set_future_exception(error.PythonError, rd.future);
+    };
     defer python_c.py_decref(py_data);
 
     const future_data = utils.get_data_ptr(Future, rd.future);
     try Future.Python.Result.future_fast_set_result(future_data, py_data);
-    success = true;
 }
 
 pub fn loop_sock_recv(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t, knames: ?PyObject) callconv(.c) ?*FutureObject {
@@ -400,15 +474,17 @@ fn z_loop_sock_recv(self: *LoopObject, args: []const ?PyObject, knames: ?PyObjec
         python_c.py_decref(@ptrCast(rd.loop));
     }
 
-    _ = try loop_data.io.queue(.{ .PerformRead = .{
-        .fd = fd,
-        .data = .{ .buffer = buf },
-        .callback = .{
-            .func = &sock_recv_callback,
-            .cleanup = &cleanup_recv,
-            .data = .{ .user_data = rd },
+    _ = try loop_data.io.queue(.{
+        .PerformRead = .{
+            .fd = fd,
+            .data = .{ .buffer = buf },
+            .callback = .{
+                .func = &sock_recv_callback,
+                .cleanup = null, // BUG-356: the callback cleans up unconditionally (defer)
+                .data = .{ .user_data = rd },
+            },
         },
-    } });
+    });
 
     return fut;
 }
@@ -438,22 +514,33 @@ fn sock_sendall_callback(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
     const io_uring_res = data.io_uring_res();
     const sd: *SockSendAllData = @ptrCast(@alignCast(data.user_data.?));
-    var success = false;
-    defer if (success) cleanup_sendall(@ptrCast(sd));
+    // BUG-356: unconditional cleanup — every exit path (success,
+    // failure, cancellation) releases the callback state. The
+    // manager-side `.cleanup` is nulled (it only ran on error returns,
+    // which would double-free with an unconditional defer).
+    defer cleanup_sendall(@ptrCast(sd));
 
     if (data.cancelled()) {
-        success = true;
+        // BUG-356: resolve the future instead of leaving the awaiter
+        // hanging.
+        const future_data = utils.get_data_ptr(Future, sd.future);
+        if (future_data.status == .pending) {
+            python_c.raise_python_runtime_error("Socket operation cancelled");
+            return set_future_exception(error.PythonError, sd.future);
+        }
         return;
     }
 
     if (io_uring_err != .SUCCESS) {
         const errno_val = @intFromEnum(io_uring_err);
-        const exc = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "is\x00", @as(c_int, @intCast(errno_val)), "Sendall call failed\x00") orelse return set_future_exception(error.PythonError, sd.future);
+        const exc = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "is\x00", @as(c_int, @intCast(errno_val)), "Sendall call failed\x00") orelse {
+            ensure_exception(error.PythonError);
+            return set_future_exception(error.PythonError, sd.future);
+        };
         defer python_c.py_decref(exc);
 
         const future_data = utils.get_data_ptr(Future, sd.future);
         try Future.Python.Result.future_fast_set_exception(sd.future, future_data, exc);
-        success = true;
         return;
     }
 
@@ -463,15 +550,17 @@ fn sock_sendall_callback(data: *const CallbackManager.CallbackData) !void {
     if (sd.offset < sd.data.len) {
         // Re-queue remaining data - NOT finished, do not cleanup sd!
         const loop_data = utils.get_data_ptr(Loop, sd.loop);
-        _ = try loop_data.io.queue(.{ .PerformWrite = .{
-            .fd = sd.fd,
-            .data = sd.data[sd.offset..],
-            .callback = .{
-                .func = &sock_sendall_callback,
-                .cleanup = &cleanup_sendall,
-                .data = .{ .user_data = sd },
+        _ = try loop_data.io.queue(.{
+            .PerformWrite = .{
+                .fd = sd.fd,
+                .data = sd.data[sd.offset..],
+                .callback = .{
+                    .func = &sock_sendall_callback,
+                    .cleanup = null, // BUG-356: the callback cleans up unconditionally (defer)
+                    .data = .{ .user_data = sd },
+                },
             },
-        } });
+        });
         return;
     }
 
@@ -479,7 +568,6 @@ fn sock_sendall_callback(data: *const CallbackManager.CallbackData) !void {
     const future_data = utils.get_data_ptr(Future, sd.future);
     // BUG-353: pass the borrowed None (see sock_connect_callback).
     try Future.Python.Result.future_fast_set_result(future_data, python_c.get_py_none_without_incref());
-    success = true;
 }
 
 pub fn loop_sock_sendall(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t, knames: ?PyObject) callconv(.c) ?*FutureObject {
@@ -540,15 +628,17 @@ fn z_loop_sock_sendall(self: *LoopObject, args: []const ?PyObject, knames: ?PyOb
         python_c.py_decref(@ptrCast(sd.loop));
     }
 
-    _ = try loop_data.io.queue(.{ .PerformWrite = .{
-        .fd = fd,
-        .data = data_buf,
-        .callback = .{
-            .func = &sock_sendall_callback,
-            .cleanup = &cleanup_sendall,
-            .data = .{ .user_data = sd },
+    _ = try loop_data.io.queue(.{
+        .PerformWrite = .{
+            .fd = fd,
+            .data = data_buf,
+            .callback = .{
+                .func = &sock_sendall_callback,
+                .cleanup = null, // BUG-356: the callback cleans up unconditionally (defer)
+                .data = .{ .user_data = sd },
+            },
         },
-    } });
+    });
 
     return fut;
 }
@@ -579,38 +669,59 @@ fn sock_recvfrom_callback(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
     const io_uring_res = data.io_uring_res();
     const rd: *SockRecvFromData = @ptrCast(@alignCast(data.user_data.?));
-    var success = false;
-    defer if (success) cleanup_recvfrom(@ptrCast(rd));
+    // BUG-356: unconditional cleanup — every exit path (success,
+    // failure, cancellation) releases the callback state. The
+    // manager-side `.cleanup` is nulled (it only ran on error returns,
+    // which would double-free with an unconditional defer).
+    defer cleanup_recvfrom(@ptrCast(rd));
 
     if (data.cancelled()) {
-        success = true;
+        // BUG-356: resolve the future instead of leaving the awaiter
+        // hanging.
+        const future_data = utils.get_data_ptr(Future, rd.future);
+        if (future_data.status == .pending) {
+            python_c.raise_python_runtime_error("Socket operation cancelled");
+            return set_future_exception(error.PythonError, rd.future);
+        }
         return;
     }
 
     if (io_uring_err != .SUCCESS) {
         const errno_val = @intFromEnum(io_uring_err);
-        const exc = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "is\x00", @as(c_int, @intCast(errno_val)), "Recvfrom call failed\x00") orelse return set_future_exception(error.PythonError, rd.future);
+        const exc = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "is\x00", @as(c_int, @intCast(errno_val)), "Recvfrom call failed\x00") orelse {
+            ensure_exception(error.PythonError);
+            return set_future_exception(error.PythonError, rd.future);
+        };
         defer python_c.py_decref(exc);
 
         const future_data = utils.get_data_ptr(Future, rd.future);
         try Future.Python.Result.future_fast_set_exception(rd.future, future_data, exc);
-        success = true;
         return;
     }
 
     const nread: usize = @intCast(@max(io_uring_res, 0));
-    const py_data = python_c.PyBytes_FromStringAndSize(rd.buf.ptr, @intCast(nread)) orelse return error.PythonError;
+    const py_data = python_c.PyBytes_FromStringAndSize(rd.buf.ptr, @intCast(nread)) orelse {
+        ensure_exception(error.PythonError);
+        return set_future_exception(error.PythonError, rd.future);
+    };
     defer python_c.py_decref(py_data);
 
-    const py_addr = try AddressUtils.toPyAddr(utils.Address.initPosix(@ptrCast(&rd.addr)));
+    const py_addr = AddressUtils.toPyAddr(utils.Address.initPosix(@ptrCast(&rd.addr))) catch |err| {
+        // BUG-356: resolve the future — the cleanup defer releases the
+        // receive buffer; a bare error return hung the awaiter forever.
+        ensure_exception(err);
+        return set_future_exception(err, rd.future);
+    };
     defer python_c.py_decref(py_addr);
 
-    const result_tuple = python_c.PyTuple_Pack(2, py_data, py_addr) orelse return error.PythonError;
+    const result_tuple = python_c.PyTuple_Pack(2, py_data, py_addr) orelse {
+        ensure_exception(error.PythonError);
+        return set_future_exception(error.PythonError, rd.future);
+    };
     defer python_c.py_decref(result_tuple);
 
     const future_data = utils.get_data_ptr(Future, rd.future);
     try Future.Python.Result.future_fast_set_result(future_data, result_tuple);
-    success = true;
 }
 
 pub fn loop_sock_recvfrom(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t, knames: ?PyObject) callconv(.c) ?*FutureObject {
@@ -682,15 +793,17 @@ fn z_loop_sock_recvfrom(self: *LoopObject, args: []const ?PyObject, knames: ?PyO
         .flags = 0,
     };
 
-    _ = try loop_data.io.queue(.{ .PerformRecvMsg = .{
-        .fd = fd,
-        .msg = &rd.msg,
-        .callback = .{
-            .func = &sock_recvfrom_callback,
-            .cleanup = &cleanup_recvfrom,
-            .data = .{ .user_data = rd },
+    _ = try loop_data.io.queue(.{
+        .PerformRecvMsg = .{
+            .fd = fd,
+            .msg = &rd.msg,
+            .callback = .{
+                .func = &sock_recvfrom_callback,
+                .cleanup = null, // BUG-356: the callback cleans up unconditionally (defer)
+                .data = .{ .user_data = rd },
+            },
         },
-    } });
+    });
 
     return fut;
 }
@@ -721,22 +834,33 @@ fn sock_sendto_callback(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
     const io_uring_res = data.io_uring_res();
     const sd: *SockSendToData = @ptrCast(@alignCast(data.user_data.?));
-    var success = false;
-    defer if (success) cleanup_sendto(@ptrCast(sd));
+    // BUG-356: unconditional cleanup — every exit path (success,
+    // failure, cancellation) releases the callback state. The
+    // manager-side `.cleanup` is nulled (it only ran on error returns,
+    // which would double-free with an unconditional defer).
+    defer cleanup_sendto(@ptrCast(sd));
 
     if (data.cancelled()) {
-        success = true;
+        // BUG-356: resolve the future instead of leaving the awaiter
+        // hanging.
+        const future_data = utils.get_data_ptr(Future, sd.future);
+        if (future_data.status == .pending) {
+            python_c.raise_python_runtime_error("Socket operation cancelled");
+            return set_future_exception(error.PythonError, sd.future);
+        }
         return;
     }
 
     if (io_uring_err != .SUCCESS) {
         const errno_val = @intFromEnum(io_uring_err);
-        const exc = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "is\x00", @as(c_int, @intCast(errno_val)), "Sendto call failed\x00") orelse return set_future_exception(error.PythonError, sd.future);
+        const exc = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "is\x00", @as(c_int, @intCast(errno_val)), "Sendto call failed\x00") orelse {
+            ensure_exception(error.PythonError);
+            return set_future_exception(error.PythonError, sd.future);
+        };
         defer python_c.py_decref(exc);
 
         const future_data = utils.get_data_ptr(Future, sd.future);
         try Future.Python.Result.future_fast_set_exception(sd.future, future_data, exc);
-        success = true;
         return;
     }
 
@@ -749,7 +873,6 @@ fn sock_sendto_callback(data: *const CallbackManager.CallbackData) !void {
     // BUG-353: future_fast_set_result takes its own reference — drop ours.
     defer python_c.py_decref(py_res);
     try Future.Python.Result.future_fast_set_result(future_data, py_res);
-    success = true;
 }
 
 pub fn loop_sock_sendto(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: python_c.Py_ssize_t, knames: ?PyObject) callconv(.c) ?*FutureObject {
@@ -829,15 +952,17 @@ fn z_loop_sock_sendto(self: *LoopObject, args: []const ?PyObject, knames: ?PyObj
         .flags = 0,
     };
 
-    _ = try loop_data.io.queue(.{ .PerformSendMsg = .{
-        .fd = fd,
-        .msg = &sd.msg,
-        .callback = .{
-            .func = &sock_sendto_callback,
-            .cleanup = &cleanup_sendto,
-            .data = .{ .user_data = sd },
+    _ = try loop_data.io.queue(.{
+        .PerformSendMsg = .{
+            .fd = fd,
+            .msg = &sd.msg,
+            .callback = .{
+                .func = &sock_sendto_callback,
+                .cleanup = null, // BUG-356: the callback cleans up unconditionally (defer)
+                .data = .{ .user_data = sd },
+            },
         },
-    } });
+    });
 
     return fut;
 }
@@ -900,15 +1025,17 @@ fn z_loop_sock_recv_into(self: *LoopObject, args: []const ?PyObject, knames: ?Py
         python_c.py_decref(@ptrCast(rd.loop));
     }
 
-    _ = try loop_data.io.queue(.{ .PerformRead = .{
-        .fd = fd,
-        .data = .{ .buffer = @as([*]u8, @ptrCast(pbuf.buf))[0..@intCast(pbuf.len)] },
-        .callback = .{
-            .func = &sock_recv_into_callback_with_buf,
-            .cleanup = &cleanup_recv_into_with_buf,
-            .data = .{ .user_data = rd },
+    _ = try loop_data.io.queue(.{
+        .PerformRead = .{
+            .fd = fd,
+            .data = .{ .buffer = @as([*]u8, @ptrCast(pbuf.buf))[0..@intCast(pbuf.len)] },
+            .callback = .{
+                .func = &sock_recv_into_callback_with_buf,
+                .cleanup = null, // BUG-356: the callback cleans up unconditionally (defer)
+                .data = .{ .user_data = rd },
+            },
         },
-    } });
+    });
 
     return fut;
 }
@@ -932,22 +1059,33 @@ fn sock_recv_into_callback_with_buf(data: *const CallbackManager.CallbackData) !
     const io_uring_err = data.io_uring_err();
     const io_uring_res = data.io_uring_res();
     const rd: *SockRecvIntoDataWithBuf = @ptrCast(@alignCast(data.user_data.?));
-    var success = false;
-    defer if (success) cleanup_recv_into_with_buf(@ptrCast(rd));
+    // BUG-356: unconditional cleanup — every exit path (success,
+    // failure, cancellation) releases the callback state. The
+    // manager-side `.cleanup` is nulled (it only ran on error returns,
+    // which would double-free with an unconditional defer).
+    defer cleanup_recv_into_with_buf(@ptrCast(rd));
 
     if (data.cancelled()) {
-        success = true;
+        // BUG-356: resolve the future instead of leaving the awaiter
+        // hanging.
+        const future_data = utils.get_data_ptr(Future, rd.future);
+        if (future_data.status == .pending) {
+            python_c.raise_python_runtime_error("Socket operation cancelled");
+            return set_future_exception(error.PythonError, rd.future);
+        }
         return;
     }
 
     if (io_uring_err != .SUCCESS) {
         const errno_val = @intFromEnum(io_uring_err);
-        const exc = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "is\x00", @as(c_int, @intCast(errno_val)), "Recv_into call failed\x00") orelse return set_future_exception(error.PythonError, rd.future);
+        const exc = python_c.PyObject_CallFunction(python_c.PyExc_OSError, "is\x00", @as(c_int, @intCast(errno_val)), "Recv_into call failed\x00") orelse {
+            ensure_exception(error.PythonError);
+            return set_future_exception(error.PythonError, rd.future);
+        };
         defer python_c.py_decref(exc);
 
         const future_data = utils.get_data_ptr(Future, rd.future);
         try Future.Python.Result.future_fast_set_exception(rd.future, future_data, exc);
-        success = true;
         return;
     }
 
@@ -961,5 +1099,4 @@ fn sock_recv_into_callback_with_buf(data: *const CallbackManager.CallbackData) !
     // BUG-353: future_fast_set_result takes its own reference — drop ours.
     defer python_c.py_decref(py_nread);
     try Future.Python.Result.future_fast_set_result(future_data, py_nread);
-    success = true;
 }

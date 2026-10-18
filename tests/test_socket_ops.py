@@ -328,9 +328,6 @@ def test_bug353_no_result_reference_leaks():
     import gc
     import sys
 
-    import faulthandler
-    faulthandler.dump_traceback_later(40, exit=True)
-
     async def main():
         loop = asyncio.get_running_loop()
 
@@ -347,7 +344,7 @@ def test_bug353_no_result_reference_leaks():
         udp.setblocking(False)
 
         async def echo_server():
-            for _ in range(101):  # 1 warmup + 100 measured iterations
+            for _ in range(301):  # 1 warmup + 300 measured iterations
                 client, _ = await loop.sock_accept(server_sock)
                 try:
                     data = await loop.sock_recv(client, 1024)
@@ -382,7 +379,7 @@ def test_bug353_no_result_reference_leaks():
         none_before = sys.getrefcount(None)
         blocks_before = sys.getallocatedblocks()
 
-        for _ in range(100):
+        for _ in range(300):
             await one_iteration()
 
         await server_task
@@ -404,10 +401,91 @@ def test_bug353_no_result_reference_leaks():
         )
         # Pre-fix, every iteration leaked the PyLong result objects of
         # sock_sendto and sock_recv_into (~2 blocks/iter; calibrated at
-        # +196 blocks for 100 iterations vs ~0 with the fix). Threshold at
-        # 3/4 of the leak rate for deferred-dealloc noise headroom.
-        assert blocks_after - blocks_before < 150, (
+        # +196 blocks for 100 iterations vs ~0 with the fix). 300
+        # iterations leak ~590 blocks pre-fix; free-threaded deferred-
+        # dealloc noise stays below ~300, so 450 separates them.
+        assert blocks_after - blocks_before < 450, (
             f"result PyLong objects leaked: {blocks_before} -> {blocks_after} blocks"
         )
+
+    talyn.run(main())
+
+
+def test_bug356_accept_recvfrom_no_leak():
+    """BUG-356: the socket completion callbacks used
+    `var success = false; defer if (success) cleanup(d)` — every
+    `orelse return set_future_exception(...)` branch returned void with
+    success == false, bypassing cleanup AND the manager's .cleanup,
+    leaking the callback struct, its heap buffer, and references. The
+    callbacks now clean up unconditionally; repeated accept/recvfrom
+    flows must leave the allocator flat."""
+    import gc
+    import sys
+
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server_sock.bind(("127.0.0.1", 0))
+        server_sock.listen(8)
+        server_sock.setblocking(False)
+        addr = server_sock.getsockname()
+
+        udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        udp.bind(("127.0.0.1", 0))
+        udp.setblocking(False)
+
+        payload = b"y" * 300
+
+        async def echo_server():
+            for _ in range(101):
+                client, _ = await loop.sock_accept(server_sock)  # cleanup_accept path
+                try:
+                    data = await loop.sock_recv(client, 1024)
+                    if data:
+                        await loop.sock_sendall(client, data)
+                finally:
+                    client.close()
+
+        server_task = loop.create_task(echo_server())
+
+        async def one_cycle():
+            # accept/recv echo through the stream socket
+            c = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            c.setblocking(False)
+            await loop.sock_connect(c, addr)
+            await loop.sock_sendall(c, payload)
+            n = await loop.sock_recv(c, 1024)
+            assert n == payload
+            c.close()
+            # recvfrom through the UDP socket
+            await loop.sock_sendto(udp, payload, udp.getsockname())
+            buf = bytearray(1024)
+            data, _sender = await loop.sock_recvfrom(udp, bufsize=1024)
+            assert data == payload
+
+        # Warmup, then measure.
+        await one_cycle()
+        await asyncio.sleep(0.05)
+        gc.collect()
+        blocks_before = sys.getallocatedblocks()
+
+        for _ in range(100):
+            await one_cycle()
+
+        await server_task
+        await asyncio.sleep(0.05)
+        for _ in range(5):
+            await asyncio.sleep(0.02)
+            gc.collect()
+        blocks_after = sys.getallocatedblocks()
+
+        assert blocks_after - blocks_before < 150, (
+            f"callback state leaked: {blocks_before} -> {blocks_after} blocks"
+        )
+
+        server_sock.close()
+        udp.close()
 
     talyn.run(main())
