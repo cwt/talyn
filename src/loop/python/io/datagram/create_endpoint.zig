@@ -48,6 +48,37 @@ const DatagramCreationData = struct {
 
 const set_future_exception = Future.Python.Result.set_future_exception;
 
+/// BUG-355: `set_future_exception` STEALS the pending Python exception
+/// (`PyErr_GetRaisedException`); if none is set it silently does nothing
+/// and the future stays pending forever (infinite hang on `await`).
+fn ensure_exception(err: anyerror) void {
+    if (python_c.PyErr_Occurred() == null) {
+        if (err == error.PythonError) {
+            python_c.raise_python_runtime_error("DNS resolution failed");
+        } else {
+            utils.handle_zig_function_error(err, {});
+        }
+    }
+}
+
+/// BUG-355: fail the endpoint creation — resolve the future (unless it is
+/// already resolved/cancelled), release the creation data, and surface the
+/// error. Every failure path of the DNS resolution chain must go through
+/// here: `set_future_exception` returns void, so a plain return leaked
+/// `dcd` and left the awaiting coroutine hanging forever.
+fn fail_endpoint(err: anyerror, dcd: *DatagramCreationData) !void {
+    const future = dcd.future;
+    const future_data = utils.get_data_ptr(Future, future);
+    if (future_data.status != .pending) {
+        // Already resolved or cancelled — nothing to notify.
+        dcd.deinit();
+        return;
+    }
+    ensure_exception(err);
+    dcd.deinit();
+    return set_future_exception(err, future);
+}
+
 inline fn z_loop_create_datagram_endpoint(self: *LoopObject, args: []?PyObject, knames: ?PyObject) !*FutureObject {
     if (Loop.Python.check_forked(self)) return error.PythonError;
     if (Loop.Python.check_thread(self)) return error.PythonError;
@@ -155,19 +186,25 @@ fn get_addr_tuple(addr: PyObject) !struct { host: []const u8, port: u16 } {
 
 fn resolve_local_addr(data: *const CallbackManager.CallbackData) !void {
     const dcd: *DatagramCreationData = @ptrCast(@alignCast(data.user_data.?));
-    if (data.cancelled()) return dcd.deinit();
+    // BUG-355: a cancelled dispatch must still resolve the future and
+    // release the creation data — the silent return left the future
+    // pending forever.
+    if (data.cancelled()) return fail_endpoint(error.PythonError, dcd);
 
     const loop_data = utils.get_data_ptr(Loop, dcd.loop);
 
     if (dcd.py_local_addr) |la| {
-        const addr_info = get_addr_tuple(la) catch |err| return set_future_exception(err, dcd.future);
+        const addr_info = get_addr_tuple(la) catch |err| return fail_endpoint(err, dcd);
         const resolver_callback = CallbackManager.Callback{
             .func = &local_addr_resolved_callback,
             .cleanup = null,
             .data = .{ .user_data = dcd },
         };
+        // Note: a null return WITH a registered resolver callback means
+        // the query was queued asynchronously — the callback chain
+        // continues there.
         const addresses = try loop_data.dns.lookup(addr_info.host, &resolver_callback, dcd.dns_timeout) orelse return;
-        dcd.local_addresses = try loop_data.allocator.dupe(utils.Address, addresses);
+        dcd.local_addresses = loop_data.allocator.dupe(utils.Address, addresses) catch |err| return fail_endpoint(err, dcd);
         // Update ports
         for (dcd.local_addresses.?) |*addr| addr.setPort(addr_info.port);
     }
@@ -177,17 +214,21 @@ fn resolve_local_addr(data: *const CallbackManager.CallbackData) !void {
         .cleanup = null,
         .data = .{ .user_data = dcd },
     };
-    try Loop.Scheduling.Soon.dispatch(loop_data, &callback);
+    Loop.Scheduling.Soon.dispatch(loop_data, &callback) catch |err| return fail_endpoint(err, dcd);
 }
 
 fn local_addr_resolved_callback(data: *const CallbackManager.CallbackData) !void {
     const dcd: *DatagramCreationData = @ptrCast(@alignCast(data.user_data.?));
-    if (data.cancelled()) return dcd.deinit();
+    if (data.cancelled()) return fail_endpoint(error.PythonError, dcd);
 
     const loop_data = utils.get_data_ptr(Loop, dcd.loop);
-    const addr_info = get_addr_tuple(dcd.py_local_addr.?) catch |err| return set_future_exception(err, dcd.future);
-    const addresses = try loop_data.dns.lookup(addr_info.host, null, dcd.dns_timeout) orelse return set_future_exception(error.PythonError, dcd.future);
-    dcd.local_addresses = try loop_data.allocator.dupe(utils.Address, addresses);
+    const addr_info = get_addr_tuple(dcd.py_local_addr.?) catch |err| return fail_endpoint(err, dcd);
+    // BUG-355: with a null resolver callback this is a synchronous
+    // lookup failure — raise an exception before set_future_exception
+    // (which silently does nothing without a pending exception) and
+    // release the creation data.
+    const addresses = (loop_data.dns.lookup(addr_info.host, null, dcd.dns_timeout) catch |err| return fail_endpoint(err, dcd)) orelse return fail_endpoint(error.PythonError, dcd);
+    dcd.local_addresses = loop_data.allocator.dupe(utils.Address, addresses) catch |err| return fail_endpoint(err, dcd);
     for (dcd.local_addresses.?) |*addr| addr.setPort(addr_info.port);
 
     const callback = CallbackManager.Callback{
@@ -195,24 +236,26 @@ fn local_addr_resolved_callback(data: *const CallbackManager.CallbackData) !void
         .cleanup = null,
         .data = .{ .user_data = dcd },
     };
-    try Loop.Scheduling.Soon.dispatch(loop_data, &callback);
+    Loop.Scheduling.Soon.dispatch(loop_data, &callback) catch |err| return fail_endpoint(err, dcd);
 }
 
 fn resolve_remote_addr(data: *const CallbackManager.CallbackData) !void {
     const dcd: *DatagramCreationData = @ptrCast(@alignCast(data.user_data.?));
-    if (data.cancelled()) return dcd.deinit();
+    // BUG-355: see resolve_local_addr — resolve the future and release
+    // the creation data instead of leaving it pending forever.
+    if (data.cancelled()) return fail_endpoint(error.PythonError, dcd);
 
     const loop_data = utils.get_data_ptr(Loop, dcd.loop);
 
     if (dcd.py_remote_addr) |ra| {
-        const addr_info = get_addr_tuple(ra) catch |err| return set_future_exception(err, dcd.future);
+        const addr_info = get_addr_tuple(ra) catch |err| return fail_endpoint(err, dcd);
         const resolver_callback = CallbackManager.Callback{
             .func = &remote_addr_resolved_callback,
             .cleanup = null,
             .data = .{ .user_data = dcd },
         };
         const addresses = try loop_data.dns.lookup(addr_info.host, &resolver_callback, dcd.dns_timeout) orelse return;
-        dcd.remote_addresses = try loop_data.allocator.dupe(utils.Address, addresses);
+        dcd.remote_addresses = loop_data.allocator.dupe(utils.Address, addresses) catch |err| return fail_endpoint(err, dcd);
         for (dcd.remote_addresses.?) |*addr| addr.setPort(addr_info.port);
     }
 
@@ -221,18 +264,21 @@ fn resolve_remote_addr(data: *const CallbackManager.CallbackData) !void {
         .cleanup = null,
         .data = .{ .user_data = dcd },
     };
-    try Loop.Scheduling.Soon.dispatch(loop_data, &callback);
+    Loop.Scheduling.Soon.dispatch(loop_data, &callback) catch |err| return fail_endpoint(err, dcd);
 }
 
 fn remote_addr_resolved_callback(data: *const CallbackManager.CallbackData) !void {
     const dcd: *DatagramCreationData = @ptrCast(@alignCast(data.user_data.?));
-    if (data.cancelled()) return dcd.deinit();
+    if (data.cancelled()) return fail_endpoint(error.PythonError, dcd);
 
     const loop_data = utils.get_data_ptr(Loop, dcd.loop);
 
-    const addr_info = get_addr_tuple(dcd.py_remote_addr.?) catch |err| return set_future_exception(err, dcd.future);
-    const addresses = try loop_data.dns.lookup(addr_info.host, null, dcd.dns_timeout) orelse return set_future_exception(error.PythonError, dcd.future);
-    dcd.remote_addresses = try loop_data.allocator.dupe(utils.Address, addresses);
+    const addr_info = get_addr_tuple(dcd.py_remote_addr.?) catch |err| return fail_endpoint(err, dcd);
+    // BUG-355: see local_addr_resolved_callback — synchronous lookup
+    // failure needs an exception before set_future_exception, and the
+    // creation data must be released.
+    const addresses = (loop_data.dns.lookup(addr_info.host, null, dcd.dns_timeout) catch |err| return fail_endpoint(err, dcd)) orelse return fail_endpoint(error.PythonError, dcd);
+    dcd.remote_addresses = loop_data.allocator.dupe(utils.Address, addresses) catch |err| return fail_endpoint(err, dcd);
     for (dcd.remote_addresses.?) |*addr| addr.setPort(addr_info.port);
 
     const callback = CallbackManager.Callback{
@@ -240,7 +286,7 @@ fn remote_addr_resolved_callback(data: *const CallbackManager.CallbackData) !voi
         .cleanup = null,
         .data = .{ .user_data = dcd },
     };
-    try Loop.Scheduling.Soon.dispatch(loop_data, &callback);
+    Loop.Scheduling.Soon.dispatch(loop_data, &callback) catch |err| return fail_endpoint(err, dcd);
 }
 
 fn z_create_endpoint(dcd: *DatagramCreationData) !void {
@@ -330,9 +376,27 @@ fn z_create_endpoint(dcd: *DatagramCreationData) !void {
 fn create_endpoint(data: *const CallbackManager.CallbackData) !void {
     const dcd: *DatagramCreationData = @ptrCast(@alignCast(data.user_data.?));
     defer dcd.deinit();
-    if (data.cancelled()) return;
+    if (data.cancelled()) {
+        // BUG-355: the DNS layer cancelled this dispatch (e.g. query send
+        // failed on all nameservers) — the silent `return` left the
+        // future pending forever. Resolve it with an exception instead
+        // (the `defer dcd.deinit()` above owns the cleanup here — do NOT
+        // use fail_endpoint, it would deinit twice).
+        const future = dcd.future;
+        const future_data = utils.get_data_ptr(Future, future);
+        if (future_data.status == .pending) {
+            python_c.raise_python_runtime_error("DNS resolution cancelled");
+            return set_future_exception(error.PythonError, future);
+        }
+        return;
+    }
 
     z_create_endpoint(dcd) catch |err| {
+        // BUG-355: ensure an exception is pending — several error paths
+        // (setsockopt, queue failures) return Zig errors without setting
+        // one, and set_future_exception silently no-ops then, leaving
+        // the future pending forever.
+        ensure_exception(err);
         return set_future_exception(err, dcd.future);
     };
 }

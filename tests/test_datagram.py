@@ -526,3 +526,44 @@ def test_bug352_no_kwargs_reference_leak() -> None:
         )
 
     talyn.run(main())
+
+
+def test_bug355_dns_failure_resolves_future_no_leak() -> None:
+    """BUG-355: on DNS failure the datagram endpoint resolution chain
+    called set_future_exception WITHOUT a pending Python exception (it
+    silently no-oped) and never released DatagramCreationData - the
+    awaiting coroutine hung forever and the arguments leaked."""
+    import contextlib
+    import gc
+    import sys
+
+    remote_addr = ("nonexistent.invalid", 53)
+
+    async def main() -> None:
+        loop = asyncio.get_running_loop()
+
+        # Warmup (also settles the resolver machinery).
+        with contextlib.suppress(Exception):
+            t, _ = await asyncio.wait_for(
+                loop.create_datagram_endpoint(DatagramProtocol, remote_addr=remote_addr), 10.0)
+            t.close()
+        await asyncio.sleep(0.05)
+        gc.collect()
+
+        rc_before = sys.getrefcount(remote_addr)
+
+        for _ in range(50):
+            # Must RAISE (future resolved), never hang.
+            with contextlib.suppress(Exception):
+                fut = loop.create_datagram_endpoint(DatagramProtocol, remote_addr=remote_addr)
+                t, _ = await asyncio.wait_for(fut, 30.0)
+                t.close()
+        await asyncio.sleep(0.1)
+        gc.collect()
+
+        rc_after = sys.getrefcount(remote_addr)
+        assert rc_after == rc_before, (
+            f"remote_addr leaked: {rc_before} -> {rc_after}"
+        )
+
+    talyn.run(main())

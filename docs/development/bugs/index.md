@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 340 |
-| Open | 42 |
+| Fixed | 341 |
+| Open | 41 |
 | False Positive | 13 |
 | **Total** | **395** |
 
@@ -390,7 +390,7 @@ Sorted by bug number. See individual bug files for details.
 | [352](352.md) | 100% reference leak of all keyword arguments in `z_loop_create_datagram_endpoint` due to double `py_newref` | High | Fixed |
 | [353](353.md) | 100% reference leak of return values in `sock_sendto_callback`, `sock_recv_into_callback_with_buf`, `sock_connect_callback`, and `sock_sendall_callback` | High | Fixed |
 | [354](354.md) | Memory and `PyObject` reference leak of `SocketCreationData`, `SocketConnectionData`, `ServerCreationData`, and `ServerSocketData` on DNS failure or cancellation | High | Fixed |
-| [355](355.md) | Memory/reference leaks, missing Python exception before `set_future_exception`, and unresolved `Future` (infinite hang) in `create_endpoint.zig` DNS resolution callbacks | High | Open |
+| [355](355.md) | Memory/reference leaks, missing Python exception before `set_future_exception`, and unresolved `Future` (infinite hang) in `create_endpoint.zig` DNS resolution callbacks | High | Fixed |
 | [356](356.md) | Leaked callback structs/buffers on `orelse return set_future_exception` and unresolved futures (infinite hang) on `try` / `cancelled()` across all 7 socket operations in `ops.zig` | High | Open |
 | [357](357.md) | Unresolved futures (infinite hang) when DNS `on_query_sent` fails on the last nameserver or `getaddrinfo_callback` / `getnameinfo_callback` error or cancel | High | Open |
 | [358](358.md) | `Resolv.build_queries` clobbers `server_data.dns_timeout` back to `null` via struct-literal assignment | High | Open |
