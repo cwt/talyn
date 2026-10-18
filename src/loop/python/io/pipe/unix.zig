@@ -204,7 +204,10 @@ inline fn z_loop_create_unix_server(self: *LoopObject, args: []?PyObject, knames
     const fd_ret = std.os.linux.socket(std.posix.AF.UNIX, std.posix.SOCK.STREAM | std.posix.SOCK.CLOEXEC, 0);
     if (utils.getSyscallErrno(fd_ret) != .SUCCESS) return error.SystemResources;
     const fd: std.posix.fd_t = @intCast(fd_ret);
-    errdefer _ = std.os.linux.close(fd);
+    var owns_fd = true;
+    errdefer if (owns_fd) {
+        _ = std.os.linux.close(fd);
+    };
 
     const addr = try utils.Address.fromPyAddr(py_path, std.posix.AF.UNIX);
 
@@ -213,7 +216,6 @@ inline fn z_loop_create_unix_server(self: *LoopObject, args: []?PyObject, knames
 
     const bind_rc = std.os.linux.bind(fd, @ptrCast(&addr.any), addr.getOsSockLen());
     if (utils.getSyscallErrno(bind_rc) != .SUCCESS) return error.SystemResources;
-    errdefer _ = std.os.linux.close(fd);
 
     const listen_rc = std.os.linux.listen(fd, @as(u32, @intCast(backlog)));
     if (utils.getSyscallErrno(listen_rc) != .SUCCESS) return error.SystemResources;
@@ -235,6 +237,7 @@ inline fn z_loop_create_unix_server(self: *LoopObject, args: []?PyObject, knames
         py_family_obj,
         py_backlog_obj,
     ) orelse return error.PythonError;
+    owns_fd = false;
     errdefer python_c.py_decref(server);
 
     StreamServer.start_serving(@ptrCast(server)) catch |err| {

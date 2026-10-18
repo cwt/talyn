@@ -215,3 +215,28 @@ def test_create_unix_connection_protocol_refcount() -> None:
     gc.collect()
     assert sys.getrefcount(proto) == initial_refcnt
 
+
+def test_create_unix_server_error_cleans_up_fd_once() -> None:
+    """BUG-343: create_unix_server error paths must close the temporary
+    socket fd once without leaking file descriptors or corrupting state."""
+    path = "/nonexistent_dir_bug343_probe/talyn_test.sock"
+
+    async def main() -> None:
+        loop = asyncio.get_running_loop()
+        probe_r, probe_w = os.pipe()
+        try:
+            os.close(probe_r)
+            for _ in range(5):
+                with pytest.raises(OSError):
+                    await loop.create_unix_server(EchoProtocol, path)
+            new_r, new_w = os.pipe()
+            try:
+                assert new_r == probe_r
+            finally:
+                os.close(new_r)
+                os.close(new_w)
+        finally:
+            os.close(probe_w)
+
+    talyn.run(main())
+
