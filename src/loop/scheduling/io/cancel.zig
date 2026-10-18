@@ -11,6 +11,9 @@ pub fn perform_io(ring: *std.os.linux.IoUring, task_id: usize) !usize {
 }
 
 pub fn perform_by_fd(ring: *std.os.linux.IoUring, fd: usize) !usize {
-    _ = try ring.cancel(0, @intCast(fd), std.os.linux.IORING_ASYNC_CANCEL_FD);
+    const sqe = try ring.get_sqe();
+    sqe.prep_cancel_fd(@intCast(fd), std.os.linux.IORING_ASYNC_CANCEL_FD);
+    sqe.user_data = 0;
     return 0;
 }
+

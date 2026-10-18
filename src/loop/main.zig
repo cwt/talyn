@@ -531,4 +531,29 @@ test "BUG-117: registered-buffer fallback when io_uring buffer registration fail
     // runs IO.deinit, which owns buffer_pool exactly once.
 }
 
+test "BUG-337: Cancel.perform_by_fd populates sqe.fd with target fd instead of -1" {
+    const allocator = std.testing.allocator;
+    const loop = try allocator.create(Loop);
+    defer allocator.destroy(loop);
+
+    try loop.init(allocator, 1024);
+    defer loop.release();
+
+    const ring = &loop.io.ring;
+    _ = try loop.io.flush_pending_sqes();
+
+    const target_fd: usize = 42;
+    const tail_before = ring.sq.sqe_tail;
+    _ = try Scheduling.IO.Cancel.perform_by_fd(ring, target_fd);
+    defer ring.sq.sqe_tail = tail_before;
+
+    const sqe = &ring.sq.sqes[(ring.sq.sqe_tail -% 1) & ring.sq.mask];
+    try std.testing.expectEqual(std.os.linux.IORING_OP.ASYNC_CANCEL, sqe.opcode);
+    try std.testing.expectEqual(@as(i32, 42), sqe.fd);
+    try std.testing.expectEqual(@as(u64, 0), sqe.addr);
+    try std.testing.expectEqual(@as(u32, std.os.linux.IORING_ASYNC_CANCEL_FD), sqe.rw_flags);
+    try std.testing.expectEqual(@as(u64, 0), sqe.user_data);
+}
+
 const Loop = @This();
+
