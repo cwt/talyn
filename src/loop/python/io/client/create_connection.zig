@@ -367,15 +367,25 @@ fn z_try_resolv_host(creation_data: *SocketCreationData) !void {
 
 fn try_resolv_host(data: *const CallbackManager.CallbackData) !void {
     const socket_creation_data_ptr: *SocketCreationData = @ptrCast(@alignCast(data.user_data.?));
-    errdefer python_c.deinitialize_object_fields(socket_creation_data_ptr, &.{});
+
+    // BUG-354: capture the future up front — the cleanup below frees the
+    // creation data (dropping its own future reference), and
+    // `set_future_exception` returns void so no `errdefer` runs.
+    const future = socket_creation_data_ptr.future.?;
 
     if (data.cancelled()) {
         python_c.raise_python_runtime_error("Event for trying host resolution cancelled");
-        return set_future_exception(error.PythonError, socket_creation_data_ptr.future.?);
+        python_c.py_incref(@ptrCast(future));
+        defer python_c.py_decref(@ptrCast(future));
+        socket_creation_data_ptr.deinit();
+        return set_future_exception(error.PythonError, future);
     }
 
     z_try_resolv_host(socket_creation_data_ptr) catch |err| {
-        return set_future_exception(err, socket_creation_data_ptr.future.?);
+        python_c.py_incref(@ptrCast(future));
+        defer python_c.py_decref(@ptrCast(future));
+        socket_creation_data_ptr.deinit();
+        return set_future_exception(err, future);
     };
 }
 
@@ -389,8 +399,10 @@ fn z_host_resolved_callback(connection_data: *SocketConnectionData) !void {
 
     const host = try get_host_slice(creation_data);
     const address_list = try loop_data.dns.lookup(host, null, creation_data.dns_timeout) orelse {
-        python_c.raise_python_runtime_error("Failed to resolve host");
-        return set_future_exception(error.PythonError, creation_data.future.?);
+        // BUG-354: report failure via error — the caller owns the
+        // connection data and performs the cleanup before setting the
+        // future exception.
+        return error.DnsResolutionFailed;
     };
 
     connection_data.address_list = try allocator.dupe(utils.Address, address_list);
@@ -404,15 +416,33 @@ fn z_host_resolved_callback(connection_data: *SocketConnectionData) !void {
 
 fn host_resolved_callback(data: *const CallbackManager.CallbackData) !void {
     const connection_data: *SocketConnectionData = @ptrCast(@alignCast(data.user_data.?));
-    errdefer connection_data.deinit();
 
     if (data.cancelled()) {
         python_c.raise_python_runtime_error("Host resolution failed");
-        return set_future_exception(error.PythonError, connection_data.creation_data.future.?);
+        // BUG-354: `set_future_exception` returns void, so the old
+        // `errdefer connection_data.deinit()` never ran on this path,
+        // leaking the heap structs and every owned PyObject reference.
+        // Clean up explicitly, keeping the future alive across deinit.
+        const future = connection_data.creation_data.future.?;
+        python_c.py_incref(@ptrCast(future));
+        defer python_c.py_decref(@ptrCast(future));
+        connection_data.deinit();
+        return set_future_exception(error.PythonError, future);
     }
 
     z_host_resolved_callback(connection_data) catch |err| {
-        return set_future_exception(err, connection_data.creation_data.future.?);
+        const future = connection_data.creation_data.future.?;
+        python_c.py_incref(@ptrCast(future));
+        defer python_c.py_decref(@ptrCast(future));
+        connection_data.deinit();
+        switch (err) {
+            error.DnsResolutionFailed => python_c.raise_python_runtime_error("Failed to resolve host"),
+            // error.PythonError already left an exception set; anything
+            // else is mapped by handle_zig_function_error (and again,
+            // idempotently, by set_future_exception below).
+            else => utils.handle_zig_function_error(err, {}),
+        }
+        return set_future_exception(err, future);
     };
 }
 

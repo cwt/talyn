@@ -310,15 +310,25 @@ fn z_try_resolve_server_host(creation_data: *ServerCreationData) !void {
 
 fn try_resolve_server_host(data: *const CallbackManager.CallbackData) !void {
     const creation_data: *ServerCreationData = @ptrCast(@alignCast(data.user_data.?));
-    errdefer creation_data.deinit();
+
+    // BUG-354: capture the future up front — the cleanup below frees the
+    // creation data (dropping its own future reference), and
+    // `set_future_exception` returns void so no `errdefer` runs.
+    const future = creation_data.future.?;
 
     if (data.cancelled()) {
         python_c.raise_python_runtime_error("Event for server host resolution cancelled\x00");
-        return set_future_exception(error.PythonError, creation_data.future.?);
+        python_c.py_incref(@ptrCast(future));
+        defer python_c.py_decref(@ptrCast(future));
+        creation_data.deinit();
+        return set_future_exception(error.PythonError, future);
     }
 
     z_try_resolve_server_host(creation_data) catch |err| {
-        return set_future_exception(err, creation_data.future.?);
+        python_c.py_incref(@ptrCast(future));
+        defer python_c.py_decref(@ptrCast(future));
+        creation_data.deinit();
+        return set_future_exception(err, future);
     };
 }
 
@@ -332,13 +342,14 @@ fn z_server_host_resolved_callback(server_data: *ServerSocketData) !void {
 
     const host = try get_host_slice(creation_data);
     const address_list = try loop_data.dns.lookup(host, null, server_data.dns_timeout) orelse {
-        python_c.raise_python_runtime_error("Failed to resolve host\x00");
-        return set_future_exception(error.PythonError, creation_data.future.?);
+        // BUG-354: report failure via error — the caller owns the server
+        // data and performs the cleanup before setting the future
+        // exception.
+        return error.DnsResolutionFailed;
     };
 
     if (address_list.len == 0) {
-        python_c.raise_python_runtime_error("No addresses to bind to\x00");
-        return set_future_exception(error.PythonError, creation_data.future.?);
+        return error.NoAddressesToBind;
     }
 
     server_data.address_list = try allocator.dupe(utils.Address, address_list);
@@ -356,15 +367,34 @@ fn z_server_host_resolved_callback(server_data: *ServerSocketData) !void {
 
 fn server_host_resolved_callback(data: *const CallbackManager.CallbackData) !void {
     const server_data: *ServerSocketData = @ptrCast(@alignCast(data.user_data.?));
-    errdefer server_data.deinit();
 
     if (data.cancelled()) {
         python_c.raise_python_runtime_error("Server host resolution cancelled\x00");
-        return set_future_exception(error.PythonError, server_data.creation_data.future.?);
+        // BUG-354: `set_future_exception` returns void, so the old
+        // `errdefer server_data.deinit()` never ran on this path, leaking
+        // the heap structs and every owned PyObject reference. Clean up
+        // explicitly, keeping the future alive across deinit.
+        const future = server_data.creation_data.future.?;
+        python_c.py_incref(@ptrCast(future));
+        defer python_c.py_decref(@ptrCast(future));
+        server_data.deinit();
+        return set_future_exception(error.PythonError, future);
     }
 
     z_server_host_resolved_callback(server_data) catch |err| {
-        return set_future_exception(err, server_data.creation_data.future.?);
+        const future = server_data.creation_data.future.?;
+        python_c.py_incref(@ptrCast(future));
+        defer python_c.py_decref(@ptrCast(future));
+        server_data.deinit();
+        switch (err) {
+            error.DnsResolutionFailed => python_c.raise_python_runtime_error("Failed to resolve host\x00"),
+            error.NoAddressesToBind => python_c.raise_python_runtime_error("No addresses to bind to\x00"),
+            // error.PythonError already left an exception set; anything
+            // else is mapped by handle_zig_function_error (and again,
+            // idempotently, by set_future_exception below).
+            else => utils.handle_zig_function_error(err, {}),
+        }
+        return set_future_exception(err, future);
     };
 }
 

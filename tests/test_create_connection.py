@@ -702,3 +702,52 @@ def test_create_connection_sock_loop_refcount_balanced() -> None:
         assert sys.getrefcount(loop) == baseline_refs
 
     talyn.run(main())
+
+
+def test_bug354_no_dns_failure_leak() -> None:
+    """BUG-354: on DNS failure (or cancellation) the DNS resolution
+    callbacks returned via set_future_exception(...) — a VOID return —
+    bypassing their `errdefer ...deinit()`, leaking SocketConnectionData /
+    ServerCreationData and every owned PyObject reference (future, loop,
+    protocol_factory, py_host, py_port, ...)."""
+    import contextlib
+    import gc
+    import sys
+
+    import talyn.loop
+
+    host = "nonexistent.invalid"
+    factory = talyn.loop._BaseProtocol if hasattr(talyn.loop, "_BaseProtocol") else asyncio.Protocol
+
+    async def main() -> None:
+        loop = asyncio.get_running_loop()
+
+        async def attempt(kind: str) -> None:
+            with contextlib.suppress(Exception):
+                if kind == "conn":
+                    await loop.create_connection(factory, host, 80)
+                else:
+                    await loop.create_server(factory, host, 80)
+
+        # Warmup: one of each so lazy machinery reaches steady state.
+        await attempt("conn")
+        await attempt("srv")
+        await asyncio.sleep(0.05)
+        gc.collect()
+
+        rc_before = sys.getrefcount(host)
+
+        for _ in range(50):
+            await attempt("conn")
+            await attempt("srv")
+        # Let any queued callbacks (and their cleanups) settle.
+        await asyncio.sleep(0.1)
+        gc.collect()
+
+        rc_after = sys.getrefcount(host)
+        assert rc_after == rc_before, (
+            f"host string leaked: {rc_before} -> {rc_after} "
+            f"(pre-fix leaked 1 ref per DNS failure)"
+        )
+
+    talyn.run(main())
