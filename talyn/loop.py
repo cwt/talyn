@@ -56,43 +56,58 @@ class _SSLTransportWrapper:
         # sets _read_wants_read / _write_wants_write flags and re-arms the
         # appropriate waiter. We mirror that here: on WantRead or WantWrite,
         # mark the state and let the transport's pause/resume handle re-arming.
+        # BUG-375: on WantRead/WantWrite (renegotiation, read-side need)
+        # or a partial write, the plaintext that _sslobj.write did not
+        # consume must be buffered for a later flush, not dropped on the
+        # floor.
+        view = memoryview(data)
         try:
-            self._ssp._sslobj.write(data)
+            written = self._ssp._sslobj.write(view)
         except self._sslmod.SSLWantReadError:
             # Need to read more data from the peer before we can write.
             # Set the flag so the read side knows to re-arm.
             self._ssp._write_wants_read = True
+            self._write_buffer.append(view)
         except self._sslmod.SSLWantWriteError:
             # Need to wait for the write side to drain before writing.
             # Set the flag so the write side knows to re-arm.
             self._ssp._write_wants_write = True
+            self._write_buffer.append(view)
         except (self._sslmod.SSLError, self._sslmod.SSLSyscallError) as exc:
             # Fatal SSL error \u2014 close the transport.
             self._ssp._f()
             if self._loop is not None and not self._loop.is_closed():
                 self._loop.call_soon(self._fatal_error, exc)
             return
+        else:
+            if written < len(view):
+                self._write_buffer.append(view[written:])
         self._ssp._f()
 
     def _flush_write_buffer(self):
         # Flush any buffered application data to SSL object
         while self._write_buffer:
             data = self._write_buffer.pop(0)
+            # BUG-375: honor the partial-write return — requeue only the
+            # unconsumed remainder.
+            view = memoryview(data)
             try:
-                self._ssp._sslobj.write(data)
+                written = self._ssp._sslobj.write(view)
             except self._sslmod.SSLWantReadError:
                 self._ssp._write_wants_read = True
-                self._write_buffer.insert(0, data)
+                self._write_buffer.insert(0, view)
                 break
             except self._sslmod.SSLWantWriteError:
                 self._ssp._write_wants_write = True
-                self._write_buffer.insert(0, data)
+                self._write_buffer.insert(0, view)
                 break
             except (self._sslmod.SSLError, self._sslmod.SSLSyscallError) as exc:
                 self._ssp._f()
                 if self._loop is not None and not self._loop.is_closed():
                     self._loop.call_soon(self._fatal_error, exc)
                 return
+            if written < len(view):
+                self._write_buffer.insert(0, view[written:])
 
         # Flush all pending encrypted data from outgoing BIO to transport
         outgoing = getattr(self._ssp, "_outgoing", None)
@@ -105,19 +120,15 @@ class _SSLTransportWrapper:
                     self._raw_t.write(d)
                 except RuntimeError as e:
                     if "Writing operations are paused" in str(e):
-                        # Raw transport is paused at protocol level, but socket may still accept data.
-                        # Write directly to socket fd to bypass protocol-level flow control.
-                        try:
-                            fd = self._raw_t.get_extra_info("socket").fileno()
-                            view = memoryview(d)
-                            while view:
-                                n = os.write(fd, view)
-                                view = view[n:]
-                        except (AttributeError, OSError):
-                            logger.exception(
-                                "Failed to write directly to socket in _flush_write_buffer"
-                            )
-                            return
+                        # BUG-375: the raw transport is paused at
+                        # protocol level. Put the ciphertext back into
+                        # the outgoing MemoryBIO so the next flush re-
+                        # reads it in order, instead of an un-coordinated
+                        # os.write() that loses the tail on EAGAIN and
+                        # scrambles TLS record order against the queued
+                        # io_uring writes.
+                        outgoing.write(d)
+                        break
                     else:
                         raise
 
@@ -694,6 +705,10 @@ class Loop(_Loop):
                         self._ap.resume_writing()
                     except Exception:
                         logger.exception("Unhandled exception in event loop callback")
+                # BUG-375: flush the wrapper's plaintext write buffer that
+                # was stranding while writes were paused.
+                if hasattr(self, "_wrapper") and self._wrapper is not None:
+                    self._wrapper._flush_write_buffer()
                 self._f()
 
             def _h(self):
@@ -961,16 +976,14 @@ class Loop(_Loop):
                         self._raw_t.write(d)
                     except RuntimeError as e:
                         if "Writing operations are paused" in str(e):
-                            # Raw transport is paused at protocol level, but socket may still accept data.
-                            # Write directly to socket fd to bypass protocol-level flow control.
-                            try:
-                                fd = self._raw_t.get_extra_info("socket").fileno()
-                                view = memoryview(d)
-                                while view:
-                                    n = os.write(fd, view)
-                                    view = view[n:]
-                            except (AttributeError, OSError):
-                                logger.exception("direct socket write fallback failed")
+                            # BUG-375: the raw transport is paused at
+                            # protocol level. Put the ciphertext back
+                            # into the outgoing MemoryBIO so the next
+                            # _f() re-reads it in order — the previous
+                            # raw os.write() bypass lost the tail on
+                            # EAGAIN (truncated TLS records) and
+                            # interleaved with queued io_uring writes.
+                            self._outgoing.write(d)
                         else:
                             raise
 
@@ -1026,6 +1039,11 @@ class Loop(_Loop):
                 await waiter
             except BaseException:
                 timeout_handle.cancel()
+                # BUG-375: a failed handshake (SSLError from the peer's
+                # non-TLS state, or cancellation of the awaiting task)
+                # left the raw_transport's socket open when the timeout
+                # itself had not fired; mirror the non-timeout branch.
+                transport.close()
                 raise
             finally:
                 timeout_handle.cancel()
@@ -1186,6 +1204,10 @@ class Loop(_Loop):
                         self._ap.resume_writing()
                     except Exception:
                         logger.exception("Unhandled exception in event loop callback")
+                # BUG-375: flush the wrapper's plaintext write buffer that
+                # was stranding while writes were paused.
+                if hasattr(self, "_wrapper") and self._wrapper is not None:
+                    self._wrapper._flush_write_buffer()
                 self._f()
 
             def _h(self):
@@ -1404,6 +1426,10 @@ class Loop(_Loop):
                         self._ap.resume_writing()
                     except Exception:
                         logger.exception("Unhandled exception in event loop callback")
+                # BUG-375: flush the wrapper's plaintext write buffer that
+                # was stranding while writes were paused.
+                if hasattr(self, "_wrapper") and self._wrapper is not None:
+                    self._wrapper._flush_write_buffer()
                 self._f()
 
             def _h(self):

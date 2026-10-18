@@ -465,7 +465,10 @@ def test_ssl_transport_wrapper_write() -> None:
             self.write_called_with = None
 
         def write(self, data):
+            # Mirror the realMemoryBIO-backed SSLSocket.write contract:
+            # return the number of plaintext bytes consumed.
             self.write_called_with = data
+            return len(data)
 
     raw = DummyRaw()
     ssp = DummySSP()
