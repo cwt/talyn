@@ -7,6 +7,13 @@ const PythonFutureObject = Future.Python.FutureObject;
 const utils = @import("utils");
 
 pub inline fn future_fast_cancel(instance: *PythonFutureObject, data: *Future, cancel_msg_py_object: ?PyObject) !bool {
+    // BUG-369: a never-armed or teardown-bound Future (created via tp_new
+    // without init, or fences-released by Future.release) has no valid
+    // callbacks queue scheduling state — re-entrant cancel() from a
+    // finalizer during release() must be an inert no-op instead of
+    // arming the guaranteed-dispatch machinery on the dying object.
+    if (data.released) return false;
+
     switch (data.status) {
         .finished, .canceled => return false,
         .pending => {},

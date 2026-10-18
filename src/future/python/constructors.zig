@@ -11,9 +11,7 @@ const LoopObject = Loop.Python.LoopObject;
 const PythonFutureObject = Future.Python.FutureObject;
 
 pub inline fn future_set_initial_values(self: *PythonFutureObject) void {
-    python_c.initialize_object_fields(
-        self, &.{"ob_base", "log_destroy_pending", "cancel_msg_py_object"}
-    );
+    python_c.initialize_object_fields(self, &.{ "ob_base", "log_destroy_pending", "cancel_msg_py_object" });
 
     self.cancel_msg_py_object = python_c.get_py_none();
 
@@ -31,9 +29,7 @@ pub inline fn future_init_configuration(self: *PythonFutureObject, talyn_loop: *
 }
 
 pub inline fn fast_new_future(talyn_loop: *LoopObject) !*PythonFutureObject {
-    const instance: *PythonFutureObject = @ptrCast(
-        Future.Python.FutureType.tp_alloc.?(&Future.Python.FutureType, 0) orelse return error.PythonError
-    );
+    const instance: *PythonFutureObject = @ptrCast(Future.Python.FutureType.tp_alloc.?(&Future.Python.FutureType, 0) orelse return error.PythonError);
     errdefer future_dealloc(instance);
 
     future_set_initial_values(instance);
@@ -41,22 +37,14 @@ pub inline fn fast_new_future(talyn_loop: *LoopObject) !*PythonFutureObject {
     return instance;
 }
 
-inline fn z_future_new(
-    @"type": *python_c.PyTypeObject, _: ?PyObject,
-    _: ?PyObject
-) !*PythonFutureObject {
+inline fn z_future_new(@"type": *python_c.PyTypeObject, _: ?PyObject, _: ?PyObject) !*PythonFutureObject {
     const instance: *PythonFutureObject = @ptrCast(@"type".tp_alloc.?(@"type", 0) orelse return error.PythonError);
     future_set_initial_values(instance);
     return instance;
 }
 
-pub fn future_new(
-    @"type": ?*python_c.PyTypeObject, args: ?PyObject,
-    kwargs: ?PyObject
-) callconv(.c) ?PyObject {
-    const self = utils.execute_zig_function(
-        z_future_new, .{@"type".?, args, kwargs}
-    );
+pub fn future_new(@"type": ?*python_c.PyTypeObject, args: ?PyObject, kwargs: ?PyObject) callconv(.c) ?PyObject {
+    const self = utils.execute_zig_function(z_future_new, .{ @"type".?, args, kwargs });
     return @ptrCast(self);
 }
 
@@ -65,9 +53,14 @@ pub fn future_clear(self: ?*PythonFutureObject) callconv(.c) c_int {
     const future_data = utils.get_data_ptr(Future, py_future);
     if (!future_data.released) {
         const _result = future_data.result;
+        // BUG-369: detach BEFORE decref — the decref can synchronously
+        // run the result object's finalizer, which may re-enter this
+        // Future (result()/clear paths) while `result` still pointed
+        // at the dying object (use-after-free through get_result's
+        // unwrap).
+        future_data.result = null;
         if (_result) |res| {
-            python_c.py_decref(@alignCast(@ptrCast(res)));
-            future_data.result = null;
+            python_c.py_decref(@ptrCast(@alignCast(res)));
         }
         future_data.release();
     }
@@ -82,7 +75,7 @@ pub fn future_traverse(self: ?*PythonFutureObject, visit: python_c.visitproc, ar
     const future_data = utils.get_data_ptr(Future, instance);
 
     if (future_data.result) |res| {
-        const vret = visit.?(@alignCast(@ptrCast(res)), arg);
+        const vret = visit.?(@ptrCast(@alignCast(res)), arg);
         if (vret != 0) {
             return vret;
         }
@@ -114,9 +107,7 @@ pub fn future_dealloc(self: ?*PythonFutureObject) callconv(.c) void {
     @"type".tp_free.?(@ptrCast(instance));
 }
 
-inline fn z_future_init(
-    self: *PythonFutureObject, args: ?PyObject, kwargs: ?PyObject
-) !c_int {
+inline fn z_future_init(self: *PythonFutureObject, args: ?PyObject, kwargs: ?PyObject) !c_int {
     var kwlist: [2][*c]u8 = undefined;
     kwlist[0] = @constCast("loop\x00");
     kwlist[1] = null;
@@ -137,10 +128,8 @@ inline fn z_future_init(
     return 0;
 }
 
-pub fn future_init(
-    self: ?*PythonFutureObject, args: ?PyObject, kwargs: ?PyObject
-) callconv(.c) c_int {
-    return utils.execute_zig_function(z_future_init, .{self.?, args, kwargs});
+pub fn future_init(self: ?*PythonFutureObject, args: ?PyObject, kwargs: ?PyObject) callconv(.c) c_int {
+    return utils.execute_zig_function(z_future_init, .{ self.?, args, kwargs });
 }
 
 pub fn future_get_loop(self: ?*PythonFutureObject) callconv(.c) ?PyObject {
@@ -159,8 +148,7 @@ pub fn future_iternext(self: ?*PythonFutureObject) callconv(.c) ?PyObject {
     if (future_data.status != .pending) {
         const res = result.get_result(instance);
         if (res) |py_res| {
-            const exc = python_c.PyObject_CallOneArg(python_c.PyExc_StopIteration, py_res)
-                orelse return null;
+            const exc = python_c.PyObject_CallOneArg(python_c.PyExc_StopIteration, py_res) orelse return null;
             python_c.PyErr_SetRaisedException(exc);
             return null;
         }

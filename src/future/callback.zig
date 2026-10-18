@@ -191,7 +191,7 @@ pub fn release_callbacks_queue(queue: *CallbacksSetData) void {
 }
 
 pub inline fn add_done_callback(self: *Future, callback_data: Data) !void {
-    if (self.status != .pending) return;
+    if (self.status != .pending or self.released) return;
 
     try self.callbacks_queue.append(self.loop.allocator, .{
         .data = callback_data,
@@ -202,7 +202,7 @@ pub inline fn add_done_callback(self: *Future, callback_data: Data) !void {
 }
 
 pub fn remove_done_callback(self: *Future, callback_id: u64) usize {
-    if (self.status != .pending) return 0;
+    if (self.status != .pending or self.released) return 0;
 
     var removed_count: usize = 0;
     for (self.callbacks_queue.items) |*callback| {

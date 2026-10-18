@@ -32,6 +32,17 @@ pub inline fn get_result(self: *PythonFutureObject) ?PyObject {
                 python_c.PyErr_SetRaisedException(python_c.py_newref(exc));
                 break :blk null;
             }
+            // BUG-369: tp_clear may have detached the result while the
+            // status stayed .finished (a finalizer calling result()
+            // during GC); report InvalidStateError instead of
+            // unwrapping null (Mandate #4 — no panics).
+            if (future_data.result == null) {
+                python_c.PyErr_SetString(
+                    utils.PythonImports.get("invalid_state_exc"),
+                    "Result is not ready.\x00",
+                );
+                break :blk null;
+            }
             break :blk @as(PyObject, @ptrCast(@alignCast(future_data.result.?)));
         },
         .canceled => blk: {
@@ -95,6 +106,13 @@ inline fn z_future_set_exception(self: *PythonFutureObject, exception: PyObject)
 
     const future_data = utils.get_data_ptr(Future, self);
 
+    // BUG-369: a teardown-bound Future cannot be resolved (see
+    // z_future_set_result).
+    if (future_data.released) {
+        python_c.PyErr_SetString(utils.PythonImports.get("invalid_state_exc"), "Exception already setted\x00");
+        return error.PythonError;
+    }
+
     switch (future_data.status) {
         .finished, .canceled => {
             python_c.PyErr_SetString(utils.PythonImports.get("invalid_state_exc"), "Exception already setted\x00");
@@ -118,6 +136,14 @@ pub inline fn future_fast_set_result(obj: *Future, result: PyObject) !void {
 
 inline fn z_future_set_result(self: *PythonFutureObject, result: PyObject) !PyObject {
     const future_data = utils.get_data_ptr(Future, self);
+
+    // BUG-369: a teardown-bound Future cannot be resolved — its
+    // callbacks queue is already deinit'd and arming the done-callback
+    // machinery on the dead object would be a use-after-free.
+    if (future_data.released) {
+        python_c.PyErr_SetString(utils.PythonImports.get("invalid_state_exc"), "Result already setted\x00");
+        return error.PythonError;
+    }
 
     switch (future_data.status) {
         .finished, .canceled => {
