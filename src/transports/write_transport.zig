@@ -102,12 +102,13 @@ pub fn close(self: *WriteTransport) !void {
     self.is_closing = true;
     self.connection_lost_callback = null;
 
-    if (self.blocking_task_id > 0 and !self.cancelling) {
-        _ = try self.loop.io.queue(.{ .CancelIO = self.blocking_task_id });
-        // BUG-336: see field docs — one CancelIO per op generation.
-        self.cancelling = true;
-    }
-
+    // BUG-378: close() must NOT cancel the in-flight write — the asyncio
+    // contract is "close(): buffered data will be flushed asynchronously"
+    // and the in-flight SQE is part of that data. Only force_close()
+    // (abort) kills a pending op. The drain completes via
+    // write_operation_completed / flush_buffered_writes and settles the
+    // transport through maybe_close_fd. When nothing is in flight and
+    // nothing is buffered, the drain is already done: settle now.
     if (!self.write_in_flight and self.buffer_size == 0) {
         self.closed = true;
         const StreamLifecycle = @import("stream/lifecycle.zig");

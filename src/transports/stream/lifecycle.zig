@@ -32,6 +32,10 @@ pub fn close_transports(transport: *StreamTransportObject, read_transport: *Read
     write_transport.close() catch |err| std.log.warn("write_transport close failed: {s}", .{@errorName(err)});
 
     transport.is_reading = false;
+    // BUG-378: reaching this function means the transport is shutting
+    // down (EOF, I/O error or user close). is_closing must be true so a
+    // later transport.close() cannot run the machinery a second time.
+    transport.is_closing = true;
 
     if (closed_already) return;
 
@@ -58,17 +62,29 @@ pub fn close_transports(transport: *StreamTransportObject, read_transport: *Read
         }
     }
 
-    const loop_obj = transport.loop orelse return;
-    const connection_lost = transport.protocol_connection_lost orelse return;
+    // BUG-378: connection_lost() fires only at the fully-closed
+    // transition (both sides drained/force-closed), so stash the
+    // exception this close came with and let maybe_close_fd do the
+    // notify-once at the right moment.
+    if (transport.pending_lost_exc == null) {
+        transport.pending_lost_exc = python_c.py_newref(exception);
+    }
+    maybe_close_fd(transport);
+}
 
-    // Check if loop is closed
+/// BUG-378: dispatch protocol.connection_lost(exception) exactly once,
+/// either directly when the loop is already closed or via call_soon.
+/// `exception` must be an owned reference (decrefed here).
+fn connection_lost_fp(loop_obj: PyObject, connection_lost: PyObject, exception_obj: PyObject) void {
     const is_closed_attr = python_c.PyObject_GetAttrString(loop_obj, "is_closed\x00") orelse {
         python_c.PyErr_Clear();
+        python_c.py_decref(exception_obj);
         return;
     };
     defer python_c.py_decref(is_closed_attr);
     const is_closed_py = python_c.PyObject_CallNoArgs(is_closed_attr) orelse {
         python_c.PyErr_Clear();
+        python_c.py_decref(exception_obj);
         return;
     };
     defer python_c.py_decref(is_closed_py);
@@ -76,7 +92,7 @@ pub fn close_transports(transport: *StreamTransportObject, read_transport: *Read
     const closed = python_c.PyObject_IsTrue(is_closed_py) != 0;
 
     if (closed) {
-        const ret = python_c.PyObject_CallOneArg(connection_lost, exception);
+        const ret = python_c.PyObject_CallOneArg(connection_lost, exception_obj);
         if (ret) |v| {
             python_c.py_decref(v);
         } else {
@@ -97,17 +113,41 @@ pub fn close_transports(transport: *StreamTransportObject, read_transport: *Read
                 }
             }
         }
+        python_c.py_decref(exception_obj);
     } else {
         const call_soon = python_c.PyObject_GetAttrString(loop_obj, "call_soon\x00") orelse {
             python_c.PyErr_Clear();
+            python_c.py_decref(exception_obj);
             return;
         };
         defer python_c.py_decref(call_soon);
-        const ret = python_c.PyObject_CallFunctionObjArgs(call_soon, connection_lost, exception, @as(?*python_c.PyObject, null));
+        const ret = python_c.PyObject_CallFunctionObjArgs(call_soon, connection_lost, exception_obj, @as(?*python_c.PyObject, null));
         if (ret) |v| python_c.py_decref(v) else python_c.PyErr_Clear();
+        python_c.py_decref(exception_obj);
     }
+}
 
-    maybe_close_fd(transport);
+fn schedule_connection_lost_once(transport: *StreamTransportObject) void {
+    // BUG-378: at-most-once guard across close()/abort()/EOF/error paths.
+    if (transport.connection_lost_notified) {
+        return;
+    }
+    transport.connection_lost_notified = true;
+
+    const stashed = transport.pending_lost_exc;
+    transport.pending_lost_exc = null;
+
+    const loop_obj = transport.loop orelse {
+        python_c.py_xdecref(stashed);
+        return;
+    };
+    const connection_lost = transport.protocol_connection_lost orelse {
+        python_c.py_xdecref(stashed);
+        return;
+    };
+
+    const exception_obj: PyObject = stashed orelse python_c.get_py_none();
+    connection_lost_fp(loop_obj, connection_lost, exception_obj);
 }
 
 pub fn transport_close(self: ?*StreamTransportObject) callconv(.c) ?PyObject {
@@ -125,6 +165,10 @@ pub fn transport_close(self: ?*StreamTransportObject) callconv(.c) ?PyObject {
         instance.closed = true;
 
         cancel_and_close_fd(instance);
+        // BUG-378: both sides are already closed; if no path has
+        // scheduled the notification yet, fire it now (the guard makes
+        // this a no-op otherwise).
+        schedule_connection_lost_once(instance);
 
         return python_c.get_py_none();
     }
@@ -146,6 +190,10 @@ pub fn maybe_close_fd(self: *StreamTransportObject) void {
         @atomicStore(u64, &self.dispatch_generation, self.dispatch_generation + 1, .release);
         self.closed = true;
         cancel_and_close_fd(self);
+        // BUG-378: this is the fully-closed transition — connection_lost
+        // fires exactly once here (buffered writes have drained, or the
+        // transports were force-closed).
+        schedule_connection_lost_once(self);
     }
 }
 
@@ -178,6 +226,16 @@ pub fn transport_force_close(self: ?*StreamTransportObject, exc: ?PyObject) call
     @atomicStore(u64, &instance.dispatch_generation, instance.dispatch_generation + 1, .release);
     instance.closed = true;
 
+    // BUG-378: abort()'s exception argument replaces any pending close
+    // exception BEFORE the chain of force-closes reaches
+    // maybe_close_fd/schedule_connection_lost_once, so the once-only
+    // notification carries the abort's exception (stdlib semantics).
+    python_c.py_xdecref(instance.pending_lost_exc);
+    instance.pending_lost_exc = null;
+    if (exc) |e| {
+        instance.pending_lost_exc = python_c.py_newref(e);
+    }
+
     const read_transport = utils.get_data_ptr2(ReadTransport, "read_transport", instance);
     const write_transport = utils.get_data_ptr2(WriteTransport, "write_transport", instance);
 
@@ -187,14 +245,10 @@ pub fn transport_force_close(self: ?*StreamTransportObject, exc: ?PyObject) call
     instance.is_reading = false;
     instance.is_writing = false;
 
+    // BUG-378: the notification is driven by the force-closes' already
+    // set `closed` flags via the maybe_close_fd/schedule path, so this
+    // method only guarantees the fd teardown is complete (idempotent).
     cancel_and_close_fd(instance);
-
-    const exc_arg = if (exc) |e| python_c.py_newref(e) else python_c.get_py_none();
-    defer python_c.py_decref(exc_arg);
-
-    const connection_lost = instance.protocol_connection_lost orelse return python_c.get_py_none();
-    const ret = python_c.PyObject_CallOneArg(connection_lost, exc_arg) orelse return null;
-    python_c.py_decref(ret);
 
     return python_c.get_py_none();
 }

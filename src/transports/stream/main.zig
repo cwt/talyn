@@ -78,6 +78,15 @@ pub const StreamTransportObject = extern struct {
     // live client connections.
     server_ref: ?PyObject = null,
 
+    // BUG-378: owned reference to the exception that connection_lost()
+    // must receive when the fully-closed transition finally happens
+    // (stashed by close_transports because buffered writes may still be
+    // draining at that point).
+    pending_lost_exc: ?PyObject = null,
+    // BUG-378: protocol.connection_lost() must fire at most once across
+    // every combination of close()/abort()/EOF/I/O-error paths.
+    connection_lost_notified: bool = false,
+
     writing_high_water_mark: usize,
     writing_low_water_mark: usize,
 

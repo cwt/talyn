@@ -254,6 +254,8 @@ inline fn z_stream_new(@"type": *python_c.PyTypeObject) !*StreamTransportObject 
     instance.loop = null;
     instance.socket = null;
     instance.server_ref = null;
+    instance.pending_lost_exc = null;
+    instance.connection_lost_notified = false;
     instance.peername = null;
     instance.sockname = null;
 
