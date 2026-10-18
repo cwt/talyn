@@ -194,6 +194,15 @@ inline fn discard_from_asyncio_tasks_set(task: *Task.PythonTaskObject) void {
     }
 }
 
+/// BUG-374: wake_up_task_callback is a PyCFunction with m_self = task;
+/// keeping the cached field alive after the task finished forms a
+/// permanent task -> callback -> task cycle (ref-count unreachable —
+/// and leaked forever on free-threaded builds where gc is disabled).
+/// Break it wherever the task completes.
+inline fn release_wake_up_task_callback(task: *Task.PythonTaskObject) void {
+    python_c.py_decref_and_set_null(&task.wake_up_task_callback);
+}
+
 inline fn set_result(task: *Task.PythonTaskObject, future_data: *Future, result: PyObject) !void {
     if (task.must_cancel) {
         _ = try Future.Python.Cancel.future_fast_cancel(&task.fut, future_data, task.fut.cancel_msg_py_object);
@@ -201,6 +210,7 @@ inline fn set_result(task: *Task.PythonTaskObject, future_data: *Future, result:
         try Future.Python.Result.future_fast_set_result(future_data, result);
     }
     discard_from_asyncio_tasks_set(task);
+    release_wake_up_task_callback(task);
     if (task.fut.py_loop) |py_loop| {
         const loop_obj: *Loop.Python.LoopObject = @ptrCast(@alignCast(py_loop));
         if (loop_obj.asyncio_tasks_set) |tasks_set| {
@@ -298,6 +308,10 @@ inline fn handle_legacy_future_object(task: *Task.PythonTaskObject, future: PyOb
     const allocator = loop_data.allocator;
 
     const asyncio_future_blocking: PyObject = python_c.PyObject_GetAttrString(future, "_asyncio_future_blocking\x00") orelse return error.PythonError;
+    // BUG-374: GetAttrString returns a new reference — without this
+    // defer every legacy await leaked it (success, bad-type and
+    // SetAttrString-error paths alike).
+    defer python_c.py_decref(asyncio_future_blocking);
 
     if (!python_c.type_check(asyncio_future_blocking, &python_c.PyBool_Type)) {
         try create_new_py_exception_and_add_event(loop_data, allocator, "Task {s} got bad yield: {s}\x00", task, asyncio_future_blocking);
@@ -315,7 +329,10 @@ inline fn handle_legacy_future_object(task: *Task.PythonTaskObject, future: PyOb
         python_c.py_decref(ret);
         python_c.py_incref(@ptrCast(task));
 
-        if (python_c.PyObject_SetAttrString(future, "_asyncio_future_blocking", python_c.get_py_false()) < 0) {
+        // BUG-374: SetAttrString does not steal the value reference;
+        // the incref-ing get_py_false() leaked Py_False per legacy
+        // await, so pass the borrowed variant.
+        if (python_c.PyObject_SetAttrString(future, "_asyncio_future_blocking", python_c.get_py_false_without_incref()) < 0) {
             return error.PythonError;
         }
 
@@ -434,6 +451,7 @@ fn failed_execution(task: *Task.PythonTaskObject) !void {
             return error.PythonError;
         };
         discard_from_asyncio_tasks_set(task);
+        release_wake_up_task_callback(task);
         if (task.py_context) |ctx| {
             python_c.py_decref(ctx);
             task.py_context = null;
@@ -447,6 +465,7 @@ fn failed_execution(task: *Task.PythonTaskObject) !void {
 
     try Future.Python.Result.future_fast_set_exception(fut, future_data, exception);
     discard_from_asyncio_tasks_set(task);
+    release_wake_up_task_callback(task);
     if (task.py_context) |ctx| {
         python_c.py_decref(ctx);
         task.py_context = null;

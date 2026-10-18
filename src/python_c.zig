@@ -332,6 +332,10 @@ pub inline fn get_py_false() *Python.PyObject {
     return py_false_struct;
 }
 
+pub inline fn get_py_false_without_incref() *Python.PyObject {
+    return @ptrCast(&Python._Py_FalseStruct);
+}
+
 pub inline fn get_py_none() *Python.PyObject {
     const py_none_struct: *Python.PyObject = @ptrCast(&Python._Py_NoneStruct);
     Python.py_incref(py_none_struct);
