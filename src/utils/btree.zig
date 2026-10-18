@@ -260,12 +260,23 @@ pub fn BTree(comptime Key: type, comptime Value: type, comptime Degree: usize) t
                 const new_node1 = try create_node(allocator);
                 const parent = current_node.parent;
                 if (parent) |p_node| {
+                    // BUG-368: the split helpers can fail after new_node1
+                    // was allocated — without this errdefer it leaked on
+                    // OOM. (The statements after the try are infallible,
+                    // so the errdefer is exactly scoped to the failure
+                    // window.)
+                    errdefer allocator.destroy(new_node1);
                     try split_node(keys, values, childs, p_node, new_node1);
                     change_parent(current_node);
                     new_node1.parent = p_node;
                     current_node.nkeys = (Degree - 1) / 2;
                 } else {
+                    // BUG-368: failing the new_node2 allocation or the
+                    // split_root_node body leaked new_node1 (and its own
+                    // node).
+                    errdefer allocator.destroy(new_node1);
                     const new_node2 = try create_node(allocator);
+                    errdefer allocator.destroy(new_node2);
                     try split_root_node(keys, values, childs, new_node1, new_node2);
                     new_node1.parent = current_node;
                     new_node2.parent = current_node;
@@ -362,6 +373,13 @@ pub fn BTree(comptime Key: type, comptime Value: type, comptime Degree: usize) t
                     childs[i] = childs[i + 1];
                 }
                 childs[nkeys] = childs[nkeys + 1];
+                // BUG-368: the copy duplicated the pointer into slot
+                // nkeys + 1, which is now beyond the valid child range
+                // (a node with nkeys keys owns childs[0..nkeys + 1]) —
+                // clear it or the later destroy of that child nulls only
+                // the first match and leaves this dangling alias for
+                // change_parent to write into.
+                childs[nkeys + 1] = null;
             }
         }
 
@@ -391,7 +409,7 @@ pub fn BTree(comptime Key: type, comptime Value: type, comptime Degree: usize) t
             if (nkeys == 0) {
                 const p_node = node.parent orelse return;
 
-                for (p_node.childs[0..(p_node.nkeys + 1)]) |*child| {
+                for (p_node.childs[0..(@as(usize, p_node.nkeys) + 1)]) |*child| {
                     if (child.* == node) {
                         allocator.destroy(node);
                         child.* = null;
@@ -405,6 +423,11 @@ pub fn BTree(comptime Key: type, comptime Value: type, comptime Degree: usize) t
                     childs[i] = childs[i + 1];
                 }
                 childs[nkeys] = childs[nkeys + 1];
+                // BUG-368: clear the now-invalid duplicate (see the
+                // delete_from_right twin comment) — otherwise the destroy
+                // of a later-emptied child nulls only the first match and
+                // leaves this dangling alias for change_parent.
+                childs[nkeys + 1] = null;
             }
         }
 
@@ -679,4 +702,120 @@ test "BTree: get_min_value_ptr and get_max_value_ptr with non-pointer values" {
     _ = tree.delete(5);
     _ = tree.delete(10);
     _ = tree.delete(20);
+}
+
+test "BUG-368: child shifting never leaves a pointer beyond the valid range" {
+    const Tree = BTree(i32, i32, 3);
+
+    const S = struct {
+        fn check(counted_node: *Tree.Node, node_count: *usize) anyerror!void {
+            node_count.* += 1;
+            // A node with nkeys keys owns childs[0 .. nkeys + 1]; every
+            // slot beyond that must be null. A non-null one is either a
+            // dangling alias left by a child-array shift (deleted later —
+            // change_parent then wrote into freed memory) or a stale
+            // structure leak.
+            for (counted_node.childs[@as(usize, counted_node.nkeys) + 1 ..]) |child| {
+                if (child != null) return error.DanglingChildSlot;
+            }
+            for (counted_node.childs[0 .. @as(usize, counted_node.nkeys) + 1]) |child| {
+                if (child) |c| {
+                    if (c.parent != counted_node) return error.StaleParent;
+                    try check(c, node_count);
+                }
+            }
+        }
+    };
+
+    var tree = try Tree.init(std.testing.allocator);
+    // Best-effort teardown: on a pre-fix buggy tree the drain may strand
+    // keys, and deinit then fails — the invariant failure itself is the
+    // test outcome, so only warn here instead of masking it with
+    // unreachable.
+    defer tree.deinit() catch |err| std.log.warn(
+        "BUG-368 test teardown: deinit failed: {s}",
+        .{@errorName(err)},
+    );
+
+    var outer_prng = std.Random.DefaultPrng.init(20241018);
+    const rand = outer_prng.random();
+
+    var keys: [64]i32 = undefined;
+    for (&keys, 0..) |*k, i| k.* = @intCast(i);
+
+    rand.shuffle(i32, &keys);
+    for (keys) |k| {
+        _ = tree.insert(k, k * 2);
+    }
+
+    var node_count: usize = 0;
+    try S.check(tree.parent, &node_count);
+
+    // Churn across several seeds and shapes: delete half of the keys,
+    // checking the invariant after every delete — the shifted child
+    // arrays are exactly where the pre-fix duplicate/dangling pointer
+    // appeared.
+    var seed: u64 = 20241018;
+    for (0..12) |_| {
+        var prng = std.Random.DefaultPrng.init(seed);
+        const loop_rand = prng.random();
+        seed += 1;
+
+        var keys2: [128]i32 = undefined;
+        for (&keys2, 0..) |*k, i| k.* = @intCast(i);
+        loop_rand.shuffle(i32, &keys2);
+        for (keys2) |k| {
+            _ = tree.insert(k, k * 2);
+        }
+
+        loop_rand.shuffle(i32, &keys2);
+        for (keys2[0 .. keys2.len / 2]) |k| {
+            _ = tree.delete(k);
+            node_count = 0;
+            try S.check(tree.parent, &node_count);
+        }
+
+        for (keys2[keys2.len / 2 ..]) |k| {
+            _ = tree.delete(k);
+        }
+        node_count = 0;
+        try S.check(tree.parent, &node_count);
+
+        loop_rand.shuffle(i32, &keys2);
+        for (keys2[0 .. keys2.len / 3]) |k| {
+            _ = tree.insert(k, k * 2 + 1);
+        }
+        node_count = 0;
+        try S.check(tree.parent, &node_count);
+
+        var drain_key: i32 = 0;
+        while (tree.get_min_value_ptr(&drain_key, null) != null) {
+            _ = tree.delete(drain_key);
+        }
+    }
+}
+
+test "BUG-368: OOM while splitting does not leak nodes" {
+    // Deterministic split allocation sequence with Degree 3: allocation,
+    // root creation; the 4th insert triggers split_nodes (new_node1,
+    // then — for a root split — new_node2). Failing each allocation in
+    // turn must leave the tree fully retrievable on teardown.
+    for (1..6) |fail_index| {
+        var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = fail_index });
+        const allocator = failing.allocator();
+
+        var tree = try BTree(u32, u32, 3).init(allocator);
+
+        var loaded: u32 = 0;
+        while (loaded < 40) : (loaded += 1) {
+            // insert() swallows internal OOM and returns false.
+            if (!tree.insert(loaded, loaded)) break;
+        }
+
+        var key: u32 = 0;
+        while (tree.get_min_value_ptr(&key, null) != null) {
+            _ = tree.delete(key);
+        }
+        tree.deinit() catch unreachable;
+    }
 }
