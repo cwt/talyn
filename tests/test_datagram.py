@@ -487,3 +487,42 @@ def test_bug350_datagram_new_without_init_pool_safe() -> None:
             server_t.close()
 
     talyn.run(main())
+
+
+def test_bug352_no_kwargs_reference_leak() -> None:
+    """BUG-352: z_loop_create_datagram_endpoint took a second py_newref for
+    every keyword argument (parse_vector_call_kwargs already returns owned
+    references) and never released py_dns_timeout, leaking one reference
+    per kwarg on every call."""
+    import gc
+    import sys
+
+    local_addr = ("127.0.0.1", 0)
+    dns_timeout = float(2.5)
+
+    async def main() -> None:
+        loop = asyncio.get_running_loop()
+
+        # Warmup: settle allocator/GC state, then measure.
+        t, _ = await loop.create_datagram_endpoint(
+            DatagramProtocol, local_addr=local_addr, dns_timeout=dns_timeout)
+        t.close()
+        await asyncio.sleep(0.05)
+        gc.collect()
+
+        rc_before = (sys.getrefcount(local_addr), sys.getrefcount(dns_timeout))
+
+        for _ in range(50):
+            t, _ = await loop.create_datagram_endpoint(
+                DatagramProtocol, local_addr=local_addr, dns_timeout=dns_timeout)
+            t.close()
+        await asyncio.sleep(0.1)
+        gc.collect()
+
+        rc_after = (sys.getrefcount(local_addr), sys.getrefcount(dns_timeout))
+        assert rc_after == rc_before, (
+            f"reference leak: {rc_before} -> {rc_after} "
+            f"(pre-fix leaked 1 ref per kwarg per call)"
+        )
+
+    talyn.run(main())

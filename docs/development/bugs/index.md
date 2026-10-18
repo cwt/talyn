@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 337 |
-| Open | 45 |
+| Fixed | 338 |
+| Open | 44 |
 | False Positive | 13 |
 | **Total** | **395** |
 
@@ -387,7 +387,7 @@ Sorted by bug number. See individual bug files for details.
 | [349](349.md) | `parse_vector_call_kwargs` casts `kwargs_len` to `usize` before checking `if (kwargs_len < 0)` (Mandate #1 panic) | Critical | Fixed |
 | [350](350.md) | Uninitialized `fixed_buffer_index` (`0`) on `DatagramTransportObject` corrupts `RegisteredBufferPool` when `DatagramTransport` allocation fails | Critical | Fixed |
 | [351](351.md) | Stale `ReadTransport.blocking_task_id` during P15 batch dispatch cancels reused `BlockingTask` slots on `pause_reading()`/`close()`/`abort()`, and `ReadTransport.close()` omits `!self.cancelling` guard | Critical | Fixed |
-| [352](352.md) | 100% reference leak of all keyword arguments in `z_loop_create_datagram_endpoint` due to double `py_newref` | High | Open |
+| [352](352.md) | 100% reference leak of all keyword arguments in `z_loop_create_datagram_endpoint` due to double `py_newref` | High | Fixed |
 | [353](353.md) | 100% reference leak of return values in `sock_sendto_callback`, `sock_recv_into_callback_with_buf`, `sock_connect_callback`, and `sock_sendall_callback` | High | Open |
 | [354](354.md) | Memory and `PyObject` reference leak of `SocketCreationData`, `SocketConnectionData`, `ServerCreationData`, and `ServerSocketData` on DNS failure or cancellation | High | Open |
 | [355](355.md) | Memory/reference leaks, missing Python exception before `set_future_exception`, and unresolved `Future` (infinite hang) in `create_endpoint.zig` DNS resolution callbacks | High | Open |

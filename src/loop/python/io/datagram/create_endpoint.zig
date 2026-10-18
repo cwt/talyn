@@ -70,16 +70,30 @@ inline fn z_loop_create_datagram_endpoint(self: *LoopObject, args: []?PyObject, 
     var py_sock: ?PyObject = null;
     var py_dns_timeout: ?PyObject = null;
 
+    // BUG-352: every populated slot below owns a reference —
+    // `parse_vector_call_kwargs` returns NEW references.
     try python_c.parse_vector_call_kwargs(
         knames,
         args.ptr + args.len,
         &.{ "local_addr", "remote_addr", "family", "reuse_port", "allow_broadcast", "sock", "dns_timeout" },
         &.{ &py_local_addr, &py_remote_addr, &py_family, &py_reuse_port, &py_allow_broadcast, &py_sock, &py_dns_timeout },
     );
+    errdefer {
+        python_c.py_xdecref(py_local_addr);
+        python_c.py_xdecref(py_remote_addr);
+        python_c.py_xdecref(py_family);
+        python_c.py_xdecref(py_reuse_port);
+        python_c.py_xdecref(py_allow_broadcast);
+        python_c.py_xdecref(py_sock);
+        python_c.py_xdecref(py_dns_timeout);
+    }
 
     var dns_timeout: ?Resolv.DnsTimeout = null;
     if (py_dns_timeout) |pt| {
         dns_timeout = try Resolv.parse_dns_timeout(pt);
+        // Done with the value — it was converted to a plain struct.
+        python_c.py_decref(pt);
+        py_dns_timeout = null;
     }
 
     const fut = try Future.Python.Constructors.fast_new_future(self);
@@ -89,18 +103,29 @@ inline fn z_loop_create_datagram_endpoint(self: *LoopObject, args: []?PyObject, 
     const allocator = loop_data.allocator;
 
     const dcd = try allocator.create(DatagramCreationData);
+
+    // BUG-352: TRANSFER the owned references instead of taking a second
+    // `py_newref` — that second ref was never balanced by deinit(),
+    // leaking one reference per keyword argument on every call. The
+    // locals are nulled afterwards so the errdefer above becomes a no-op.
     dcd.* = .{
         .future = @ptrCast(python_c.py_newref(@as(PyObject, @ptrCast(fut)))),
         .loop = python_c.py_newref(self),
         .protocol_factory = python_c.py_newref(protocol_factory),
-        .py_local_addr = if (py_local_addr) |a| python_c.py_newref(a) else null,
-        .py_remote_addr = if (py_remote_addr) |a| python_c.py_newref(a) else null,
-        .py_family = if (py_family) |a| python_c.py_newref(a) else null,
-        .py_reuse_port = if (py_reuse_port) |a| python_c.py_newref(a) else null,
-        .py_allow_broadcast = if (py_allow_broadcast) |a| python_c.py_newref(a) else null,
-        .py_sock = if (py_sock) |a| python_c.py_newref(a) else null,
+        .py_local_addr = py_local_addr,
+        .py_remote_addr = py_remote_addr,
+        .py_family = py_family,
+        .py_reuse_port = py_reuse_port,
+        .py_allow_broadcast = py_allow_broadcast,
+        .py_sock = py_sock,
         .dns_timeout = dns_timeout,
     };
+    py_local_addr = null;
+    py_remote_addr = null;
+    py_family = null;
+    py_reuse_port = null;
+    py_allow_broadcast = null;
+    py_sock = null;
     errdefer dcd.deinit();
 
     const callback = CallbackManager.Callback{
