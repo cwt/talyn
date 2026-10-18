@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 332 |
-| Open | 50 |
+| Fixed | 333 |
+| Open | 49 |
 | False Positive | 13 |
 | **Total** | **395** |
 
@@ -382,7 +382,7 @@ Sorted by bug number. See individual bug files for details.
 | [344](344.md) | Double-decref of `LoopObject` (`self`) on `Soon.dispatch` failure in `z_loop_create_connection` (`sock=` path) | Critical | Fixed |
 | [345](345.md) | `callback_for_python_generic_callbacks` sets `handle.cancelled = true` on normal execution, breaking `Handle.cancelled()` and causing `loop.add_signal_handler` callbacks to fire only once | Critical | Fixed |
 | [346](346.md) | `FDWatcher` (`add_reader`/`add_writer`) leaks `handle` references on cancel/error and leaves raised Python exceptions pending on thread state | Critical | Fixed |
-| [347](347.md) | Use-after-free and double-free in `HookHandle.cancel` and `PathWatcherHandle.cancel` after `loop.close()`, plus GC list corruption in `z_loop_add_hook` | Critical | Open |
+| [347](347.md) | Use-after-free and double-free in `HookHandle.cancel` and `PathWatcherHandle.cancel` after `loop.close()`, plus GC list corruption in `z_loop_add_hook` | Critical | Fixed |
 | [348](348.md) | `loop_close` unlocks `loop_data.mutex` before calling `loop_data.release()` and lacks `loop_data.initialized` guard | Critical | Open |
 | [349](349.md) | `parse_vector_call_kwargs` casts `kwargs_len` to `usize` before checking `if (kwargs_len < 0)` (Mandate #1 panic) | Critical | Open |
 | [350](350.md) | Uninitialized `fixed_buffer_index` (`0`) on `DatagramTransportObject` corrupts `RegisteredBufferPool` when `DatagramTransport` allocation fails | Critical | Open |

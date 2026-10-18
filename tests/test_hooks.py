@@ -133,5 +133,19 @@ def test_hook_gc_cycle_collection():
     assert holder_ref() is None
 
 
+def test_hook_cancel_after_loop_close():
+    loop = talyn.Loop()
+
+    def dummy():
+        pass
+
+    h = loop._add_hook(0, dummy)
+    loop.close()
+    # Calling cancel on hook handle after loop.close() must not crash or double-free (BUG-347)
+    h.cancel()
+    h.cancel()
+
+
+
 
 

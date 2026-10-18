@@ -125,6 +125,7 @@ pub fn loop_set_task_factory(self: ?*LoopObject, factory: ?PyObject) callconv(.c
 
 const HookHandle = extern struct {
     ob_base: python_c.PyObject,
+    loop: ?PyObject,
     loop_data: *Loop,
     hook_type: c_int,
     node: Loop.HooksList.Node,
@@ -141,6 +142,7 @@ fn traverse_hook_handle(ptr: ?*anyopaque, visit_ptr: ?*anyopaque, arg: ?*anyopaq
 
 fn hook_handle_clear(self: ?*HookHandle) callconv(.c) c_int {
     const instance = self.?;
+    python_c.py_decref_and_set_null(&instance.loop);
     python_c.py_decref_and_set_null(&instance.callback);
     instance.python_payload.callback_ptr = null;
     return 0;
@@ -156,8 +158,12 @@ fn hook_handle_dealloc(self: ?*HookHandle) callconv(.c) void {
 
 fn hook_handle_traverse(self: ?*HookHandle, visit: python_c.visitproc, arg: ?*anyopaque) callconv(.c) c_int {
     const instance = self.?;
+    if (instance.loop) |l| {
+        const vret = visit.?(l, arg);
+        if (vret != 0) return vret;
+    }
     if (instance.callback) |cb| {
-        const vret = visit.?(@ptrCast(cb), arg);
+        const vret = visit.?(cb, arg);
         if (vret != 0) return vret;
     }
     return 0;
@@ -165,7 +171,8 @@ fn hook_handle_traverse(self: ?*HookHandle, visit: python_c.visitproc, arg: ?*an
 
 fn hook_handle_cancel(self: ?*HookHandle, _: ?PyObject) callconv(.c) ?PyObject {
     const instance = self.?;
-    if (instance.cancelled) {
+    if (instance.cancelled or !instance.loop_data.initialized) {
+        instance.cancelled = true;
         return python_c.get_py_none();
     }
     instance.cancelled = true;
@@ -192,6 +199,7 @@ var HookHandleType = python_c.PyTypeObject{
 
 fn cleanup_hook_handle(ptr: ?*anyopaque) void {
     const handle: *HookHandle = @ptrCast(@alignCast(ptr.?));
+    handle.cancelled = true;
     python_c.py_decref(@ptrCast(handle));
 }
 
@@ -226,6 +234,7 @@ fn z_loop_add_hook(self: *LoopObject, args: []const ?PyObject) !PyObject {
 
     if (python_c.PyType_Ready(&HookHandleType) < 0) return error.PythonError;
     const handle: *HookHandle = @ptrCast(HookHandleType.tp_alloc.?(&HookHandleType, 0) orelse return error.PythonError);
+    handle.loop = python_c.py_newref(@as(PyObject, @ptrCast(self)));
     handle.loop_data = utils.get_data_ptr(Loop, self);
     handle.hook_type = hook_type_int;
     handle.callback = python_c.py_newref(py_callback);
@@ -235,10 +244,7 @@ fn z_loop_add_hook(self: *LoopObject, args: []const ?PyObject) !PyObject {
         .callback_ptr = null,
         .traverse = &traverse_hook_handle,
     };
-    errdefer {
-        python_c.py_xdecref(handle.callback);
-        HookHandleType.tp_free.?(@ptrCast(handle));
-    }
+    errdefer python_c.py_decref(@ptrCast(handle));
 
     python_c.py_incref(@ptrCast(handle));
     errdefer python_c.py_decref(@ptrCast(handle));
@@ -254,6 +260,7 @@ fn z_loop_add_hook(self: *LoopObject, args: []const ?PyObject) !PyObject {
 
 const PathWatcherHandle = extern struct {
     ob_base: python_c.PyObject,
+    loop: ?PyObject,
     loop_data: *Loop,
     wd: i32,
     callback: ?PyObject,
@@ -261,6 +268,7 @@ const PathWatcherHandle = extern struct {
 
 fn path_watcher_handle_clear(self: ?*PathWatcherHandle) callconv(.c) c_int {
     const instance = self.?;
+    python_c.py_decref_and_set_null(&instance.loop);
     python_c.py_decref_and_set_null(&instance.callback);
     return 0;
 }
@@ -285,6 +293,7 @@ fn path_watcher_handle_cancel(self: ?*PathWatcherHandle, _: ?PyObject) callconv(
             instance.loop_data.fs_watcher.remove_watch(instance.wd, cb);
         }
     }
+    python_c.py_decref_and_set_null(&instance.callback);
     return python_c.get_py_none();
 }
 
@@ -326,6 +335,7 @@ fn z_loop_add_path_watcher(self: *LoopObject, args: []const ?PyObject) !PyObject
 
     if (python_c.PyType_Ready(&PathWatcherHandleType) < 0) return error.PythonError;
     const handle: *PathWatcherHandle = @ptrCast(PathWatcherHandleType.tp_alloc.?(&PathWatcherHandleType, 0) orelse return error.PythonError);
+    handle.loop = python_c.py_newref(@as(PyObject, @ptrCast(self)));
     handle.loop_data = loop_data;
     handle.wd = wd;
     handle.callback = python_c.py_newref(py_callback);

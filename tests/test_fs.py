@@ -135,3 +135,18 @@ def test_fs_watcher_survives_raising_callback():
             handle.cancel()
 
     talyn.run(main())
+
+
+def test_path_watcher_cancel_after_loop_close():
+    loop = talyn.Loop()
+
+    def dummy(mask, cookie, name):
+        pass
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        h = loop._add_path_watcher(tmpdir, 2, dummy)
+        loop.close()
+        # Calling cancel on path watcher handle after loop.close() must not crash or double-free (BUG-347)
+        h.cancel()
+        h.cancel()
+
