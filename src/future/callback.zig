@@ -83,9 +83,11 @@ fn run_python_future_set_callbacks(data: *const CallbackManager.CallbackData) !v
     const callbacks_items = future.callbacks_queue.items;
     var exceptions_array = &future.exceptions_queue;
     errdefer {
-        for (exceptions_array.items) |exc| {
-            python_c.py_xdecref(exc);
+        for (exceptions_array.items) |*exc| {
+            python_c.py_xdecref(exc.*);
+            exc.* = null;
         }
+        exceptions_array.clearRetainingCapacity();
     }
 
     for (callbacks_items) |*callback| {

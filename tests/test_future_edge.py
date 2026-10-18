@@ -40,3 +40,50 @@ def test_future_callbacks_after_loop_close_raises_runtime_error() -> None:
     with pytest.raises(RuntimeError, match="closed"):
         done_fut.add_done_callback(noop)
 
+
+def test_future_callback_exceptions_gc_traverse_and_release() -> None:
+    """BUG-341: after Future done callbacks raise exceptions, exceptions_queue
+    must be cleared so subsequent GC traversal (future_traverse) does not
+    visit stale/freed pointers and no exception references leak."""
+    import gc
+    import sys
+
+    exc = ValueError("callback-boom")
+    initial_refcnt = sys.getrefcount(exc)
+
+    loop = Loop()
+    try:
+        exceptions_caught = []
+
+        def handler(_loop, context) -> None:
+            exceptions_caught.append(context.get("exception"))
+
+        loop.set_exception_handler(handler)
+
+        fut = loop.create_future()
+
+        def bad_cb(_f) -> None:
+            raise exc
+
+        fut.add_done_callback(bad_cb)
+        fut.set_result("ok")
+
+        async def tick() -> None:
+            pass
+
+        loop.run_until_complete(tick())
+        assert len(exceptions_caught) == 1
+
+        # Trigger GC while `fut` is still alive and tracked by GC
+        gc.collect()
+    finally:
+        del fut
+        del exceptions_caught
+        loop.close()
+        del loop
+
+    exc.__traceback__ = None
+    gc.collect()
+    assert sys.getrefcount(exc) == initial_refcnt
+
+

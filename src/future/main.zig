@@ -33,6 +33,10 @@ pub fn init(self: *Future, loop: *Loop) !void {
 pub fn release(self: *Future) void {
     Callback.release_callbacks_queue(&self.callbacks_queue);
     self.callbacks_queue.deinit(self.loop.allocator);
+    for (self.exceptions_queue.items) |*exc| {
+        python_c.py_xdecref(exc.*);
+        exc.* = null;
+    }
     self.exceptions_queue.deinit(self.loop.allocator);
     if (self.status == .pending) {
         self.loop.reserved_slots -= 1;
