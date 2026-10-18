@@ -110,16 +110,66 @@ pub inline fn call_once(ready_queue: *CallbackManager.DynamicRingBuffer, _: usiz
     return callbacks_executed;
 }
 
+/// BUG-363: routes an exception raised by a transport protocol callback
+/// (data_received / buffer_updated) during completion-batch dispatch.
+///
+/// The exception is fetched IMMEDIATELY so the remaining records of the
+/// batch run with a clean thread state (calling C-API with a live
+/// exception violates CPython's contract and dropped earlier
+/// exceptions), then it is reported via loop.call_exception_handler —
+/// a protocol callback exception must not abort run_forever (asyncio
+/// semantics). SystemExit/KeyboardInterrupt propagate (stopping the
+/// loop), matching BaseEventLoop.handle_exception and the ready-queue
+/// `exception_handler` in this file; all other handler failures are
+/// swallowed so the batch continues.
+fn dispatch_protocol_callback_exception(
+    loop_obj: *Loop.Python.LoopObject,
+    message: [:0]const u8,
+) !void {
+    // Fetch first: clears the thread state for the rest of the batch.
+    const py_exc = python_c.PyErr_GetRaisedException();
+    defer {
+        if (py_exc) |exc| python_c.py_decref(exc);
+    }
+
+    const context_dict = python_c.PyDict_New() orelse {
+        python_c.PyErr_Clear();
+        return;
+    };
+    defer python_c.py_decref(context_dict);
+
+    const py_msg = python_c.PyUnicode_FromString(message.ptr) orelse {
+        python_c.PyErr_Clear();
+        return;
+    };
+    defer python_c.py_decref(py_msg);
+    _ = python_c.PyDict_SetItemString(context_dict, "message\x00", py_msg);
+    if (py_exc) |exc| {
+        _ = python_c.PyDict_SetItemString(context_dict, "exception\x00", exc);
+    }
+
+    const ret = python_c.PyObject_CallMethod(@ptrCast(loop_obj), "call_exception_handler\x00", "O\x00", context_dict) orelse {
+        if (python_c.PyErr_Occurred()) |inner_exc| {
+            if (python_c.PyErr_GivenExceptionMatches(inner_exc, python_c.PyExc_KeyboardInterrupt.?) != 0 or
+                python_c.PyErr_GivenExceptionMatches(inner_exc, python_c.PyExc_SystemExit.?) != 0)
+            {
+                return error.PythonError;
+            }
+        }
+        python_c.PyErr_Clear();
+        return;
+    };
+    python_c.py_decref(ret);
+}
+
 fn dispatch_completion_batch(
     self: *Loop,
     loop_obj: *Loop.Python.LoopObject,
 ) !void {
-    _ = loop_obj;
     const batch = &self.completion_batch;
     if (batch.is_empty()) return;
 
     const records = batch.records[0..batch.ready_count];
-    var had_error = false;
 
     for (records) |*record| {
         const transport: *Stream.StreamTransportObject = @ptrCast(@alignCast(record.stream_transport orelse continue));
@@ -136,7 +186,7 @@ fn dispatch_completion_batch(
                 const cb = transport.protocol_data_received orelse continue;
                 const ptr: [*]u8 = @ptrCast(record.buffer_ptr orelse continue);
                 const py_bytes = python_c.PyBytes_FromStringAndSize(ptr, @intCast(record.nbytes)) orelse {
-                    had_error = true;
+                    try dispatch_protocol_callback_exception(loop_obj, "Fatal read error on stream transport: out of memory building the data_received payload\x00");
                     continue;
                 };
                 defer python_c.py_decref(py_bytes);
@@ -144,14 +194,18 @@ fn dispatch_completion_batch(
                 if (ret) |r| {
                     python_c.py_decref(r);
                 } else {
-                    had_error = true;
+                    // BUG-363: report through the loop's exception
+                    // handler — routing failures stop run_forever;
+                    // everything else is swallowed so the batch and the
+                    // loop continue with a clean thread state.
+                    try dispatch_protocol_callback_exception(loop_obj, "Fatal read error on stream transport: protocol.data_received() raised\x00");
                     continue;
                 }
             },
             .BufferUpdated => {
                 const cb = transport.protocol_buffer_updated orelse continue;
                 const nbytes_obj = python_c.PyLong_FromUnsignedLongLong(@intCast(record.nbytes)) orelse {
-                    had_error = true;
+                    try dispatch_protocol_callback_exception(loop_obj, "Fatal read error on stream transport: out of memory building the buffer_updated payload\x00");
                     continue;
                 };
                 defer python_c.py_decref(nbytes_obj);
@@ -159,7 +213,7 @@ fn dispatch_completion_batch(
                 if (ret) |r| {
                     python_c.py_decref(r);
                 } else {
-                    had_error = true;
+                    try dispatch_protocol_callback_exception(loop_obj, "Fatal read error on stream transport: protocol.buffer_updated() raised\x00");
                     continue;
                 }
             },
@@ -183,10 +237,6 @@ fn dispatch_completion_batch(
     }
 
     batch.reset();
-
-    if (had_error) {
-        return error.PythonError;
-    }
 }
 
 fn execute_hooks(hooks: *Loop.HooksList) !void {

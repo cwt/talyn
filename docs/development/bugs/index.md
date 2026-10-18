@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 348 |
-| Open | 34 |
+| Fixed | 349 |
+| Open | 33 |
 | False Positive | 13 |
 | **Total** | **395** |
 
@@ -398,7 +398,7 @@ Sorted by bug number. See individual bug files for details.
 | [360](360.md) | Uninitialized `sockaddr.storage` read in `sock_accept_callback` and `sock_recvfrom_callback` (`AF_UNIX`), plus null `pbuf.buf` pointer cast panic in `sock_sendall`, `sock_sendto`, and `sock_recv_into` | High | Fixed |
 | [361](361.md) | Unchecked `@intCast` and `@intFromFloat` panics on untrusted Python integer/float arguments across Loop, Socket, DNS, and PseudoSocket entry points (Mandate #1 violations) | High | Fixed |
 | [362](362.md) | `ChildWatcher` reads uninitialized `siginfo_t` when `waitid(WNOHANG)` returns `0` with no exited child and leaks `pidfd`, callback reference, and `ChildHandler` on `on_child_exit` error/shutdown paths | High | Fixed |
-| [363](363.md) | `dispatch_completion_batch` calls CPython APIs with a live exception set and aborts `Runner.start` before releasing buffers or re-arming reads | High | Open |
+| [363](363.md) | `dispatch_completion_batch` calls CPython APIs with a live exception set and aborts `Runner.start` before releasing buffers or re-arming reads | High | Fixed |
 | [364](364.md) | `BlockingTasksSet.free()` ignores `self.free_count`, permanently leaking ~80 KB `BlockingTasksSet` nodes into `busy_sets` every 1024 operations (plus `reserved_slots` leak on `Overflow`) | High | Open |
 | [365](365.md) | Allocator mismatch in `DNS.lookup` (freed via `DNS.arena` in `Cache.evict_record`) and unbounded `DNS.arena` memory growth across cache evictions and `ControlData` lifecycles | High | Open |
 | [366](366.md) | `SubprocessTransport` leaks `pidfd` when exit watcher is cancelled during `loop.close()` or `SubprocessTransport` deallocation | High | Open |
