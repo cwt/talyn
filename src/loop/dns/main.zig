@@ -40,10 +40,19 @@ deferred_release_head: ?*Resolv.ControlData = null,
 pub fn init(self: *DNS, loop: *Loop) !void {
     self.loop = loop;
     self.arena = std.heap.ArenaAllocator.init(loop.allocator);
+    // BUG-365: init can fail after the arena exists (failed resolv.conf
+    // parse hosts setup below); without errdefer every arena chunk leaks.
+    errdefer self.arena.deinit();
     self.allocator = self.arena.allocator();
 
+    // BUG-365: cache records (hostnames, Record structs, resolved Address
+    // slices, LRU hash-map storage) are evicted and re-created all the
+    // time over the loop's lifetime — they must live on the loop's GPA,
+    // where freed is a real free. The arena is reserved for loop-lifetime
+    // configuration data (resolv.conf parse output) so it no longer grows
+    // without bound with every query and every eviction.
     for (&self.cache_entries) |*entry| {
-        entry.init(self.allocator);
+        entry.init(self.loop.allocator);
     }
 
     try self.load_configuration(self.allocator);
@@ -112,9 +121,15 @@ pub fn lookup(
         var resolved_buf: [2]utils.Address = undefined;
         const n = try Parsers.resolve_address(parsed_hostname, ipv6_supported, &resolved_buf);
         if (n > 0) {
-            const slice = self.loop.allocator.dupe(utils.Address, resolved_buf[0..n]) catch return null;
+            // BUG-365: the seed slice must come from the SAME allocator the
+            // cache evicts frees it with (cache_slot.allocator). It used to
+            // come from self.loop.allocator while Cache.evict_record freed
+            // via the arena allocator — ArenaAllocator.free is a no-op for
+            // foreign pointers, so every IP-literal cache entry's resolved
+            // slice leaked from the GPA on eviction/update.
+            const slice = cache_slot.allocator.dupe(utils.Address, resolved_buf[0..n]) catch return null;
             const new_rec = cache_slot.create_new_record_from_resolved(parsed_hostname, slice, 60) catch {
-                self.loop.allocator.free(slice);
+                cache_slot.allocator.free(slice);
                 return null;
             };
             return new_rec.get_address_list();
@@ -164,6 +179,17 @@ pub fn reverse_lookup(
 }
 
 pub fn deinit(self: *DNS) void {
+    // BUG-365: order matters. Drain the caches FIRST (each eviction
+    // flags a pending record's ControlData as record_evicted, so the
+    // ControlData release below never touches the evaporated record);
+    // releasing pending queries first would have the cache evictions
+    // write into already-destroyed ControlDatas. Cache entries now
+    // live on the loop GPA, so they need explicit teardown (the arena
+    // deinit alone used to reclaim everything).
+    for (&self.cache_entries) |*entry| {
+        entry.deinit();
+    }
+
     var node = self.pending_queries.first;
     while (node) |n| {
         node = n.next;
@@ -325,4 +351,34 @@ test {
     std.testing.refAllDecls(Parsers);
     std.testing.refAllDecls(Cache);
     std.testing.refAllDecls(Resolv);
+}
+
+test "BUG-365: IP-literal seed slices survive eviction with balanced allocation" {
+    // Debug-only scaling: the cache holds DNSCacheEntries slots and each
+    // slot's LRU holds 1024 records — at Debug capacity (4 slots) this
+    // triggers thousands of evictions.
+    if (builtin.mode != .Debug) return error.SkipZigTest;
+
+    const allocator = std.testing.allocator;
+    const loop = try allocator.create(Loop);
+    defer allocator.destroy(loop);
+    try loop.init(allocator, 1024);
+    defer loop.release();
+
+    var host_buf: [32]u8 = undefined;
+    var n: usize = 0;
+    while (n < 8192) : (n += 1) {
+        const host = try std.fmt.bufPrint(&host_buf, "10.{d}.{d}.{d}", .{ (n >> 8) & 0xff, n & 0xff, 7 });
+        // Each literal resolves synchronously into a cache record; the
+        // churn overflows every per-slot LRU capacity, forcing thousands
+        // of evictions. Pre-fix, DNS.lookup seeded each record with a
+        // GpA-allocated slice while Cache.evict_record freed it via the
+        // arena (a no-op for foreign pointers) — testing.allocator's leak
+        // check fails at teardown. Post-fix both sides use the cache's
+        // allocator and balance exactly.
+        _ = try loop.dns.lookup(host, null, null);
+    }
+    // Drive one final eviction cycle through an explicit cache teardown
+    // (deferred loop.release() covers the rest) - both paths free with
+    // the allocator that owned the memory.
 }

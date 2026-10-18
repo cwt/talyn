@@ -66,12 +66,17 @@ pub fn LRUCache(comptime K: type, comptime V: type) type {
                 // register a callback to release resources tied to
                 // the cached value (e.g., freeing a buffer) leak
                 // the old value when they re-put the same key.
+                // BUG-365: the callback may also free the key (the DNS
+                // cache's callback does). Detach the entry and the
+                // node BEFORE invoking it so neither the map nor the
+                // free list ever hashes freed key bytes, then fall
+                // through to the fresh-insert path below.
+                _ = self.map.remove(node.key);
+                self.remove_node(node);
                 if (self.evict_callback) |cb| {
                     cb(self.evict_ctx, node.key, node.value);
                 }
-                node.value = value;
-                self.move_to_front(node);
-                return;
+                self.allocator.destroy(node);
             }
 
             if (self.map.count() >= self.capacity) {
@@ -147,11 +152,16 @@ pub fn LRUCache(comptime K: type, comptime V: type) type {
 
         fn evict_last(self: *Self) void {
             if (self.tail) |node| {
+                // BUG-365: the evict callback owns the key (the DNS cache's
+                // callback frees it). Remove the map entry and unlink the
+                // node BEFORE invoking the callback — the previous order
+                // hashed freed key bytes for map.remove afterwards,
+                // stranding the entry (and crashing the next rehash).
+                _ = self.map.remove(node.key);
+                self.remove_node(node);
                 if (self.evict_callback) |cb| {
                     cb(self.evict_ctx, node.key, node.value);
                 }
-                _ = self.map.remove(node.key);
-                self.remove_node(node);
                 self.allocator.destroy(node);
             }
         }
