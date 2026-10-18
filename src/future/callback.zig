@@ -22,8 +22,11 @@ const ModuleName: [:0]const u8 = "future";
 // };
 
 const PythonGenericData = struct {
-    callback: PyObject,
-    context: PyObject,
+    // BUG-370: optional so that a removed callback can detach its
+    // references at removal time instead of holding them until Future
+    // teardown. A detached entry always has cancelled == true.
+    callback: ?PyObject,
+    context: ?PyObject,
 };
 
 const ZigGenericData = struct { callback: *const fn (?*Future.Python.FutureObject, ?*anyopaque) anyerror!void, ptr: ?*anyopaque };
@@ -96,7 +99,11 @@ fn run_python_future_set_callbacks(data: *const CallbackManager.CallbackData) !v
 
         switch (callback.data) {
             .PythonGeneric => |py_data| {
-                execute_python_callback(py_data.context, py_data.callback, @ptrCast(py_future)) catch |err| {
+                // Detached (removed) entries carry no references — the
+                // cancelled skip above already covers them; the guard
+                // keeps the invariant explicit for Mandate #4.
+                if (py_data.callback == null or py_data.context == null) continue;
+                execute_python_callback(py_data.context.?, py_data.callback.?, @ptrCast(py_future)) catch |err| {
                     utils.handle_zig_function_error(err, {});
 
                     const exc = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
@@ -151,7 +158,7 @@ fn run_python_future_set_callbacks(data: *const CallbackManager.CallbackData) !v
 
 pub fn traverse_callbacks_queue(queue: *const CallbacksSetData, visit: python_c.visitproc, arg: ?*anyopaque) c_int {
     for (queue.items) |callback| {
-        if (callback.executed) continue;
+        if (callback.executed or callback.cancelled) continue;
         switch (callback.data) {
             .PythonGeneric => |data| {
                 const vret1 = visit.?(@ptrCast(data.callback), arg);
@@ -178,8 +185,11 @@ pub fn release_callbacks_queue(queue: *CallbacksSetData) void {
         callback.executed = true;
         switch (callback.data) {
             .PythonGeneric => |data| {
-                python_c.py_decref(data.callback);
-                python_c.py_decref(data.context);
+                // BUG-370: the fields are optional now — a removed
+                // (detached) entry has no references left; plain
+                // py_decref would dereference them.
+                python_c.py_xdecref(data.callback);
+                python_c.py_xdecref(data.context);
             },
             .ZigGeneric => |data| {
                 data.callback(null, data.ptr) catch |err| {
@@ -201,22 +211,39 @@ pub inline fn add_done_callback(self: *Future, callback_data: Data) !void {
     try self.exceptions_queue.ensureTotalCapacity(self.loop.allocator, self.callbacks_queue.items.len);
 }
 
-pub fn remove_done_callback(self: *Future, callback_id: u64) usize {
+/// BUG-370: Python callbacks are compared by PyObject equality (Py_EQ),
+/// not pointer identity — attribute lookups re-wrap bound methods into
+/// NEW method objects, so identity never matched and removal silently
+/// returned 0 (breaking run_until_complete's own
+/// `remove_done_callback(self.__run_until_complete_cb)`). Matched
+/// entries are marked cancelled and their callback/context references
+/// are detached + decref'd immediately instead of lingering until
+/// Future teardown. Python exceptions from custom `__eq__` propagate.
+pub fn remove_done_callback(self: *Future, py_callback: PyObject) !usize {
     if (self.status != .pending or self.released) return 0;
 
     var removed_count: usize = 0;
     for (self.callbacks_queue.items) |*callback| {
         if (callback.cancelled or callback.executed) continue;
         switch (callback.data) {
-            .ZigGeneric => |*value| {
-                if (callback_id == @intFromPtr(value.callback)) {
-                    callback.cancelled = true;
-                    removed_count += 1;
-                }
-            },
+            .ZigGeneric => {},
             .PythonGeneric => |*value| {
-                if (callback_id == @intFromPtr(value.callback)) {
+                const equal = python_c._c.PyObject_RichCompareBool(
+                    value.callback orelse python_c.get_py_none(),
+                    py_callback,
+                    python_c._c.Py_EQ,
+                );
+                if (equal < 0) {
+                    return error.PythonError;
+                }
+                if (equal == 1) {
+                    const callback_obj = value.callback;
+                    const context_obj = value.context;
+                    value.callback = null;
+                    value.context = null;
                     callback.cancelled = true;
+                    python_c.py_xdecref(callback_obj);
+                    python_c.py_xdecref(context_obj);
                     removed_count += 1;
                 }
             },

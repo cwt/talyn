@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 355 |
-| Open | 27 |
+| Fixed | 356 |
+| Open | 26 |
 | False Positive | 13 |
 | **Total** | **395** |
 
@@ -405,7 +405,7 @@ Sorted by bug number. See individual bug files for details.
 | [367](367.md) | `DatagramTransport.close()` never calls `protocol.connection_lost(None)` and delays fixed-file unregistration until GC deallocation | High | Fixed |
 | [368](368.md) | `BTree` child pointer shifting leaves duplicate/dangling pointer at `childs[nkeys + 1]` causing use-after-free in `change_parent`, and `split_nodes` leaks `new_node1` on OOM | High | Fixed |
 | [369](369.md) | Re-entrant finalizer or GC access during `Future.release` and `future_clear` causes double-free/double-decref and null-unwrap panic in `future_result` | High | Fixed |
-| [370](370.md) | `Future.remove_done_callback` compares pointer identity (`@intFromPtr`) instead of Python equality (`Py_EQ`) and leaks removed callback/context references until `Future` deallocation | High | Open |
+| [370](370.md) | `Future.remove_done_callback` compares pointer identity (`@intFromPtr`) instead of Python equality (`Py_EQ`) and leaks removed callback/context references until `Future` deallocation | High | Fixed |
 | [371](371.md) | `Task.cancel()`, `Task.uncancel()`, and `Task.cancelling()` state machine bugs breaking Python 3.11+ `asyncio.TaskGroup` and `asyncio.timeout` | High | Open |
 | [372](372.md) | `KeyboardInterrupt` and `SystemExit` raised inside a `Task` are swallowed and double-set on `task.fut.exception` (plus `exc` reference leak in `wakeup_task`) | High | Open |
 | [373](373.md) | `Py_None` reference leaked on every coroutine step (`talyn_task_step_trampoline` / `talyn_task_throw_trampoline`) and every task registration (`register_asyncio_task`) | High | Open |
