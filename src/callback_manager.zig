@@ -24,7 +24,6 @@ pub const PythonPayload = extern struct {
     module_ptr: ?*python_c.PyObject = null,
     callback_ptr: ?PyObject = null,
     traverse: ?*const fn (ptr: ?*anyopaque, visit: ?*anyopaque, arg: ?*anyopaque) c_int = null,
-    dns_timeout: ?*i64 = null,
 };
 
 pub const CallbackData = struct {
@@ -131,126 +130,6 @@ pub const Callback = struct {
     data: CallbackData,
 };
 
-pub fn RingBuffer(comptime N: usize) type {
-    return struct {
-        const Self = @This();
-
-        callbacks: [N]Callback,
-        read_idx: usize,
-        write_idx: usize,
-        // BUG-43: `executed` is a per-slot flag that marks whether a
-        // slot has been consumed. In free-threading mode, the producer
-        // (try_push) writes the callback data, then unsets this flag,
-        // while the consumer (traverse, called from GC) reads it. To
-        // avoid torn reads of the bit and to ensure that the callback
-        // data is fully written before the flag is cleared, we use
-        // atomic booleans with release/acquire ordering.
-        executed: [N]std.atomic.Value(bool),
-
-        pub fn init(self: *Self) void {
-            self.read_idx = 0;
-            self.write_idx = 0;
-            for (&self.executed) |*e| {
-                e.* = std.atomic.Value(bool).init(false);
-            }
-        }
-
-        pub inline fn is_full(self: *const Self) bool {
-            return (@atomicLoad(usize, &self.write_idx, .acquire) - @atomicLoad(usize, &self.read_idx, .acquire)) == N;
-        }
-
-        pub inline fn is_empty(self: *const Self) bool {
-            return @atomicLoad(usize, &self.read_idx, .acquire) == @atomicLoad(usize, &self.write_idx, .acquire);
-        }
-
-        pub inline fn count(self: *const Self) usize {
-            return @atomicLoad(usize, &self.write_idx, .acquire) - @atomicLoad(usize, &self.read_idx, .acquire);
-        }
-
-        pub fn try_push(self: *Self, callback: Callback) bool {
-            const w_idx = @atomicLoad(usize, &self.write_idx, .acquire);
-            const r_idx = @atomicLoad(usize, &self.read_idx, .acquire);
-            if ((w_idx - r_idx) == N) return false;
-
-            const idx = w_idx % N;
-            // BUG-289: clear `executed` BEFORE release-storing write_idx.
-            // Physical slots are recycled, so `executed[idx]` still holds
-            // `true` from the previous consumption; publishing first let a
-            // concurrent GC traverse see this slot as in-range while
-            // skipping it (executed==true), hiding a live callback from
-            // the collector. Matches DynamicRingBuffer.try_push below.
-            self.callbacks[idx] = callback;
-            self.executed[idx].store(false, .release);
-            @atomicStore(usize, &self.write_idx, w_idx + 1, .release);
-            return true;
-        }
-
-        pub fn push(self: *Self, callback: Callback) !void {
-            if (!self.try_push(callback)) {
-                return error.RingBufferOverflow;
-            }
-        }
-
-        pub fn next(self: *Self) ?*Callback {
-            const r_idx = @atomicLoad(usize, &self.read_idx, .acquire);
-            const w_idx = @atomicLoad(usize, &self.write_idx, .acquire);
-            if (r_idx == w_idx) return null;
-
-            const idx = r_idx % N;
-            return &self.callbacks[idx];
-        }
-
-        pub inline fn consume(self: *Self) void {
-            const r_idx = @atomicLoad(usize, &self.read_idx, .acquire);
-            const idx = r_idx % N;
-            // Mark executed BEFORE advancing read_idx so any concurrent
-            // traverse that observes the new read_idx (and therefore
-            // thinks this slot is "out of range") is fine, and any
-            // traverse that sees the slot as "in range" (via the
-            // pre-increment snapshot) sees executed=true and skips.
-            self.executed[idx].store(true, .release);
-            @atomicStore(usize, &self.read_idx, r_idx + 1, .release);
-        }
-
-        pub fn reset(self: *Self) void {
-            @atomicStore(usize, &self.read_idx, 0, .release);
-            @atomicStore(usize, &self.write_idx, 0, .release);
-            for (&self.executed) |*e| {
-                e.* = std.atomic.Value(bool).init(false);
-            }
-        }
-
-        pub fn traverse(self: *const Self, visit: python_c.visitproc, arg: ?*anyopaque) c_int {
-            const r_idx = @atomicLoad(usize, &self.read_idx, .acquire);
-            const w_idx = @atomicLoad(usize, &self.write_idx, .acquire);
-
-            var i = r_idx;
-            while (i < w_idx) : (i += 1) {
-                const idx = i % N;
-                // Acquire-load: if we see executed=false, the data
-                // write is visible. If we see executed=true, the
-                // slot has been consumed; skip it.
-                if (self.executed[idx].load(.acquire)) continue;
-
-                const callback = &self.callbacks[idx];
-                if (callback.data.traverse()) |t| {
-                    const vret = t(callback.data.user_data, @ptrCast(@constCast(visit)), arg);
-                    if (vret != 0) return vret;
-                }
-
-                if (callback.data.module_ptr()) |mod| {
-                    const vret1 = visit.?(@ptrCast(mod), arg);
-                    if (vret1 != 0) return vret1;
-                }
-                if (callback.data.callback_ptr()) |cp| {
-                    const vret2 = visit.?(@ptrCast(cp), arg);
-                    if (vret2 != 0) return vret2;
-                }
-            }
-            return 0;
-        }
-    };
-}
 
 fn ceilPowerOfTwo(val: usize) usize {
     if (val <= 1) return 1;
@@ -438,108 +317,6 @@ inline fn get_adaptive_yield_threshold(initial_count: usize) usize {
     }
 }
 
-pub fn execute_ring_buffer(comptime N: usize, ring: *RingBuffer(N), comptime exception_handler: ?ExceptionHandler, exception_handler_data: ?*anyopaque, comptime debug: bool, warning_handler: ?WarningHandler, debug_state: ?*const DebugState) !usize {
-    if (ring.is_empty()) return 0;
-
-    var callbacks_executed: usize = 0;
-    var yield_counter: usize = 0;
-    const yield_threshold = get_adaptive_yield_threshold(ring.count());
-
-    while (ring.next()) |cb_ptr| {
-        const callback = cb_ptr.*;
-        const mod = callback.data.module_ptr();
-        const cb = callback.data.callback_ptr();
-
-        if (debug) {
-            if (mod) |m| {
-                python_c.py_incref(m);
-                if (cb) |c| python_c.py_incref(c);
-            }
-        }
-
-        const start_time = if (debug) nanoTime() else 0;
-
-        // BUG-42: Consume BEFORE calling the callback. If the callback
-        // frees user_data and triggers GC, the ring buffer slot is
-        // already marked consumed so GC traversal won't access
-        // dangling pointers. This matches the behavior of
-        // `execute_dynamic_ring_buffer` below.
-        ring.consume();
-        callbacks_executed += 1;
-
-        callback.func(&callback.data) catch |err| {
-            defer {
-                if (debug) {
-                    if (mod) |m| {
-                        python_c.py_decref(m);
-                        if (cb) |c| python_c.py_decref(c);
-                    }
-                }
-                if (callback.cleanup) |cleanup| {
-                    cleanup(callback.data.user_data);
-                }
-            }
-
-            // Now check for fatal exceptions BEFORE calling the handler.
-            if (err == error.PythonError) {
-                if (python_c.PyErr_Occurred()) |exc| {
-                    if (python_c.PyErr_GivenExceptionMatches(exc, python_c.PyExc_KeyboardInterrupt.?) != 0 or
-                        python_c.PyErr_GivenExceptionMatches(exc, python_c.PyExc_SystemExit.?) != 0)
-                    {
-                        return err;
-                    }
-                }
-            }
-
-            const handler = exception_handler orelse return err;
-            handler(err, exception_handler_data, if (debug) mod else null, if (debug) cb else null) catch |err2| {
-                return err2;
-            };
-            continue;
-        };
-
-        if (debug) {
-            const end_time = nanoTime();
-            const duration = @as(f64, @floatFromInt(end_time - start_time)) / 1e9;
-            const ds = debug_state.?;
-            if (duration >= ds.slow_callback_duration) {
-                if (warning_handler) |wh| {
-                    wh(duration, mod, exception_handler_data);
-                }
-            }
-            if (mod) |m| {
-                python_c.py_decref(m);
-                if (cb) |c| python_c.py_decref(c);
-            }
-        }
-
-        yield_counter += 1;
-        if (!builtin.is_test and yield_counter >= yield_threshold) {
-            yield_counter = 0;
-            const ts = python_c.PyEval_SaveThread();
-            _ = python_c.PyEval_RestoreThread(ts);
-        }
-    }
-
-    return callbacks_executed;
-}
-
-pub fn release_ring_buffer(
-    comptime N: usize,
-    ring: *RingBuffer(N),
-) void {
-    while (ring.next()) |cb_ptr| {
-        var callback = cb_ptr.*;
-        ring.consume();
-        callback.data.set_cancelled(true);
-        callback.func(&callback.data) catch |err| {
-            std.log.err("callback error in release: {s}", .{@errorName(err)});
-            if (callback.cleanup) |cleanup| {
-                cleanup(callback.data.user_data);
-            }
-        };
-    }
-}
 
 pub fn execute_dynamic_ring_buffer(ring: *DynamicRingBuffer, comptime exception_handler: ?ExceptionHandler, exception_handler_data: ?*anyopaque, comptime debug: bool, warning_handler: ?WarningHandler, debug_state: ?*const DebugState) !usize {
     if (ring.is_empty()) return 0;
@@ -671,10 +448,10 @@ test "Callback and CallbackData compact sizes" {
     try std.testing.expectEqual(@as(usize, 32), @sizeOf(Callback));
 }
 
-test "RingBuffer basic properties" {
-    const RB = RingBuffer(8);
-    var rb: RB = undefined;
-    rb.init();
+test "DynamicRingBuffer basic properties" {
+    var rb: DynamicRingBuffer = undefined;
+    try rb.init(std.testing.allocator, 8);
+    defer rb.deinit();
 
     try std.testing.expect(rb.is_empty());
     try std.testing.expect(!rb.is_full());
@@ -698,10 +475,10 @@ test "RingBuffer basic properties" {
     try std.testing.expectEqual(@as(usize, 0), rb.count());
 }
 
-test "RingBuffer push and execute" {
-    const RB = RingBuffer(4);
-    var rb: RB = undefined;
-    rb.init();
+test "DynamicRingBuffer push and execute" {
+    var rb: DynamicRingBuffer = undefined;
+    try rb.init(std.testing.allocator, 4);
+    defer rb.deinit();
 
     var executed: usize = 0;
     const callback = Callback{ .func = &test_callback, .cleanup = null, .data = .{ .user_data = &executed } };
@@ -717,7 +494,7 @@ test "RingBuffer push and execute" {
 
     try std.testing.expectEqual(@as(usize, 4), rb.count());
 
-    const executed_count = try execute_ring_buffer(4, &rb, null, null, false, null, null);
+    const executed_count = try execute_dynamic_ring_buffer(&rb, null, null, false, null, null);
     try std.testing.expectEqual(@as(usize, 4), executed_count);
     try std.testing.expectEqual(@as(usize, 4), executed);
     try std.testing.expect(rb.is_empty());
@@ -726,16 +503,16 @@ test "RingBuffer push and execute" {
     try std.testing.expectEqual(@as(usize, 0), rb.read_idx);
     try std.testing.expectEqual(@as(usize, 0), rb.write_idx);
     var set_count: usize = 0;
-    for (rb.executed) |e| {
+    for (rb.executed) |*e| {
         if (e.load(.acquire)) set_count += 1;
     }
     try std.testing.expectEqual(@as(usize, 0), set_count);
 }
 
-test "RingBuffer handle exceptions" {
-    const RB = RingBuffer(4);
-    var rb: RB = undefined;
-    rb.init();
+test "DynamicRingBuffer handle exceptions" {
+    var rb: DynamicRingBuffer = undefined;
+    try rb.init(std.testing.allocator, 4);
+    defer rb.deinit();
 
     var executed: usize = 0;
     var exceptions: usize = 0;
@@ -747,7 +524,7 @@ test "RingBuffer handle exceptions" {
     try rb.push(cb2);
     try rb.push(cb1);
 
-    const executed_count = try execute_ring_buffer(4, &rb, test_exception_handler, &exceptions, false, null, null);
+    const executed_count = try execute_dynamic_ring_buffer(&rb, test_exception_handler, &exceptions, false, null, null);
     try std.testing.expectEqual(@as(usize, 3), executed_count);
     try std.testing.expectEqual(@as(usize, 2), executed);
     try std.testing.expectEqual(@as(usize, 1), exceptions);
@@ -760,10 +537,10 @@ fn mock_visit(obj: ?*python_c.PyObject, arg: ?*anyopaque) callconv(.c) c_int {
     return 0;
 }
 
-test "RingBuffer traverse" {
-    const RB = RingBuffer(4);
-    var rb: RB = undefined;
-    rb.init();
+test "DynamicRingBuffer traverse" {
+    var rb: DynamicRingBuffer = undefined;
+    try rb.init(std.testing.allocator, 4);
+    defer rb.deinit();
 
     var visit_count: usize = 0;
     var dummy_obj: usize = 0xDEADBEEF;

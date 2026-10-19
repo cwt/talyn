@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 377 |
-| Open | 5 |
+| Fixed | 382 |
+| Open | 0 |
 | False Positive | 13 |
 | **Total** | **395** |
 
@@ -427,9 +427,9 @@ Sorted by bug number. See individual bug files for details.
 | [389](389.md) | Python C-API error handling bugs: `PyObject_IsTrue(...) != 0` treating `-1` as `true`, returning `null` without setting Python exception, `setup_asyncgen_hooks` partial failure leak, and `z_loop_create_task` passing `name` to custom `task_factory` | Medium | Fixed |
 | [390](390.md) | Server and endpoint creation bugs: `create_server(factory, sock=s)` fails without positional `host` and leaks earlier `StreamServer`s on partial multi-bind failure; `create_datagram_endpoint` ignores `sock=`; `create_unix_server` creates blocking socket and unlinks abstract socket paths | Medium | Fixed |
 | [391](391.md) | `LoopObject.weakref_list` decref'd instead of `PyObject_ClearWeakRefs`, free-threaded `LoopType` reference leak in `loop_dealloc`, and module init error leaks in `src/lib.zig` | Medium | Fixed |
-| [392](392.md) | `LRUCache.put` dangling key slice on key overwrite, `Address.parseIp6` accepting `":::1"`, `execute_task_send` running coroutine on cancelled loop shutdown, `enter_or_leave_task` partial failure corrupting `_current_tasks`, and `talyn.install()` globally disabling Python GC on 3.13t/3.14t | Medium | Open |
-| [393](393.md) | `talyn/loop.py` & `talyn/runner.py` API compliance bugs: ignored `start_serving=False`, ignored `subprocess_exec` `**kwargs`, premature `_subprocess_popens.pop`, and incomplete `Runner.close()` | Medium | Open |
-| [394](394.md) | Build & AST linter bugs: missing `build_options` import on `utils_unit_tests` in `build.zig`, untested `sqe_pointer_lifetime` rule in `test_rules.zig`, and whole-file substring false negatives in linter rules | Medium | Open |
-| [395](395.md) | Dead code across the codebase: 5 `.orig` backup files, dead `RingBuffer(N)` in `callback_manager.zig`, dead `write_buf`/`read_buf` in `DatagramTransport`, dead `PseudoSocket` in `talyn/loop.py`, empty placeholder Zig files, and unused fields/helpers | Low | Open |
-| [396](396.md) | Duplicate code and unoptimized algorithms across the codebase: 5 copy-pasted SSL protocol classes & $O(N^2)$ buffer pops in `talyn/loop.py`, pre-cache heap allocations on DNS hits, per-hostname `getrandom` syscalls in `build_queries`, and duplicated linked-timeout SQE prep | Low | Open |
+| [392](392.md) | `LRUCache.put` dangling key slice on key overwrite, `Address.parseIp6` accepting `":::1"`, `execute_task_send` running coroutine on cancelled loop shutdown, `enter_or_leave_task` partial failure corrupting `_current_tasks`, and `talyn.install()` globally disabling Python GC on 3.13t/3.14t | Medium | Fixed |
+| [393](393.md) | `talyn/loop.py` & `talyn/runner.py` API compliance bugs: ignored `start_serving=False`, ignored `subprocess_exec` `**kwargs`, premature `_subprocess_popens.pop`, and incomplete `Runner.close()` | Medium | Fixed |
+| [394](394.md) | Build & AST linter bugs: missing `build_options` import on `utils_unit_tests` in `build.zig`, untested `sqe_pointer_lifetime` rule in `test_rules.zig`, and whole-file substring false negatives in linter rules | Medium | Fixed |
+| [395](395.md) | Dead code across the codebase: 5 `.orig` backup files, dead `RingBuffer(N)` in `callback_manager.zig`, dead `write_buf`/`read_buf` in `DatagramTransport`, dead `PseudoSocket` in `talyn/loop.py`, empty placeholder Zig files, and unused fields/helpers | Low | Fixed |
+| [396](396.md) | Duplicate code and unoptimized algorithms across the codebase: 5 copy-pasted SSL protocol classes & $O(N^2)$ buffer pops in `talyn/loop.py`, pre-cache heap allocations on DNS hits, per-hostname `getrandom` syscalls in `build_queries`, and duplicated linked-timeout SQE prep | Low | Fixed |
 

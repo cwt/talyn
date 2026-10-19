@@ -747,14 +747,22 @@ fn build_queries(
     const queries = try allocator.alloc(QuerySlot, total_queries);
     errdefer allocator.free(queries);
 
+    var id_buf_stack: [32]u16 = undefined;
+    const id_buf = if (total_queries <= 32)
+        id_buf_stack[0..total_queries]
+    else
+        try allocator.alloc(u16, total_queries);
+    defer if (total_queries > 32) allocator.free(id_buf);
+
+    const total_bytes = total_queries * @sizeOf(u16);
+    const bytes_read = std.os.linux.getrandom(@ptrCast(id_buf.ptr), total_bytes, 0);
+    if (bytes_read != @as(usize, total_bytes)) return error.SystemResources;
+
     var slot_idx: u32 = 0;
     for (hostnames_array.array[0..hostnames_array.len]) |hostname_info| {
         const hostname = hostname_info.hostname[0..hostname_info.hostname_len];
 
-        var id_buf: [2]u8 = undefined;
-        const bytes_read = std.os.linux.getrandom(&id_buf, 2, 0);
-        if (bytes_read != 2) return error.SystemResources;
-        const query_id = std.mem.readInt(u16, &id_buf, .little);
+        const query_id = id_buf[slot_idx];
 
         if (question_type) |qt| {
             queries[slot_idx].id = query_id;
@@ -766,12 +774,7 @@ fn build_queries(
             slot_idx += 1;
 
             if (ipv6_supported) {
-                // Generate a separate random ID for the AAAA query.
-                var id_buf2: [2]u8 = undefined;
-                const bytes_read2 = std.os.linux.getrandom(&id_buf2, 2, 0);
-                if (bytes_read2 != 2) return error.SystemResources;
-                const query_id2 = std.mem.readInt(u16, &id_buf2, .little);
-
+                const query_id2 = id_buf[slot_idx];
                 queries[slot_idx].id = query_id2;
                 queries[slot_idx].len = @intCast(build_query(query_id2, &queries[slot_idx].buf, .ipv6, hostname));
                 slot_idx += 1;

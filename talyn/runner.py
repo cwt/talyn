@@ -35,12 +35,24 @@ class Runner:
         if self._closed:
             return
         self._closed = True
-        if not self._loop.is_closed():
+        loop = self._loop
+        if loop is not None and not loop.is_closed():
             try:
-                self._loop.run_until_complete(self._loop.shutdown_default_executor())
-            except RuntimeError:
-                logger.exception("Runner.close: shutdown_default_executor failed")
-        self._loop.close()
+                to_cancel = asyncio.all_tasks(loop)
+                if to_cancel:
+                    for task in to_cancel:
+                        task.cancel()
+
+                    async def wait_cancelled() -> None:
+                        await asyncio.gather(*to_cancel, return_exceptions=True)
+
+                    loop.run_until_complete(wait_cancelled())
+                loop.run_until_complete(loop.shutdown_asyncgens())
+                loop.run_until_complete(loop.shutdown_default_executor())
+            except BaseException:
+                logger.exception("Runner.close: teardown failed")
+            finally:
+                loop.close()
 
 
 def run(coro_or_future: Coroutine[Any, Any, _T]) -> _T:

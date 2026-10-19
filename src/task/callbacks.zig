@@ -25,7 +25,13 @@ fn enter_or_leave_task(loop: PyObject, task: PyObject, comptime entering: bool) 
         const cur = python_c.PyObject_CallOneArg(get_cur, loop) orelse {
             // Probe failed — fall back to updating the py registry directly.
             python_c.PyErr_Clear();
-            const py_ret = python_c.PyObject_Vectorcall(py_func, &args, 2, null) orelse return null;
+            const py_ret = python_c.PyObject_Vectorcall(py_func, &args, 2, null) orelse {
+                if (entering) {
+                    const rollback_leave = python_c.PyObject_Vectorcall(utils.PythonImports.get("leave_task_func"), &args, 2, null);
+                    if (rollback_leave) |rl| python_c.py_decref(rl);
+                }
+                return null;
+            };
             python_c.py_decref(py_ret);
             return python_c.get_py_none();
         };
@@ -34,7 +40,13 @@ fn enter_or_leave_task(loop: PyObject, task: PyObject, comptime entering: bool) 
 
         const needs_update = if (entering) !is_current else is_current;
         if (needs_update) {
-            const py_ret = python_c.PyObject_Vectorcall(py_func, &args, 2, null) orelse return null;
+            const py_ret = python_c.PyObject_Vectorcall(py_func, &args, 2, null) orelse {
+                if (entering) {
+                    const rollback_leave = python_c.PyObject_Vectorcall(utils.PythonImports.get("leave_task_func"), &args, 2, null);
+                    if (rollback_leave) |rl| python_c.py_decref(rl);
+                }
+                return null;
+            };
             python_c.py_decref(py_ret);
         }
     }
@@ -685,15 +697,18 @@ fn _execute_task_send(task: *Task.PythonTaskObject) !void {
 pub fn execute_task_send(data: *const CallbackManager.CallbackData) !void {
     const task: *Task.PythonTaskObject = @ptrCast(@alignCast(data.user_data.?));
     if (data.cancelled()) {
-        // The loop is shutting down (release_ring_buffer). Start the
-        // coroutine via PyIter_Send just to set gi_frame != NULL, which
-        // prevents CPython's "coroutine was never awaited" RuntimeWarning
-        // when the Task is eventually garbage collected.
+        // The loop is shutting down (release_ring_buffer). Close the coroutine
+        // to prevent CPython's "coroutine was never awaited" RuntimeWarning
+        // without stepping into the coroutine body.
         if (task.coro) |coro| {
-            var coro_ret: ?PyObject = null;
-            defer python_c.py_xdecref(coro_ret);
-            _ = python_c.PyIter_Send(coro, python_c.get_py_none_without_incref(), &coro_ret);
+            if (python_c.PyObject_CallMethod(coro, "close\x00", null)) |ret| {
+                python_c.py_decref(ret);
+            }
             python_c.PyErr_Clear();
+        }
+        const future_data = utils.get_data_ptr(Future, &task.fut);
+        if (future_data.status == .pending) {
+            future_data.status = .canceled;
         }
         python_c.py_decref(@ptrCast(task));
         return;

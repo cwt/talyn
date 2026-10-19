@@ -162,6 +162,7 @@ pub const Address = extern union {
             double_colon = true;
             double_colon_idx = 0;
             i = 2;
+            if (i < host.len and host[i] == ':') return error.InvalidCharacter;
         } else if (host.len > 0 and host[0] == ':') {
             return error.InvalidCharacter;
         }
@@ -180,6 +181,7 @@ pub const Address = extern union {
                 digits += 1;
                 if (digits > 4) return error.InvalidCharacter;
             }
+            if (digits == 0) return error.InvalidCharacter;
             groups[group_i] = val;
             group_i += 1;
             // BUG-288: an 8th group followed by ANYTHING means either

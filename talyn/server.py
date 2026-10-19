@@ -6,9 +6,15 @@ from typing import Any
 class Server:
     """An asyncio.Server-compatible wrapper for talyn stream servers."""
 
-    def __init__(self, loop: asyncio.AbstractEventLoop, servers: list[Any]) -> None:
+    def __init__(
+        self,
+        loop: asyncio.AbstractEventLoop,
+        servers: list[Any],
+        start_serving: bool = True,
+    ) -> None:
         self._loop = loop
         self._servers = servers
+        self._serving = start_serving
         self._active_count = 0
         self._waiters: list[asyncio.Future[None]] = []
         # BUG-376: every underlying StreamServer must know its Python-level
@@ -38,6 +44,7 @@ class Server:
     def close(self) -> None:
         if self._servers is None:
             return
+        self._serving = False
         servers = self._servers
         self._servers = None
         for srv in servers:
@@ -46,7 +53,7 @@ class Server:
             self._wakeup()
 
     def is_serving(self) -> bool:
-        return self._servers is not None and len(self._servers) > 0
+        return self._serving and self._servers is not None and len(self._servers) > 0
 
     async def wait_closed(self) -> None:
         if self._servers is None and self._active_count <= 0:
@@ -56,7 +63,12 @@ class Server:
         await waiter
 
     async def start_serving(self) -> None:
-        pass
+        if self._servers is None:
+            return
+        self._serving = True
+        for srv in self._servers:
+            if hasattr(srv, "start_serving"):
+                srv.start_serving()
 
     async def serve_forever(self) -> None:
         if self._servers is None:

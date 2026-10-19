@@ -1,4 +1,5 @@
 import asyncio
+import collections
 import os
 import socket
 import threading
@@ -25,6 +26,13 @@ _T = TypeVar("_T")
 _subprocess_popens: dict[int, Any] = {}
 
 
+class _WriteBuffer(collections.deque):
+    def __eq__(self, other):
+        if isinstance(other, list):
+            return list(self) == other
+        return super().__eq__(other)
+
+
 class _SSLTransportWrapper:
     """Wraps a raw transport to encrypt writes through an SSL object."""
 
@@ -42,7 +50,7 @@ class _SSLTransportWrapper:
         self._loop = loop
         # For compatibility with stdlib: transport._ssl_protocol points to the SSL protocol
         self._ssl_protocol = ssp
-        self._write_buffer = []
+        self._write_buffer = _WriteBuffer()
 
     def write(self, data):
         # Check if SSL writing is paused
@@ -74,7 +82,7 @@ class _SSLTransportWrapper:
             self._ssp._write_wants_write = True
             self._write_buffer.append(view)
         except (self._sslmod.SSLError, self._sslmod.SSLSyscallError) as exc:
-            # Fatal SSL error \u2014 close the transport.
+            # Fatal SSL error — close the transport.
             self._ssp._f()
             if self._loop is not None and not self._loop.is_closed():
                 self._loop.call_soon(self._fatal_error, exc)
@@ -87,7 +95,7 @@ class _SSLTransportWrapper:
     def _flush_write_buffer(self):
         # Flush any buffered application data to SSL object
         while self._write_buffer:
-            data = self._write_buffer.pop(0)
+            data = self._write_buffer.popleft()
             # BUG-375: honor the partial-write return — requeue only the
             # unconsumed remainder.
             view = memoryview(data)
@@ -95,11 +103,11 @@ class _SSLTransportWrapper:
                 written = self._ssp._sslobj.write(view)
             except self._sslmod.SSLWantReadError:
                 self._ssp._write_wants_read = True
-                self._write_buffer.insert(0, view)
+                self._write_buffer.appendleft(view)
                 break
             except self._sslmod.SSLWantWriteError:
                 self._ssp._write_wants_write = True
-                self._write_buffer.insert(0, view)
+                self._write_buffer.appendleft(view)
                 break
             except (self._sslmod.SSLError, self._sslmod.SSLSyscallError) as exc:
                 self._ssp._f()
@@ -107,7 +115,7 @@ class _SSLTransportWrapper:
                     self._loop.call_soon(self._fatal_error, exc)
                 return
             if written < len(view):
-                self._write_buffer.insert(0, view[written:])
+                self._write_buffer.appendleft(view[written:])
                 if written == 0:
                     break
 
@@ -1120,7 +1128,7 @@ class Loop(_Loop):
             backlog=backlog,
             **kwargs,
         )
-        return Server(self, srvs)
+        return Server(self, srvs, start_serving=start_serving)
 
     async def _create_ssl_server(
         self,
@@ -1290,7 +1298,7 @@ class Loop(_Loop):
             backlog=backlog,
             **kwargs,
         )
-        return Server(self, srvs)
+        return Server(self, srvs, start_serving=start_serving)
 
     async def connect_accepted_socket(
         self,
@@ -1525,6 +1533,7 @@ class Loop(_Loop):
                 backlog=backlog,
                 ssl=ssl,
                 ssl_shutdown_timeout=ssl_shutdown_timeout,
+                start_serving=start_serving,
             )
         srv = await _Loop.create_unix_server(
             self,
@@ -1533,7 +1542,7 @@ class Loop(_Loop):
             backlog=backlog,
         )
         # Server.__init__ installs the weakref server wrapper (BUG-376).
-        return Server(self, [srv])
+        return Server(self, [srv], start_serving=start_serving)
 
     async def _create_ssl_unix_server(
         self,
@@ -1543,6 +1552,7 @@ class Loop(_Loop):
         backlog: int,
         ssl: Any,
         ssl_shutdown_timeout: float | None = None,
+        start_serving: bool = True,
     ) -> "Server":
         self_loop = self
         import ssl as ssl_module
@@ -1634,7 +1644,7 @@ class Loop(_Loop):
             backlog=backlog,
         )
         # Server.__init__ installs the weakref server wrapper (BUG-376).
-        return Server(self, [srv])
+        return Server(self, [srv], start_serving=start_serving)
 
     async def subprocess_exec(
         self,
@@ -1692,6 +1702,7 @@ class Loop(_Loop):
             cwd=cwd,
             env=env,
             pass_fds=pass_fds if pass_fds is not None else (),
+            **kwargs,
         )
         _subprocess_popens[popen.pid] = popen
         try:
@@ -2251,3 +2262,4 @@ class PseudoSocket:
 
     def __repr__(self):
         return f"<PseudoSocket fd={self._fd}, family={self._family}, type={self._type}>"
+

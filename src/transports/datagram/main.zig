@@ -21,9 +21,6 @@ pub const DatagramTransportObject = extern struct {
     protocol_error_received: ?PyObject,
     protocol_connection_lost: ?PyObject,
 
-    write_buf: [@sizeOf(WriteTransport)]u8 align(@alignOf(WriteTransport)),
-    read_buf: [@sizeOf(ReadTransport)]u8 align(@alignOf(ReadTransport)),
-
     buffer_size: usize,
     writing_high_water_mark: usize,
     writing_low_water_mark: usize,

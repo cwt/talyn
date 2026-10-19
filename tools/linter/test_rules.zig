@@ -19,6 +19,7 @@ const stale_cancel_bulk = @import("rules/stale_cancel_bulk.zig");
 const clear_before_python = @import("rules/clear_before_python.zig");
 const timer_io_mixing = @import("rules/timer_io_mixing.zig");
 const no_builtin_mode_in_src = @import("rules/no_builtin_mode_in_src.zig");
+const sqe_pointer_lifetime = @import("rules/sqe_pointer_lifetime.zig");
 
 fn checkSnippet(
     gpa: std.mem.Allocator,
@@ -374,3 +375,22 @@ test "TALYN-019: no builtin.mode in src/" {
     , no_builtin_mode_in_src.check);
     try std.testing.expectEqual(@as(usize, 0), diags_tools);
 }
+
+test "TALYN-015: sqe pointer lifetime" {
+    // Should flag: address of by-value parameter passed to ring prep
+    const diags_bad = try checkSnippet(std.testing.allocator, "src/loop/scheduling/io/timeout.zig",
+        \\fn prep(ring: *Ring, data: TaskData) !void {
+        \\    _ = ring.link_timeout(0, &data.ts, 0);
+        \\}
+    , sqe_pointer_lifetime.check);
+    try std.testing.expectEqual(@as(usize, 1), diags_bad);
+
+    // Should NOT flag: address of pointer parameter
+    const diags_ok = try checkSnippet(std.testing.allocator, "src/loop/scheduling/io/timeout.zig",
+        \\fn prep(ring: *Ring, data: *TaskData) !void {
+        \\    _ = ring.link_timeout(0, &data.ts, 0);
+        \\}
+    , sqe_pointer_lifetime.check);
+    try std.testing.expectEqual(@as(usize, 0), diags_ok);
+}
+
