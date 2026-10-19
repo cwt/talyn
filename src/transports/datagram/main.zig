@@ -331,8 +331,12 @@ var datagram_spec = python_c.PyType_Spec{
 pub var DatagramTransportType: ?*python_c.PyTypeObject = null;
 
 pub fn create_type() !void {
-    if (DatagramTransportType != null) return;
-    DatagramTransportType = @ptrCast(python_c.PyType_FromSpecWithBases(@constCast(&datagram_spec), utils.PythonImports.get("asyncio_datagram_transport")) orelse return error.PythonError);
+    const dt = python_c.PyType_FromSpecWithBases(@constCast(&datagram_spec), utils.PythonImports.get("asyncio_datagram_transport")) orelse return error.PythonError;
+    if (python_c.PyType_Ready(@ptrCast(dt)) < 0) {
+        python_c.py_decref(dt);
+        return error.PythonError;
+    }
+    DatagramTransportType = @ptrCast(dt);
 }
 
 test "BUG-350: tp_alloc-zeroed datagram transport must not release buffer slot 0" {
