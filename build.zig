@@ -73,6 +73,7 @@ pub fn build(b: *std.Build) void {
     ) orelse false;
     const build_options = b.addOptions();
     build_options.addOption(bool, "debug_alloc", debug_alloc);
+    build_options.addOption(bool, "is_debug", optimize == debug_mode);
     const build_options_module = build_options.createModule();
 
     if (target.result.os.tag != .linux) {
@@ -248,6 +249,7 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "python_c", .module = python_c_module },
                 .{ .name = "utils", .module = utils_module },
+                .{ .name = "build_options", .module = build_options_module },
             },
         }),
     });
@@ -262,6 +264,7 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "python_c", .module = python_c_module },
                 .{ .name = "utils", .module = utils_module },
+                .{ .name = "build_options", .module = build_options_module },
             },
         }),
     });

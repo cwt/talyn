@@ -96,6 +96,7 @@ fn subprocess_traverse(self: ?*SubprocessTransportObject, visit: python_c.visitp
 
 fn subprocess_clear(self: ?*SubprocessTransportObject) callconv(.c) c_int {
     const instance = self.?;
+    close_pidfd(instance);
     python_c.py_xdecref(instance.loop);
     instance.loop = null;
     python_c.py_xdecref(instance.protocol);

@@ -132,6 +132,15 @@ fn dispatch_protocol_callback_exception(
         if (py_exc) |exc| python_c.py_decref(exc);
     }
 
+    if (py_exc) |exc| {
+        if (python_c.PyErr_GivenExceptionMatches(exc, python_c.PyExc_KeyboardInterrupt.?) != 0 or
+            python_c.PyErr_GivenExceptionMatches(exc, python_c.PyExc_SystemExit.?) != 0)
+        {
+            python_c.PyErr_SetRaisedException(python_c.py_newref(exc));
+            return error.PythonError;
+        }
+    }
+
     const context_dict = python_c.PyDict_New() orelse {
         python_c.PyErr_Clear();
         return;
@@ -170,6 +179,7 @@ fn dispatch_completion_batch(
     if (batch.is_empty()) return;
 
     const records = batch.records[0..batch.ready_count];
+    defer batch.reset();
 
     for (records) |*record| {
         const transport: *Stream.StreamTransportObject = @ptrCast(@alignCast(record.stream_transport orelse continue));
@@ -235,8 +245,6 @@ fn dispatch_completion_batch(
             },
         }
     }
-
-    batch.reset();
 }
 
 fn execute_hooks(hooks: *Loop.HooksList) !void {

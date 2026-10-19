@@ -67,15 +67,14 @@ fn ensure_exception(err: anyerror) void {
 /// here: `set_future_exception` returns void, so a plain return leaked
 /// `dcd` and left the awaiting coroutine hanging forever.
 fn fail_endpoint(err: anyerror, dcd: *DatagramCreationData) !void {
+    defer dcd.deinit();
     const future = dcd.future;
     const future_data = utils.get_data_ptr(Future, future);
     if (future_data.status != .pending) {
         // Already resolved or cancelled — nothing to notify.
-        dcd.deinit();
         return;
     }
     ensure_exception(err);
-    dcd.deinit();
     return set_future_exception(err, future);
 }
 
@@ -208,7 +207,7 @@ fn resolve_local_addr(data: *const CallbackManager.CallbackData) !void {
         // Note: a null return WITH a registered resolver callback means
         // the query was queued asynchronously — the callback chain
         // continues there.
-        const addresses = try loop_data.dns.lookup(addr_info.host, &resolver_callback, dcd.dns_timeout) orelse return;
+        const addresses = (loop_data.dns.lookup(addr_info.host, &resolver_callback, dcd.dns_timeout) catch |err| return fail_endpoint(err, dcd)) orelse return;
         dcd.local_addresses = loop_data.allocator.dupe(utils.Address, addresses) catch |err| return fail_endpoint(err, dcd);
         // Update ports
         for (dcd.local_addresses.?) |*addr| addr.setPort(addr_info.port);
@@ -259,7 +258,7 @@ fn resolve_remote_addr(data: *const CallbackManager.CallbackData) !void {
             .cleanup = null,
             .data = .{ .user_data = dcd },
         };
-        const addresses = try loop_data.dns.lookup(addr_info.host, &resolver_callback, dcd.dns_timeout) orelse return;
+        const addresses = (loop_data.dns.lookup(addr_info.host, &resolver_callback, dcd.dns_timeout) catch |err| return fail_endpoint(err, dcd)) orelse return;
         dcd.remote_addresses = loop_data.allocator.dupe(utils.Address, addresses) catch |err| return fail_endpoint(err, dcd);
         for (dcd.remote_addresses.?) |*addr| addr.setPort(addr_info.port);
     }

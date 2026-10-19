@@ -220,6 +220,7 @@ fn schedule_datagram_connection_lost(
     defer python_c.py_decref(is_closed_py);
 
     const none = python_c.get_py_none();
+    defer python_c.py_decref(none);
     if (python_c.PyObject_IsTrue(is_closed_py) != 0) {
         const ret = python_c.PyObject_CallOneArg(connection_lost, none);
         if (ret) |v| {

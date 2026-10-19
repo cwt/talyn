@@ -108,6 +108,8 @@ class _SSLTransportWrapper:
                 return
             if written < len(view):
                 self._write_buffer.insert(0, view[written:])
+                if written == 0:
+                    break
 
         # Flush all pending encrypted data from outgoing BIO to transport
         outgoing = getattr(self._ssp, "_outgoing", None)

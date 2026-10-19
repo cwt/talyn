@@ -223,13 +223,19 @@ pub fn remove_done_callback(self: *Future, py_callback: PyObject) !usize {
     if (self.status != .pending or self.released) return 0;
 
     var removed_count: usize = 0;
-    for (self.callbacks_queue.items) |*callback| {
-        if (callback.cancelled or callback.executed) continue;
-        switch (callback.data) {
+    var i: usize = 0;
+    while (i < self.callbacks_queue.items.len) : (i += 1) {
+        if (self.status != .pending or self.released) break;
+        const entry = self.callbacks_queue.items[i];
+        if (entry.cancelled or entry.executed) continue;
+        switch (entry.data) {
             .ZigGeneric => {},
-            .PythonGeneric => |*value| {
+            .PythonGeneric => |value| {
+                const candidate = value.callback orelse continue;
+                python_c.py_incref(candidate);
+                defer python_c.py_decref(candidate);
                 const equal = python_c._c.PyObject_RichCompareBool(
-                    value.callback orelse python_c.get_py_none(),
+                    candidate,
                     py_callback,
                     python_c._c.Py_EQ,
                 );
@@ -237,14 +243,22 @@ pub fn remove_done_callback(self: *Future, py_callback: PyObject) !usize {
                     return error.PythonError;
                 }
                 if (equal == 1) {
-                    const callback_obj = value.callback;
-                    const context_obj = value.context;
-                    value.callback = null;
-                    value.context = null;
-                    callback.cancelled = true;
-                    python_c.py_xdecref(callback_obj);
-                    python_c.py_xdecref(context_obj);
-                    removed_count += 1;
+                    if (self.released or i >= self.callbacks_queue.items.len) break;
+                    const slot = &self.callbacks_queue.items[i];
+                    if (slot.cancelled or slot.executed) continue;
+                    switch (slot.data) {
+                        .ZigGeneric => {},
+                        .PythonGeneric => |*mut_val| {
+                            const callback_obj = mut_val.callback;
+                            const context_obj = mut_val.context;
+                            mut_val.callback = null;
+                            mut_val.context = null;
+                            slot.cancelled = true;
+                            python_c.py_xdecref(callback_obj);
+                            python_c.py_xdecref(context_obj);
+                            removed_count += 1;
+                        },
+                    }
                 }
             },
         }

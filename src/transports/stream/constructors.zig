@@ -311,6 +311,8 @@ pub fn stream_traverse(self: ?*StreamTransportObject, visit: python_c.visitproc,
 pub fn stream_clear(self: ?*StreamTransportObject) callconv(.c) c_int {
     const py_transport = self.?;
 
+    Lifecyle.detach_server(py_transport);
+
     const write_transport_data = utils.get_data_ptr2(WriteTransport, "write_transport", py_transport);
     if (write_transport_data.initialized) {
         write_transport_data.deinit();
@@ -387,7 +389,7 @@ inline fn z_stream_init(self: *StreamTransportObject, args: ?PyObject, kwargs: ?
         return error.PythonError;
     }
 
-    if (fd < 0) {
+    if (fd < 0 or fd > std.math.maxInt(std.posix.fd_t)) {
         python_c.raise_python_value_error("Invalid fd\x00");
         return error.PythonError;
     }

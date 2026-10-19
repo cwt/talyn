@@ -29,7 +29,7 @@ pub fn z_datagram_init(self: *DatagramTransport.DatagramTransportObject, args: ?
     var py_protocol: ?PyObject = null;
     var py_fd: ?PyObject = null;
 
-    if (python_c.PyArg_ParseTupleAndKeywords(args, kwargs, "OO|L\x00", @ptrCast(&kwlist), &py_loop, &py_protocol, &py_fd) < 0) return error.PythonError;
+    if (python_c.PyArg_ParseTupleAndKeywords(args, kwargs, "OO|O\x00", @ptrCast(&kwlist), &py_loop, &py_protocol, &py_fd) < 0) return error.PythonError;
 
     if (!python_c.type_check(py_loop.?, Loop.Python.LoopType)) {
         python_c.raise_python_type_error("loop must be a talyn Loop\x00");
@@ -39,7 +39,7 @@ pub fn z_datagram_init(self: *DatagramTransport.DatagramTransportObject, args: ?
     const fd: std.posix.fd_t = if (py_fd) |f| blk: {
         const f_val = python_c.PyLong_AsLongLong(f);
         if (python_c.PyErr_Occurred() != null) return error.PythonError;
-        break :blk @intCast(f_val);
+        break :blk try utils.checkedNarrow(std.posix.fd_t, f_val, "Invalid fd\x00");
     } else -1;
 
     try init_configuration(self, py_protocol.?, @ptrCast(py_loop.?), fd);

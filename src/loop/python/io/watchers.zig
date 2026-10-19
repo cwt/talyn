@@ -62,10 +62,6 @@ fn loop_watcher_python_wrapper_callback(data: *const CallbackManager.CallbackDat
     temp_data.set_python(&watcher.handle.python_payload);
 
     Handle.callback_for_python_generic_callbacks(&temp_data) catch |err| {
-        // BUG-346: decref the reference added for this Soon callback,
-        // since callback_for_python_generic_callbacks only decrefs on success.
-        python_c.py_decref(@ptrCast(watcher.handle));
-
         // Extract and route Python exception to loop.call_exception_handler
         const loop_obj = utils.get_parent_ptr(Loop.Python.LoopObject, loop_data);
         var py_exc: ?PyObject = null;
@@ -80,9 +76,16 @@ fn loop_watcher_python_wrapper_callback(data: *const CallbackManager.CallbackDat
             if (python_c.PyErr_GivenExceptionMatches(exc, python_c.PyExc_KeyboardInterrupt.?) != 0 or
                 python_c.PyErr_GivenExceptionMatches(exc, python_c.PyExc_SystemExit.?) != 0)
             {
-                python_c.PyErr_SetRaisedException(exc);
+                // Returning an error invokes loop_watcher_python_wrapper_cleanup,
+                // which decrefs watcher.handle and cleans up the watcher.
+                // PyErr_SetRaisedException steals a reference, so pass a newref.
+                python_c.PyErr_SetRaisedException(python_c.py_newref(exc));
                 return error.PythonError;
             }
+
+            // BUG-346: decref the reference added for this Soon callback,
+            // since callback_for_python_generic_callbacks only decrefs on success.
+            python_c.py_decref(@ptrCast(watcher.handle));
 
             if (python_c.PyDict_New()) |ctx| {
                 defer python_c.py_decref(ctx);
@@ -102,6 +105,7 @@ fn loop_watcher_python_wrapper_callback(data: *const CallbackManager.CallbackDat
                 python_c.PyErr_Clear();
             }
         } else {
+            python_c.py_decref(@ptrCast(watcher.handle));
             utils.handle_zig_function_error(err, {});
         }
     };
@@ -165,13 +169,13 @@ fn loop_watchers_callback(data: *const CallbackManager.CallbackData) !void {
 
         watcher.blocking_task_id = 0; // Clear blocking task ID since it is no longer in-flight in io_uring
         python_c.py_incref(@ptrCast(handle));
-        errdefer python_c.py_decref(@ptrCast(handle));
         Loop.Scheduling.Soon.dispatch(loop_data, &callback) catch |err| {
             // BUG-315: a failed dispatch used to strand the watcher in the
             // reader/writer B-tree - its io op had already completed, so
             // nothing would ever clean it up (leaked handle + struct and a
             // stale B-tree entry). Route through the same cleanup as the
             // io-error branch and the wrapper's own re-arm-failure path.
+            python_c.py_decref(@ptrCast(handle));
             std.log.warn("fd watcher callback dispatch failed, cleaning up watcher: {s}", .{@errorName(err)});
             @call(.always_inline, loop_watchers_cleanup_callback, .{watcher});
             return;

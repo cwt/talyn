@@ -17,6 +17,7 @@ const python_c = @import("python_c");
 // Zig-native equivalent of AddressSanitizer (unavailable in Zig 0.16). The
 // c_allocator (malloc/free) is used otherwise for production performance.
 const build_options = @import("build_options");
+pub const is_debug = build_options.is_debug;
 var debug_gpa: std.heap.DebugAllocator(.{ .safety = true }) = .{};
 
 pub const gpa = struct {

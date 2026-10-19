@@ -1,5 +1,4 @@
 const std = @import("std");
-const builtin = @import("builtin");
 
 const Loop = @import("../main.zig");
 const utils = @import("utils");
@@ -10,10 +9,7 @@ const Parsers = @import("parsers.zig");
 const Resolv = @import("resolv.zig");
 const CallbackManager = @import("callback_manager");
 
-const DNSCacheEntries = switch (builtin.mode) {
-    .Debug => 4,
-    else => 1024,
-};
+const DNSCacheEntries = if (utils.is_debug) 4 else 1024;
 
 const CACHE_MASK = DNSCacheEntries - 1;
 
@@ -357,7 +353,7 @@ test "BUG-365: IP-literal seed slices survive eviction with balanced allocation"
     // Debug-only scaling: the cache holds DNSCacheEntries slots and each
     // slot's LRU holds 1024 records — at Debug capacity (4 slots) this
     // triggers thousands of evictions.
-    if (builtin.mode != .Debug) return error.SkipZigTest;
+    if (!utils.is_debug) return error.SkipZigTest;
 
     const allocator = std.testing.allocator;
     const loop = try allocator.create(Loop);

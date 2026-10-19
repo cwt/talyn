@@ -171,7 +171,7 @@ fn hook_handle_traverse(self: ?*HookHandle, visit: python_c.visitproc, arg: ?*an
 
 fn hook_handle_cancel(self: ?*HookHandle, _: ?PyObject) callconv(.c) ?PyObject {
     const instance = self.?;
-    if (instance.cancelled or !instance.loop_data.initialized) {
+    if (instance.cancelled or instance.loop == null or !instance.loop_data.initialized) {
         instance.cancelled = true;
         return python_c.get_py_none();
     }
@@ -292,7 +292,7 @@ fn path_watcher_handle_traverse(self: ?*PathWatcherHandle, visit: python_c.visit
 
 fn path_watcher_handle_cancel(self: ?*PathWatcherHandle, _: ?PyObject) callconv(.c) ?PyObject {
     const instance = self.?;
-    if (instance.loop_data.initialized) {
+    if (instance.loop != null and instance.loop_data.initialized) {
         if (instance.callback) |cb| {
             instance.loop_data.fs_watcher.remove_watch(instance.wd, cb);
         }

@@ -87,15 +87,16 @@ pub inline fn future_fast_set_exception(self: *PythonFutureObject, obj: *Future,
     // the previous payload reference and dispatched the done callbacks
     // machinery twice. The payload slot is also released when a
     // future is somehow re-targeted while still pending.
-    if (obj.status != .pending) {
+    if (obj.status != .pending or obj.released) {
         python_c.PyErr_SetString(
             utils.PythonImports.get("invalid_state_exc"),
             "Exception already setted\x00",
         );
         return error.PythonError;
     }
+    const new_exc = python_c.py_newref(exception);
     python_c.py_xdecref(self.exception);
-    self.exception = python_c.py_newref(exception);
+    self.exception = new_exc;
     try Future.Callback.call_done_callbacks(obj, .finished);
 }
 
@@ -108,6 +109,7 @@ pub fn set_future_exception(err: anyerror, future: *PythonFutureObject) !void {
     defer python_c.py_decref(exc);
 
     const future_data = utils.get_data_ptr(Future, future);
+    if (future_data.status != .pending or future_data.released) return;
     try future_fast_set_exception(future, future_data, exc);
 }
 
@@ -143,7 +145,10 @@ pub fn future_set_exception(self: ?*PythonFutureObject, exception: ?PyObject) ca
 }
 
 pub inline fn future_fast_set_result(obj: *Future, result: PyObject) !void {
-    obj.result = python_c.py_newref(result);
+    if (obj.status != .pending or obj.released) return;
+    const new_res = python_c.py_newref(result);
+    if (obj.result) |old| python_c.py_decref(@ptrCast(@alignCast(old)));
+    obj.result = new_res;
     try Future.Callback.call_done_callbacks(obj, .finished);
 }
 

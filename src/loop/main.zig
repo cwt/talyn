@@ -571,4 +571,3 @@ test "BUG-337: Cancel.perform_by_fd populates sqe.fd with target fd instead of -
 }
 
 const Loop = @This();
-

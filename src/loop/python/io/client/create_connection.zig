@@ -960,6 +960,13 @@ fn socket_connected_callback(data: *const CallbackManager.CallbackData) !void {
         // (cleanup_socket_connected_callback only destroys the struct; it
         // does not close the fd).
         if (fd >= 0) _ = std.os.linux.close(fd);
+        // BUG-359: when this is the final pending connect (and no
+        // happy-eyeballs timer is waiting to fire), mcs must be torn down
+        // on every exit path, including if the all_errors bookkeeping
+        // below fails.
+        defer if (mcs.pending == 0 and !(mcs.timer_scheduled and !mcs.timer_fired)) {
+            mcs.deinit();
+        };
 
         if (mcs.all_errors) {
             const errno_val = if (io_uring_res < 0) -io_uring_res else @intFromEnum(io_uring_err);
@@ -976,12 +983,6 @@ fn socket_connected_callback(data: *const CallbackManager.CallbackData) !void {
                 // teardown in this state.
                 return;
             }
-
-            // BUG-359: whatever happens below (including errors), mcs
-            // must be torn down exactly once — any early return here
-            // previously leaked MultiConnectState and every owned
-            // reference.
-            defer mcs.deinit();
 
             const future = creation_data.future.?;
             const future_data = utils.get_data_ptr(Future, future);
@@ -1013,11 +1014,13 @@ fn socket_connected_callback(data: *const CallbackManager.CallbackData) !void {
                 ) orelse {
                     const exc = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
                     defer python_c.py_decref(exc);
-                    try Future.Python.Result.future_fast_set_exception(
-                        @ptrCast(future),
-                        future_data,
-                        exc,
-                    );
+                    if (future_data.status == .pending) {
+                        try Future.Python.Result.future_fast_set_exception(
+                            @ptrCast(future),
+                            future_data,
+                            exc,
+                        );
+                    }
                     return error.PythonError;
                 };
                 defer python_c.py_decref(exc);

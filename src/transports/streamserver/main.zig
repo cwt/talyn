@@ -103,7 +103,7 @@ fn z_streamserver_init(self: *StreamServerObject, py_loop: ?PyObject, py_protoco
 
     const fd = python_c.PyLong_AsLongLong(py_server_fd.?);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
-    if (fd < 0) {
+    if (fd < 0 or fd > std.math.maxInt(std.posix.fd_t)) {
         python_c.raise_python_value_error("Invalid fd\x00");
         return error.PythonError;
     }
@@ -111,7 +111,7 @@ fn z_streamserver_init(self: *StreamServerObject, py_loop: ?PyObject, py_protoco
     const family = if (py_family) |f| blk: {
         const f_val = python_c.PyLong_AsLong(f);
         if (python_c.PyErr_Occurred() != null) return error.PythonError;
-        break :blk @as(c_int, @intCast(f_val));
+        break :blk try utils.checkedNarrow(c_int, f_val, "invalid address family\x00");
     } else std.posix.AF.INET;
 
     const backlog: c_int = if (py_backlog) |b| blk: {
@@ -244,6 +244,7 @@ fn accept_callback(data: *const CallbackManager.CallbackData) !void {
     );
     owns_fd = false;
     defer python_c.py_decref(@ptrCast(transport));
+    errdefer _ = Stream.Lifecyle.transport_force_close(transport, null);
 
     // BUG-376: resolve the weakref to the Python Server wrapper installed
     // by Server.__init__ (it may already be gone — a dead weakref calls
@@ -265,12 +266,12 @@ fn accept_callback(data: *const CallbackManager.CallbackData) !void {
         }
         if (resolved) |srv| {
             defer python_c.py_decref(srv);
-            transport.server_ref = python_c.py_newref(srv);
 
             const attach = python_c.PyObject_GetAttrString(srv, "_attach\x00") orelse return error.PythonError;
             defer python_c.py_decref(attach);
             const r = python_c.PyObject_CallNoArgs(attach) orelse return error.PythonError;
             python_c.py_decref(r);
+            transport.server_ref = python_c.py_newref(srv);
         }
     }
 

@@ -83,7 +83,9 @@ fn sock_accept_callback(data: *const CallbackManager.CallbackData) !void {
         defer python_c.py_decref(exc);
 
         const future_data = utils.get_data_ptr(Future, ad.future);
-        try Future.Python.Result.future_fast_set_exception(ad.future, future_data, exc);
+        if (future_data.status == .pending) {
+            try Future.Python.Result.future_fast_set_exception(ad.future, future_data, exc);
+        }
         return;
     }
 
@@ -292,7 +294,9 @@ fn sock_connect_callback(data: *const CallbackManager.CallbackData) !void {
         defer python_c.py_decref(exc);
 
         const future_data = utils.get_data_ptr(Future, scd.future);
-        try Future.Python.Result.future_fast_set_exception(scd.future, future_data, exc);
+        if (future_data.status == .pending) {
+            try Future.Python.Result.future_fast_set_exception(scd.future, future_data, exc);
+        }
         return;
     }
 
@@ -425,7 +429,9 @@ fn sock_recv_callback(data: *const CallbackManager.CallbackData) !void {
         defer python_c.py_decref(exc);
 
         const future_data = utils.get_data_ptr(Future, rd.future);
-        try Future.Python.Result.future_fast_set_exception(rd.future, future_data, exc);
+        if (future_data.status == .pending) {
+            try Future.Python.Result.future_fast_set_exception(rd.future, future_data, exc);
+        }
         return;
     }
 
@@ -540,11 +546,11 @@ fn sock_sendall_callback(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
     const io_uring_res = data.io_uring_res();
     const sd: *SockSendAllData = @ptrCast(@alignCast(data.user_data.?));
-    // BUG-356: unconditional cleanup — every exit path (success,
-    // failure, cancellation) releases the callback state. The
-    // manager-side `.cleanup` is nulled (it only ran on error returns,
-    // which would double-free with an unconditional defer).
-    defer cleanup_sendall(@ptrCast(sd));
+    // BUG-356: every terminal exit path (final completion, failure,
+    // cancellation) releases the callback state; only a successful
+    // partial-write re-queue keeps `sd` alive for the next SQE.
+    var requeued = false;
+    defer if (!requeued) cleanup_sendall(@ptrCast(sd));
 
     if (data.cancelled()) {
         // BUG-356: resolve the future instead of leaving the awaiter
@@ -566,7 +572,9 @@ fn sock_sendall_callback(data: *const CallbackManager.CallbackData) !void {
         defer python_c.py_decref(exc);
 
         const future_data = utils.get_data_ptr(Future, sd.future);
-        try Future.Python.Result.future_fast_set_exception(sd.future, future_data, exc);
+        if (future_data.status == .pending) {
+            try Future.Python.Result.future_fast_set_exception(sd.future, future_data, exc);
+        }
         return;
     }
 
@@ -576,17 +584,21 @@ fn sock_sendall_callback(data: *const CallbackManager.CallbackData) !void {
     if (sd.offset < sd.data.len) {
         // Re-queue remaining data - NOT finished, do not cleanup sd!
         const loop_data = utils.get_data_ptr(Loop, sd.loop);
-        _ = try loop_data.io.queue(.{
+        _ = loop_data.io.queue(.{
             .PerformWrite = .{
                 .fd = sd.fd,
                 .data = sd.data[sd.offset..],
                 .callback = .{
                     .func = &sock_sendall_callback,
-                    .cleanup = null, // BUG-356: the callback cleans up unconditionally (defer)
+                    .cleanup = null, // BUG-356: the callback cleans up via defer
                     .data = .{ .user_data = sd },
                 },
             },
-        });
+        }) catch |err| {
+            ensure_exception(err);
+            return set_future_exception(err, sd.future);
+        };
+        requeued = true;
         return;
     }
 
@@ -741,7 +753,9 @@ fn sock_recvfrom_callback(data: *const CallbackManager.CallbackData) !void {
         defer python_c.py_decref(exc);
 
         const future_data = utils.get_data_ptr(Future, rd.future);
-        try Future.Python.Result.future_fast_set_exception(rd.future, future_data, exc);
+        if (future_data.status == .pending) {
+            try Future.Python.Result.future_fast_set_exception(rd.future, future_data, exc);
+        }
         return;
     }
 
@@ -920,7 +934,9 @@ fn sock_sendto_callback(data: *const CallbackManager.CallbackData) !void {
         defer python_c.py_decref(exc);
 
         const future_data = utils.get_data_ptr(Future, sd.future);
-        try Future.Python.Result.future_fast_set_exception(sd.future, future_data, exc);
+        if (future_data.status == .pending) {
+            try Future.Python.Result.future_fast_set_exception(sd.future, future_data, exc);
+        }
         return;
     }
 
@@ -1172,7 +1188,9 @@ fn sock_recv_into_callback_with_buf(data: *const CallbackManager.CallbackData) !
         defer python_c.py_decref(exc);
 
         const future_data = utils.get_data_ptr(Future, rd.future);
-        try Future.Python.Result.future_fast_set_exception(rd.future, future_data, exc);
+        if (future_data.status == .pending) {
+            try Future.Python.Result.future_fast_set_exception(rd.future, future_data, exc);
+        }
         return;
     }
 

@@ -16,4 +16,3 @@ pub fn perform_by_fd(ring: *std.os.linux.IoUring, fd: usize) !usize {
     sqe.user_data = 0;
     return 0;
 }
-

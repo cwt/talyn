@@ -398,8 +398,8 @@ test "BUG-362: waitid under WNOHANG on a still-running child succeeds with signo
     // final waitid below consumes it, making both calls no-ops).
     defer {
         _ = std.os.linux.kill(child_pid, .KILL);
-        var ws: u32 = 0;
-        _ = std.os.linux.waitpid(child_pid, &ws, 0);
+        var reap_siginfo = std.mem.zeroes(std.os.linux.siginfo_t);
+        _ = std.os.linux.waitid(.PID, child_pid, &reap_siginfo, std.os.linux.W.EXITED, null);
     }
 
     const rc = std.os.linux.syscall2(.pidfd_open, @as(usize, @intCast(child_pid)), 0);

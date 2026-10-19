@@ -25,27 +25,14 @@ pub fn connection_lost_callback(transport_obj: PyObject, exception: PyObject) !v
     close_transports(transport, read_transport, write_transport, exception);
 }
 
-pub fn close_transports(transport: *StreamTransportObject, read_transport: *ReadTransport, write_transport: *WriteTransport, exception: PyObject) void {
-    const closed_already = transport.closed;
-
-    read_transport.close() catch |err| std.log.warn("read_transport close failed: {s}", .{@errorName(err)});
-    write_transport.close() catch |err| std.log.warn("write_transport close failed: {s}", .{@errorName(err)});
-
-    transport.is_reading = false;
-    // BUG-378: reaching this function means the transport is shutting
-    // down (EOF, I/O error or user close). is_closing must be true so a
-    // later transport.close() cannot run the machinery a second time.
-    transport.is_closing = true;
-
-    if (closed_already) return;
-
-    // BUG-376: tell the Python Server wrapper this client connection is
-    // gone, exactly once (the field is nulled as the once-guard), BEFORE
-    // protocol.connection_lost can run arbitrary app code. Errors are
-    // swallowed: the counter must not break the transport teardown.
-    // BUG-369 ordering: resolve _detach BEFORE releasing the field — the
-    // decref can drop the wrapper's last reference and free it, and the
-    // captured `srv` pointer alone does not keep the object alive.
+/// BUG-376: tell the Python Server wrapper this client connection is
+/// gone, exactly once (the field is nulled as the once-guard), BEFORE
+/// protocol.connection_lost can run arbitrary app code. Errors are
+/// swallowed: the counter must not break the transport teardown.
+/// BUG-369 ordering: resolve _detach BEFORE releasing the field — the
+/// decref can drop the wrapper's last reference and free it, and the
+/// captured `srv` pointer alone does not keep the object alive.
+pub fn detach_server(transport: *StreamTransportObject) void {
     if (transport.server_ref) |srv| {
         const detach = python_c.PyObject_GetAttrString(srv, "_detach\x00");
         python_c.py_decref_and_set_null(&transport.server_ref);
@@ -61,6 +48,23 @@ pub fn close_transports(transport: *StreamTransportObject, read_transport: *Read
             python_c.PyErr_Clear();
         }
     }
+}
+
+pub fn close_transports(transport: *StreamTransportObject, read_transport: *ReadTransport, write_transport: *WriteTransport, exception: PyObject) void {
+    const closed_already = transport.closed;
+
+    read_transport.close() catch |err| std.log.warn("read_transport close failed: {s}", .{@errorName(err)});
+    write_transport.close() catch |err| std.log.warn("write_transport close failed: {s}", .{@errorName(err)});
+
+    transport.is_reading = false;
+    // BUG-378: reaching this function means the transport is shutting
+    // down (EOF, I/O error or user close). is_closing must be true so a
+    // later transport.close() cannot run the machinery a second time.
+    transport.is_closing = true;
+
+    if (closed_already) return;
+
+    detach_server(transport);
 
     // BUG-378: connection_lost() fires only at the fully-closed
     // transition (both sides drained/force-closed), so stash the
@@ -128,6 +132,8 @@ fn connection_lost_fp(loop_obj: PyObject, connection_lost: PyObject, exception_o
 }
 
 fn schedule_connection_lost_once(transport: *StreamTransportObject) void {
+    detach_server(transport);
+
     // BUG-378: at-most-once guard across close()/abort()/EOF/error paths.
     if (transport.connection_lost_notified) {
         return;
@@ -230,11 +236,9 @@ pub fn transport_force_close(self: ?*StreamTransportObject, exc: ?PyObject) call
     // exception BEFORE the chain of force-closes reaches
     // maybe_close_fd/schedule_connection_lost_once, so the once-only
     // notification carries the abort's exception (stdlib semantics).
+    const new_exc = if (exc) |e| python_c.py_newref(e) else null;
     python_c.py_xdecref(instance.pending_lost_exc);
-    instance.pending_lost_exc = null;
-    if (exc) |e| {
-        instance.pending_lost_exc = python_c.py_newref(e);
-    }
+    instance.pending_lost_exc = new_exc;
 
     const read_transport = utils.get_data_ptr2(ReadTransport, "read_transport", instance);
     const write_transport = utils.get_data_ptr2(WriteTransport, "write_transport", instance);

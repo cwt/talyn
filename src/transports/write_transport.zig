@@ -351,6 +351,9 @@ fn write_operation_completed(data: *const CallbackManager.CallbackData) !void {
             success = true;
             return;
         }
+        self.closed = true;
+        const StreamLifecycle = @import("stream/lifecycle.zig");
+        StreamLifecycle.maybe_close_fd(@ptrCast(self.parent_transport));
         success = true;
         return;
     }
