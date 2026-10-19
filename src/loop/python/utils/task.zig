@@ -71,7 +71,27 @@ inline fn z_loop_create_task(self: *PythonLoopObject, args: []?PyObject, knames:
             if (name) |n| {
                 _ = python_c.PyDict_SetItemString(py_kwargs, "name\x00", n);
             }
-            task = python_c.PyObject_Call(factory, py_args, py_kwargs) orelse return error.PythonError;
+            const res = python_c.PyObject_Call(factory, py_args, py_kwargs);
+            if (res) |t| {
+                task = t;
+            } else {
+                // If custom factory failed with TypeError because it doesn't accept **kwargs
+                // (legacy 2-arg factory(loop, coro)), fall back to calling without kwargs.
+                if (python_c.PyErr_ExceptionMatches(python_c.PyExc_TypeError.?) != 0) {
+                    python_c.PyErr_Clear();
+                    task = python_c.PyObject_Call(factory, py_args, null) orelse return error.PythonError;
+                    if (name) |n| {
+                        const set_name_res = python_c.PyObject_CallMethod(task, "set_name\x00", "O\x00", n);
+                        if (set_name_res) |sn| {
+                            python_c.py_decref(sn);
+                        } else {
+                            python_c.PyErr_Clear();
+                        }
+                    }
+                } else {
+                    return error.PythonError;
+                }
+            }
         } else {
             task = python_c.PyObject_Call(factory, py_args, null) orelse return error.PythonError;
         }

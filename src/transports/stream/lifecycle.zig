@@ -93,7 +93,13 @@ fn connection_lost_fp(loop_obj: PyObject, connection_lost: PyObject, exception_o
     };
     defer python_c.py_decref(is_closed_py);
 
-    const closed = python_c.PyObject_IsTrue(is_closed_py) != 0;
+    const rc = python_c.PyObject_IsTrue(is_closed_py);
+    if (rc < 0) {
+        python_c.PyErr_Clear();
+        python_c.py_decref(exception_obj);
+        return;
+    }
+    const closed = (rc == 1);
 
     if (closed) {
         const ret = python_c.PyObject_CallOneArg(connection_lost, exception_obj);

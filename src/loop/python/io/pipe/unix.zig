@@ -207,7 +207,7 @@ inline fn z_loop_create_unix_server(self: *LoopObject, args: []?PyObject, knames
         break :blk @intCast(b_val);
     } else 100;
 
-    const fd_ret = std.os.linux.socket(std.posix.AF.UNIX, std.posix.SOCK.STREAM | std.posix.SOCK.CLOEXEC, 0);
+    const fd_ret = std.os.linux.socket(std.posix.AF.UNIX, std.posix.SOCK.STREAM | std.posix.SOCK.NONBLOCK | std.posix.SOCK.CLOEXEC, 0);
     if (utils.getSyscallErrno(fd_ret) != .SUCCESS) return error.SystemResources;
     const fd: std.posix.fd_t = @intCast(fd_ret);
     var owns_fd = true;
@@ -217,8 +217,10 @@ inline fn z_loop_create_unix_server(self: *LoopObject, args: []?PyObject, knames
 
     const addr = try utils.Address.fromPyAddr(py_path, std.posix.AF.UNIX);
 
-    // Unlink existing socket file before bind
-    _ = std.os.linux.unlink(std.mem.span(@as([*:0]const u8, @ptrCast(&addr.un.path))));
+    // Unlink existing socket file before bind (only for filesystem paths, not abstract sockets)
+    if (addr.un.path[0] != 0) {
+        _ = std.os.linux.unlink(std.mem.span(@as([*:0]const u8, @ptrCast(&addr.un.path))));
+    }
 
     const bind_rc = std.os.linux.bind(fd, @ptrCast(&addr.any), addr.getOsSockLen());
     if (utils.getSyscallErrno(bind_rc) != .SUCCESS) return error.SystemResources;

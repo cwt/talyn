@@ -76,6 +76,21 @@ fn on_inotify_event(data: *const CallbackManager.CallbackData) !void {
     // re-arm at the end of this function installs the next wait's ID.
     // deinit() therefore cannot CancelIO the new occupant.
     self.inotify_task_id = 0;
+    defer {
+        if (self.inotify_fd >= 0 and self.inotify_task_id == 0 and self.watchers.items.len > 0) {
+            self.inotify_task_id = self.loop.io.queue(.{ .WaitReadable = .{
+                .fd = self.inotify_fd,
+                .callback = .{
+                    .func = &on_inotify_event,
+                    .cleanup = null,
+                    .data = .{ .user_data = self },
+                },
+            } }) catch |err| blk: {
+                std.log.warn("inotify re-arm failed: {s}", .{@errorName(err)});
+                break :blk 0;
+            };
+        }
+    }
 
     var buf: [4096]u8 align(@alignOf(std.os.linux.inotify_event)) = undefined;
     while (true) {
@@ -103,14 +118,16 @@ fn on_inotify_event(data: *const CallbackManager.CallbackData) !void {
             }
             const name = if (event.len > 0) std.mem.sliceTo(buf[pos + @sizeOf(std.os.linux.inotify_event) .. pos + @sizeOf(std.os.linux.inotify_event) + event.len], 0) else "";
 
-            // BUG-278: dispatch_event runs arbitrary Python which may
-            // add/remove watches - append reallocates (and remove_watch
-            // frees) watcher storage, so neither the items slice nor raw
-            // pointers may be held across a dispatch. Snapshot the
-            // pointers once, and re-validate liveness against the LIVE
-            // list immediately before every callback invocation.
-            const pending = try self.loop.allocator.dupe(*Watcher, self.watchers.items);
-            defer self.loop.allocator.free(pending);
+            // BUG-278 / BUG-387: snapshot watcher pointers to handle dynamic add/remove.
+            // Use stack buffer for common case (<=16 watchers) to avoid per-event heap churn.
+            var stack_pending: [16]*Watcher = undefined;
+            const watcher_count = self.watchers.items.len;
+            const pending = if (watcher_count <= 16)
+                stack_pending[0..watcher_count]
+            else
+                try self.loop.allocator.dupe(*Watcher, self.watchers.items);
+            defer if (watcher_count > 16) self.loop.allocator.free(pending);
+            @memcpy(pending, self.watchers.items[0..watcher_count]);
 
             for (pending) |watcher| {
                 var alive = false;
@@ -137,16 +154,6 @@ fn on_inotify_event(data: *const CallbackManager.CallbackData) !void {
             pos += total;
         }
     }
-
-    // Re-arm
-    self.inotify_task_id = try self.loop.io.queue(.{ .WaitReadable = .{
-        .fd = self.inotify_fd,
-        .callback = .{
-            .func = &on_inotify_event,
-            .cleanup = null,
-            .data = .{ .user_data = self },
-        },
-    } });
 }
 
 fn dispatch_event(self: *FSWatcher, watcher: *Watcher, mask: u32, cookie: u32, name: []const u8) !void {
@@ -187,6 +194,20 @@ pub fn add_watch(self: *FSWatcher, path: [:0]const u8, mask: u32, callback: PyOb
     if (utils.getSyscallErrno(wd_ret) != .SUCCESS) return error.SystemResources;
     const wd: i32 = @intCast(wd_ret);
 
+    // BUG-387: on error, if no existing watcher uses this wd, remove it from inotify.
+    errdefer {
+        var has_other = false;
+        for (self.watchers.items) |other| {
+            if (other.wd == wd) {
+                has_other = true;
+                break;
+            }
+        }
+        if (!has_other) {
+            _ = std.os.linux.inotify_rm_watch(self.inotify_fd, wd);
+        }
+    }
+
     const watcher = try self.loop.allocator.create(Watcher);
     errdefer self.loop.allocator.destroy(watcher);
     watcher.* = .{
@@ -194,6 +215,7 @@ pub fn add_watch(self: *FSWatcher, path: [:0]const u8, mask: u32, callback: PyOb
         .mask = mask,
         .wd = wd,
     };
+    errdefer python_c.py_decref(watcher.callback);
 
     try self.watchers.append(self.loop.allocator, watcher);
     return wd;

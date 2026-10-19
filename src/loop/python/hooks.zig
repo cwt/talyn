@@ -15,6 +15,7 @@ pub fn asyncgen_firstiter_hook(self: ?*LoopObject, agen: ?PyObject) callconv(.c)
         std.log.err("asyncgen_firstiter_hook called with null self", .{});
         return null;
     };
+    if (!python_c.type_check(@ptrCast(instance), Loop.Python.LoopType)) return null;
     const _agen = agen orelse {
         std.log.err("asyncgen_firstiter_hook called with null agen", .{});
         return null;
@@ -57,6 +58,7 @@ pub fn asyncgen_finalizer_hook(self: ?*LoopObject, agen: ?PyObject) callconv(.c)
         std.log.err("asyncgen_finalizer_hook called with null self", .{});
         return null;
     };
+    if (!python_c.type_check(@ptrCast(instance), Loop.Python.LoopType)) return null;
     const _agen = agen orelse {
         std.log.err("asyncgen_finalizer_hook called with null agen", .{});
         return null;
@@ -84,6 +86,7 @@ pub fn setup_asyncgen_hooks(self: *LoopObject) !void {
     }
 
     self.old_asyncgen_hooks = python_c.PyObject_CallNoArgs(utils.PythonImports.get("get_asyncgen_hooks")) orelse return error.PythonError;
+    errdefer python_c.py_decref_and_set_null(&self.old_asyncgen_hooks);
 
     var args: [2]PyObject = undefined;
     args[0] = python_c.PyCFunction_New(@constCast(&LoopAsyncGenFirstIterHookMethod), @ptrCast(self)) orelse return error.PythonError;

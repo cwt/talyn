@@ -733,7 +733,9 @@ fn z_create_socket_connection(data: *SocketConnectionData) !void {
 
     const all_errors: bool = blk: {
         const py_all_errors = creation_data.py_all_errors orelse break :blk false;
-        break :blk python_c.PyObject_IsTrue(py_all_errors) != 0;
+        const rc = python_c.PyObject_IsTrue(py_all_errors);
+        if (rc < 0) return error.PythonError;
+        break :blk rc == 1;
     };
 
     // `connection_data` (== `data`) is owned by `create_socket_connection` until we

@@ -94,7 +94,13 @@ pub fn loop_get_debug(self: ?*LoopObject, _: ?PyObject) callconv(.c) ?PyObject {
 }
 
 pub fn loop_set_debug(self: ?*LoopObject, enabled: ?PyObject) callconv(.c) ?PyObject {
-    self.?.debug = (python_c.PyObject_IsTrue(enabled.?) != 0);
+    const o = enabled orelse {
+        python_c.raise_python_type_error("enabled argument required\x00");
+        return null;
+    };
+    const rc = python_c.PyObject_IsTrue(o);
+    if (rc < 0) return null;
+    self.?.debug = (rc == 1);
     return python_c.get_py_none();
 }
 
@@ -219,12 +225,19 @@ pub fn loop_add_hook(self: ?*LoopObject, args: ?[*]const ?PyObject, nargs: pytho
 }
 
 fn z_loop_add_hook(self: *LoopObject, args: []const ?PyObject) !PyObject {
-    if (args.len < 2) return error.PythonError;
+    if (args.len < 2) {
+        python_c.raise_python_type_error("add_hook requires hook_type and callback arguments\x00");
+        return error.PythonError;
+    }
     const hook_type_val = python_c.PyLong_AsLong(args[0].?);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;
     // BUG-361: unchecked narrowing panicked on out-of-range hook types.
     const hook_type_int: c_int = try utils.checkedNarrow(c_int, hook_type_val, "invalid hook type\x00");
     const py_callback = args[1].?;
+    if (python_c.PyCallable_Check(py_callback) == 0) {
+        python_c.raise_python_type_error("callback must be callable\x00");
+        return error.PythonError;
+    }
 
     const hook_type: Loop.HookType = switch (hook_type_int) {
         0 => .prepare,
@@ -318,10 +331,17 @@ pub fn loop_add_path_watcher(self: ?*LoopObject, args: ?[*]const ?PyObject, narg
 }
 
 fn z_loop_add_path_watcher(self: *LoopObject, args: []const ?PyObject) !PyObject {
-    if (args.len < 3) return error.PythonError;
+    if (args.len < 3) {
+        python_c.raise_python_type_error("add_path_watcher requires path, mask, and callback arguments\x00");
+        return error.PythonError;
+    }
     const py_path = args[0].?;
     const py_mask = args[1].?;
     const py_callback = args[2].?;
+    if (python_c.PyCallable_Check(py_callback) == 0) {
+        python_c.raise_python_type_error("callback must be callable\x00");
+        return error.PythonError;
+    }
 
     const mask_val = python_c.PyLong_AsUnsignedLong(py_mask);
     if (python_c.PyErr_Occurred() != null) return error.PythonError;

@@ -197,6 +197,16 @@ fn resolve_local_addr(data: *const CallbackManager.CallbackData) !void {
 
     const loop_data = utils.get_data_ptr(Loop, dcd.loop);
 
+    if (dcd.py_sock != null) {
+        const callback = CallbackManager.Callback{
+            .func = &resolve_remote_addr,
+            .cleanup = null,
+            .data = .{ .user_data = dcd },
+        };
+        Loop.Scheduling.Soon.dispatch(loop_data, &callback) catch |err| return fail_endpoint(err, dcd);
+        return;
+    }
+
     if (dcd.py_local_addr) |la| {
         const addr_info = get_addr_tuple(la) catch |err| return fail_endpoint(err, dcd);
         const resolver_callback = CallbackManager.Callback{
@@ -294,48 +304,74 @@ fn remote_addr_resolved_callback(data: *const CallbackManager.CallbackData) !voi
 }
 
 fn z_create_endpoint(dcd: *DatagramCreationData) !void {
-    // Pick family
-    var family: u32 = std.posix.AF.INET;
-    if (dcd.py_family) |f| {
-        const f_val = python_c.PyLong_AsLong(f);
-        if (python_c.PyErr_Occurred() != null) return error.PythonError;
-        // BUG-361: negative/out-of-range families panicked the u32
-        // narrowing.
-        family = try utils.checkedNarrow(u32, f_val, "invalid address family\x00");
-    } else if (dcd.remote_addresses) |addrs| {
-        family = addrs[0].any.family;
-    } else if (dcd.local_addresses) |addrs| {
-        family = addrs[0].any.family;
-    }
-
-    const socket_ret = std.os.linux.socket(family, @as(u32, @intCast(std.posix.SOCK.DGRAM | std.posix.SOCK.NONBLOCK | std.posix.SOCK.CLOEXEC)), 0);
-    const socket_err = utils.getSyscallErrno(socket_ret);
-    if (socket_err != .SUCCESS) return utils.socketSyscallError(socket_err);
-    const fd: std.posix.fd_t = @intCast(socket_ret);
     var owns_fd = true;
+    var fd: std.posix.fd_t = undefined;
+    var family: u32 = std.posix.AF.INET;
+
+    if (dcd.py_sock) |sock_obj| {
+        const raw_fd = python_c.PyObject_CallMethod(sock_obj, "fileno\x00", null) orelse return error.PythonError;
+        defer python_c.py_decref(raw_fd);
+        const lfd = python_c.PyLong_AsLong(raw_fd);
+        const dup_ret = std.os.linux.dup(@intCast(lfd));
+        if (utils.getSyscallErrno(dup_ret) != .SUCCESS) return error.SystemResources;
+        fd = @intCast(dup_ret);
+        // Set nonblocking and cloexec
+        const flags = std.os.linux.fcntl(fd, std.os.linux.F.GETFL, 0);
+        _ = std.os.linux.fcntl(fd, std.os.linux.F.SETFL, flags | std.posix.SOCK.NONBLOCK);
+        _ = std.os.linux.fcntl(fd, std.os.linux.F.SETFD, std.os.linux.FD_CLOEXEC);
+
+        var sock_addr: std.posix.sockaddr.storage = undefined;
+        var sock_len: std.posix.socklen_t = @sizeOf(std.posix.sockaddr.storage);
+        if (std.os.linux.getsockname(fd, @ptrCast(&sock_addr), &sock_len) == 0) {
+            const sa: *const std.posix.sockaddr = @ptrCast(&sock_addr);
+            family = sa.family;
+        }
+    } else {
+        // Pick family
+        if (dcd.py_family) |f| {
+            const f_val = python_c.PyLong_AsLong(f);
+            if (python_c.PyErr_Occurred() != null) return error.PythonError;
+            // BUG-361: negative/out-of-range families panicked the u32
+            // narrowing.
+            family = try utils.checkedNarrow(u32, f_val, "invalid address family\x00");
+        } else if (dcd.remote_addresses) |addrs| {
+            family = addrs[0].any.family;
+        } else if (dcd.local_addresses) |addrs| {
+            family = addrs[0].any.family;
+        }
+
+        const socket_ret = std.os.linux.socket(family, @as(u32, @intCast(std.posix.SOCK.DGRAM | std.posix.SOCK.NONBLOCK | std.posix.SOCK.CLOEXEC)), 0);
+        const socket_err = utils.getSyscallErrno(socket_ret);
+        if (socket_err != .SUCCESS) return utils.socketSyscallError(socket_err);
+        fd = @intCast(socket_ret);
+    }
     defer {
         if (owns_fd) _ = std.os.linux.close(fd);
     }
 
     if (dcd.py_reuse_port) |rp| {
-        if (python_c.PyObject_IsTrue(rp) != 0) {
+        const rc = python_c.PyObject_IsTrue(rp);
+        if (rc < 0) return error.PythonError;
+        if (rc == 1) {
             const val: c_int = 1;
             try std.posix.setsockopt(fd, std.posix.SOL.SOCKET, std.posix.SO.REUSEPORT, std.mem.asBytes(&val));
         }
     }
 
     if (dcd.py_allow_broadcast) |ab| {
-        if (python_c.PyObject_IsTrue(ab) != 0) {
+        const rc = python_c.PyObject_IsTrue(ab);
+        if (rc < 0) return error.PythonError;
+        if (rc == 1) {
             const val: c_int = 1;
             try std.posix.setsockopt(fd, std.posix.SOL.SOCKET, std.posix.SO.BROADCAST, std.mem.asBytes(&val));
         }
     }
 
-    if (dcd.local_addresses) |addrs| {
+    if (dcd.py_sock == null and dcd.local_addresses != null) {
         // Try each until one binds
+        const addrs = dcd.local_addresses.?;
         var bound = false;
         for (addrs) |*addr| {
-            if (addr.any.family != family) continue;
             const bind_ret = std.os.linux.bind(fd, @ptrCast(&addr.any), addr.getOsSockLen());
             if (utils.getSyscallErrno(bind_ret) == .SUCCESS) {
                 bound = true;

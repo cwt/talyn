@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 373 |
-| Open | 9 |
+| Fixed | 377 |
+| Open | 5 |
 | False Positive | 13 |
 | **Total** | **395** |
 
@@ -422,11 +422,11 @@ Sorted by bug number. See individual bug files for details.
 | [384](384.md) | Multi-server DNS premature failure on negative responses (`SERVFAIL`/`NXDOMAIN`/`NODATA`), dual-stack `A`+`AAAA` first-packet race, and missing bare hostname in `get_hostname_array` for dotless names | Medium-High | Fixed |
 | [385](385.md) | `ControlData.traverse` omits `v.data.traverse()` on pending DNS user callbacks, and multiple IO callback state structs lack GC `traverse` wiring | Medium-High | Fixed |
 | [386](386.md) | Unchecked `.?` on `contextvars` and `py_callback` in `Handle` after `handle_clear` (Mandate #4), repeated `__init__` memory/ref leaks in `Loop`/`Future`/`Task`/`Handle`/`TimerHandle`, and stale `blocking_task_id` reuse window in `TimerHandle` | Medium-High | Fixed |
-| [387](387.md) | `FSWatcher` leaks `callback` reference and `wd` on `add_watch` error, disarms permanently on `on_inotify_event` error, and performs per-event `dupe` + $O(W^2)$ scan | Medium | Open |
+| [387](387.md) | `FSWatcher` leaks `callback` reference and `wd` on `add_watch` error, disarms permanently on `on_inotify_event` error, and performs per-event `dupe` + $O(W^2)$ scan | Medium | Fixed |
 | [388](388.md) | `StreamTransport.get_extra_info` ignores positional `default` argument (`transport.get_extra_info('unknown', 'fallback')` returns `None`) | Medium | Fixed |
-| [389](389.md) | Python C-API error handling bugs: `PyObject_IsTrue(...) != 0` treating `-1` as `true`, returning `null` without setting Python exception, `setup_asyncgen_hooks` partial failure leak, and `z_loop_create_task` passing `name` to custom `task_factory` | Medium | Open |
-| [390](390.md) | Server and endpoint creation bugs: `create_server(factory, sock=s)` fails without positional `host` and leaks earlier `StreamServer`s on partial multi-bind failure; `create_datagram_endpoint` ignores `sock=`; `create_unix_server` creates blocking socket and unlinks abstract socket paths | Medium | Open |
-| [391](391.md) | `LoopObject.weakref_list` decref'd instead of `PyObject_ClearWeakRefs`, free-threaded `LoopType` reference leak in `loop_dealloc`, and module init error leaks in `src/lib.zig` | Medium | Open |
+| [389](389.md) | Python C-API error handling bugs: `PyObject_IsTrue(...) != 0` treating `-1` as `true`, returning `null` without setting Python exception, `setup_asyncgen_hooks` partial failure leak, and `z_loop_create_task` passing `name` to custom `task_factory` | Medium | Fixed |
+| [390](390.md) | Server and endpoint creation bugs: `create_server(factory, sock=s)` fails without positional `host` and leaks earlier `StreamServer`s on partial multi-bind failure; `create_datagram_endpoint` ignores `sock=`; `create_unix_server` creates blocking socket and unlinks abstract socket paths | Medium | Fixed |
+| [391](391.md) | `LoopObject.weakref_list` decref'd instead of `PyObject_ClearWeakRefs`, free-threaded `LoopType` reference leak in `loop_dealloc`, and module init error leaks in `src/lib.zig` | Medium | Fixed |
 | [392](392.md) | `LRUCache.put` dangling key slice on key overwrite, `Address.parseIp6` accepting `":::1"`, `execute_task_send` running coroutine on cancelled loop shutdown, `enter_or_leave_task` partial failure corrupting `_current_tasks`, and `talyn.install()` globally disabling Python GC on 3.13t/3.14t | Medium | Open |
 | [393](393.md) | `talyn/loop.py` & `talyn/runner.py` API compliance bugs: ignored `start_serving=False`, ignored `subprocess_exec` `**kwargs`, premature `_subprocess_popens.pop`, and incomplete `Runner.close()` | Medium | Open |
 | [394](394.md) | Build & AST linter bugs: missing `build_options` import on `utils_unit_tests` in `build.zig`, untested `sqe_pointer_lifetime` rule in `test_rules.zig`, and whole-file substring false negatives in linter rules | Medium | Open |

@@ -79,8 +79,8 @@ fn get_host_slice(data: *ServerCreationData) ![]const u8 {
 inline fn z_loop_create_server(self: *LoopObject, args: []?PyObject, knames: ?PyObject) !*FutureObject {
     if (Loop.Python.check_forked(self)) return error.PythonError;
     if (Loop.Python.check_thread(self)) return error.PythonError;
-    if (args.len < 2) {
-        python_c.raise_python_value_error("protocol_factory and host are required\x00");
+    if (args.len < 1) {
+        python_c.raise_python_value_error("protocol_factory is required\x00");
         return error.PythonError;
     }
 
@@ -104,6 +104,10 @@ inline fn z_loop_create_server(self: *LoopObject, args: []?PyObject, knames: ?Py
 
     // Only set host/port if sock is not provided
     if (creation_data.py_sock == null) {
+        if (args.len < 2) {
+            python_c.raise_python_value_error("host is required when sock is not provided\x00");
+            return error.PythonError;
+        }
         creation_data.py_host = python_c.py_newref(args[1].?);
         if (args.len > 2) creation_data.py_port = python_c.py_newref(args[2].?);
     }
@@ -457,18 +461,30 @@ fn z_create_server_socket(server_data: *ServerSocketData) !void {
         break :blk 100;
     };
 
-    const reuse_address: bool = if (creation_data.py_reuse_address) |r|
-        python_c.PyObject_IsTrue(r) != 0
-    else
-        true;
+    const reuse_address: bool = if (creation_data.py_reuse_address) |r| blk: {
+        const rc = python_c.PyObject_IsTrue(r);
+        if (rc < 0) return error.PythonError;
+        break :blk (rc == 1);
+    } else true;
 
-    const reuse_port: bool = if (creation_data.py_reuse_port) |r|
-        python_c.PyObject_IsTrue(r) != 0
-    else
-        false;
+    const reuse_port: bool = if (creation_data.py_reuse_port) |r| blk: {
+        const rc = python_c.PyObject_IsTrue(r);
+        if (rc < 0) return error.PythonError;
+        break :blk (rc == 1);
+    } else false;
 
     const servers_list = python_c.PyList_New(0) orelse return error.PythonError;
-    errdefer python_c.py_decref(servers_list);
+    errdefer {
+        const size = python_c.PyList_Size(servers_list);
+        var i: python_c.Py_ssize_t = 0;
+        while (i < size) : (i += 1) {
+            if (python_c.PyList_GetItem(servers_list, i)) |item| {
+                const s: *StreamServer.StreamServerObject = @ptrCast(item);
+                StreamServer.z_close_server(s) catch |err| std.log.warn("create_server cleanup close failed: {any}", .{err});
+            }
+        }
+        python_c.py_decref(servers_list);
+    }
 
     var last_err: ?anyerror = null;
 

@@ -221,7 +221,12 @@ fn schedule_datagram_connection_lost(
 
     const none = python_c.get_py_none();
     defer python_c.py_decref(none);
-    if (python_c.PyObject_IsTrue(is_closed_py) != 0) {
+    const rc = python_c.PyObject_IsTrue(is_closed_py);
+    if (rc < 0) {
+        python_c.PyErr_Clear();
+        return;
+    }
+    if (rc == 1) {
         const ret = python_c.PyObject_CallOneArg(connection_lost, none);
         if (ret) |v| {
             python_c.py_decref(v);

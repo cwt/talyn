@@ -28,7 +28,9 @@ fn cancel_future_waiter(future: PyObject, cancel_msg_py_object: ?PyObject) anyer
         python_c.PyObject_CallNoArgs(cancel_function) orelse return error.PythonError;
     defer python_c.py_decref(ret);
 
-    return (python_c.PyObject_IsTrue(ret) != 0);
+    const rc = python_c.PyObject_IsTrue(ret);
+    if (rc < 0) return error.PythonError;
+    return (rc == 1);
 }
 
 inline fn fast_task_cancel(task: *PythonTaskObject, data: *Future, cancel_msg_py_object: ?PyObject) !bool {

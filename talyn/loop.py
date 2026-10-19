@@ -347,6 +347,10 @@ class Loop(_Loop):
         if handler is None:
             self._exception_handler = self.default_exception_handler
         else:
+            if not callable(handler):
+                raise TypeError(
+                    f"A callable object or None is expected, got {handler!r}"
+                )
             self._exception_handler = handler
 
     # --------------------------------------------------------------------------------------------------------

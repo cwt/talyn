@@ -105,13 +105,6 @@ const LoopMembers: []const python_c.PyMemberDef = &[_]python_c.PyMemberDef{
         .offset = @offsetOf(LoopObject, "asyncgens_set"),
         .doc = null,
     },
-    python_c.PyMemberDef{
-        .name = "__weakref__\x00",
-        .type = python_c.Py_T_OBJECT_EX,
-        .offset = @offsetOf(LoopObject, "weakref_list"),
-        .flags = 0,
-        .doc = null,
-    },
     python_c.PyMemberDef{ .name = null, .flags = 0, .offset = 0, .doc = null },
 };
 

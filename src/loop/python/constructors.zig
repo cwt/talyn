@@ -59,7 +59,12 @@ pub fn loop_clear(self: ?*LoopObject) callconv(.c) c_int {
         loop_data.release();
     }
 
-    python_c.deinitialize_object_fields(py_loop, &.{});
+    if (py_loop.weakref_list != null) {
+        python_c.PyObject_ClearWeakRefs(@ptrCast(py_loop));
+        py_loop.weakref_list = null;
+    }
+
+    python_c.deinitialize_object_fields(py_loop, &.{"weakref_list"});
     if (python_c.has_managed_dict(@ptrCast(py_loop))) {
         python_c.PyObject_ClearManagedDict(@ptrCast(py_loop));
     }
@@ -191,10 +196,7 @@ pub fn loop_dealloc(self: ?*LoopObject) callconv(.c) void {
 
     const @"type" = python_c.get_type(@ptrCast(instance)) orelse return;
     @"type".tp_free.?(@ptrCast(instance));
-
-    if (builtin.single_threaded) {
-        python_c.py_decref(@ptrCast(@"type"));
-    }
+    python_c.py_decref(@ptrCast(@"type"));
 }
 
 inline fn z_loop_init(self: *LoopObject, args: ?PyObject, kwargs: ?PyObject) !c_int {

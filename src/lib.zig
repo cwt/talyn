@@ -111,20 +111,18 @@ fn initialize_python_module() !*python_c.PyObject {
     return module;
 }
 
-export fn PyInit_talyn_zig() ?*python_c.PyObject {
+fn z_init() !*python_c.PyObject {
     utils.init_gpa();
     loop.init_module(utils.gpa.allocator());
-    utils.PythonImports.initialize_python_imports() catch return null;
-    initialize_talyn_types() catch return null;
-    // BUG-66: If initialize_python_module fails after
-    // initialize_talyn_types succeeded, clean up the initialized
-    // types so we don't leak them. The dynamic_talyn_types_ptrs
-    // will be cleared but the static types are still safe (they
-    // aren't decref'd here — see BUG-41).
-    if (initialize_python_module()) |module| {
-        return module;
-    } else |_| {
-        deinitialize_talyn_types();
-        return null;
-    }
+    try utils.PythonImports.initialize_python_imports();
+    errdefer utils.PythonImports.release_python_imports();
+
+    try initialize_talyn_types();
+    errdefer deinitialize_talyn_types();
+
+    return try initialize_python_module();
+}
+
+export fn PyInit_talyn_zig() ?*python_c.PyObject {
+    return utils.execute_zig_function(z_init, .{});
 }

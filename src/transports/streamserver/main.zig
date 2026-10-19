@@ -350,7 +350,7 @@ fn accept_retry_callback(data: *const CallbackManager.CallbackData) !void {
     };
 }
 
-fn z_close_server(self: *StreamServerObject) !void {
+pub fn z_close_server(self: *StreamServerObject) !void {
     if (self.closed) return;
     self.closed = true;
 

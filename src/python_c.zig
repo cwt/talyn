@@ -25,6 +25,7 @@ pub const Py_TPFLAGS_MANAGED_DICT = 16;
 pub const Py_READONLY = _c.Py_READONLY;
 pub const Py_T_BOOL = _c.Py_T_BOOL;
 pub const Py_T_OBJECT_EX = _c.Py_T_OBJECT_EX;
+pub const Py_T_PYSSIZET = _c.Py_T_PYSSIZET;
 pub const _Py_T_OBJECT = _c._Py_T_OBJECT;
 pub const Py_tp_new = _c.Py_tp_new;
 pub const Py_tp_init = _c.Py_tp_init;
@@ -65,6 +66,7 @@ pub const PyErr_Clear = _c.PyErr_Clear;
 pub const PyErr_GetRaisedException = _c.PyErr_GetRaisedException;
 pub const PyErr_SetRaisedException = _c.PyErr_SetRaisedException;
 pub const PyErr_GivenExceptionMatches = _c.PyErr_GivenExceptionMatches;
+pub const PyErr_ExceptionMatches = _c.PyErr_ExceptionMatches;
 pub const PyErr_CheckSignals = _c.PyErr_CheckSignals;
 
 pub extern var PyExc_ValueError: ?*PyObject;
