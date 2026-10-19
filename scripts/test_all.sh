@@ -632,15 +632,24 @@ if [ "${JOBS:-0}" -eq 1 ] || [ "$SEQUENTIAL" = true ]; then
     fi
 else
     # Auto-calculate default JOBS if not explicitly specified
-    # Default is capped at 4 parallel jobs to protect system resources
+    # Sized against RLIMIT_MEMLOCK (ulimit -l) so concurrent io_uring rings never exceed pinned memory
     if [ -z "$JOBS" ]; then
         JOBS=0
         for _ in $BUILT_PYTHONS; do JOBS=$((JOBS + 1)); done
         [ -n "$ZIG_016_BIN" ] && JOBS=$((JOBS + 1))
         [ -n "$ZIG_017_BIN" ] && JOBS=$((JOBS + 1))
         [ -n "$ZIG_FALLBACK_BIN" ] && JOBS=$((JOBS + 1))
-        if [ "$JOBS" -gt 4 ]; then
-            JOBS=4
+
+        memlock_kb="$(ulimit -l 2>/dev/null || echo 65536)"
+        if [ "$memlock_kb" != "unlimited" ] && [ "$memlock_kb" -le 8192 ] 2>/dev/null; then
+            # Under a tight 8MB locked memory ceiling, cap default concurrency at 2
+            if [ "$JOBS" -gt 2 ]; then
+                JOBS=2
+            fi
+        else
+            if [ "$JOBS" -gt 4 ]; then
+                JOBS=4
+            fi
         fi
         if [ "$JOBS" -lt 1 ]; then
             JOBS=1
