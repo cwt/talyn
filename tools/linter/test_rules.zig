@@ -18,6 +18,7 @@ const method_flags_missing_keywords = @import("rules/method_flags_missing_keywor
 const stale_cancel_bulk = @import("rules/stale_cancel_bulk.zig");
 const clear_before_python = @import("rules/clear_before_python.zig");
 const timer_io_mixing = @import("rules/timer_io_mixing.zig");
+const no_builtin_mode_in_src = @import("rules/no_builtin_mode_in_src.zig");
 
 fn checkSnippet(
     gpa: std.mem.Allocator,
@@ -343,4 +344,33 @@ test "TALYN-018: timer ID mixed into task_ids list" {
         \\}
     , timer_io_mixing.check);
     try std.testing.expectEqual(@as(usize, 0), diags_ok);
+}
+
+test "TALYN-019: no builtin.mode in src/" {
+    // Should flag: direct reference to builtin.mode in src/
+    const diags_bad = try checkSnippet(std.testing.allocator, "src/loop/dns/main.zig",
+        \\const builtin = @import("builtin");
+        \\fn isDebug() bool {
+        \\    return builtin.mode == .Debug;
+        \\}
+    , no_builtin_mode_in_src.check);
+    try std.testing.expectEqual(@as(usize, 1), diags_bad);
+
+    // Should NOT flag: use of utils.is_debug in src/
+    const diags_ok = try checkSnippet(std.testing.allocator, "src/loop/dns/main.zig",
+        \\const utils = @import("utils");
+        \\fn isDebug() bool {
+        \\    return utils.is_debug;
+        \\}
+    , no_builtin_mode_in_src.check);
+    try std.testing.expectEqual(@as(usize, 0), diags_ok);
+
+    // Should NOT flag: files outside of src/ (e.g. tools/ or build.zig)
+    const diags_tools = try checkSnippet(std.testing.allocator, "tools/linter/diagnostic.zig",
+        \\const builtin = @import("builtin");
+        \\fn isDebug() bool {
+        \\    return builtin.mode == .Debug;
+        \\}
+    , no_builtin_mode_in_src.check);
+    try std.testing.expectEqual(@as(usize, 0), diags_tools);
 }

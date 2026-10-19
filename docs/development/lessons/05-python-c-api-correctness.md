@@ -86,5 +86,21 @@ In `_execute_task_throw`, `PyContext_Enter` was called before `PyObject_GetAttrS
 | `Py_IncRef` / `Py_DecRef` | No stealing |
 | `PyObject_GetAttrString` | Returns new reference |
 | `PyObject_Call` | Returns new reference |
-| `PyLong_FromLong` | Returns new reference or NULL |
 | `py_newref` (talyn wrapper) | Returns new reference |
+
+---
+
+### Reference Stealing & Exception Propagation
+
+**Lesson 104 — `PyErr_SetRaisedException` Steals Reference: Guard Against Scope `defer py_decref`**
+When propagating an extracted exception using `PyErr_SetRaisedException(exc)`, remember that `PyErr_SetRaisedException` steals ownership of the reference.
+- **Bug (BUG-346):** Code extracted `exc = PyErr_GetRaisedException()` and registered `defer python_c.py_decref(exc)`. When handling fatal exceptions (`KeyboardInterrupt`), it invoked `PyErr_SetRaisedException(exc)` without a new reference. `SetRaisedException` stole `exc`, and upon function return the scope's `defer` released it, creating an immediate dangling pointer on CPython's thread state.
+- **Fix:** Pass a newly acquired reference: `python_c.PyErr_SetRaisedException(python_c.py_newref(exc))`.
+- **Lesson:** Whenever calling an API that steals a reference (`PyErr_SetRaisedException`, `PyTuple_SetItem`, `PyList_SetItem`), check whether the pointer has an active `defer py_decref` in the same scope. If so, you MUST pass `py_newref(obj)` so both the stolen transfer and the local scope cleanup own distinct reference increments.
+
+**Lesson 105 — Re-Entrant Code Execution in `PyObject_RichCompareBool` and `py_xdecref`**
+Native collections must assume arbitrary Python re-entrancy when comparing or releasing Python objects.
+- **Bug (BUG-370):** In `future.remove_done_callback`, code looped over `for (self.callbacks_queue.items) |*callback|` and compared callbacks using `PyObject_RichCompareBool(candidate, target, Py_EQ)`. User-defined classes can implement custom `__eq__` or `__del__` methods that call `future.add_done_callback()`, causing `callbacks_queue` to reallocate while slice pointers were held, leading to use-after-free and memory corruption.
+- **Fix:** Switched to index-based iteration (`while (i < len)`), held a temporary `py_incref` on the candidate object, and re-verified container bounds and `!self.released` after the comparison call.
+- **Lesson:** `PyObject_RichCompareBool` (`__eq__`) and `py_decref` / `py_xdecref` (`__del__`) run arbitrary Python bytecode. Never execute them while holding pointers into dynamic arrays (`ArrayList.items`). Always iterate by index, safeguard candidate lifetimes with temporary references, and re-check data structure state after returning from Python space.
+

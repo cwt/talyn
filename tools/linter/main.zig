@@ -20,6 +20,7 @@ const sqe_pointer_lifetime = @import("rules/sqe_pointer_lifetime.zig");
 const stale_cancel_bulk = @import("rules/stale_cancel_bulk.zig");
 const clear_before_python = @import("rules/clear_before_python.zig");
 const timer_io_mixing = @import("rules/timer_io_mixing.zig");
+const no_builtin_mode_in_src = @import("rules/no_builtin_mode_in_src.zig");
 
 fn parseAst(gpa: std.mem.Allocator, source: [:0]const u8) !std.zig.Ast {
     if (@hasDecl(std.zig.Ast, "ParseOptions")) {
@@ -96,6 +97,7 @@ pub fn main(init: std.process.Init) !void {
             try stale_cancel_bulk.check(&ast, full_path, arena, &diagnostics);
             try clear_before_python.check(&ast, full_path, arena, &diagnostics);
             try timer_io_mixing.check(&ast, full_path, arena, &diagnostics);
+            try no_builtin_mode_in_src.check(&ast, full_path, arena, &diagnostics);
         }
     } else |err| {
         try w.print("Failed to open 'src' directory: {t}\n", .{err});

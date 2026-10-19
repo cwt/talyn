@@ -94,3 +94,14 @@ Type specifications/descriptors (`loop_spec`, `datagram_spec`, `stream_spec`) we
 `std.fmt.allocPrint` with format string `"Talyn.Task_{x:0>16}\x00"` produced a `[]u8` slice whose length included the null terminator. `PyUnicode_FromStringAndSize(ptr, len)` then created a Python string with an embedded NUL byte.
 - **Fix:** Removed the `\x00` from the format string. `PyUnicode_FromStringAndSize` takes explicit length — a null terminator is unnecessary and harmful.
 - **Lesson:** C strings use a null terminator to mark the end. Length-based strings (Python's `PyUnicode_FromStringAndSize`, Rust's `&str`, Zig's `[]u8`) use an explicit length. Mixing them causes embedded NUL bytes (C string + length API) or missing terminators (length string + C API). Always know which API you're using.
+
+---
+
+### io_uring Callback Lifecycle & Defer Disciplines
+
+**Lesson 106 — Multi-Shot io_uring Callbacks vs Unconditional `defer cleanup`**
+Unconditional cleanup defers (`defer cleanup(state)`) are valid only for single-shot completions.
+- **Bug (BUG-356):** Agents refactored socket completion callbacks by mechanically replacing error-flag cleanup with unconditional `defer cleanup_sendall(sd)`. In `sock_sendall_callback` (which streams data across multiple SQEs when partial writes occur), the unconditional defer deallocated `sd` and its buffer while the remaining slice had just been re-queued into the ring, resulting in a use-after-free in kernel space on the next SQE execution.
+- **Fix:** Used a re-queue latch: `var requeued = false; defer if (!requeued) cleanup_sendall(sd);`. Terminal exit paths (complete drain, errors, cancellation) clean up, while partial-write resubmissions set `requeued = true` to preserve state for the in-flight operation.
+- **Lesson:** Before converting cleanup logic to an unconditional `defer`, verify whether the callback is single-shot or multi-shot. Any completion callback that re-submits asynchronous operations must guard cleanup so intermediate progress keeps backing structures alive until the final completion event.
+

@@ -14,7 +14,7 @@ timestamp: "2026-08-27T00:00:00Z"
 This is the master index for all lessons learned during Talyn development (originally branched from Leviathan).
 Lessons have been grouped by topic for maximum readability. Each section links to a dedicated file.
 
-> **112 lessons** documented across **11 topic areas**.
+> **115 lessons** documented across **11 topic areas**.
 
 ---
 
@@ -84,9 +84,9 @@ For historical references to lesson numbers in commit messages or bug reports:
 | 2, 5, 8, 10, 12, 19, 20, 47, 56, 57, 82, 84, 85, 86, 104 | [Event Loop Lifecycle](03-event-loop-lifecycle.md) |
 | 9, 13, 24, 48, 60, 105, 108, 109, 110 | [io_uring & Kernel Interaction](04-io-uring-and-kernel.md) |
 | 111 | [Registered Buffers & MEMLOCK (BUG-117)](23-bug-117-registered-buffer-fallback-2026.md) |
-| 27, 28, 32, 35, 54, 55, 95, 97 | [Python C API Correctness](05-python-c-api-correctness.md) |
+| 27, 28, 32, 35, 54, 55, 95, 97, 104, 105 | [Python C API Correctness](05-python-c-api-correctness.md) |
 | 16, 31, 40, 41, 42, 43, 44, 45, 51, 78, 80, 81, 112 | [Network Protocols & I/O](06-network-protocols-and-io.md) |
 | 23, 53, 72, 83, 94, 100 | [Data Structures & Algorithms](07-data-structures-and-algorithms.md) |
-| 6, 32, 49, 50, 54, 55, 77, 87, 88, 102, 103 | [Zig-Specific Patterns](08-zig-specific-patterns.md) |
+| 6, 32, 49, 50, 54, 55, 77, 87, 88, 102, 103, 106 | [Zig-Specific Patterns](08-zig-specific-patterns.md) |
 | 29, 33, 34, 58, 91, 92, 96 | [Security & Input Validation](09-security-and-input-validation.md) |
 | 57, 75, 76, 79, 82, 85, 86, 89, 90, 93, 97, 98, 101 | [Defensive Programming & Code Quality](10-defensive-programming-and-code-quality.md) |

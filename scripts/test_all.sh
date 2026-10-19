@@ -25,6 +25,8 @@ OPTIMIZE_MODE="Debug"
 SELECTED_PYTHONS="3.13 3.14 3.13t 3.14t"
 VERBOSE=false
 NO_BUILD=false
+ZIG16="${ZIG16:-}"
+ZIG17="${ZIG17:-}"
 for arg in "$@"; do
     case "$arg" in
         --starburst|--releasefast)
@@ -43,6 +45,12 @@ for arg in "$@"; do
         --verbose)
             VERBOSE=true
             STDERR_TARGET="/dev/stderr"
+            ;;
+        --zig16=*)
+            ZIG16="${arg#--zig16=}"
+            ;;
+        --zig17=*)
+            ZIG17="${arg#--zig17=}"
             ;;
         --python=*)
             raw="${arg#--python=}"
@@ -73,6 +81,8 @@ Options:
   --safe                Build with ReleaseSafe
   --no-build            Skip Zig compilation; use prebuilt talyn_zig*.so files
   --verbose             Show Zig compiler output on build/test failures
+  --zig16=PATH          Path to Zig 0.16.x executable (or set ZIG16 env var)
+  --zig17=PATH          Path to Zig 0.17.x executable (or set ZIG17 env var)
   -h, --help            Show this help
 EOF
             exit 0
@@ -91,7 +101,7 @@ ensure_test_cert() {
 }
 
 clean() {
-    rm -rf zig-out zig-cache .zig-cache .pytest_cache 2>/dev/null || true
+    rm -rf zig-out zig-cache .zig-cache .zig-cache16 .zig-cache17 .pytest_cache 2>/dev/null || true
     if [ "$NO_BUILD" != true ]; then
         rm -f talyn/talyn_zig*.so talyn/talyn_zig*.pyd 2>/dev/null || true
     fi
@@ -272,7 +282,7 @@ for ver in $SELECTED_PYTHONS; do
         printf "${YELLOW}[%s]${NC} Building...\n" "$py"
 
         # Clean zig build artifacts between variants (different headers/libs)
-        rm -rf zig-out zig-cache .zig-cache .pytest_cache 2>/dev/null || true
+        rm -rf zig-out zig-cache .zig-cache .zig-cache16 .zig-cache17 .pytest_cache 2>/dev/null || true
         find . -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
         find . -name '*.pyc' -delete 2>/dev/null || true
 
@@ -322,37 +332,130 @@ done
 if [ "$NO_BUILD" = true ]; then
     printf "${YELLOW}[zig]${NC} Skipping zig unit tests (--no-build)\n"
 else
-REF_INC="$(get_python_include python3.13)"
-REF_LIB="$(get_python_lib python3.13)"
-ZIG_OPTS="-Doptimize=$OPTIMIZE_MODE -Dpython-include-dir=$REF_INC -Dpython-lib-dir=$(dirname "$REF_LIB") -Dpython-lib=$REF_LIB"
+    REF_INC="$(get_python_include python3.13)"
+    REF_LIB="$(get_python_lib python3.13)"
+    ZIG_OPTS="-Doptimize=$OPTIMIZE_MODE -Dpython-include-dir=$REF_INC -Dpython-lib-dir=$(dirname "$REF_LIB") -Dpython-lib=$REF_LIB"
 
-printf "${YELLOW}[zig]${NC} Running zig unit tests...\n"
-# `zig build test` prints a cosmetic "failed command:" line for the spawned
-# test-binary worker even on success; filter it so the result is unambiguous.
-# On success we also run the compiled test binary directly to surface its
-# clear "All N tests passed." summary (the test-runner wrapper suppresses it).
-ZIG_TEST_LOG="$(mktemp)"
-if $VERBOSE; then
-    zig build test $ZIG_OPTS 2>&1 | grep -v 'failed command:' | tee "$ZIG_TEST_LOG"
-    rc=${PIPESTATUS[0]}
-else
-    zig build test $ZIG_OPTS >"$ZIG_TEST_LOG" 2>&1
-    rc=$?
-fi
-if [ "$rc" -eq 0 ]; then
-    ZIG_BIN="$(ls -t .zig-cache/o/*/talyn 2>/dev/null | head -n1)"
-    if [ -n "$ZIG_BIN" ]; then
-        SUMMARY="$("$ZIG_BIN" 2>&1 | grep -E "All .* tests passed" | tail -n1)"
-        if [ -n "$SUMMARY" ]; then
-            printf "   %s\n" "$SUMMARY"
+    # Multi-candidate compiler discovery
+    ZIG_016_BIN=""
+    ZIG_016_VER=""
+    ZIG_017_BIN=""
+    ZIG_017_VER=""
+
+    check_zig_candidate() {
+        local cand="$1"
+        [ -z "$cand" ] && return
+        if [ "${cand#/}" = "$cand" ]; then
+            cand="$(command -v "$cand" 2>/dev/null || true)"
+        fi
+        [ -z "$cand" ] || [ ! -x "$cand" ] && return
+
+        local ver
+        ver="$("$cand" version 2>/dev/null || true)"
+        case "$ver" in
+            0.16.*)
+                if [ -z "$ZIG_016_BIN" ]; then
+                    ZIG_016_BIN="$cand"
+                    ZIG_016_VER="$ver"
+                fi
+                ;;
+            0.17.*)
+                if [ -z "$ZIG_017_BIN" ]; then
+                    ZIG_017_BIN="$cand"
+                    ZIG_017_VER="$ver"
+                fi
+                ;;
+        esac
+    }
+
+    # 1. User-specified CLI flag or environment variables
+    check_zig_candidate "$ZIG16"
+    check_zig_candidate "$ZIG17"
+
+    # 2. PATH commands (default zig and versioned names)
+    check_zig_candidate "zig"
+    check_zig_candidate "zig-0.16.0"
+    check_zig_candidate "zig-0.16"
+    check_zig_candidate "zig-0.17.0"
+    check_zig_candidate "zig-0.17"
+
+    # 3. Well-known installation directories
+    for p in \
+        /opt/zig/0.16.0/zig /opt/zig/0.16/zig \
+        /opt/zig/0.17.0/zig /opt/zig/0.17/zig \
+        /usr/local/zig/0.16.0/zig /usr/local/zig/0.17.0/zig \
+        "$HOME/.local/zig/0.16.0/zig" "$HOME/.local/zig/0.17.0/zig" \
+        /opt/zig/zig; do
+        check_zig_candidate "$p"
+    done
+
+    run_zig_unit_tests() {
+        local zig_bin="$1"
+        local label="$2"
+        local cache_dir="$3"
+        local extra_flags=""
+        if [ -n "$cache_dir" ]; then
+            extra_flags="--cache-dir $cache_dir"
+        fi
+
+        printf "${YELLOW}[%s]${NC} Running zig unit tests (%s)...\n" "$label" "$("$zig_bin" version 2>/dev/null || echo "unknown")"
+        local test_log
+        test_log="$(mktemp)"
+        local rc=0
+        if $VERBOSE; then
+            "$zig_bin" build test $extra_flags $ZIG_OPTS 2>&1 | grep -v 'failed command:' | tee "$test_log"
+            rc=${PIPESTATUS[0]}
+        else
+            "$zig_bin" build test $extra_flags $ZIG_OPTS >"$test_log" 2>&1
+            rc=$?
+        fi
+
+        if [ "$rc" -eq 0 ]; then
+            local search_dir="${cache_dir:-.zig-cache}/o"
+            local zig_bin_artifact
+            zig_bin_artifact="$(ls -t "$search_dir"/*/talyn 2>/dev/null | head -n1 || true)"
+            if [ -n "$zig_bin_artifact" ]; then
+                local summary
+                summary="$("$zig_bin_artifact" 2>&1 | grep -E "All .* tests passed" | tail -n1 || true)"
+                if [ -n "$summary" ]; then
+                    printf "   %s\n" "$summary"
+                fi
+            fi
+            printf "${GREEN}[%s] PASS${NC}\n" "$label"
+        else
+            printf "${RED}[%s] FAIL${NC}\n" "$label"
+            if ! $VERBOSE; then
+                tail -n 25 "$test_log"
+            fi
+            FAIL=$((FAIL + 1))
+        fi
+        rm -f "$test_log"
+    }
+
+    ran_any=false
+
+    if [ -n "$ZIG_016_BIN" ]; then
+        run_zig_unit_tests "$ZIG_016_BIN" "zig-0.16" ".zig-cache16"
+        ran_any=true
+    else
+        printf "${YELLOW}[zig-0.16]${NC} SKIP (Zig 0.16.x compiler not found; install or set ZIG16)\n"
+    fi
+
+    if [ -n "$ZIG_017_BIN" ]; then
+        run_zig_unit_tests "$ZIG_017_BIN" "zig-0.17" ".zig-cache17"
+        ran_any=true
+    else
+        printf "${YELLOW}[zig-0.17]${NC} SKIP (Zig 0.17.x compiler not found; install or set ZIG17)\n"
+    fi
+
+    if [ "$ran_any" = false ]; then
+        if command -v zig >/dev/null 2>&1; then
+            run_zig_unit_tests "zig" "zig" ""
+        else
+            printf "${RED}[zig]${NC} FAIL (No zig compiler found in PATH)\n"
+            FAIL=$((FAIL + 1))
         fi
     fi
-    printf "${GREEN}[zig] PASS${NC}\n"
-else
-    printf "${RED}[zig] FAIL${NC}\n"
-    FAIL=$((FAIL + 1))
-fi
-rm -f "$ZIG_TEST_LOG"
 fi
 
 
