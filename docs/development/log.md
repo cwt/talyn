@@ -11,6 +11,19 @@ timestamp: "2026-10-07T00:00:00Z"
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
 
+## [2026-10-19] — v0.10.0 Release: Zero Open Bugs & Dual-Toolchain Stability (BUG-337..BUG-396)
+
+This release drives the bug tracker to **zero open bugs** (395 total, 382 Fixed, 13 False Positive) on top of dual-toolchain support, resolving 60 audit findings (BUG-337 through BUG-396) across I/O cancellation, DNS, Future/Task state machines, socket/transport lifecycles, GC traversal, and Python API compliance:
+
+- **I/O & io_uring (BUG-337, BUG-356, BUG-363, BUG-364, BUG-383)**: `sqe.prep_cancel_fd` in `Cancel.perform_by_fd`; dispatch routing through the loop instead of aborting `run_forever`; `BlockingTasksSet.free()` accounting; `ring.fd >= 0` guards.
+- **DNS (BUG-338, BUG-354, BUG-355, BUG-357, BUG-358, BUG-365, BUG-380, BUG-384)**: no spurious `Soon` scheduling on sync error; creation-state deinit; future resolution on DNS failure/cancel; `dns_timeout` preservation; cache records on loop GPA; `Record.append_callback` guard.
+- **Future / Task (BUG-339–341, BUG-369–374, BUG-371, BUG-372)**: incref-before-decref; done-callback dispatch guarded against closed loop; `exceptions_queue` cleanup; `Task.cancel/uncancel/cancelling` state machine; SystemExit/KeyboardInterrupt propagation; Py_None leak fixes.
+- **Socket / Transport (BUG-342–344, BUG-350–353, BUG-359–361, BUG-367, BUG-375, BUG-378, BUG-379)**: fd double-close prevention; datagram sentinels; kwargs ref transfer; owned-result drop; sockaddr zeroing; ValueError instead of panic on untrusted ints; `DatagramTransport.close` dispatches `connection_lost`; SSL data-loss fixes; WriteTransport flow-control.
+- **Lifecycle / GC (BUG-345–349, BUG-366, BUG-368, BUG-381, BUG-382, BUG-385–387, BUG-391)**: Handle executed-vs-cancelled state; FDWatcher ref/exception handling; HookHandle/PathWatcherHandle UAF after close; loop teardown under mutex; `tp_clear` on GC types; pidfd close on all exit paths; BTree child-shift duplicate pointer.
+- **Python API / Compliance (BUG-376, BUG-377, BUG-388–396)**: `srv.set_server_ref` wiring; `writelines` exception handling; `get_extra_info` positional default; `METH_KEYWORDS` registrations; `loop.py`/`runner.py`/`server.py` API fixes; dead-code removal; AST linter rule TALYN-019.
+- **Version Bump**: Bumped version to **0.10.0** in `pyproject.toml`, `build.zig.zon`, and AST linter banner.
+- **Validation**: 82/82 Zig unit tests on both Zig 0.16.0 and 0.17.0; 0 linter violations; 478 passed / 1 skipped in `pytest tests/`.
+
 ## [2026-10-07] — Dual Zig 0.16.0 / 0.17.0 Toolchain Support
 
 Enables dual-toolchain compatibility for Talyn so that the entire project builds, lints, and passes all test suites on both **Zig 0.16.0** and **Zig 0.17.0** from a single source tree without version forks or runtime overhead:

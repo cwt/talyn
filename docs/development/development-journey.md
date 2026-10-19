@@ -35,6 +35,12 @@ Rather than maintaining separate version forks, Talyn adopted a portable common-
 
 ---
 
+## v0.10.0 — Zero Open Bugs & Dual-Toolchain Stability (BUG-337..BUG-396)
+
+**v0.10.0** is the stability milestone release: a deep audit pass (BUG-337 through BUG-396) drove the bug tracker to **zero open bugs** (395 total, 382 Fixed, 13 False Positive), on top of the dual-toolchain (Zig 0.16.0 + 0.17.0) support landed earlier in the cycle. The release resolves 60 new findings across I/O and io_uring cancellation, DNS resolution and caching, Future/Task state machines, socket and transport lifecycles, GC traversal, Python API compliance, and dead-code removal, with regression coverage added in `tests/test_server_and_endpoint_safety.py` and `tests/test_api_compliance_and_cleanup.py`. All 82 Zig unit tests pass on both toolchains (0 linter violations), and the Python suite passes (478 passed, 1 skipped).
+
+---
+
 ## v0.9.12 — BUG-336-Class Sweep: Linter Rules + Ten Teardown Fixes
 
 **v0.9.12** extrapolates the BUG-336 stale-cancel pattern — cancelling an already-completed task hits a freed `BlockingTask` slot (raw pointer IDs, no generation) that synchronous Python may already have reused, killing the new occupant — across the codebase. The pattern is now encoded as three AST linter rules (**TALYN-016** `STALE_CANCEL_BULK`, **TALYN-017** `CLEAR_BEFORE_PYTHON`, **TALYN-018** `TIMER_IO_MIXING`), and every flagged site plus four deeper residuals from the same audit is fixed with the BUG-336 template (release-before-Python, cancel-only-if-live): streamserver accept, subprocess pidfd wait, datagram read arm, inotify wait, signalfd read, and the child watcher (which needed a `completed` flag so teardown neither cancels stale nor destroys the executing handler), followed by Handle/TimerHandle invalidation, one-CancelIO-per-generation in read/write close paths, `MultiConnectState` abort/empty-list/`timer_scheduled` residuals, and DNS cancel-flush-before-dispatch against the fd-number variant. Along the way the ReleaseFast suite caught a double-free the Debug build hid (framework `cleanup_read()` runs on error returns), confirming the project verifies on ReleaseFast only.
