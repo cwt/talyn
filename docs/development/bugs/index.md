@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 365 |
-| Open | 17 |
+| Fixed | 369 |
+| Open | 13 |
 | False Positive | 13 |
 | **Total** | **395** |
 
@@ -416,12 +416,12 @@ Sorted by bug number. See individual bug files for details.
 | [378](378.md) | `StreamTransport` lifecycle bugs: `close_transports` omits `transport.is_closing = true` and schedules `connection_lost` before write buffer drains, while `close()` + `abort()` invokes `protocol.connection_lost` twice | High | Fixed |
 | [379](379.md) | `WriteTransport` flow-control and `write_eof` bugs: `writing_low_water_mark` ignored until buffer hits 0, `write_eof()` silently dropped when `buffer_size > 0`, and `set_write_buffer_limits` rejects `None` and leaks positional refs | High | Fixed |
 | [380](380.md) | `Record.append_callback` unconditionally accesses `self.state.pending`, panicking when a second DNS lookup hits an existing `.ptr`, `.resolved`, or `.none` cache record | Medium-High | Open |
-| [381](381.md) | `CallbackManager` bugs: `release_dynamic_ring_buffer` calls `consume()` after `func()` and skips `cleanup` on error; `execute_*` passes un-incref'd `mod`/`cb` when `debug == false`; `DynamicRingBuffer.executed` is non-atomic | Medium-High | Open |
-| [382](382.md) | `UnixSignals` bugs: `unlink`/`deinit` install no-op `default_signal_handler` instead of `SIG_DFL` (breaking `SIGINT`/Ctrl+C after `loop.close()`), `@as(u6, @intCast(sig))` panics on `sig == 64` or short read, `Soon.dispatch` failure leaks `handle` ref, and `deinit` skips `CancelIO` | Medium-High | Open |
-| [383](383.md) | Missing `ring.fd >= 0` guards in `IO.deinit()`, `flush_pending_sqes()`, and `ensure_ring_for_current_thread()` (Mandate #6), lost fixed files on thread handoff, and early `self.index` release-store in `BlockingTasksSet.push()` (Mandate #5) | Medium-High | Open |
+| [381](381.md) | `CallbackManager` bugs: `release_dynamic_ring_buffer` calls `consume()` after `func()` and skips `cleanup` on error; `execute_*` passes un-incref'd `mod`/`cb` when `debug == false`; `DynamicRingBuffer.executed` is non-atomic | Medium-High | Fixed |
+| [382](382.md) | `UnixSignals` bugs: `unlink`/`deinit` install no-op `default_signal_handler` instead of `SIG_DFL` (breaking `SIGINT`/Ctrl+C after `loop.close()`), `@as(u6, @intCast(sig))` panics on `sig == 64` or short read, `Soon.dispatch` failure leaks `handle` ref, and `deinit` skips `CancelIO` | Medium-High | Fixed |
+| [383](383.md) | Missing `ring.fd >= 0` guards in `IO.deinit()`, `flush_pending_sqes()`, and `ensure_ring_for_current_thread()` (Mandate #6), lost fixed files on thread handoff, and early `self.index` release-store in `BlockingTasksSet.push()` (Mandate #5) | Medium-High | Fixed |
 | [384](384.md) | Multi-server DNS premature failure on negative responses (`SERVFAIL`/`NXDOMAIN`/`NODATA`), dual-stack `A`+`AAAA` first-packet race, and missing bare hostname in `get_hostname_array` for dotless names | Medium-High | Open |
 | [385](385.md) | `ControlData.traverse` omits `v.data.traverse()` on pending DNS user callbacks, and multiple IO callback state structs lack GC `traverse` wiring | Medium-High | Open |
-| [386](386.md) | Unchecked `.?` on `contextvars` and `py_callback` in `Handle` after `handle_clear` (Mandate #4), repeated `__init__` memory/ref leaks in `Loop`/`Future`/`Task`/`Handle`/`TimerHandle`, and stale `blocking_task_id` reuse window in `TimerHandle` | Medium-High | Open |
+| [386](386.md) | Unchecked `.?` on `contextvars` and `py_callback` in `Handle` after `handle_clear` (Mandate #4), repeated `__init__` memory/ref leaks in `Loop`/`Future`/`Task`/`Handle`/`TimerHandle`, and stale `blocking_task_id` reuse window in `TimerHandle` | Medium-High | Fixed |
 | [387](387.md) | `FSWatcher` leaks `callback` reference and `wd` on `add_watch` error, disarms permanently on `on_inotify_event` error, and performs per-event `dupe` + $O(W^2)$ scan | Medium | Open |
 | [388](388.md) | `StreamTransport.get_extra_info` ignores positional `default` argument (`transport.get_extra_info('unknown', 'fallback')` returns `None`) | Medium | Open |
 | [389](389.md) | Python C-API error handling bugs: `PyObject_IsTrue(...) != 0` treating `-1` as `true`, returning `null` without setting Python exception, `setup_asyncgen_hooks` partial failure leak, and `z_loop_create_task` passing `name` to custom `task_factory` | Medium | Open |

@@ -220,6 +220,21 @@ inline fn z_loop_init(self: *LoopObject, args: ?PyObject, kwargs: ?PyObject) !c_
         return error.PythonError;
     }
 
+    const loop_data = utils.get_data_ptr(Loop, self);
+    if (loop_data.initialized) {
+        python_c.raise_python_runtime_error("Event loop is already initialized\x00");
+        return error.PythonError;
+    }
+
+    if (self.exception_handler) |eh| {
+        python_c.py_decref(eh);
+        self.exception_handler = null;
+    }
+    if (self.asyncio_tasks_set) |ts| {
+        python_c.py_decref(ts);
+        self.asyncio_tasks_set = null;
+    }
+
     self.exception_handler = python_c.py_newref(exception_handler.?);
     errdefer {
         python_c.py_decref(self.exception_handler.?);
@@ -227,7 +242,6 @@ inline fn z_loop_init(self: *LoopObject, args: ?PyObject, kwargs: ?PyObject) !c_
     }
 
     const allocator = utils.gpa.allocator();
-    const loop_data = utils.get_data_ptr(Loop, self);
     try loop_data.init(allocator, @intCast(ready_tasks_queue_capacity));
 
     self.asyncio_tasks_set = python_c.PyObject_GetAttrString(@ptrCast(self), "_asyncio_tasks\x00");

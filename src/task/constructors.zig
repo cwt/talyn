@@ -205,6 +205,11 @@ inline fn z_task_init(self: *PythonTaskObject, args: ?PyObject, kwargs: ?PyObjec
         return error.PythonError;
     }
 
+    if (self.coro != null) {
+        python_c.raise_python_runtime_error("Task is already initialized\x00");
+        return error.PythonError;
+    }
+
     const talyn_loop: *LoopObject = @ptrCast(py_loop.?);
     if (!python_c.type_check(@ptrCast(talyn_loop), Loop.Python.LoopType)) {
         python_c.raise_python_type_error("Invalid asyncio event loop. Only Talyn's event loops are allowed\x00");

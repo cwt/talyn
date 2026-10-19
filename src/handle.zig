@@ -41,6 +41,7 @@ pub fn callback_for_python_generic_callbacks(data: *const CallbackManager.Callba
     if (thread_safe) {
         if (data.cancelled()) {
             _ = @cmpxchgStrong(u8, &handle.state, STATE_PENDING, STATE_CANCELLED, .acq_rel, .acquire);
+            @atomicStore(usize, &handle.blocking_task_id, 0, .release);
             python_c.py_decref(@ptrCast(handle));
             return;
         }
@@ -50,6 +51,7 @@ pub fn callback_for_python_generic_callbacks(data: *const CallbackManager.Callba
         // If fast_handle_cancel won earlier, state is STATE_CANCELLED and CAS fails.
         const cmpxchg = @cmpxchgStrong(u8, &handle.state, STATE_PENDING, STATE_EXECUTED, .acq_rel, .acquire);
         if (cmpxchg != null) {
+            @atomicStore(usize, &handle.blocking_task_id, 0, .release);
             python_c.py_decref(@ptrCast(handle));
             return;
         }
@@ -59,6 +61,7 @@ pub fn callback_for_python_generic_callbacks(data: *const CallbackManager.Callba
         @atomicStore(usize, &handle.blocking_task_id, 0, .release);
     } else {
         if (data.cancelled() or handle.state == STATE_CANCELLED) {
+            handle.blocking_task_id = 0;
             python_c.py_decref(@ptrCast(handle));
             return;
         }
@@ -67,7 +70,10 @@ pub fn callback_for_python_generic_callbacks(data: *const CallbackManager.Callba
         handle.blocking_task_id = 0;
     }
 
-    const py_context = handle.contextvars.?;
+    const py_context = handle.contextvars orelse {
+        python_c.py_decref(@ptrCast(handle));
+        return;
+    };
     if (python_c.PyContext_Enter(py_context) < 0) {
         return error.PythonError;
     }
@@ -78,6 +84,11 @@ pub fn callback_for_python_generic_callbacks(data: *const CallbackManager.Callba
         }
     }
     defer _ = python_c.PyContext_Exit(py_context);
+
+    const py_cb = handle.py_callback orelse {
+        success = true;
+        return;
+    };
 
     var result: ?PyObject = null;
     if (handle.py_callback_args) |args_ptr| {
@@ -93,9 +104,9 @@ pub fn callback_for_python_generic_callbacks(data: *const CallbackManager.Callba
             }
         }
 
-        result = python_c.PyObject_Call(handle.py_callback.?, args_tuple, null);
+        result = python_c.PyObject_Call(py_cb, args_tuple, null);
     } else {
-        result = python_c.PyObject_CallNoArgs(handle.py_callback.?);
+        result = python_c.PyObject_CallNoArgs(py_cb);
     }
 
     if (result) |res| {
@@ -156,7 +167,8 @@ pub fn handle_traverse(self: ?*PythonHandleObject, visit: python_c.visitproc, ar
 }
 
 pub fn handle_clear(self: ?*PythonHandleObject) callconv(.c) c_int {
-    const instance = self.?;
+    const instance = self orelse return 0;
+    instance.state = STATE_CANCELLED;
     python_c.py_decref_and_set_null(&instance.contextvars);
     python_c.py_decref_and_set_null(&instance.py_callback);
 
@@ -202,6 +214,10 @@ inline fn z_handle_init(self: *PythonHandleObject, args: ?PyObject, kwargs: ?PyO
         }
     }
 
+    if (self.contextvars != null) {
+        _ = handle_clear(self);
+    }
+
     self.contextvars = python_c.py_newref(py_context.?);
     self.state = STATE_PENDING;
     self.thread_safe = false;
@@ -214,7 +230,11 @@ fn handle_init(self: ?*PythonHandleObject, args: ?PyObject, kwargs: ?PyObject) c
 }
 
 fn handle_get_context(self: ?*PythonHandleObject, _: ?PyObject) callconv(.c) ?PyObject {
-    return python_c.py_newref(self.?.contextvars.?);
+    const instance = self orelse return python_c.get_py_none();
+    if (instance.contextvars) |ctx| {
+        return python_c.py_newref(ctx);
+    }
+    return python_c.get_py_none();
 }
 
 pub inline fn fast_handle_cancel(self: *PythonHandleObject) !void {

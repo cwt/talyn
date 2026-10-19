@@ -12,12 +12,10 @@ const CallbackManager = @import("callback_manager");
 pub const SIG_DFL: usize = 0;
 pub const SIG_IGN: usize = 1;
 pub const SigHandler = *const fn (i32) callconv(.c) void;
-extern "c" fn signal(sig: i32, handler: SigHandler) callconv(.c) SigHandler;
+extern "c" fn signal(sig: i32, handler: ?SigHandler) callconv(.c) ?SigHandler;
 extern "c" fn siginterrupt(sig: i32, flag: i32) i32;
 
-fn default_signal_handler(_: i32) callconv(.c) void {}
-
-const CallbacksBTree = utils.BTree(u6, CallbackManager.Callback, 3);
+const CallbacksBTree = utils.BTree(u8, CallbackManager.Callback, 3);
 
 callbacks: CallbacksBTree = undefined,
 fd: std.posix.fd_t = -1,
@@ -27,6 +25,7 @@ loop: *Loop = undefined,
 blocking_task_id: usize = 0,
 
 signalfd_info: std.os.linux.signalfd_siginfo = undefined,
+prev_handlers: [65]?SigHandler = @splat(null),
 
 fn dummy_signal_handler(_: i32) callconv(.c) void {
     // std.log.info("Dummy signal handler", .{});
@@ -55,13 +54,19 @@ fn signal_handler(data: *const CallbackManager.CallbackData) !void {
         return error.PythonError;
     }
 
-    const sig = loop.unix_signals.signalfd_info.signo;
+    if (data.io_uring_res() < @sizeOf(std.os.linux.signalfd_siginfo)) {
+        return;
+    }
+
+    const sig_raw = loop.unix_signals.signalfd_info.signo;
+    if (sig_raw < 1 or sig_raw > 64) return;
+    const sig: u8 = @intCast(sig_raw);
 
     // BUG-37: If the callback for this signal was removed (via `unlink`)
     // between the signal being delivered and the io_uring read completing,
     // `get_value_ptr` returns null. Don't panic — just re-queue the read
     // (so we keep reading from signalfd) and skip the dispatch.
-    const callback_ptr = loop.unix_signals.callbacks.get_value_ptr(@as(u6, @intCast(sig)), null) orelse {
+    const callback_ptr = loop.unix_signals.callbacks.get_value_ptr(sig, null) orelse {
         const buffer_to_read: std.os.linux.IoUring.ReadBuffer = .{
             .buffer = @as([*]u8, @ptrCast(&loop.unix_signals.signalfd_info))[0..@sizeOf(std.os.linux.signalfd_siginfo)],
         };
@@ -88,10 +93,13 @@ fn signal_handler(data: *const CallbackManager.CallbackData) !void {
     // (such as the default SIGINT handler where user_data is *Loop), user_data
     // is a native Zig pointer and must NOT be increffed with Py_IncRef.
     if (callback_ptr.cleanup != null) {
-        python_c.py_incref(@ptrCast(@alignCast(callback_ptr.data.user_data.?)));
+        const py_handle: *python_c.PyObject = @ptrCast(@alignCast(callback_ptr.data.user_data.?));
+        python_c.py_incref(py_handle);
+        errdefer python_c.py_decref(py_handle);
+        try Loop.Scheduling.Soon.dispatch(loop, callback_ptr);
+    } else {
+        try Loop.Scheduling.Soon.dispatch(loop, callback_ptr);
     }
-
-    try Loop.Scheduling.Soon.dispatch(loop, callback_ptr);
 
     const buffer_to_read: std.os.linux.IoUring.ReadBuffer = .{
         .buffer = @as([*]u8, @ptrCast(&loop.unix_signals.signalfd_info))[0..@sizeOf(std.os.linux.signalfd_siginfo)],
@@ -160,13 +168,21 @@ pub fn link(self: *UnixSignals, sig: std.os.linux.SIG, callback: CallbackManager
     // When the user create a new thread, we need to avoid that python catch the signal.
     // Installed second: glibc's siginterrupt patches the CURRENTLY installed
     // action, so it must run after signal().
-    _ = signal(@as(i32, @intCast(@intFromEnum(sig))), @ptrCast(&dummy_signal_handler));
-    _ = siginterrupt(@as(i32, @intCast(@intFromEnum(sig))), 0);
+    const sig_idx = @intFromEnum(sig);
+    if (sig_idx >= 1 and sig_idx <= 64) {
+        const prev = signal(@as(i32, @intCast(sig_idx)), @ptrCast(&dummy_signal_handler));
+        if (self.prev_handlers[sig_idx] == null) {
+            self.prev_handlers[sig_idx] = prev;
+        }
+    } else {
+        _ = signal(@as(i32, @intCast(sig_idx)), @ptrCast(&dummy_signal_handler));
+    }
+    _ = siginterrupt(@as(i32, @intCast(sig_idx)), 0);
 
     self.fd = try std.posix.signalfd(self.fd, mask, 0);
     try self.enqueue_signal_fd(true);
 
-    var prev_callback = self.callbacks.replace(@intCast(@intFromEnum(sig)), callback);
+    var prev_callback = self.callbacks.replace(@intCast(sig_idx), callback);
     if (prev_callback) |*v| {
         v.data.set_cancelled(true);
         try Loop.Scheduling.Soon.dispatch_nonthreadsafe(self.loop, v);
@@ -176,7 +192,8 @@ pub fn link(self: *UnixSignals, sig: std.os.linux.SIG, callback: CallbackManager
 }
 
 pub fn unlink(self: *UnixSignals, sig: std.os.linux.SIG) !void {
-    var callback_info = self.callbacks.delete(@intCast(@intFromEnum(sig)));
+    const sig_idx = @intFromEnum(sig);
+    var callback_info = self.callbacks.delete(@intCast(sig_idx));
     if (callback_info) |*v| {
         v.data.set_cancelled(true);
         try Loop.Scheduling.Soon.dispatch_guaranteed_nonthreadsafe(self.loop, v);
@@ -191,8 +208,15 @@ pub fn unlink(self: *UnixSignals, sig: std.os.linux.SIG) !void {
     // silently during the teardown window.
     std.posix.sigdelset(&self.mask, sig);
     self.fd = try std.posix.signalfd(self.fd, &self.mask, 0);
-    _ = signal(@as(i32, @intCast(@intFromEnum(sig))), &default_signal_handler);
-    _ = siginterrupt(@as(i32, @intCast(@intFromEnum(sig))), 1);
+
+    const old_handler = if (sig_idx >= 1 and sig_idx <= 64) blk: {
+        const h = self.prev_handlers[sig_idx];
+        self.prev_handlers[sig_idx] = null;
+        break :blk h;
+    } else null;
+
+    _ = signal(@as(i32, @intCast(sig_idx)), old_handler);
+    _ = siginterrupt(@as(i32, @intCast(sig_idx)), 1);
 
     var mask: std.posix.sigset_t = std.posix.sigemptyset();
     std.posix.sigaddset(&mask, sig);
@@ -204,7 +228,13 @@ pub fn init(loop: *Loop) !void {
     const fd = try std.posix.signalfd(-1, &mask, std.os.linux.SFD.CLOEXEC);
     errdefer _ = std.os.linux.close(fd);
 
-    loop.unix_signals = .{ .callbacks = try CallbacksBTree.init(loop.allocator), .fd = fd, .mask = mask, .loop = loop };
+    loop.unix_signals = .{
+        .callbacks = try CallbacksBTree.init(loop.allocator),
+        .fd = fd,
+        .mask = mask,
+        .loop = loop,
+        .prev_handlers = @splat(null),
+    };
     const unix_signals = &loop.unix_signals;
     errdefer unix_signals.deinit();
 
@@ -212,24 +242,42 @@ pub fn init(loop: *Loop) !void {
 }
 
 pub fn deinit(self: *UnixSignals) void {
-    _ = std.os.linux.close(self.fd);
+    if (self.blocking_task_id > 0 and self.loop.io.ring.fd >= 0) {
+        _ = self.loop.io.queue_unlocked(.{ .CancelIO = self.blocking_task_id }) catch |err| std.log.warn("CancelIO failed: {s}", .{@errorName(err)});
+        self.blocking_task_id = 0;
+    }
+
+    if (self.fd >= 0) {
+        _ = std.os.linux.close(self.fd);
+        self.fd = -1;
+    }
     const loop = self.loop;
 
     var mask: std.posix.sigset_t = std.posix.sigemptyset();
 
     while (true) {
-        var sig: u6 = undefined;
+        var sig: u8 = undefined;
         var value = self.callbacks.pop(&sig) orelse break;
-        std.posix.sigaddset(&mask, @as(std.os.linux.SIG, @enumFromInt(sig)));
+        if (sig >= 1 and sig <= 64) {
+            std.posix.sigaddset(&mask, @as(std.os.linux.SIG, @enumFromInt(sig)));
 
-        _ = signal(@as(i32, @intCast(sig)), &default_signal_handler);
+            const old_handler = self.prev_handlers[sig];
+            self.prev_handlers[sig] = null;
+            _ = signal(@as(i32, @intCast(sig)), old_handler);
+        }
         value.data.set_cancelled(true);
         Loop.Scheduling.Soon.dispatch_guaranteed_nonthreadsafe(loop, &value) catch |err| std.log.warn("dispatch failed: {s}", .{@errorName(err)});
     }
 
+    for (1..65) |s| {
+        if (self.prev_handlers[s]) |h| {
+            self.prev_handlers[s] = null;
+            _ = signal(@as(i32, @intCast(s)), h);
+        }
+    }
+
     std.posix.sigprocmask(std.os.linux.SIG.UNBLOCK, &mask, null);
     self.callbacks.deinit() catch |err| std.log.warn("deinit failed: {s}", .{@errorName(err)});
-    self.fd = -1;
 }
 
 pub fn traverse(self: *const UnixSignals, visit: python_c.visitproc, arg: ?*anyopaque) i32 {
@@ -286,10 +334,10 @@ test "BUG-306: link blocks before dummy handler; unlink disarms before unblockin
     const link_dummy = std.mem.find(u8, link_body, "&dummy_signal_handler") orelse return error.TestUnexpectedResult;
     try std.testing.expect(link_block < link_dummy);
 
-    // unlink(): both signalfd re-mask and default-handler restore must
+    // unlink(): both signalfd re-mask and handler restore must
     // precede the SIG.UNBLOCK.
     const unlink_signalfd = std.mem.find(u8, unlink_body, "self.fd = try std.posix.signalfd(self.fd, &self.mask") orelse return error.TestUnexpectedResult;
-    const unlink_default = std.mem.find(u8, unlink_body, "&default_signal_handler") orelse return error.TestUnexpectedResult;
+    const unlink_default = std.mem.find(u8, unlink_body, "old_handler") orelse return error.TestUnexpectedResult;
     const unblock_pos = std.mem.find(u8, unlink_body, "SIG.UNBLOCK") orelse return error.TestUnexpectedResult;
     try std.testing.expect(unlink_signalfd < unblock_pos);
     try std.testing.expect(unlink_default < unblock_pos);

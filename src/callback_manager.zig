@@ -270,7 +270,7 @@ pub const DynamicRingBuffer = struct {
     const Self = @This();
 
     callbacks: []Callback = &.{},
-    executed: []bool = &.{},
+    executed: []std.atomic.Value(bool) = &.{},
     capacity: usize = 0,
     read_idx: usize = 0,
     write_idx: usize = 0,
@@ -280,8 +280,10 @@ pub const DynamicRingBuffer = struct {
         const actual_capacity = ceilPowerOfTwo(capacity);
         self.callbacks = try allocator.alloc(Callback, actual_capacity);
         errdefer allocator.free(self.callbacks);
-        self.executed = try allocator.alloc(bool, actual_capacity);
-        @memset(self.executed, false);
+        self.executed = try allocator.alloc(std.atomic.Value(bool), actual_capacity);
+        for (self.executed) |*e| {
+            e.* = std.atomic.Value(bool).init(false);
+        }
         self.capacity = actual_capacity;
         self.read_idx = 0;
         self.write_idx = 0;
@@ -313,7 +315,7 @@ pub const DynamicRingBuffer = struct {
 
         const new_callbacks = try self.allocator.alloc(Callback, new_cap);
         errdefer self.allocator.free(new_callbacks);
-        const new_executed = try self.allocator.alloc(bool, new_cap);
+        const new_executed = try self.allocator.alloc(std.atomic.Value(bool), new_cap);
         errdefer self.allocator.free(new_executed);
 
         var i: usize = 0;
@@ -325,9 +327,11 @@ pub const DynamicRingBuffer = struct {
         }) {
             const old_idx = idx & mask;
             new_callbacks[i] = self.callbacks[old_idx];
-            new_executed[i] = false;
+            new_executed[i] = std.atomic.Value(bool).init(self.executed[old_idx].load(.acquire));
         }
-        @memset(new_executed[n..new_cap], false);
+        for (new_executed[n..new_cap]) |*e| {
+            e.* = std.atomic.Value(bool).init(false);
+        }
 
         self.allocator.free(self.callbacks);
         self.allocator.free(self.executed);
@@ -346,7 +350,7 @@ pub const DynamicRingBuffer = struct {
 
         const idx = w_idx & (self.capacity - 1);
         self.callbacks[idx] = callback;
-        self.executed[idx] = false;
+        self.executed[idx].store(false, .release);
 
         @atomicStore(usize, &self.write_idx, w_idx + 1, .release);
         return true;
@@ -379,12 +383,14 @@ pub const DynamicRingBuffer = struct {
     pub inline fn consume(self: *Self) void {
         const r_idx = @atomicLoad(usize, &self.read_idx, .acquire);
         const idx = r_idx & (self.capacity - 1);
-        self.executed[idx] = true;
+        self.executed[idx].store(true, .release);
         @atomicStore(usize, &self.read_idx, r_idx + 1, .release);
     }
 
     pub fn reset(self: *Self) void {
-        @memset(self.executed, false);
+        for (self.executed) |*e| {
+            e.store(false, .release);
+        }
         @atomicStore(usize, &self.read_idx, 0, .release);
         @atomicStore(usize, &self.write_idx, 0, .release);
     }
@@ -397,7 +403,7 @@ pub const DynamicRingBuffer = struct {
         var i = r_idx;
         while (i < w_idx) : (i += 1) {
             const idx = i & mask;
-            if (self.executed[idx]) continue;
+            if (self.executed[idx].load(.acquire)) continue;
 
             const callback = &self.callbacks[idx];
             if (callback.data.traverse()) |t| {
@@ -486,7 +492,7 @@ pub fn execute_ring_buffer(comptime N: usize, ring: *RingBuffer(N), comptime exc
             }
 
             const handler = exception_handler orelse return err;
-            handler(err, exception_handler_data, mod, cb) catch |err2| {
+            handler(err, exception_handler_data, if (debug) mod else null, if (debug) cb else null) catch |err2| {
                 return err2;
             };
             continue;
@@ -522,10 +528,16 @@ pub fn release_ring_buffer(
     comptime N: usize,
     ring: *RingBuffer(N),
 ) void {
-    while (ring.next()) |callback| {
-        callback.data.set_cancelled(true);
-        callback.func(&callback.data) catch |err| std.log.err("callback error in release: {s}", .{@errorName(err)});
+    while (ring.next()) |cb_ptr| {
+        var callback = cb_ptr.*;
         ring.consume();
+        callback.data.set_cancelled(true);
+        callback.func(&callback.data) catch |err| {
+            std.log.err("callback error in release: {s}", .{@errorName(err)});
+            if (callback.cleanup) |cleanup| {
+                cleanup(callback.data.user_data);
+            }
+        };
     }
 }
 
@@ -583,7 +595,7 @@ pub fn execute_dynamic_ring_buffer(ring: *DynamicRingBuffer, comptime exception_
             }
 
             const handler = exception_handler orelse return err;
-            handler(err, exception_handler_data, mod, cb) catch |err2| {
+            handler(err, exception_handler_data, if (debug) mod else null, if (debug) cb else null) catch |err2| {
                 return err2;
             };
             continue;
@@ -620,10 +632,16 @@ pub fn execute_dynamic_ring_buffer(ring: *DynamicRingBuffer, comptime exception_
 pub fn release_dynamic_ring_buffer(
     ring: *DynamicRingBuffer,
 ) void {
-    while (ring.next()) |callback| {
-        callback.data.set_cancelled(true);
-        callback.func(&callback.data) catch |err| std.log.err("callback error in release: {s}", .{@errorName(err)});
+    while (ring.next()) |cb_ptr| {
+        var callback = cb_ptr.*;
         ring.consume();
+        callback.data.set_cancelled(true);
+        callback.func(&callback.data) catch |err| {
+            std.log.err("callback error in release: {s}", .{@errorName(err)});
+            if (callback.cleanup) |cleanup| {
+                cleanup(callback.data.user_data);
+            }
+        };
     }
 }
 

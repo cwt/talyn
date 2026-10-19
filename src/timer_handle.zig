@@ -71,6 +71,10 @@ inline fn z_timer_handle_init(self: *PythonTimerHandleObject, args: ?PyObject, k
         return error.PythonError;
     }
 
+    if (self.handle.contextvars != null) {
+        _ = timer_handle_clear(self);
+    }
+
     self.handle.contextvars = python_c.py_newref(py_context.?);
 
     const max_time_secs: f64 = @floatFromInt(std.math.maxInt(std.posix.time_t) - 1_000_000_000);

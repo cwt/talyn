@@ -232,8 +232,9 @@ pub const BlockingTasksSet = struct {
     pub fn push(self: *BlockingTasksSet, operation: BlockingOperation, callback: ?*const CallbackManager.Callback) !*BlockingTask {
         try self.loop.reserve_slots(1);
 
+        const is_bump = self.free_count == 0;
         var slot_idx: u16 = undefined;
-        if (self.free_count > 0) {
+        if (!is_bump) {
             self.free_count -= 1;
             slot_idx = self.free_slots[self.free_count];
         } else {
@@ -247,14 +248,17 @@ pub const BlockingTasksSet = struct {
                 return error.Overflow;
             }
             slot_idx = index;
-            @atomicStore(u16, &self.index, index + 1, .release);
         }
 
         const data_slot = &self.task_data_pool[slot_idx];
 
-        // GC Safety: Initialize data BEFORE incrementing active_tasks
+        // GC Safety (Mandate #5): Initialize data BEFORE advancing self.index or active_tasks
         data_slot.data = if (callback) |v| .{ .callback = v.* } else .none;
         data_slot.operation = operation;
+
+        if (is_bump) {
+            @atomicStore(u16, &self.index, slot_idx + 1, .release);
+        }
 
         self.active_tasks += 1;
 
@@ -702,7 +706,9 @@ pub fn ensure_ring_for_current_thread(self: *IO) !void {
     }
 
     // No work was ever submitted: recreate the ring in this thread.
-    self.ring.deinit();
+    if (self.ring.fd >= 0) {
+        self.ring.deinit();
+    }
     self.ring = try init_ring();
     errdefer self.ring.deinit();
     _ = std.os.linux.fcntl(self.ring.fd, std.posix.F.SETFD, @intCast(std.posix.FD_CLOEXEC));
@@ -716,7 +722,7 @@ pub fn ensure_ring_for_current_thread(self: *IO) !void {
         };
     }
     if (self.fixed_files_enabled) {
-        self.ring.register_files_update(0, self.fixed_file_table[0..1]) catch {
+        self.ring.register_files_update(0, self.fixed_file_table) catch {
             self.fixed_files_enabled = false;
         };
     }
@@ -877,14 +883,17 @@ pub fn deinit(self: *IO) void {
     // thread; when the loop is closed from a different thread, skip the
     // polite unregister — closing the ring releases the registrations anyway.
     if (python_c._c.PyThread_get_thread_ident() == self.ring_owner_tid) {
-        if (self.buffers_registered) {
+        if (self.buffers_registered and self.ring.fd >= 0) {
             self.ring.unregister_buffers() catch |err| std.log.warn("unregister_buffers failed: {s}", .{@errorName(err)});
         }
     }
     self.buffer_pool.deinit(self.busy_sets.allocator);
     @atomicStore([*]u8, &self.buffer_pool.buffer_memory.ptr, @ptrFromInt(0xDEADBEEF), .seq_cst); // HARD-04
 
-    self.ring.deinit();
+    if (self.ring.fd >= 0) {
+        self.ring.deinit();
+        self.ring.fd = -1;
+    }
     self.busy_sets.allocator.free(self.blocking_ready_tasks);
     self.fixed_file_free.deinit(self.busy_sets.allocator);
     self.busy_sets.allocator.free(self.fixed_file_table);
@@ -928,6 +937,7 @@ pub fn get_blocking_tasks_set(self: *IO) !*BlockingTasksSet {
 }
 
 pub fn flush_pending_sqes(self: *IO) !u32 {
+    if (self.ring.fd < 0) return 0;
     const ready = self.ring.sq_ready();
     if (ready == 0) return 0;
     const submitted = try submit_guaranteed(&self.ring);
