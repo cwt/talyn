@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 364 |
-| Open | 18 |
+| Fixed | 365 |
+| Open | 17 |
 | False Positive | 13 |
 | **Total** | **395** |
 
@@ -414,7 +414,7 @@ Sorted by bug number. See individual bug files for details.
 | [376](376.md) | `create_server` and `_create_ssl_server` never wire `srv.server_ref = server`, breaking `Server.wait_closed()` active connection tracking | High | Fixed |
 | [377](377.md) | `transport_write_lines` does not check `PyErr_Occurred()` after `PyIter_Next` returns `null`, returning `Py_None` with a live exception set (unfixed `BUG-298`) | High | Fixed |
 | [378](378.md) | `StreamTransport` lifecycle bugs: `close_transports` omits `transport.is_closing = true` and schedules `connection_lost` before write buffer drains, while `close()` + `abort()` invokes `protocol.connection_lost` twice | High | Fixed |
-| [379](379.md) | `WriteTransport` flow-control and `write_eof` bugs: `writing_low_water_mark` ignored until buffer hits 0, `write_eof()` silently dropped when `buffer_size > 0`, and `set_write_buffer_limits` rejects `None` and leaks positional refs | High | Open |
+| [379](379.md) | `WriteTransport` flow-control and `write_eof` bugs: `writing_low_water_mark` ignored until buffer hits 0, `write_eof()` silently dropped when `buffer_size > 0`, and `set_write_buffer_limits` rejects `None` and leaks positional refs | High | Fixed |
 | [380](380.md) | `Record.append_callback` unconditionally accesses `self.state.pending`, panicking when a second DNS lookup hits an existing `.ptr`, `.resolved`, or `.none` cache record | Medium-High | Open |
 | [381](381.md) | `CallbackManager` bugs: `release_dynamic_ring_buffer` calls `consume()` after `func()` and skips `cleanup` on error; `execute_*` passes un-incref'd `mod`/`cb` when `debug == false`; `DynamicRingBuffer.executed` is non-atomic | Medium-High | Open |
 | [382](382.md) | `UnixSignals` bugs: `unlink`/`deinit` install no-op `default_signal_handler` instead of `SIG_DFL` (breaking `SIGINT`/Ctrl+C after `loop.close()`), `@as(u6, @intCast(sig))` panics on `sig == 64` or short read, `Soon.dispatch` failure leaks `handle` ref, and `deinit` skips `CancelIO` | Medium-High | Open |

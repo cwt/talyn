@@ -44,7 +44,10 @@ pub fn transport_write_eof(self: ?*StreamTransportObject) callconv(.c) ?PyObject
     const instance = self.?;
 
     const write_transport = utils.get_data_ptr2(WriteTransport, "write_transport", instance);
-    if (write_transport.is_closing) {
+    // BUG-379: with a buffered write_eof() still draining, a repeated
+    // write_eof() is a silent no-op (stdlib _eof == True semantics)
+    // instead of raising "Transport is closed".
+    if (write_transport.is_closing and !write_transport.eof_pending) {
         python_c.raise_python_runtime_error("Transport is closed\x00");
         return null;
     }
@@ -77,48 +80,92 @@ pub fn transport_get_write_buffer_limits(self: ?*StreamTransportObject, _: ?PyOb
 
 inline fn z_transport_set_write_buffer_limits(self: *StreamTransportObject, args: []?PyObject, knames: ?PyObject) !PyObject {
     if (args.len > 2) {
-        python_c.raise_python_value_error("Invalid number of arguments\x00");
+        python_c.raise_python_value_error("set_write_buffer_limits() takes at most 2 arguments\x00");
         return error.PythonError;
     }
 
-    var py_high_water_mark: ?PyObject = null;
-    var py_low_water_mark: ?PyObject = null;
+    // BUG-379: merge positionals + kwargs through the CPython-faithful
+    // helper: duplicate positional/kwarg passing raises TypeError like
+    // CPython and the values stay BORROWED, fixing the positional-ref
+    // leak the old py_newref + overwrite dance had (a keyword overwriting
+    // a positional ref, and any parse failure dropping both).
+    var merged: [2]?PyObject = undefined;
+    try python_c.merge_vector_call_args(args, knames, &.{ "high\x00", "low\x00" }, &merged);
 
-    if (args.len >= 1) {
-        py_high_water_mark = python_c.py_newref(args[0].?);
-    }
+    // BUG-379: None means "not specified" (stdlib signature
+    // set_write_buffer_limits(high=None, low=None)); the old code passed
+    // Py_None to PyLong_AsUnsignedLongLong and raised TypeError.
+    var high: ?i64 = null;
+    var low: ?i64 = null;
 
-    if (args.len == 2) {
-        py_low_water_mark = python_c.py_newref(args[1].?);
-    }
-
-    try python_c.parse_vector_call_kwargs(knames, args.ptr + args.len, &.{ "high\x00", "low\x00" }, &.{ &py_high_water_mark, &py_low_water_mark });
-    defer {
-        python_c.py_xdecref(py_high_water_mark);
-        python_c.py_xdecref(py_low_water_mark);
-    }
-
-    var high_water_mark: usize = 64 * 1024;
-    var low_water_mark: usize = 32 * 1024;
-    if (py_high_water_mark) |obj| {
-        const value = python_c.PyLong_AsUnsignedLongLong(obj);
-        if (python_c.PyErr_Occurred() != null) return error.PythonError;
-
-        high_water_mark = @intCast(value);
-        if (high_water_mark < low_water_mark) {
-            low_water_mark = high_water_mark;
+    if (merged[0]) |obj| {
+        if (!python_c.is_none(obj)) {
+            const value = python_c.PyLong_AsLongLong(obj);
+            if (python_c.PyErr_Occurred() != null) return error.PythonError;
+            high = value;
         }
     }
 
-    if (py_low_water_mark) |obj| {
-        const value = python_c.PyLong_AsUnsignedLongLong(obj);
-        if (python_c.PyErr_Occurred() != null) return error.PythonError;
-
-        low_water_mark = @min(high_water_mark, @as(usize, @intCast(value)));
+    if (merged[1]) |obj| {
+        if (!python_c.is_none(obj)) {
+            const value = python_c.PyLong_AsLongLong(obj);
+            if (python_c.PyErr_Occurred() != null) return error.PythonError;
+            low = value;
+        }
     }
 
-    self.writing_high_water_mark = high_water_mark;
-    self.writing_low_water_mark = low_water_mark;
+    // stdlib defaults (Lib/asyncio/transports.py
+    // `_set_write_buffer_limits`): both unspecified -> high = 64 KiB,
+    // then low = high // 4; only low given -> high = 4 * low. The old
+    // code defaulted low to a plain 32 KiB and clamped it into range
+    // instead of validating.
+    if (high == null) {
+        high = if (low) |l| ((l *| 4)) else 64 * 1024;
+    }
+    if (low == null) {
+        low = @divTrunc(high.?, 4);
+    }
+
+    if (!(high.? >= low.? and low.? >= 0)) {
+        const msg = python_c.PyUnicode_FromFormat(
+            "high (%zd) must be >= low (%zd) must be >= 0\x00",
+            high.?,
+            low.?,
+        );
+        if (msg) |m| {
+            defer python_c.py_decref(m);
+            python_c.PyErr_SetObject(python_c.PyExc_ValueError, m);
+            return error.PythonError;
+        }
+        python_c.raise_python_value_error("high must be >= low and low must be >= 0\x00");
+        return error.PythonError;
+    }
+
+    self.writing_high_water_mark = @intCast(high.?);
+    self.writing_low_water_mark = @intCast(low.?);
+
+    // BUG-379: re-evaluate flow control against the new limits, like
+    // stdlib's set_write_buffer_limits() -> _maybe_pause_protocol() (plus
+    // the mirrored resume when the new low-water admits the buffered
+    // size). Both pauses and resumes are mutually exclusive because
+    // validation guarantees low <= high.
+    const write_transport = utils.get_data_ptr2(WriteTransport, "write_transport", self);
+
+    if (self.is_writing and write_transport.buffer_size > self.writing_high_water_mark) {
+        self.is_writing = false;
+        if (self.protocol_pause_writing) |cb| {
+            const ret = python_c.PyObject_CallNoArgs(cb) orelse return error.PythonError;
+            python_c.py_decref(ret);
+        }
+    }
+
+    if (!self.is_writing and write_transport.buffer_size <= self.writing_low_water_mark) {
+        self.is_writing = true;
+        if (self.protocol_resume_writing) |cb| {
+            const ret = python_c.PyObject_CallNoArgs(cb) orelse return error.PythonError;
+            python_c.py_decref(ret);
+        }
+    }
 
     return python_c.get_py_none();
 }
@@ -131,7 +178,11 @@ pub fn transport_write(self: ?*StreamTransportObject, py_buffer: ?PyObject) call
     const instance = self.?;
 
     const write_transport = utils.get_data_ptr2(WriteTransport, "write_transport", instance);
-    if (write_transport.is_closing) {
+    // BUG-379: writes stay valid while a buffered write_eof() has not
+    // flushed yet (stdlib only forbids them once the FIN actually went
+    // out); the old gate also silently dropped these writes when the
+    // buffered EOF marked the transport as closing.
+    if (write_transport.is_closing and !write_transport.eof_pending) {
         return python_c.get_py_none();
     }
 
@@ -139,7 +190,7 @@ pub fn transport_write(self: ?*StreamTransportObject, py_buffer: ?PyObject) call
         return utils.handle_zig_function_error(err, null);
     };
 
-    if (new_buffer_size >= instance.writing_high_water_mark) {
+    if (new_buffer_size > instance.writing_high_water_mark) {
         if (instance.is_writing) {
             instance.is_writing = false;
 
@@ -157,7 +208,9 @@ pub fn transport_write_lines(self: ?*StreamTransportObject, py_buffers: ?PyObjec
     const instance = self.?;
 
     const write_transport = utils.get_data_ptr2(WriteTransport, "write_transport", instance);
-    if (write_transport.is_closing) {
+    // BUG-379: same gate as transport_write — writes stay valid while a
+    // buffered write_eof() is still pending.
+    if (write_transport.is_closing and !write_transport.eof_pending) {
         return python_c.get_py_none();
     }
 
@@ -183,7 +236,7 @@ pub fn transport_write_lines(self: ?*StreamTransportObject, py_buffers: ?PyObjec
         return null;
     }
 
-    if (new_buffer_size >= instance.writing_high_water_mark) {
+    if (new_buffer_size > instance.writing_high_water_mark) {
         if (instance.is_writing) {
             instance.is_writing = false;
 

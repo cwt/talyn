@@ -43,6 +43,10 @@ writev_count: usize = 0,
 is_closing: bool = false,
 closed: bool = false,
 initialized: bool = false,
+// BUG-379: write_eof() requested while buffered writes are still
+// draining. The FIN (.SocketShutdown / SHUT_WR) is submitted at the
+// full-drain completion instead of being silently dropped.
+eof_pending: bool = false,
 // BUG-336: exactly one CancelIO per op generation (mirrors
 // ReadTransport.cancelling). A second cancel after completion +
 // slot-reuse would kill the new occupant.
@@ -75,6 +79,7 @@ pub fn init(self: *WriteTransport, loop: *Loop, fd: std.posix.fd_t, callback: Wr
         .zero_copying = zero_copying,
         .initialized = false,
         .blocking_task_id = 0,
+        .eof_pending = false,
     };
 
     self.prepare_hook_node = try loop.add_hook(.prepare, .{
@@ -252,6 +257,31 @@ fn cleanup_resources_callback(ptr: ?*anyopaque) void {
     python_c.py_decref(self.parent_transport);
 }
 
+/// BUG-379: run the stream-level write-completion callback with the
+/// shared fatal-error path. The callback invokes user protocol code
+/// (resume_writing); when it raises, the transport must close itself and
+/// surface the exception, exactly like the drained path used to do
+/// inline. Shared by the mid-drain and the full-drain invocations.
+fn invoke_write_completed(self: *WriteTransport, data_written: usize, remaining: usize) !void {
+    self.write_completed_callback(self, data_written, remaining, .SUCCESS) catch |err| {
+        utils.handle_zig_function_error(err, {});
+        const exception = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
+
+        defer {
+            self.is_closing = true;
+            self.closed = true;
+            const StreamLifecycle = @import("stream/lifecycle.zig");
+            StreamLifecycle.maybe_close_fd(@ptrCast(self.parent_transport));
+            python_c.PyErr_SetRaisedException(exception);
+        }
+
+        if (self.connection_lost_callback) |callback| {
+            try callback(self.parent_transport, exception);
+        }
+        return error.PythonError;
+    };
+}
+
 fn write_operation_completed(data: *const CallbackManager.CallbackData) !void {
     const self: *WriteTransport = @ptrCast(@alignCast(data.user_data.?));
     self.blocking_task_id = 0;
@@ -331,7 +361,23 @@ fn write_operation_completed(data: *const CallbackManager.CallbackData) !void {
     // slot unregistered, so resubmission must be gated on !closed (the
     // read side has the equivalent !is_closing gate).
     if (!self.closed and self.buffer_size > 0) {
-        try self.submit_next_chunk();
+        // BUG-379: give the stream-level callback the chance to fire
+        // protocol.resume_writing() on the LOW-WATER crossing during
+        // multi-chunk drains. Pre-fix the callback only ran at the 0-byte
+        // drain, so resume_writing waited until the user-space buffer was
+        // completely empty and writing_low_water_mark was dead during
+        // partial drains. The stream-level callback self-gates (success,
+        // closing/paused state, remaining <= low-water), so calling it
+        // unconditionally is safe.
+        const bw = self.total_bytes_written;
+        try self.invoke_write_completed(bw, self.buffer_size);
+
+        // The callback ran arbitrary protocol code (it may have closed
+        // the transport or written more data) — re-gate the resubmission
+        // exactly like the BUG-275 gate below.
+        if (!self.closed and self.buffer_size > 0) {
+            try self.submit_next_chunk();
+        }
         success = true;
     } else if (self.closed) {
         // BUG-275: force_close with pending data — the fd is already torn
@@ -347,6 +393,14 @@ fn write_operation_completed(data: *const CallbackManager.CallbackData) !void {
         self.pending_buffer_index = 0;
         self.pending_buffer_offset = 0;
 
+        // BUG-379: a buffered write_eof() must go out while the fd is
+        // still alive, BEFORE the settle below can tear it down through
+        // maybe_close_fd.
+        if (self.eof_pending) {
+            self.eof_pending = false;
+            _ = try self.loop.io.queue(.{ .SocketShutdown = .{ .socket_fd = self.fd, .how = std.os.linux.SHUT.WR } });
+        }
+
         if (self.is_closing) {
             self.closed = true;
             const StreamLifecycle = @import("stream/lifecycle.zig");
@@ -355,23 +409,7 @@ fn write_operation_completed(data: *const CallbackManager.CallbackData) !void {
 
         const bw = self.total_bytes_written;
         self.total_bytes_written = 0;
-        _ = self.write_completed_callback(self, bw, 0, .SUCCESS) catch |err| {
-            utils.handle_zig_function_error(err, {});
-            const exception = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
-
-            defer {
-                self.is_closing = true;
-                self.closed = true;
-                const StreamLifecycle = @import("stream/lifecycle.zig");
-                StreamLifecycle.maybe_close_fd(@ptrCast(self.parent_transport));
-                python_c.PyErr_SetRaisedException(exception);
-            }
-
-            if (self.connection_lost_callback) |callback| {
-                try callback(self.parent_transport, exception);
-            }
-            return error.PythonError;
-        };
+        try self.invoke_write_completed(bw, 0);
         success = true;
     }
 }
@@ -408,11 +446,24 @@ pub fn append_new_buffer_to_write(self: *WriteTransport, py_object: PyObject) !u
 }
 
 pub fn queue_eof(self: *WriteTransport) !void {
-    if (self.buffer_size > 0) return;
+    if (self.buffer_size > 0 or self.write_in_flight) {
+        // BUG-379: transports batch write() payloads into pending_buffers
+        // and reach the socket via the .prepare hook / in-flight SQEs, so
+        // write_eof() nearly always arrives with data still pending.
+        // Dropping the request silently meant FIN was never sent after
+        // the flush. Buffer the request; write_operation_completed
+        // submits the shutdown at the full-drain completion.
+        self.eof_pending = true;
+        try self.close();
+        return;
+    }
 
-    try self.close();
-
+    // Nothing buffered: submit the FIN while the fd is still open,
+    // BEFORE close() — the settle below can synchronously tear the fd
+    // down through maybe_close_fd when the read side is already gone,
+    // and the old code queued .SocketShutdown on the just-closed fd.
     _ = try self.loop.io.queue(.{ .SocketShutdown = .{ .socket_fd = self.fd, .how = std.os.linux.SHUT.WR } });
+    try self.close();
 }
 
 const WriteTransport = @This();

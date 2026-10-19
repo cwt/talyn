@@ -347,7 +347,17 @@ async def _test_stream_transport_eof_with_pending_writes() -> None:
     client_socket.setblocking(False)
 
     server_protocol = EchoProtocol()
-    client_protocol = EchoProtocol()
+
+    class ClientAccumulator(EchoProtocol):
+        def __init__(self) -> None:
+            super().__init__()
+            self.bytes_seen = bytearray()
+
+        def data_received(self, data: bytes) -> None:
+            self.bytes_seen += bytes(data)
+            super().data_received(data)
+
+    client_protocol = ClientAccumulator()
 
     # Create transport with small buffer to ensure writes are pending
     server_transport = StreamTransport(server_socket.fileno(), server_protocol, loop)
@@ -363,15 +373,20 @@ async def _test_stream_transport_eof_with_pending_writes() -> None:
         data2 = b"Second chunk of data"
         server_transport.write(data2)
 
-        # Try to write EOF while writes are pending
+        # BUG-379: write_eof() while writes are pending is honored — the
+        # FIN request is sequenced after the buffered data drains instead
+        # of being silently dropped.
         server_transport.write_eof()
 
-        # Write third chunk of data after EOF
+        # Writing while the FIN is still buffered stays valid (stdlib
+        # only forbids writes once the FIN actually went out); data3
+        # drains ahead of the FIN.
         data3 = b"Third chunk after attempted EOF"
         server_transport.write(data3)
 
-        await asyncio.sleep(0.1)
-        assert not client_eof_fut.done()
+        # The peer receives every byte and only then sees the EOF.
+        await asyncio.wait_for(client_eof_fut, 2.0)
+        assert bytes(client_protocol.bytes_seen) == data1 + data2 + data3
     finally:
         server_transport.close()
         client_transport.close()
@@ -960,9 +975,10 @@ async def _test_stream_transport_positional_write_buffer_limits() -> None:
         transport.set_write_buffer_limits(h_val, l_val)
         assert transport.get_write_buffer_limits() == (2500, 5000)
 
-        # Set single positional limit (high)
+        # Set single positional limit (high) — BUG-379: low defaults to
+        # high // 4 like stdlib instead of being clamped to high.
         transport.set_write_buffer_limits(8000)
-        assert transport.get_write_buffer_limits() == (8000, 8000)
+        assert transport.get_write_buffer_limits() == (2000, 8000)
     finally:
         transport.close()
         client_socket.close()

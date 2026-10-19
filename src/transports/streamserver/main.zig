@@ -246,14 +246,20 @@ fn accept_callback(data: *const CallbackManager.CallbackData) !void {
     defer python_c.py_decref(@ptrCast(transport));
 
     // BUG-376: resolve the weakref to the Python Server wrapper installed
-    // by Server.__init__ (it may already be gone — then tracking is a
-    // no-op) so the accepted transport reports back. The transport keeps
-    // the only extra strong ref to the Server (bound to be released by
-    // the detach-once block), so the weakref avoids pinning the wrapper.
+    // by Server.__init__ (it may already be gone — a dead weakref calls
+    // back as Py_None, then tracking is a no-op) so the accepted
+    // transport reports back. The transport keeps the only extra strong
+    // ref to the Server (bound to be released by the detach-once block),
+    // so the weakref avoids pinning the wrapper.
     if (server.server_ref) |wref| {
         var resolved: ?PyObject = null;
         if (python_c.PyObject_CallNoArgs(wref)) |resolved_obj| {
-            resolved = resolved_obj;
+            if (python_c.is_none(resolved_obj)) {
+                // The Server wrapper is gone; nothing to report to.
+                python_c.py_decref(resolved_obj);
+            } else {
+                resolved = resolved_obj;
+            }
         } else {
             python_c.PyErr_Clear();
         }
@@ -273,14 +279,6 @@ fn accept_callback(data: *const CallbackManager.CallbackData) !void {
 
     const ret = python_c.PyObject_CallOneArg(connection_made, @ptrCast(transport)) orelse return error.PythonError;
     python_c.py_decref(ret);
-
-    // Notify server of new connection
-    if (server.server_ref) |srv| {
-        const attach = python_c.PyObject_GetAttrString(srv, "_attach\x00") orelse return error.PythonError;
-        defer python_c.py_decref(attach);
-        const r = python_c.PyObject_CallNoArgs(attach) orelse return error.PythonError;
-        python_c.py_decref(r);
-    }
 }
 
 fn enqueue_accept(server: *StreamServerObject) !void {
