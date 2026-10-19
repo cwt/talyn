@@ -130,9 +130,17 @@ var talyn_module_slots = [_]python_c.PyModuleDef_Slot{
 
 var talyn_module = python_c.PyModuleDef{
     .m_base = if (@hasField(python_c.PyObject, "ob_tid")) .{
-        .ob_base = .{
+        .ob_base = if (@hasField(python_c.PyObject, "ob_flags")) .{
             .ob_tid = 0,
-            .ob_flags = python_c._c._Py_STATICALLY_ALLOCATED_FLAG,
+            .ob_flags = if (@hasDecl(python_c._c, "_Py_STATICALLY_ALLOCATED_FLAG")) python_c._c._Py_STATICALLY_ALLOCATED_FLAG else 0,
+            .ob_mutex = .{},
+            .ob_gc_bits = 0,
+            .ob_ref_local = python_c._c._Py_IMMORTAL_REFCNT_LOCAL,
+            .ob_ref_shared = 0,
+            .ob_type = null,
+        } else .{
+            .ob_tid = 0,
+            ._padding = if (@hasDecl(python_c._c, "_Py_STATICALLY_ALLOCATED_FLAG")) python_c._c._Py_STATICALLY_ALLOCATED_FLAG else 0,
             .ob_mutex = .{},
             .ob_gc_bits = 0,
             .ob_ref_local = python_c._c._Py_IMMORTAL_REFCNT_LOCAL,
