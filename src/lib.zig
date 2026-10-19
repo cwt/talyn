@@ -45,7 +45,6 @@ fn module_cleanup(_: *python_c.PyObject) callconv(.c) void {
     _ = utils.gpa.deinit();
 }
 
-var talyn_module = python_c.PyModuleDef{ .m_name = "talyn_zig\x00", .m_doc = "Talyn: A lightning-fast Zig-powered event loop for Python's asyncio.\x00", .m_size = -1, .m_free = @ptrCast(&module_cleanup) };
 
 const std = @import("std");
 
@@ -86,43 +85,77 @@ fn deinitialize_talyn_types() void {
     }
 }
 
-fn initialize_python_module() !*python_c.PyObject {
-    const module: *python_c.PyObject = python_c.PyModule_Create(&talyn_module) orelse return error.PythonError;
-    errdefer python_c.py_decref(module);
+fn talyn_module_exec(module: *python_c.PyObject) callconv(.c) c_int {
+    utils.init_gpa();
+    loop.init_module(utils.gpa.allocator());
 
-    if (@hasDecl(python_c._c, "PyUnstable_Module_SetGIL")) {
-        if (python_c.PyUnstable_Module_SetGIL(module, python_c.Py_MOD_GIL_NOT_USED) < 0) {
-            return error.PythonError;
-        }
-    }
+    utils.PythonImports.initialize_python_imports() catch {
+        return -1;
+    };
+    errdefer utils.PythonImports.release_python_imports();
 
+    initialize_talyn_types() catch {
+        return -1;
+    };
+    errdefer deinitialize_talyn_types();
+
+    // Populate the module with the Talyn types.
     inline for (dynamic_talyn_modules_names, dynamic_talyn_types_ptrs) |name, obj| {
         if (python_c.PyModule_AddObject(module, name, @as(*python_c.PyObject, @ptrCast(obj.*))) < 0) {
-            return error.PythonError;
+            return -1;
         }
     }
 
     inline for (static_talyn_modules_name, static_talyn_types) |name, obj| {
         if (python_c.PyModule_AddObject(module, name, @as(*python_c.PyObject, @ptrCast(obj))) < 0) {
-            return error.PythonError;
+            return -1;
         }
     }
 
-    return module;
+    // Declare free-threaded safety when applicable.
+    if (@hasDecl(python_c._c, "PyUnstable_Module_SetGIL")) {
+        if (python_c.PyUnstable_Module_SetGIL(module, python_c.Py_MOD_GIL_NOT_USED) < 0) {
+            return -1;
+        }
+    }
+
+    return 0;
 }
 
-fn z_init() !*python_c.PyObject {
-    utils.init_gpa();
-    loop.init_module(utils.gpa.allocator());
-    try utils.PythonImports.initialize_python_imports();
-    errdefer utils.PythonImports.release_python_imports();
+var talyn_module_slots = [_]python_c.PyModuleDef_Slot{
+    .{ .slot = python_c.Py_mod_exec, .value = @ptrCast(@constCast(&talyn_module_exec)) },
+    .{ .slot = python_c.Py_mod_gil, .value = if (@hasDecl(python_c._c, "PyUnstable_Module_SetGIL")) python_c.Py_MOD_GIL_NOT_USED else null },
+    .{ .slot = 0, .value = null },
+};
 
-    try initialize_talyn_types();
-    errdefer deinitialize_talyn_types();
-
-    return try initialize_python_module();
-}
+var talyn_module = python_c.PyModuleDef{
+    .m_base = if (@hasField(python_c.PyObject, "ob_tid")) .{
+        .ob_base = .{
+            .ob_tid = 0,
+            .ob_flags = python_c._c._Py_STATICALLY_ALLOCATED_FLAG,
+            .ob_mutex = .{},
+            .ob_gc_bits = 0,
+            .ob_ref_local = python_c._c._Py_IMMORTAL_REFCNT_LOCAL,
+            .ob_ref_shared = 0,
+            .ob_type = null,
+        },
+        .m_init = null,
+        .m_index = 0,
+        .m_copy = null,
+    } else .{
+        .ob_base = @import("std").mem.zeroes(python_c.PyObject),
+        .m_init = null,
+        .m_index = 0,
+        .m_copy = null,
+    },
+    .m_name = "talyn_zig\x00",
+    .m_doc = "Talyn: A lightning-fast Zig-powered event loop for Python's asyncio.\x00",
+    .m_size = 0,
+    .m_methods = null,
+    .m_slots = @ptrCast(&talyn_module_slots),
+    .m_free = @ptrCast(&module_cleanup),
+};
 
 export fn PyInit_talyn_zig() ?*python_c.PyObject {
-    return utils.execute_zig_function(z_init, .{});
+    return python_c.PyModuleDef_Init(&talyn_module);
 }

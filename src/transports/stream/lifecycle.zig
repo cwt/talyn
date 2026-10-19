@@ -38,7 +38,7 @@ pub fn detach_server(transport: *StreamTransportObject) void {
         python_c.py_decref_and_set_null(&transport.server_ref);
         if (detach) |d| {
             defer python_c.py_decref(d);
-            const r = python_c.PyObject_CallNoArgs(d);
+            const r = python_c.PyObject_CallOneArg(d, @ptrCast(transport));
             if (r) |v| {
                 python_c.py_decref(v);
             } else {

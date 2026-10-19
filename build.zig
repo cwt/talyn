@@ -120,6 +120,14 @@ pub fn build(b: *std.Build) void {
     c_python_header.addIncludePath(.{
         .cwd_relative = python_include_dir,
     });
+    if (python_is_gil_disabled) {
+        c_python_header.defineCMacro("Py_GIL_DISABLED", "1");
+        // Python 3.15 free-threaded uses _Py_ALIGNED_DEF(4, uintptr_t) for
+        // ob_tid, which Zig's translate-c cannot represent (minimum
+        // alignment of uintptr_t is 8). Expanding the macro to its plain
+        // type is ABI-safe because ob_tid sits at offset 0.
+        c_python_header.defineCMacro("_Py_ALIGNED_DEF(N, T)", "T");
+    }
     if (target.result.cpu.arch == .riscv64) {
         c_python_header.defineCMacro("__riscv_float_abi_double", "1");
     }

@@ -1,6 +1,9 @@
 import asyncio
+import logging
 import weakref
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class Server:
@@ -16,6 +19,7 @@ class Server:
         self._servers = servers
         self._serving = start_serving
         self._active_count = 0
+        self._clients: set[Any] = set()
         self._waiters: list[asyncio.Future[None]] = []
         # BUG-376: every underlying StreamServer must know its Python-level
         # wrapper (through a weakref — a strong ref here would form a
@@ -27,13 +31,31 @@ class Server:
         for srv in servers or []:
             srv.set_server_ref(weakref.ref(self))
 
-    def _attach(self) -> None:
+    def _attach(self, transport: Any = None) -> None:
         self._active_count += 1
+        if transport is not None:
+            self._clients.add(transport)
 
-    def _detach(self) -> None:
+    def _detach(self, transport: Any = None) -> None:
         self._active_count -= 1
+        if transport is not None:
+            self._clients.discard(transport)
         if self._active_count <= 0 and (self._servers is None or not self.is_serving()):
             self._wakeup()
+
+    def close_clients(self) -> None:
+        for transport in list(self._clients):
+            try:
+                transport.close()
+            except Exception:
+                logger.debug("exception in close_clients", exc_info=True)
+
+    def abort_clients(self) -> None:
+        for transport in list(self._clients):
+            try:
+                transport.abort()
+            except Exception:
+                logger.debug("exception in abort_clients", exc_info=True)
 
     def _wakeup(self) -> None:
         for waiter in self._waiters:

@@ -35,7 +35,7 @@ PASS=0
 FAIL=0
 
 OPTIMIZE_MODE="Debug"
-SELECTED_PYTHONS="3.13 3.14 3.13t 3.14t"
+SELECTED_PYTHONS="3.13 3.14 3.15 3.13t 3.14t 3.15t"
 VERBOSE=false
 NO_BUILD=false
 ZIG16="${ZIG16:-}"
@@ -96,7 +96,7 @@ while [ $# -gt 0 ]; do
             IFS=',' read -ra _parts <<< "$raw"
             for p in "${_parts[@]}"; do
                 case "$p" in
-                    3.13|3.14|3.13t|3.14t)
+                    3.13|3.14|3.15|3.13t|3.14t|3.15t)
                         SELECTED_PYTHONS="${SELECTED_PYTHONS:+${SELECTED_PYTHONS} }$p"
                         ;;
                     *)
@@ -114,7 +114,7 @@ while [ $# -gt 0 ]; do
             IFS=',' read -ra _parts <<< "$raw"
             for p in "${_parts[@]}"; do
                 case "$p" in
-                    3.13|3.14|3.13t|3.14t)
+                    3.13|3.14|3.15|3.13t|3.14t|3.15t)
                         SELECTED_PYTHONS="${SELECTED_PYTHONS:+${SELECTED_PYTHONS} }$p"
                         ;;
                     *)

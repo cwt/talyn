@@ -691,6 +691,8 @@ class Loop(_Loop):
                 except Exception:
                     logger.exception("Unhandled exception in event loop callback")
                 if not waiter.done():
+                    if isinstance(e, type):
+                        e = e()
                     waiter.set_exception(e or ConnectionResetError())
 
             def eof_received(self):
@@ -1645,6 +1647,48 @@ class Loop(_Loop):
         )
         # Server.__init__ installs the weakref server wrapper (BUG-376).
         return Server(self, [srv], start_serving=start_serving)
+
+    async def subprocess_shell(
+        self,
+        protocol_factory: Callable[[], asyncio.BaseProtocol],
+        cmd: Any,
+        *,
+        stdin: Any = None,
+        stdout: Any = None,
+        stderr: Any = None,
+        universal_newlines: bool = False,
+        shell: bool = True,
+        bufsize: int = 0,
+        encoding: Any = None,
+        errors: Any = None,
+        text: Any = None,
+        **kwargs: Any,
+    ) -> tuple[Any, Any]:
+        if not isinstance(cmd, (str, bytes, bytearray)):
+            raise ValueError("cmd must be a string")
+        if universal_newlines:
+            raise ValueError("universal_newlines must be False")
+        if not shell:
+            raise ValueError("shell must be True")
+        if bufsize != 0:
+            raise ValueError("bufsize must be 0")
+        if text:
+            raise ValueError("text must be False")
+        if encoding is not None:
+            raise ValueError("encoding must be None")
+        if errors is not None:
+            raise ValueError("errors must be None")
+
+        return await self.subprocess_exec(
+            protocol_factory,
+            "/bin/sh",
+            "-c",
+            cmd,
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr,
+            **kwargs,
+        )
 
     async def subprocess_exec(
         self,

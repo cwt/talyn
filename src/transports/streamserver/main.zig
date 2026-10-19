@@ -269,7 +269,7 @@ fn accept_callback(data: *const CallbackManager.CallbackData) !void {
 
             const attach = python_c.PyObject_GetAttrString(srv, "_attach\x00") orelse return error.PythonError;
             defer python_c.py_decref(attach);
-            const r = python_c.PyObject_CallNoArgs(attach) orelse return error.PythonError;
+            const r = python_c.PyObject_CallOneArg(attach, @ptrCast(transport)) orelse return error.PythonError;
             python_c.py_decref(r);
             transport.server_ref = python_c.py_newref(srv);
         }

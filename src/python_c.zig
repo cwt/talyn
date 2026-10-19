@@ -6,6 +6,7 @@ pub const PyMethodDef = _c.PyMethodDef;
 pub const PyMemberDef = _c.PyMemberDef;
 pub const PyGetSetDef = _c.PyGetSetDef;
 pub const PyModuleDef = _c.PyModuleDef;
+pub const PyModuleDef_Slot = _c.PyModuleDef_Slot;
 pub const PyType_Spec = _c.PyType_Spec;
 pub const PyType_Slot = _c.PyType_Slot;
 pub const PyAsyncMethods = _c.PyAsyncMethods;
@@ -182,6 +183,9 @@ pub const PyImport_ImportModule = _c.PyImport_ImportModule;
 
 pub const PyModule_Create = _c.PyModule_Create;
 pub const PyModule_AddObject = _c.PyModule_AddObject;
+pub const PyModuleDef_Init = _c.PyModuleDef_Init;
+pub const Py_mod_exec = _c.Py_mod_exec;
+pub const Py_mod_gil = _c.Py_mod_gil;
 
 pub const PyUnstable_Module_SetGIL = if (@hasDecl(_c, "PyUnstable_Module_SetGIL")) _c.PyUnstable_Module_SetGIL else struct {};
 
