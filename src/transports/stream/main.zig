@@ -133,6 +133,10 @@ pub var StreamType: *python_c.PyTypeObject = undefined;
 
 pub fn create_type() !void {
     const type_stream_transport = python_c.PyType_FromSpecWithBases(@constCast(&stream_spec), utils.PythonImports.get("asyncio_transport")) orelse return error.PythonError;
+    if (python_c.PyType_Ready(@ptrCast(type_stream_transport)) < 0) {
+        python_c.py_decref(type_stream_transport);
+        return error.PythonError;
+    }
     StreamType = @ptrCast(type_stream_transport);
 
     _ = python_c.PyObject_SetAttrString(@ptrCast(StreamType), "_start_tls_compatible\x00", @constCast(&python_c._Py_TrueStruct));

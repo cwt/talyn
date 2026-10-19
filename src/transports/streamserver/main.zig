@@ -478,10 +478,12 @@ var server_spec = python_c.PyType_Spec{
 pub var StreamServerType: ?*python_c.PyTypeObject = null;
 
 pub fn create_type() !void {
-    if (StreamServerType != null) {
-        return;
+    const ss = python_c.PyType_FromSpecWithBases(&server_spec, null) orelse return error.PythonError;
+    if (python_c.PyType_Ready(@ptrCast(ss)) < 0) {
+        python_c.py_decref(ss);
+        return error.PythonError;
     }
-    StreamServerType = @ptrCast(python_c.PyType_FromSpecWithBases(&server_spec, null) orelse return error.PythonError);
+    StreamServerType = @ptrCast(ss);
 }
 
 pub fn start_serving(server: *StreamServerObject) !void {

@@ -13,6 +13,8 @@ import subprocess
 import sys
 import textwrap
 
+import talyn  # noqa: F401  ensure talyn.talyn_zig is loaded
+
 
 def test_bug41_module_cleanup_no_double_decref() -> None:
     """Run a subprocess that imports talyn and exits; verify clean exit."""

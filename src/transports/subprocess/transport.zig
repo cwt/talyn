@@ -259,8 +259,12 @@ var subprocess_spec = python_c.PyType_Spec{
 pub var SubprocessType: ?*python_c.PyTypeObject = null;
 
 pub fn create_type() !void {
-    if (SubprocessType != null) return;
-    SubprocessType = @ptrCast(python_c.PyType_FromSpecWithBases(@constCast(&subprocess_spec), null) orelse return error.PythonError);
+    const st = python_c.PyType_FromSpecWithBases(@constCast(&subprocess_spec), null) orelse return error.PythonError;
+    if (python_c.PyType_Ready(@ptrCast(st)) < 0) {
+        python_c.py_decref(st);
+        return error.PythonError;
+    }
+    SubprocessType = @ptrCast(st);
 }
 
 fn cleanup_pidfd(ptr: ?*anyopaque) void {
