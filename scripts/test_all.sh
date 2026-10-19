@@ -1,14 +1,26 @@
 #!/usr/bin/env bash
 # Compatible with bash 3.x (macOS) and 4.x+
-# Usage: bash scripts/test_all.sh
+# Usage: bash scripts/test_all.sh [options]
 set -eu
 
 # Trap signals so child processes are cleaned up on CTRL-C
+CLEANUP_LOGS=true
 cleanup_pids() {
-    jobs -p | xargs -r kill 2>/dev/null || true
+    local pids
+    pids="$(jobs -p 2>/dev/null || true)"
+    if [ -n "$pids" ]; then
+        kill $pids 2>/dev/null || true
+    fi
     wait 2>/dev/null || true
 }
-trap cleanup_pids EXIT INT TERM
+
+cleanup() {
+    cleanup_pids
+    if [ -n "${LOG_DIR:-}" ] && [ -d "$LOG_DIR" ] && [ "${CLEANUP_LOGS:-true}" = true ]; then
+        rm -rf "$LOG_DIR" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT INT TERM
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -27,8 +39,11 @@ VERBOSE=false
 NO_BUILD=false
 ZIG16="${ZIG16:-}"
 ZIG17="${ZIG17:-}"
-for arg in "$@"; do
-    case "$arg" in
+JOBS=""
+SEQUENTIAL=false
+
+while [ $# -gt 0 ]; do
+    case "$1" in
         --starburst|--releasefast)
             OPTIMIZE_MODE="ReleaseFast"
             ;;
@@ -37,23 +52,45 @@ for arg in "$@"; do
             ;;
         --no-build)
             # Use prebuilt talyn_zig*.so files already present in talyn/ and
-            # skip all Zig compilation (including `zig build test`). Intended
-            # for foreign-arch VMs where the extension was cross-compiled
-            # natively on the host (QEMU TCG compilation is very slow).
+            # skip all Zig compilation (including `zig build test`).
             NO_BUILD=true
             ;;
         --verbose)
             VERBOSE=true
-            STDERR_TARGET="/dev/stderr"
+            ;;
+        --sequential)
+            SEQUENTIAL=true
+            ;;
+        --jobs=*)
+            JOBS="${1#--jobs=}"
+            ;;
+        --jobs)
+            shift
+            JOBS="$1"
+            ;;
+        -j)
+            shift
+            JOBS="$1"
+            ;;
+        -j*)
+            JOBS="${1#-j}"
             ;;
         --zig16=*)
-            ZIG16="${arg#--zig16=}"
+            ZIG16="${1#--zig16=}"
+            ;;
+        --zig16)
+            shift
+            ZIG16="$1"
             ;;
         --zig17=*)
-            ZIG17="${arg#--zig17=}"
+            ZIG17="${1#--zig17=}"
+            ;;
+        --zig17)
+            shift
+            ZIG17="$1"
             ;;
         --python=*)
-            raw="${arg#--python=}"
+            raw="${1#--python=}"
             SELECTED_PYTHONS=""
             IFS=',' read -ra _parts <<< "$raw"
             for p in "${_parts[@]}"; do
@@ -69,6 +106,24 @@ for arg in "$@"; do
                 esac
             done
             ;;
+        --python)
+            shift
+            raw="$1"
+            SELECTED_PYTHONS=""
+            IFS=',' read -ra _parts <<< "$raw"
+            for p in "${_parts[@]}"; do
+                case "$p" in
+                    3.13|3.14|3.13t|3.14t)
+                        SELECTED_PYTHONS="${SELECTED_PYTHONS:+${SELECTED_PYTHONS} }$p"
+                        ;;
+                    *)
+                        echo "Unknown Python in --python: $p" >&2
+                        echo "Valid values: 3.13, 3.14, 3.13t, 3.14t" >&2
+                        exit 2
+                        ;;
+                esac
+            done
+            ;;
         --help|-h)
             cat <<'EOF'
 Usage: bash scripts/test_all.sh [options]
@@ -76,19 +131,30 @@ Usage: bash scripts/test_all.sh [options]
 Options:
   --python=3.13,3.14t   Comma-separated list of Python versions to test
                         (subset of: 3.13, 3.14, 3.13t, 3.14t)
+  -j, --jobs=N          Number of parallel test jobs (default: auto, capped at 4)
+  --sequential          Run tests sequentially with live output (alias for -j 1)
   --starburst           Build with ReleaseFast
   --releasefast         Alias for --starburst
   --safe                Build with ReleaseSafe
   --no-build            Skip Zig compilation; use prebuilt talyn_zig*.so files
-  --verbose             Show Zig compiler output on build/test failures
+  --verbose             Show compiler and test output on failures
   --zig16=PATH          Path to Zig 0.16.x executable (or set ZIG16 env var)
   --zig17=PATH          Path to Zig 0.17.x executable (or set ZIG17 env var)
   -h, --help            Show this help
 EOF
             exit 0
             ;;
+        *)
+            echo "Unknown argument: $1" >&2
+            exit 2
+            ;;
     esac
+    shift
 done
+
+if [ "$SEQUENTIAL" = true ]; then
+    JOBS=1
+fi
 
 # ---- helpers ----
 
@@ -135,8 +201,7 @@ get_timeout_cmd() {
     if command -v timeout >/dev/null 2>&1; then echo "timeout"; else echo "gtimeout"; fi
 }
 
-# Per-test timeouts are calibrated for native speed. Slow environments (e.g.
-# foreign-arch full-system emulation via QEMU TCG) can raise them:
+# Per-test timeouts are calibrated for native speed:
 #   TALYN_TEST_TIMEOUT   pytest suite per python (default 600s)
 #   TALYN_STDLIB_TIMEOUT per standard-asyncio module (default 60s)
 TALYN_TEST_TIMEOUT="${TALYN_TEST_TIMEOUT:-600}"
@@ -150,13 +215,12 @@ run_tests() {
     else
         cmd="$py"
     fi
-    if PYTHONPATH=. $cmd -m pytest tests/ \
-        -q; then
+    if PYTHONPATH=. $cmd -m pytest tests/ -p no:cacheprovider -q; then
         printf "${GREEN}[%s] PASS${NC}\n" "$label"
         PASS=$((PASS + 1))
         return 0
     else
-        rc=$?
+        local rc=$?
         if [ "$rc" -eq 139 ] 2>/dev/null; then
             printf "${YELLOW}[%s] SEGFAULT (pytest + free-threading — standalone tests pass)${NC}\n" "$label"
         else
@@ -171,13 +235,6 @@ run_std_tests() {
     local py="$1" label="$2" cmd=""
     printf "${YELLOW}[%s]${NC} Running standard asyncio tests...\n" "$label"
 
-    # All applicable standard asyncio test modules.
-    # Excluded (not applicable to Talyn):
-    #   test_selector_events, test_base_events, test_events  — selector-implementation internals
-    #   test_unix_events                                      — Unix selector-watcher internals
-    #   test_proactor_events                                  — Windows Proactor
-    #   test_windows_events, test_windows_utils               — Windows only
-    #   test_buffered_proto                                   — selector-tied
     local std_modules="
         test_futures        test_futures2
         test_transports     test_protocols
@@ -201,16 +258,12 @@ run_std_tests() {
     local failed=0
     for mod in $std_modules; do
         if has_timeout; then
-            # 60s per module — most modules finish in <5s, but test_subprocess
-            # takes ~35s on a healthy run; a hanging module gets killed
-            # quickly rather than blocking the whole suite.
             cmd="$(get_timeout_cmd) -k 5 $TALYN_STDLIB_TIMEOUT $py"
         else
             cmd="$py"
         fi
 
         # Skip modules that don't exist in this Python version
-        # (e.g. test_graph, test_tools, test_free_threading are 3.14+ only).
         if ! PYTHONPATH=. $cmd -c "from test.test_asyncio import $mod" 2>/dev/null; then
             printf "  ${YELLOW}%s: SKIP (not in %s)${NC}\n" "$mod" "$py"
             continue
@@ -221,7 +274,7 @@ run_std_tests() {
             > /dev/null 2>&1; then
             printf "  ${GREEN}%s: PASS${NC}\n" "$mod"
         else
-            rc=$?
+            local rc=$?
             if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
                 printf "  ${YELLOW}%s: TIMEOUT${NC}\n" "$mod"
             elif [ "$rc" -eq 139 ]; then
@@ -235,10 +288,145 @@ run_std_tests() {
 
     if [ "$failed" -eq 0 ]; then
         printf "${GREEN}[%s] STD PASS${NC}\n" "$label"
+        PASS=$((PASS + 1))
         return 0
     else
         printf "${RED}[%s] STD FAIL${NC}\n" "$label"
+        FAIL=$((FAIL + 1))
         return 1
+    fi
+}
+
+run_python_target() {
+    local py="$1"
+    local label="$2"
+    local log_file="$3"
+    local status_file="$4"
+
+    local start_time=$SECONDS
+    printf "${YELLOW}[%s]${NC} Running tests (pytest + standard asyncio)...\n" "$label"
+
+    local rc_pytest=0
+    run_tests "$py" "$label" >> "$log_file" 2>&1 || rc_pytest=$?
+
+    local rc_std=0
+    run_std_tests "$py" "$label" >> "$log_file" 2>&1 || rc_std=$?
+
+    local elapsed=$((SECONDS - start_time))
+
+    local pytest_summary
+    pytest_summary="$(grep -E '[0-9]+ passed' "$log_file" | tail -n 1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' || true)"
+    if [ -z "$pytest_summary" ]; then
+        if [ "$rc_pytest" -eq 0 ]; then
+            pytest_summary="passed"
+        else
+            pytest_summary="failed"
+        fi
+    fi
+
+    local std_summary
+    if [ "$rc_std" -eq 0 ]; then
+        std_summary="std passed"
+    else
+        std_summary="std failed"
+    fi
+
+    if [ "$rc_pytest" -eq 0 ]; then
+        echo "PYTEST_STATUS=PASS" >> "$status_file"
+    else
+        echo "PYTEST_STATUS=FAIL" >> "$status_file"
+    fi
+
+    if [ "$rc_std" -eq 0 ]; then
+        echo "STD_STATUS=PASS" >> "$status_file"
+    else
+        echo "STD_STATUS=FAIL" >> "$status_file"
+    fi
+
+    if [ "$rc_pytest" -eq 0 ] && [ "$rc_std" -eq 0 ]; then
+        printf "${GREEN}[%s] PASS${NC} (%s; %s in %ds)\n" "$label" "$pytest_summary" "$std_summary" "$elapsed"
+    else
+        printf "${RED}[%s] FAIL${NC} (%s; %s in %ds)\n" "$label" "$pytest_summary" "$std_summary" "$elapsed"
+    fi
+}
+
+run_zig_unit_tests() {
+    local zig_bin="$1"
+    local label="$2"
+    local cache_dir="$3"
+    local log_file="${4:-}"
+    local status_file="${5:-}"
+
+    local extra_flags=""
+    if [ -n "$cache_dir" ]; then
+        extra_flags="--cache-dir $cache_dir"
+    fi
+
+    local ver
+    ver="$("$zig_bin" version 2>/dev/null || echo "unknown")"
+    printf "${YELLOW}[%s]${NC} Running zig unit tests (%s)...\n" "$label" "$ver"
+
+    if [ -n "$status_file" ]; then
+        # Parallel mode
+        local rc=0
+        if $VERBOSE; then
+            "$zig_bin" build test $extra_flags $ZIG_OPTS 2>&1 | grep -v 'failed command:' > "$log_file" 2>&1 || rc=$?
+        else
+            "$zig_bin" build test $extra_flags $ZIG_OPTS > "$log_file" 2>&1 || rc=$?
+        fi
+
+        if [ "$rc" -eq 0 ]; then
+            local search_dir="${cache_dir:-.zig-cache}/o"
+            local zig_bin_artifact
+            zig_bin_artifact="$(ls -t "$search_dir"/*/talyn 2>/dev/null | head -n1 || true)"
+            local summary="All tests passed"
+            if [ -n "$zig_bin_artifact" ]; then
+                local parsed
+                parsed="$("$zig_bin_artifact" 2>&1 | grep -E "All .* tests passed" | tail -n1 || true)"
+                if [ -n "$parsed" ]; then
+                    summary="$parsed"
+                fi
+            fi
+            echo "ZIG_STATUS=PASS" > "$status_file"
+            printf "${GREEN}[%s] PASS${NC} (%s)\n" "$label" "$summary"
+        else
+            echo "ZIG_STATUS=FAIL" > "$status_file"
+            printf "${RED}[%s] FAIL${NC}\n" "$label"
+        fi
+    else
+        # Sequential mode
+        local test_log
+        test_log="$(mktemp)"
+        local rc=0
+        if $VERBOSE; then
+            "$zig_bin" build test $extra_flags $ZIG_OPTS 2>&1 | grep -v 'failed command:' | tee "$test_log"
+            rc=${PIPESTATUS[0]}
+        else
+            "$zig_bin" build test $extra_flags $ZIG_OPTS >"$test_log" 2>&1
+            rc=$?
+        fi
+
+        if [ "$rc" -eq 0 ]; then
+            local search_dir="${cache_dir:-.zig-cache}/o"
+            local zig_bin_artifact
+            zig_bin_artifact="$(ls -t "$search_dir"/*/talyn 2>/dev/null | head -n1 || true)"
+            if [ -n "$zig_bin_artifact" ]; then
+                local summary
+                summary="$("$zig_bin_artifact" 2>&1 | grep -E "All .* tests passed" | tail -n1 || true)"
+                if [ -n "$summary" ]; then
+                    printf "   %s\n" "$summary"
+                fi
+            fi
+            printf "${GREEN}[%s] PASS${NC}\n" "$label"
+            PASS=$((PASS + 1))
+        else
+            printf "${RED}[%s] FAIL${NC}\n" "$label"
+            if ! $VERBOSE; then
+                tail -n 25 "$test_log"
+            fi
+            FAIL=$((FAIL + 1))
+        fi
+        rm -f "$test_log"
     fi
 }
 
@@ -252,6 +440,8 @@ echo ""
 # Clean once at start — removes all stale build artifacts
 clean
 
+# Stage 1: Build extensions matrix
+BUILT_PYTHONS=""
 for ver in $SELECTED_PYTHONS; do
     py="python${ver}"
     if ! command -v "$py" >/dev/null 2>&1; then
@@ -278,22 +468,18 @@ for ver in $SELECTED_PYTHONS; do
             FAIL=$((FAIL + 1))
             continue
         fi
+        BUILT_PYTHONS="${BUILT_PYTHONS:+${BUILT_PYTHONS} }$py"
     else
-        printf "${YELLOW}[%s]${NC} Building...\n" "$py"
+        printf "${YELLOW}[%s]${NC} Building extension...\n" "$py"
 
-        # Clean zig build artifacts between variants (different headers/libs)
-        rm -rf zig-out zig-cache .zig-cache .zig-cache16 .zig-cache17 .pytest_cache 2>/dev/null || true
-        find . -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
-        find . -name '*.pyc' -delete 2>/dev/null || true
+        # Clean zig-out between variants (different headers/libs)
+        rm -rf zig-out 2>/dev/null || true
 
         gilflag=""
         if is_free_threading "$py"; then
             gilflag="-Dpython-gil-disabled=true"
         fi
 
-        # Under `set -e`, a bare failing `zig build` exits the whole script before
-        # the $? check below. Guard it so a build failure is reported and the run
-        # continues to the remaining interpreters.
         build_ok=true
         if $VERBOSE; then
             if ! zig build install -Doptimize=$OPTIMIZE_MODE \
@@ -320,28 +506,21 @@ for ver in $SELECTED_PYTHONS; do
 
         ext_suffix=$("$py" -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))")
         cp zig-out/lib/libtalyn.so "talyn/talyn_zig${ext_suffix}"
-        rm -f talyn/talyn_zig.so
+        BUILT_PYTHONS="${BUILT_PYTHONS:+${BUILT_PYTHONS} }$py"
     fi
-
-    run_tests "$py" "$py" || true
-    run_std_tests "$py" "$py" || true
-    echo ""
 done
 
-# ---- zig tests ----
-if [ "$NO_BUILD" = true ]; then
-    printf "${YELLOW}[zig]${NC} Skipping zig unit tests (--no-build)\n"
-else
-    REF_INC="$(get_python_include python3.13)"
-    REF_LIB="$(get_python_lib python3.13)"
-    ZIG_OPTS="-Doptimize=$OPTIMIZE_MODE -Dpython-include-dir=$REF_INC -Dpython-lib-dir=$(dirname "$REF_LIB") -Dpython-lib=$REF_LIB"
+# Ensure no unversioned talyn_zig.so confuses Python imports
+rm -f talyn/talyn_zig.so
 
-    # Multi-candidate compiler discovery
-    ZIG_016_BIN=""
-    ZIG_016_VER=""
-    ZIG_017_BIN=""
-    ZIG_017_VER=""
+# Zig compiler discovery
+ZIG_016_BIN=""
+ZIG_016_VER=""
+ZIG_017_BIN=""
+ZIG_017_VER=""
+ZIG_FALLBACK_BIN=""
 
+if [ "$NO_BUILD" != true ]; then
     check_zig_candidate() {
         local cand="$1"
         [ -z "$cand" ] && return
@@ -389,76 +568,215 @@ else
         check_zig_candidate "$p"
     done
 
-    run_zig_unit_tests() {
-        local zig_bin="$1"
-        local label="$2"
-        local cache_dir="$3"
-        local extra_flags=""
-        if [ -n "$cache_dir" ]; then
-            extra_flags="--cache-dir $cache_dir"
-        fi
-
-        printf "${YELLOW}[%s]${NC} Running zig unit tests (%s)...\n" "$label" "$("$zig_bin" version 2>/dev/null || echo "unknown")"
-        local test_log
-        test_log="$(mktemp)"
-        local rc=0
-        if $VERBOSE; then
-            "$zig_bin" build test $extra_flags $ZIG_OPTS 2>&1 | grep -v 'failed command:' | tee "$test_log"
-            rc=${PIPESTATUS[0]}
-        else
-            "$zig_bin" build test $extra_flags $ZIG_OPTS >"$test_log" 2>&1
-            rc=$?
-        fi
-
-        if [ "$rc" -eq 0 ]; then
-            local search_dir="${cache_dir:-.zig-cache}/o"
-            local zig_bin_artifact
-            zig_bin_artifact="$(ls -t "$search_dir"/*/talyn 2>/dev/null | head -n1 || true)"
-            if [ -n "$zig_bin_artifact" ]; then
-                local summary
-                summary="$("$zig_bin_artifact" 2>&1 | grep -E "All .* tests passed" | tail -n1 || true)"
-                if [ -n "$summary" ]; then
-                    printf "   %s\n" "$summary"
-                fi
-            fi
-            printf "${GREEN}[%s] PASS${NC}\n" "$label"
-        else
-            printf "${RED}[%s] FAIL${NC}\n" "$label"
-            if ! $VERBOSE; then
-                tail -n 25 "$test_log"
-            fi
-            FAIL=$((FAIL + 1))
-        fi
-        rm -f "$test_log"
-    }
-
-    ran_any=false
-
-    if [ -n "$ZIG_016_BIN" ]; then
-        run_zig_unit_tests "$ZIG_016_BIN" "zig-0.16" ".zig-cache16"
-        ran_any=true
-    else
-        printf "${YELLOW}[zig-0.16]${NC} SKIP (Zig 0.16.x compiler not found; install or set ZIG16)\n"
-    fi
-
-    if [ -n "$ZIG_017_BIN" ]; then
-        run_zig_unit_tests "$ZIG_017_BIN" "zig-0.17" ".zig-cache17"
-        ran_any=true
-    else
-        printf "${YELLOW}[zig-0.17]${NC} SKIP (Zig 0.17.x compiler not found; install or set ZIG17)\n"
-    fi
-
-    if [ "$ran_any" = false ]; then
+    if [ -z "$ZIG_016_BIN" ] && [ -z "$ZIG_017_BIN" ]; then
         if command -v zig >/dev/null 2>&1; then
-            run_zig_unit_tests "zig" "zig" ""
-        else
-            printf "${RED}[zig]${NC} FAIL (No zig compiler found in PATH)\n"
-            FAIL=$((FAIL + 1))
+            ZIG_FALLBACK_BIN="zig"
         fi
+    fi
+
+    # Reference includes/libs for zig build test
+    ref_py=""
+    for p in python3.13 python3.14 $BUILT_PYTHONS; do
+        if command -v "$p" >/dev/null 2>&1; then
+            ref_py="$p"
+            break
+        fi
+    done
+    if [ -n "$ref_py" ]; then
+        REF_INC="$(get_python_include "$ref_py")"
+        REF_LIB="$(get_python_lib "$ref_py")"
+        ZIG_OPTS="-Doptimize=$OPTIMIZE_MODE -Dpython-include-dir=$REF_INC -Dpython-lib-dir=$(dirname "$REF_LIB") -Dpython-lib=$REF_LIB"
+    else
+        ZIG_OPTS="-Doptimize=$OPTIMIZE_MODE"
     fi
 fi
 
-
 echo ""
-printf "=== Results: ${GREEN}%d passed${NC}, ${RED}%d failed${NC} ===\n" "$PASS" "$FAIL"
+
+# Stage 2: Test execution (sequential or parallel)
+if [ "${JOBS:-0}" -eq 1 ] || [ "$SEQUENTIAL" = true ]; then
+    echo "=== Running Tests Sequentially ==="
+    echo ""
+    for py in $BUILT_PYTHONS; do
+        run_tests "$py" "$py" || true
+        run_std_tests "$py" "$py" || true
+        echo ""
+    done
+
+    if [ "$NO_BUILD" = true ]; then
+        printf "${YELLOW}[zig]${NC} Skipping zig unit tests (--no-build)\n"
+    else
+        ran_any=false
+        if [ -n "$ZIG_016_BIN" ]; then
+            run_zig_unit_tests "$ZIG_016_BIN" "zig-0.16" ".zig-cache16" "" ""
+            ran_any=true
+        else
+            printf "${YELLOW}[zig-0.16]${NC} SKIP (Zig 0.16.x compiler not found; install or set ZIG16)\n"
+        fi
+
+        if [ -n "$ZIG_017_BIN" ]; then
+            run_zig_unit_tests "$ZIG_017_BIN" "zig-0.17" ".zig-cache17" "" ""
+            ran_any=true
+        else
+            printf "${YELLOW}[zig-0.17]${NC} SKIP (Zig 0.17.x compiler not found; install or set ZIG17)\n"
+        fi
+
+        if [ "$ran_any" = false ]; then
+            if [ -n "$ZIG_FALLBACK_BIN" ]; then
+                run_zig_unit_tests "$ZIG_FALLBACK_BIN" "zig" "" "" ""
+            else
+                printf "${RED}[zig]${NC} FAIL (No zig compiler found in PATH)\n"
+                FAIL=$((FAIL + 1))
+            fi
+        fi
+    fi
+else
+    # Auto-calculate default JOBS if not explicitly specified
+    # Default is capped at 4 parallel jobs to protect system resources
+    if [ -z "$JOBS" ]; then
+        JOBS=0
+        for _ in $BUILT_PYTHONS; do JOBS=$((JOBS + 1)); done
+        [ -n "$ZIG_016_BIN" ] && JOBS=$((JOBS + 1))
+        [ -n "$ZIG_017_BIN" ] && JOBS=$((JOBS + 1))
+        [ -n "$ZIG_FALLBACK_BIN" ] && JOBS=$((JOBS + 1))
+        if [ "$JOBS" -gt 4 ]; then
+            JOBS=4
+        fi
+        if [ "$JOBS" -lt 1 ]; then
+            JOBS=1
+        fi
+    fi
+
+    echo "=== Running Tests in Parallel (jobs: $JOBS) ==="
+    echo ""
+
+    LOG_DIR="$(mktemp -d /tmp/talyn_test_logs_XXXXXX)"
+    CLEANUP_LOGS=true
+
+    running_pids=()
+    target_names=()
+    target_logs=()
+    target_statuses=()
+
+    dispatch_target() {
+        local target_type="$1"
+        shift
+        local target_name="$1"
+        shift
+
+        local log_file="$LOG_DIR/${target_name}.log"
+        local status_file="$LOG_DIR/${target_name}.status"
+
+        target_names+=("$target_name")
+        target_logs+=("$log_file")
+        target_statuses+=("$status_file")
+
+        if [ "$target_type" = "zig" ]; then
+            local zbin="$1" zcache="$2"
+            (
+                trap - INT TERM
+                run_zig_unit_tests "$zbin" "$target_name" "$zcache" "$log_file" "$status_file"
+            ) &
+        elif [ "$target_type" = "python" ]; then
+            local py="$1"
+            (
+                trap - INT TERM
+                run_python_target "$py" "$target_name" "$log_file" "$status_file"
+            ) &
+        fi
+        local pid=$!
+        running_pids+=("$pid")
+
+        if [ "${#running_pids[@]}" -ge "$JOBS" ]; then
+            wait "${running_pids[0]}" 2>/dev/null || true
+            running_pids=("${running_pids[@]:1}")
+        fi
+    }
+
+    # Dispatch fast zig unit tests first (finish in <1s, freeing job slots)
+    if [ "$NO_BUILD" = true ]; then
+        printf "${YELLOW}[zig]${NC} Skipping zig unit tests (--no-build)\n"
+    else
+        ran_any=false
+        if [ -n "$ZIG_016_BIN" ]; then
+            dispatch_target zig "zig-0.16" "$ZIG_016_BIN" ".zig-cache16"
+            ran_any=true
+        else
+            printf "${YELLOW}[zig-0.16]${NC} SKIP (Zig 0.16.x compiler not found; install or set ZIG16)\n"
+        fi
+
+        if [ -n "$ZIG_017_BIN" ]; then
+            dispatch_target zig "zig-0.17" "$ZIG_017_BIN" ".zig-cache17"
+            ran_any=true
+        else
+            printf "${YELLOW}[zig-0.17]${NC} SKIP (Zig 0.17.x compiler not found; install or set ZIG17)\n"
+        fi
+
+        if [ "$ran_any" = false ]; then
+            if [ -n "$ZIG_FALLBACK_BIN" ]; then
+                dispatch_target zig "zig" "$ZIG_FALLBACK_BIN" ""
+            else
+                printf "${RED}[zig]${NC} FAIL (No zig compiler found in PATH)\n"
+                FAIL=$((FAIL + 1))
+            fi
+        fi
+    fi
+
+    # Dispatch python targets
+    for py in $BUILT_PYTHONS; do
+        dispatch_target python "$py" "$py"
+    done
+
+    # Wait for all running background targets to complete
+    wait 2>/dev/null || true
+
+    # Results aggregation
+    failed_targets=()
+    for ((i=0; i<${#target_names[@]}; i++)); do
+        name="${target_names[i]}"
+        sfile="${target_statuses[i]}"
+        lfile="${target_logs[i]}"
+
+        if [ -f "$sfile" ]; then
+            py_st="$(grep '^PYTEST_STATUS=' "$sfile" | cut -d= -f2 || true)"
+            std_st="$(grep '^STD_STATUS=' "$sfile" | cut -d= -f2 || true)"
+            z_st="$(grep '^ZIG_STATUS=' "$sfile" | cut -d= -f2 || true)"
+
+            if [ -n "$py_st" ]; then
+                if [ "$py_st" = "PASS" ]; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); failed_targets+=("$name"); fi
+            fi
+            if [ -n "$std_st" ]; then
+                if [ "$std_st" = "PASS" ]; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); failed_targets+=("$name"); fi
+            fi
+            if [ -n "$z_st" ]; then
+                if [ "$z_st" = "PASS" ]; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); failed_targets+=("$name"); fi
+            fi
+        else
+            FAIL=$((FAIL + 1))
+            failed_targets+=("$name")
+        fi
+    done
+
+    if [ "${#failed_targets[@]}" -gt 0 ]; then
+        CLEANUP_LOGS=false
+        printf "\n${RED}=== Test Failures Detected ===${NC}\n"
+        seen_targets=""
+        for t in "${failed_targets[@]}"; do
+            case " $seen_targets " in
+                *" $t "*) ;;
+                *)
+                    seen_targets="${seen_targets:+${seen_targets} }$t"
+                    printf "\n${RED}--- [%s] Failure Log Tail ---${NC}\n" "$t"
+                    tail -n 35 "$LOG_DIR/${t}.log" 2>/dev/null || true
+                    ;;
+            esac
+        done
+        printf "\nLogs preserved in: %s\n" "$LOG_DIR"
+    fi
+fi
+
+mins=$((SECONDS / 60))
+secs=$((SECONDS % 60))
+echo ""
+printf "=== Results: ${GREEN}%d passed${NC}, ${RED}%d failed${NC} (took %dm %ds) ===\n" "$PASS" "$FAIL" "$mins" "$secs"
 exit $FAIL

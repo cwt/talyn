@@ -89,4 +89,4 @@ For historical references to lesson numbers in commit messages or bug reports:
 | 23, 53, 72, 83, 94, 100 | [Data Structures & Algorithms](07-data-structures-and-algorithms.md) |
 | 6, 32, 49, 50, 54, 55, 77, 87, 88, 102, 103, 106 | [Zig-Specific Patterns](08-zig-specific-patterns.md) |
 | 29, 33, 34, 58, 91, 92, 96 | [Security & Input Validation](09-security-and-input-validation.md) |
-| 57, 75, 76, 79, 82, 85, 86, 89, 90, 93, 97, 98, 101 | [Defensive Programming & Code Quality](10-defensive-programming-and-code-quality.md) |
+| 57, 75, 76, 79, 82, 85, 86, 89, 90, 93, 97, 98, 101, 113 | [Defensive Programming & Code Quality](10-defensive-programming-and-code-quality.md) |

@@ -106,3 +106,9 @@ A duplicate null check after an if/else that already handled the null case was u
 `parse_resolv_configuration` used `tokenizeScalar(u8, line, ' ')` — only spaces as delimiters. Tabs in resolv.conf files (`nameserver\t8.8.8.8`) were silently skipped.
 - **Fix:** Changed to `tokenizeAny(u8, line, " \t")`.
 - **Lesson:** Handle all whitespace variants in parsers — space, tab (`\t`), carriage return (`\r`), form feed (`\f`). The "space is the only whitespace" anti-pattern is a common parser bug in config files, CSV, URLs, and shell commands.
+
+**Lesson 113 — POSIX Background Subshell Signal Masking (`SIG_IGN` on `SIGINT`) in Async Test Runners**
+When executing test suites or worker processes in parallel as background jobs (`cmd &` or `( ... ) &`), POSIX shells automatically mask `SIGINT` and `SIGQUIT` to `SIG_IGN` (1) for non-interactive background child processes. Python's `signal` module inherits this disposition on startup (`signal.getsignal(signal.SIGINT) == signal.SIG_IGN`), which silently breaks tests relying on `_thread.interrupt_main(signal.SIGINT)` or `signal.SIGINT` handling (e.g. `test_runners` in `test_asyncio`). The interrupt is ignored and the event loop waits indefinitely, hanging the test suite until per-test timeout or causing resource starvation.
+- **Fix:** Explicitly restore default signal disposition inside the background subshell using `( trap - INT TERM; ... ) &` before launching the child runner.
+- **Lesson:** Never spawn test runners in raw background subshells without resetting signal masks if the test suites test interrupt or signal cancellation semantics.
+
