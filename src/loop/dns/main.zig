@@ -139,7 +139,14 @@ pub fn lookup(
     const address_list = record.get_address_list() orelse {
         if (callback == null) return null;
 
-        try record.append_callback(callback.?);
+        record.append_callback(callback.?) catch |err| switch (err) {
+            error.RecordNotPending, error.RecordAlreadyResolved => {
+                const ipv6_supported: bool = self.ipv6_supported;
+                try Resolv.queue(cache_slot, self.loop, parsed_hostname, callback.?, self.configuration, ipv6_supported, null, timeout);
+                return null;
+            },
+            else => return err,
+        };
         return null;
     };
 
@@ -163,11 +170,16 @@ pub fn reverse_lookup(
             return;
         }
 
-        // BUG-59: Record exists in pending state — attach the
-        // callback to the in-flight query instead of creating a
-        // duplicate. Previously we fell through to Resolv.queue
-        // which dispatched a new DNS request for every caller.
-        try record.append_callback(callback);
+        // BUG-59 / BUG-380: Record exists in pending state — attach the
+        // callback to the in-flight query instead of creating a duplicate.
+        // If not pending (or already resolved), queue a fresh query.
+        record.append_callback(callback) catch |err| switch (err) {
+            error.RecordNotPending, error.RecordAlreadyResolved => {
+                try Resolv.queue(cache_slot, self.loop, name, callback, self.configuration, false, .ptr, timeout);
+                return;
+            },
+            else => return err,
+        };
         return;
     }
 

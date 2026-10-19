@@ -24,15 +24,31 @@ fn create_socket_instance(self: *StreamTransportObject) !PyObject {
 
 inline fn z_transport_get_extra_info(self: *StreamTransportObject, args: []?PyObject, knames: ?PyObject) !PyObject {
     if (args.len < 1) {
-        python_c.raise_python_value_error("Invalid number of arguments\x00");
+        python_c.raise_python_type_error("get_extra_info() missing required argument 'name'");
+        return error.PythonError;
+    }
+    if (args.len > 2) {
+        python_c.raise_python_type_error("get_extra_info() takes at most 2 positional arguments");
         return error.PythonError;
     }
 
     const info_name = args[0].?;
-    var default_value: ?PyObject = null;
+    var kw_default: ?PyObject = null;
 
-    try python_c.parse_vector_call_kwargs(knames, args.ptr + args.len, &.{"default\x00"}, &.{&default_value});
-    defer python_c.py_xdecref(default_value);
+    try python_c.parse_vector_call_kwargs(knames, args.ptr + args.len, &.{"default\x00"}, &.{&kw_default});
+    defer python_c.py_xdecref(kw_default);
+
+    if (kw_default != null and args.len >= 2) {
+        python_c.raise_python_type_error("get_extra_info() got multiple values for argument 'default'");
+        return error.PythonError;
+    }
+
+    const default_value: PyObject = if (kw_default) |d|
+        d
+    else if (args.len >= 2)
+        args[1].?
+    else
+        python_c.get_py_none();
 
     var info_name_length: python_c.Py_ssize_t = undefined;
     const name_ptr: [*]const u8 = python_c.PyUnicode_AsUTF8AndSize(info_name, &info_name_length) orelse return error.PythonError;
@@ -85,16 +101,15 @@ inline fn z_transport_get_extra_info(self: *StreamTransportObject, args: []?PyOb
         const write_transport = utils.get_data_ptr2(@import("../write_transport.zig"), "write_transport", self);
         result = python_c.PyLong_FromUnsignedLongLong(@intCast(write_transport.writev_count)) orelse return error.PythonError;
     } else {
-        if (default_value) |v| {
-            result = python_c.py_newref(v);
-        } else {
-            result = python_c.get_py_none();
-        }
+        result = python_c.py_newref(default_value);
     }
 
     return result;
 }
 
 pub fn transport_get_extra_info(self: ?*StreamTransportObject, args: ?[*]?PyObject, nargs: isize, knames: ?PyObject) callconv(.c) ?PyObject {
-    return utils.execute_zig_function(z_transport_get_extra_info, .{ self.?, args.?[0..@as(usize, @intCast(nargs))], knames });
+    if (nargs < 0) return null;
+    var empty: [0]?PyObject = undefined;
+    const actual_args = if (args) |a| a[0..@as(usize, @intCast(nargs))] else empty[0..];
+    return utils.execute_zig_function(z_transport_get_extra_info, .{ self.?, actual_args, knames });
 }

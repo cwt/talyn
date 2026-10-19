@@ -19,9 +19,23 @@ const GetNameInfoData = struct {
     addr: utils.Address,
     flags: i32,
     allocator: std.mem.Allocator,
+    python_payload: CallbackManager.PythonPayload = .{},
 
     comptime {
-        python_c.verify_gc_coverage(@This(), &.{"allocator"});
+        python_c.verify_gc_coverage(@This(), &.{ "allocator", "python_payload" });
+    }
+
+    pub fn traverse(ptr: ?*anyopaque, visit_ptr: ?*anyopaque, arg: ?*anyopaque) c_int {
+        const visit: python_c.visitproc = @ptrCast(@alignCast(visit_ptr));
+        if (ptr) |p| {
+            const self: *GetNameInfoData = @ptrCast(@alignCast(p));
+            var ret: c_int = 0;
+            ret = visit.?(@ptrCast(self.future), arg);
+            if (ret != 0) return ret;
+            ret = visit.?(@ptrCast(self.loop), arg);
+            if (ret != 0) return ret;
+        }
+        return 0;
     }
 };
 
@@ -141,10 +155,13 @@ inline fn z_loop_getnameinfo(self: *LoopObject, args: []const ?PyObject, knames:
         python_c.py_decref(@ptrCast(gnid.loop));
     }
 
+    gnid.python_payload = .{
+        .traverse = &GetNameInfoData.traverse,
+    };
     const callback = CallbackManager.Callback{
         .func = &getnameinfo_callback,
         .cleanup = null,
-        .data = .{ .user_data = gnid },
+        .data = CallbackManager.CallbackData.init_python(gnid, &gnid.python_payload),
     };
 
     try loop_data.dns.reverse_lookup(addr, &callback, dns_timeout);

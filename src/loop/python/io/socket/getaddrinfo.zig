@@ -22,9 +22,23 @@ const GetAddrInfoData = struct {
     proto: i32,
     allocator: std.mem.Allocator,
     dns_timeout: ?Resolv.DnsTimeout = null,
+    python_payload: CallbackManager.PythonPayload = .{},
 
     comptime {
-        python_c.verify_gc_coverage(@This(), &.{ "allocator", "host" });
+        python_c.verify_gc_coverage(@This(), &.{ "allocator", "host", "python_payload" });
+    }
+
+    pub fn traverse(ptr: ?*anyopaque, visit_ptr: ?*anyopaque, arg: ?*anyopaque) c_int {
+        const visit: python_c.visitproc = @ptrCast(@alignCast(visit_ptr));
+        if (ptr) |p| {
+            const self: *GetAddrInfoData = @ptrCast(@alignCast(p));
+            var ret: c_int = 0;
+            ret = visit.?(@ptrCast(self.future), arg);
+            if (ret != 0) return ret;
+            ret = visit.?(@ptrCast(self.loop), arg);
+            if (ret != 0) return ret;
+        }
+        return 0;
     }
 };
 
@@ -226,10 +240,13 @@ inline fn z_loop_getaddrinfo(self: *LoopObject, args: []const ?PyObject, knames:
         python_c.py_decref(@ptrCast(gaid.loop));
     }
 
+    gaid.python_payload = .{
+        .traverse = &GetAddrInfoData.traverse,
+    };
     const callback = CallbackManager.Callback{
         .func = &getaddrinfo_callback,
         .cleanup = null,
-        .data = .{ .user_data = gaid },
+        .data = CallbackManager.CallbackData.init_python(gaid, &gaid.python_payload),
     };
 
     const address_list = try loop_data.dns.lookup(host_str, &callback, gaid.dns_timeout);

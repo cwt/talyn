@@ -787,6 +787,20 @@ async def _test_stream_transport_extra_info() -> None:
         peername2 = server_transport.get_extra_info("peername")
         assert peername1 == peername2
         assert peername1 == server_socket.getpeername()
+
+        # Test default values (BUG-388)
+        assert server_transport.get_extra_info("invalid_key") is None
+        assert server_transport.get_extra_info("invalid_key", "custom_default") == "custom_default"
+        assert server_transport.get_extra_info("invalid_key", default="kwarg_default") == "kwarg_default"
+        assert server_transport.get_extra_info("invalid_key", None) is None
+        assert server_transport.get_extra_info("sockname", "ignored") == server_socket.getsockname()
+        assert server_transport.get_extra_info("sockname", default="ignored") == server_socket.getsockname()
+
+        # Test error cases for invalid argument count / keyword overlap (BUG-388)
+        with pytest.raises(TypeError):
+            server_transport.get_extra_info("invalid_key", "pos_def", default="kw_def")
+        with pytest.raises(TypeError):
+            server_transport.get_extra_info("invalid_key", "arg2", "arg3")
     finally:
         server_transport.close()
         client_transport.close()

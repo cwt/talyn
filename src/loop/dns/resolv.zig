@@ -237,6 +237,10 @@ pub const ControlData = struct {
 
     pub fn traverse(self: *const ControlData, visit: python_c.visitproc, arg: ?*anyopaque) c_int {
         for (self.user_callbacks.items) |*v| {
+            if (v.data.traverse()) |t| {
+                const vret = t(v.data.user_data, @ptrCast(@constCast(visit)), arg);
+                if (vret != 0) return vret;
+            }
             if (v.data.module_ptr()) |mod| {
                 const vret = visit.?(@ptrCast(mod), arg);
                 if (vret != 0) return vret;
@@ -494,7 +498,7 @@ fn process_dns_response(data: *const CallbackManager.CallbackData) !void {
         // the callbacks the established error semantics) only when the
         // LAST outstanding nameserver finishes without anyone having
         // resolved.
-        if (should_fail_resolution_on_server_finish(control_data)) {
+        if (server_data.results.items.len > 0 or server_data.ptr_results.items.len > 0 or should_fail_resolution_on_server_finish(control_data)) {
             try mark_resolved_and_execute_user_callbacks(server_data);
         }
         server_data.release();
@@ -536,7 +540,9 @@ fn process_dns_response(data: *const CallbackManager.CallbackData) !void {
                 if (server_data.responses_received < server_data.queries.len and !control_data.resolved) {
                     try queue_next_response_read(server_data);
                 } else {
-                    try mark_resolved_and_execute_user_callbacks(server_data);
+                    if (server_data.results.items.len > 0 or server_data.ptr_results.items.len > 0 or should_fail_resolution_on_server_finish(control_data)) {
+                        try mark_resolved_and_execute_user_callbacks(server_data);
+                    }
                     server_data.release();
                 }
                 return;
@@ -652,11 +658,19 @@ fn process_dns_response(data: *const CallbackManager.CallbackData) !void {
 
     server_data.responses_received += 1;
 
-    // If we have a positive result, resolve immediately.
+    // BUG-384: Dual-stack (A + AAAA) queries send multiple queries per candidate
+    // hostname (types_per_host == 2). We must not prematurely resolve on the first
+    // packet (e.g. A) if companion queries (e.g. AAAA) for this candidate are still
+    // in flight; otherwise IPv6 addresses are dropped.
+    const types_per_host: usize = if (server_data.hostnames_array.len > 0 and server_data.queries.len >= server_data.hostnames_array.len * 2) 2 else 1;
+    const current_candidate_done = (server_data.responses_received % types_per_host) == 0;
+
     if (server_data.results.items.len > 0 or server_data.ptr_results.items.len > 0) {
-        try mark_resolved_and_execute_user_callbacks(server_data);
-        server_data.release();
-        return;
+        if (current_candidate_done or server_data.responses_received >= server_data.queries.len) {
+            try mark_resolved_and_execute_user_callbacks(server_data);
+            server_data.release();
+            return;
+        }
     }
 
     // Wait for more responses if there are queries outstanding.
@@ -666,7 +680,10 @@ fn process_dns_response(data: *const CallbackManager.CallbackData) !void {
     }
 
     // All responses received (or already resolved elsewhere).
-    try mark_resolved_and_execute_user_callbacks(server_data);
+    // BUG-384 / BUG-317: Only fail resolution if this was the last outstanding server.
+    if (server_data.results.items.len > 0 or server_data.ptr_results.items.len > 0 or should_fail_resolution_on_server_finish(control_data)) {
+        try mark_resolved_and_execute_user_callbacks(server_data);
+    }
     server_data.release();
 }
 
@@ -809,12 +826,15 @@ fn get_hostname_array(allocator: std.mem.Allocator, hostname: []const u8, suffix
         if (build_hostname(&hostnames_array.array[hostnames_array.len], hostname, &.{})) {
             hostnames_array.len += 1;
         }
-    } else {
-        // Non-FQDN: try with each search suffix
+    } else if (suffixes.len > 0) {
+        // Non-FQDN with search domains: try with each search suffix first, then bare hostname
         for (suffixes) |suffix| {
             if (build_hostname(&hostnames_array.array[hostnames_array.len], hostname, suffix)) {
                 hostnames_array.len += 1;
             }
+        }
+        if (build_hostname(&hostnames_array.array[hostnames_array.len], hostname, &.{})) {
+            hostnames_array.len += 1;
         }
     }
 

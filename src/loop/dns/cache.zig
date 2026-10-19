@@ -40,8 +40,15 @@ pub const Record = struct {
     }
 
     pub inline fn append_callback(self: *Record, user_callback: *const CallbackManager.Callback) !void {
-        const control_data = self.state.pending;
-        try control_data.user_callbacks.append(control_data.arena.allocator(), user_callback.*);
+        switch (self.state) {
+            .pending => |control_data| {
+                if (control_data.resolved) {
+                    return error.RecordAlreadyResolved;
+                }
+                try control_data.user_callbacks.append(control_data.arena.allocator(), user_callback.*);
+            },
+            else => return error.RecordNotPending,
+        }
     }
 
     pub inline fn set_resolved_data(self: *Record, address_list: []utils.Address, ttl: u32) void {
