@@ -359,12 +359,16 @@ fn poll_blocking_events(self: *Loop, mutex: *lock.Mutex, wait: bool, ready_queue
                 std.log.warn("submit failed: {s}", .{@errorName(err)});
             };
             self.io.ring_has_submitted = true;
-            PyEval_RestoreThread(py_thread_state);
 
             // Sleep briefly so we don't spin in a tight loop when idle.
             // 10ms is a good balance between responsiveness and CPU usage.
+            // Keep the GIL released across the sleep so other Python threads
+            // can run (and so SIGINT can be delivered without a held lock);
+            // restore it only before touching Python state below.
             const sleep_ts = std.os.linux.timespec{ .sec = 0, .nsec = 10_000_000 };
             _ = std.os.linux.nanosleep(&sleep_ts, null);
+
+            PyEval_RestoreThread(py_thread_state);
 
             // Check for pending Python signals (e.g., KeyboardInterrupt
             // from Ctrl-C) before looking at CQEs.

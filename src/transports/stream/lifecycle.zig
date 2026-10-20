@@ -233,6 +233,14 @@ pub fn transport_force_close(self: ?*StreamTransportObject, exc: ?PyObject) call
     if (instance.closed) {
         return python_c.get_py_none();
     }
+
+    // BUG-376 (server tracking): an aborted connection must detach from its
+    // Python Server wrapper exactly like the graceful close path, otherwise
+    // Server._active_count / _clients stay inflated and abort() bypasses the
+    // accounting that close() performs. detach_server is idempotent (it
+    // nulls server_ref), so a later GC (stream_clear) is a no-op.
+    detach_server(instance);
+
     // BUG-32: Bump dispatch_generation before mutating state. Stale completion
     // records captured before the force close will see a mismatched generation.
     @atomicStore(u64, &instance.dispatch_generation, instance.dispatch_generation + 1, .release);
