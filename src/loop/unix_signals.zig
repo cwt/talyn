@@ -259,7 +259,10 @@ pub fn deinit(self: *UnixSignals) void {
         var sig: u8 = undefined;
         var value = self.callbacks.pop(&sig) orelse break;
         if (sig >= 1 and sig <= 64) {
-            std.posix.sigaddset(&mask, @as(std.os.linux.SIG, @enumFromInt(sig)));
+            const sig_enum = std.enums.fromInt(std.os.linux.SIG, @as(@typeInfo(std.os.linux.SIG).@"enum".tag_type, @intCast(sig))) orelse null;
+            if (sig_enum) |se| {
+                std.posix.sigaddset(&mask, se);
+            }
 
             const old_handler = self.prev_handlers[sig];
             self.prev_handlers[sig] = null;

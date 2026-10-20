@@ -182,7 +182,10 @@ fn hook_handle_cancel(self: ?*HookHandle, _: ?PyObject) callconv(.c) ?PyObject {
         return python_c.get_py_none();
     }
     instance.cancelled = true;
-    const hook_type: Loop.HookType = @enumFromInt(instance.hook_type);
+    const hook_type = std.enums.fromInt(Loop.HookType, @as(@typeInfo(Loop.HookType).@"enum".tag_type, @intCast(instance.hook_type))) orelse {
+        python_c.py_decref(@ptrCast(instance));
+        return python_c.get_py_none();
+    };
     instance.loop_data.remove_hook(hook_type, instance.node);
     python_c.py_decref(@ptrCast(instance));
     return python_c.get_py_none();
