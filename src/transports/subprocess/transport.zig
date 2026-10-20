@@ -146,7 +146,11 @@ fn subprocess_send_signal(self: ?*SubprocessTransportObject, arg: ?PyObject) cal
         return null;
     }
     const sig = sig_val;
-    std.posix.kill(instance.pid, @as(std.os.linux.SIG, @enumFromInt(sig))) catch |err| {
+    const sig_enum = std.enums.fromInt(std.os.linux.SIG, @as(@typeInfo(std.os.linux.SIG).@"enum".tag_type, @intCast(sig))) orelse {
+        python_c.raise_python_value_error("Invalid signal\x00");
+        return null;
+    };
+    std.posix.kill(instance.pid, sig_enum) catch |err| {
         return utils.handle_zig_function_error(err, null);
     };
     return python_c.get_py_none();
@@ -375,7 +379,7 @@ fn pidfd_exit_callback(data: *const CallbackManager.CallbackData) !void {
 
     if (res != 0) {
         const errno: u32 = @truncate(~res + 1);
-        const err: std.os.linux.E = @enumFromInt(errno);
+        const err: std.os.linux.E = std.enums.fromInt(std.os.linux.E, @as(@typeInfo(std.os.linux.E).@"enum".tag_type, @intCast(errno))) orelse .INVAL;
         if (err == .CHILD) {
             transport.returncode = python_c.PyLong_FromLong(-1);
             dispatch_subprocess_exit_callbacks(transport);

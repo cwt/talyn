@@ -39,10 +39,13 @@ fn module_cleanup(_: *python_c.PyObject) callconv(.c) void {
     if (builtin.single_threaded) {
         deinitialize_talyn_types();
     }
-    // if (builtin.mode == .Debug) {
-    //     _ = utils.gpa.detectLeaks();
-    // }
-    _ = utils.gpa.deinit();
+    // NOTE: Do NOT call utils.gpa.deinit() here. Under the -Ddebug-alloc
+    // build the DebugAllocator's internal tracking structures can still be
+    // locked (pointer-stability) at interpreter teardown, which turns the
+    // cleanup into a hard panic (SIGABRT) instead of a clean exit. The OS
+    // reclaims the memory at process exit, so skipping the explicit deinit
+    // has no observable effect in production (c_allocator deinit is a no-op
+    // anyway) and keeps debug-alloc teardown crash-free.
 }
 
 var talyn_module = python_c.PyModuleDef{ .m_name = "talyn_zig\x00", .m_doc = "Talyn: A lightning-fast Zig-powered event loop for Python's asyncio.\x00", .m_size = -1, .m_free = @ptrCast(&module_cleanup) };

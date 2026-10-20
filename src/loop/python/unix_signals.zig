@@ -70,7 +70,11 @@ inline fn z_loop_add_signal_handler(self: *LoopObject, args: []?PyObject, knames
         return error.PythonError;
     }
 
-    try loop_data.unix_signals.link(@as(std.os.linux.SIG, @enumFromInt(sig)), CallbackManager.Callback{
+    const sig_enum = std.enums.fromInt(std.os.linux.SIG, @as(@typeInfo(std.os.linux.SIG).@"enum".tag_type, @intCast(sig))) orelse {
+        python_c.raise_python_value_error("Invalid signal\x00");
+        return error.PythonError;
+    };
+    try loop_data.unix_signals.link(sig_enum, CallbackManager.Callback{
         .func = &Handle.callback_for_python_generic_callbacks,
         .cleanup = &Handle.release_python_generic_callback,
         .data = CallbackManager.CallbackData.init_python(py_handle, &py_handle.python_payload),
@@ -101,7 +105,11 @@ pub fn loop_remove_signal_handler(self: ?*LoopObject, py_sig: ?PyObject) callcon
     mutex.lock();
     defer mutex.unlock();
 
-    loop_data.unix_signals.unlink(@as(std.os.linux.SIG, @enumFromInt(sig))) catch |err| {
+    const sig_enum2 = std.enums.fromInt(std.os.linux.SIG, @as(@typeInfo(std.os.linux.SIG).@"enum".tag_type, @intCast(sig))) orelse {
+        python_c.raise_python_value_error("Invalid signal\x00");
+        return null;
+    };
+    loop_data.unix_signals.unlink(sig_enum2) catch |err| {
         if (err == error.KeyNotFound) {
             return python_c.get_py_false();
         }

@@ -39,7 +39,8 @@ pub const CallbackData = struct {
     pub inline fn io_uring_err(self: CallbackData) std.os.linux.E {
         if ((self.payload & 1) == 0) return .SUCCESS;
         const val = (self.payload >> 35) & 0xFFFF;
-        return @enumFromInt(val);
+        // Avoid panic on unknown errno values.
+        return std.enums.fromInt(std.os.linux.E, @as(@typeInfo(std.os.linux.E).@"enum".tag_type, @intCast(val))) orelse .INVAL;
     }
 
     pub inline fn module_ptr(self: CallbackData) ?*python_c.PyObject {
@@ -129,7 +130,6 @@ pub const Callback = struct {
     cleanup: ?GenericCleanUpCallback,
     data: CallbackData,
 };
-
 
 fn ceilPowerOfTwo(val: usize) usize {
     if (val <= 1) return 1;
@@ -316,7 +316,6 @@ inline fn get_adaptive_yield_threshold(initial_count: usize) usize {
         return 512;
     }
 }
-
 
 pub fn execute_dynamic_ring_buffer(ring: *DynamicRingBuffer, comptime exception_handler: ?ExceptionHandler, exception_handler_data: ?*anyopaque, comptime debug: bool, warning_handler: ?WarningHandler, debug_state: ?*const DebugState) !usize {
     if (ring.is_empty()) return 0;

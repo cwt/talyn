@@ -142,7 +142,10 @@ pub inline fn execute_zig_function(func: anytype, args: anytype) get_func_return
 pub fn getSyscallErrno(rc: usize) std.posix.E {
     const signed = @as(isize, @bitCast(rc));
     if (signed > -4096 and signed < 0) {
-        return @enumFromInt(-signed);
+        // BUG: @enumFromInt panics on unknown errno values under
+        // ReleaseSafe/Debug. Use std.enums.fromInt to stay panic-free
+        // on untrusted/kernel-specific errno values.
+        return std.enums.fromInt(std.posix.E, @as(@typeInfo(std.posix.E).@"enum".tag_type, @intCast(-signed))) orelse .INVAL;
     }
     return .SUCCESS;
 }

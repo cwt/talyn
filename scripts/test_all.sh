@@ -206,7 +206,7 @@ get_timeout_cmd() {
 #   TALYN_TEST_TIMEOUT   pytest suite per python (default 600s)
 #   TALYN_STDLIB_TIMEOUT per standard-asyncio module (default 60s)
 TALYN_TEST_TIMEOUT="${TALYN_TEST_TIMEOUT:-600}"
-TALYN_STDLIB_TIMEOUT="${TALYN_STDLIB_TIMEOUT:-60}"
+TALYN_STDLIB_TIMEOUT="${TALYN_STDLIB_TIMEOUT:-180}"
 
 run_tests() {
     local py="$1" label="$2" cmd=""

@@ -529,8 +529,16 @@ pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
     _ = std.os.linux.fcntl(self.ring.fd, std.posix.F.SETFD, @intCast(std.posix.FD_CLOEXEC));
     self.ring_owner_tid = python_c._c.PyThread_get_thread_ident();
 
-    const eventfd_ret = std.os.linux.eventfd(0, std.os.linux.EFD.NONBLOCK | std.os.linux.EFD.CLOEXEC);
-    if (utils.getSyscallErrno(eventfd_ret) != .SUCCESS) return error.SystemResources;
+    var eventfd_ret: usize = 0;
+    var efd_attempt: u8 = 0;
+    while (efd_attempt < 20) : (efd_attempt += 1) {
+        eventfd_ret = std.os.linux.eventfd(0, std.os.linux.EFD.NONBLOCK | std.os.linux.EFD.CLOEXEC);
+        if (utils.getSyscallErrno(eventfd_ret) == .SUCCESS) break;
+        if (efd_attempt + 1 >= 20) return error.SystemResources;
+        const ns: i64 = 10_000_000 * (@as(i64, efd_attempt) + 1);
+        var ts = std.os.linux.timespec{ .sec = @divTrunc(ns, 1_000_000_000), .nsec = @mod(ns, 1_000_000_000) };
+        _ = std.os.linux.nanosleep(&ts, null);
+    }
     self.eventfd = @intCast(eventfd_ret);
     errdefer _ = std.os.linux.close(self.eventfd);
 
@@ -611,7 +619,7 @@ fn init_ring() !std.os.linux.IoUring {
     const single_issuer_flag = std.os.linux.IORING_SETUP_SINGLE_ISSUER;
 
     var attempt: u8 = 0;
-    while (true) : (attempt += 1) {
+    while (attempt < 20) : (attempt += 1) {
         // Attempt: Coop Taskrun + Single Issuer (High performance, Linux 6.0+)
         if (std.os.linux.IoUring.init(TotalTasksItems, coop_flag | single_issuer_flag)) |r| {
             return r;
@@ -623,24 +631,37 @@ fn init_ring() !std.os.linux.IoUring {
                 } else |err2| {
                     if (err2 == error.ArgumentsInvalid) {
                         // Fallback 2: Default scheduling flags (Linux 5.1+)
-                        return std.os.linux.IoUring.init(TotalTasksItems, 0);
+                        if (std.os.linux.IoUring.init(TotalTasksItems, 0)) |r| {
+                            return r;
+                        } else |err3| {
+                            if (err3 == error.SystemResources) {
+                                const ns: i64 = 10_000_000 * (@as(i64, attempt) + 1);
+                                var ts = std.os.linux.timespec{ .sec = @divTrunc(ns, 1_000_000_000), .nsec = @mod(ns, 1_000_000_000) };
+                                _ = std.os.linux.nanosleep(&ts, null);
+                                continue;
+                            }
+                            return err3;
+                        }
                     }
-                    if (err2 == error.SystemResources and attempt < 4) {
-                        var ts = std.os.linux.timespec{ .sec = 0, .nsec = 10_000_000 };
+                    if (err2 == error.SystemResources) {
+                        const ns: i64 = 10_000_000 * (@as(i64, attempt) + 1);
+                        var ts = std.os.linux.timespec{ .sec = @divTrunc(ns, 1_000_000_000), .nsec = @mod(ns, 1_000_000_000) };
                         _ = std.os.linux.nanosleep(&ts, null);
                         continue;
                     }
                     return err2;
                 }
             }
-            if (err == error.SystemResources and attempt < 4) {
-                var ts = std.os.linux.timespec{ .sec = 0, .nsec = 10_000_000 };
+            if (err == error.SystemResources) {
+                const ns: i64 = 10_000_000 * (@as(i64, attempt) + 1);
+                var ts = std.os.linux.timespec{ .sec = @divTrunc(ns, 1_000_000_000), .nsec = @mod(ns, 1_000_000_000) };
                 _ = std.os.linux.nanosleep(&ts, null);
                 continue;
             }
             return err;
         }
     }
+    return error.SystemResources;
 }
 
 /// Make the ring usable from the current thread.
