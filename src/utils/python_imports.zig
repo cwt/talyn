@@ -72,6 +72,14 @@ pub fn register_asyncio_task(task: PyObject) void {
                     python_c.PyErr_Clear();
                 }
             }
+        } else {
+            // Only the pure-Python registry exists (no C accelerator) —
+            // register the task there so asyncio.all_tasks() sees it.
+            if (python_c.PyObject_CallOneArg(func, task)) |ret| {
+                python_c.py_decref(ret);
+            } else {
+                python_c.PyErr_Clear();
+            }
         }
     }
 }

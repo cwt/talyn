@@ -223,12 +223,6 @@ inline fn set_result(task: *Task.PythonTaskObject, future_data: *Future, result:
     }
     discard_from_asyncio_tasks_set(task);
     release_wake_up_task_callback(task);
-    if (task.fut.py_loop) |py_loop| {
-        const loop_obj: *Loop.Python.LoopObject = @ptrCast(@alignCast(py_loop));
-        if (loop_obj.asyncio_tasks_set) |tasks_set| {
-            _ = python_c.PySet_Discard(tasks_set, @ptrCast(task));
-        }
-    }
     if (task.py_context) |ctx| {
         python_c.py_decref(ctx);
         task.py_context = null;
