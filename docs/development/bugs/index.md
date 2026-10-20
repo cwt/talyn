@@ -1,7 +1,7 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 395 bugs (numbered 1–396) discovered across audit passes."
+description: "Individual bug entries for talyn, one file per bug. 397 bugs (numbered 1–398) discovered across audit passes."
 timestamp: "2026-10-18T04:00:00Z"
 ---
 
@@ -18,20 +18,20 @@ Sorted by bug number. See individual bug files for details.
 | Critical | 57 |
 | High | 128 |
 | Medium-High | 37 |
-| Medium | 72 |
+| Medium | 73 |
 | Medium-Mid | 11 |
 | Medium-Low | 21 |
-| Low | 69 |
-| **Total** | **395** |
+| Low | 70 |
+| **Total** | **397** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
-| Fixed | 382 |
+| Fixed | 384 |
 | Open | 0 |
 | False Positive | 13 |
-| **Total** | **395** |
+| **Total** | **397** |
 
 ## All Bugs
 
@@ -432,4 +432,6 @@ Sorted by bug number. See individual bug files for details.
 | [394](394.md) | Build & AST linter bugs: missing `build_options` import on `utils_unit_tests` in `build.zig`, untested `sqe_pointer_lifetime` rule in `test_rules.zig`, and whole-file substring false negatives in linter rules | Medium | Fixed |
 | [395](395.md) | Dead code across the codebase: 5 `.orig` backup files, dead `RingBuffer(N)` in `callback_manager.zig`, dead `write_buf`/`read_buf` in `DatagramTransport`, dead `PseudoSocket` in `talyn/loop.py`, empty placeholder Zig files, and unused fields/helpers | Low | Fixed |
 | [396](396.md) | Duplicate code and unoptimized algorithms across the codebase: 5 copy-pasted SSL protocol classes & $O(N^2)$ buffer pops in `talyn/loop.py`, pre-cache heap allocations on DNS hits, per-hostname `getrandom` syscalls in `build_queries`, and duplicated linked-timeout SQE prep | Low | Fixed |
+| [397](397.md) | Duplicate `PySet_Discard` of task from `asyncio_tasks_set` in `set_result()` — `discard_from_asyncio_tasks_set` already does it | Low | Fixed |
+| [398](398.md) | `register_asyncio_task()` never invokes pure-Python task registry when C accelerator is absent | Medium | Fixed |
 
