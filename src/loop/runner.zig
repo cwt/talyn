@@ -347,17 +347,6 @@ fn poll_blocking_events(self: *Loop, mutex: *lock.Mutex, wait: bool, ready_queue
     var nevents: u32 = undefined;
     while (true) {
         if (should_wait and ready_queue.is_empty()) {
-            // Queue a short timeout SQE so submit_and_wait can't block
-            // indefinitely. io_uring_enter may not be interrupted by
-            // signals on all kernels (e.g., SIGINT/Ctrl-C), so we must
-            // periodically wake up to check self.stopping and pending
-            // Python signals. user_data=0 makes fetch_completed_tasks
-            // skip this completion (it's a watchdog, not a real task).
-            const timeout_ts: std.os.linux.kernel_timespec = .{ .sec = 0, .nsec = 100_000_000 };
-            if (self.io.ring.timeout(0, &timeout_ts, 0, 0)) |_| {} else |err| {
-                std.log.warn("failed to queue watchdog timeout SQE: {s}", .{@errorName(err)});
-            }
-
             @atomicStore(u8, &self.io.ring_blocked, 1, .seq_cst);
             mutex.unlock();
             defer {
@@ -366,25 +355,22 @@ fn poll_blocking_events(self: *Loop, mutex: *lock.Mutex, wait: bool, ready_queue
             }
 
             const py_thread_state = PyEval_SaveThread();
-            const res = self.io.ring.submit_and_wait(1);
+            _ = self.io.ring.submit() catch |err| {
+                std.log.warn("submit failed: {s}", .{@errorName(err)});
+            };
+            self.io.ring_has_submitted = true;
             PyEval_RestoreThread(py_thread_state);
 
+            // Sleep briefly so we don't spin in a tight loop when idle.
+            // 10ms is a good balance between responsiveness and CPU usage.
+            const sleep_ts = std.os.linux.timespec{ .sec = 0, .nsec = 10_000_000 };
+            _ = std.os.linux.nanosleep(&sleep_ts, null);
+
             // Check for pending Python signals (e.g., KeyboardInterrupt
-            // from Ctrl-C). io_uring_enter may not be interrupted by
-            // signals on all kernels, so we check explicitly after every
-            // blocking wait.
+            // from Ctrl-C) before looking at CQEs.
             if (python_c.PyErr_CheckSignals() < 0) return error.PythonError;
             if (python_c.PyErr_Occurred() != null) return error.PythonError;
 
-            _ = res catch |err| {
-                if (err == error.SignalInterrupt) {
-                    if (python_c.PyErr_CheckSignals() < 0) return error.PythonError;
-                    if (python_c.PyErr_Occurred() != null) return error.PythonError;
-                    continue;
-                }
-                return err;
-            };
-            self.io.ring_has_submitted = true;
             nevents = try copy_cqes_eintr_safe(&self.io.ring, blocking_ready_tasks);
         } else {
             // Non-blocking: flush pending SQEs, then peek at CQEs.
