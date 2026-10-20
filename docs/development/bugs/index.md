@@ -1,7 +1,7 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 397 bugs (numbered 1–398) discovered across audit passes."
+description: "Individual bug entries for talyn, one file per bug. 398 bugs (numbered 1–399) discovered across audit passes."
 timestamp: "2026-10-18T04:00:00Z"
 ---
 
@@ -16,22 +16,22 @@ Sorted by bug number. See individual bug files for details.
 | Severity | Count |
 |---|---:|
 | Critical | 57 |
-| High | 128 |
+| High | 129 |
 | Medium-High | 37 |
 | Medium | 73 |
 | Medium-Mid | 11 |
 | Medium-Low | 21 |
 | Low | 70 |
-| **Total** | **397** |
+| **Total** | **398** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
-| Fixed | 384 |
+| Fixed | 385 |
 | Open | 0 |
 | False Positive | 13 |
-| **Total** | **397** |
+| **Total** | **398** |
 
 ## All Bugs
 
@@ -434,4 +434,5 @@ Sorted by bug number. See individual bug files for details.
 | [396](396.md) | Duplicate code and unoptimized algorithms across the codebase: 5 copy-pasted SSL protocol classes & $O(N^2)$ buffer pops in `talyn/loop.py`, pre-cache heap allocations on DNS hits, per-hostname `getrandom` syscalls in `build_queries`, and duplicated linked-timeout SQE prep | Low | Fixed |
 | [397](397.md) | Duplicate `PySet_Discard` of task from `asyncio_tasks_set` in `set_result()` — `discard_from_asyncio_tasks_set` already does it | Low | Fixed |
 | [398](398.md) | `register_asyncio_task()` never invokes pure-Python task registry when C accelerator is absent | Medium | Fixed |
+| [399](399.md) | Ctrl-C / SIGINT hangs the event loop indefinitely because `io_uring_enter` blocks forever without signal interruption | High | Fixed |
 

@@ -347,11 +347,17 @@ fn poll_blocking_events(self: *Loop, mutex: *lock.Mutex, wait: bool, ready_queue
     var nevents: u32 = undefined;
     while (true) {
         if (should_wait and ready_queue.is_empty()) {
-            // BUG-60: Removed extensive debug prints that ran on
-            // every blocking wait iteration. This is the hot path
-            // for any I/O-bound workload — every print was a
-            // synchronous write to stderr, which is a serious
-            // bottleneck.
+            // Queue a short timeout SQE so submit_and_wait can't block
+            // indefinitely. io_uring_enter may not be interrupted by
+            // signals on all kernels (e.g., SIGINT/Ctrl-C), so we must
+            // periodically wake up to check self.stopping and pending
+            // Python signals. user_data=0 makes fetch_completed_tasks
+            // skip this completion (it's a watchdog, not a real task).
+            const timeout_ts: std.os.linux.kernel_timespec = .{ .sec = 0, .nsec = 100_000_000 };
+            if (self.io.ring.timeout(0, &timeout_ts, 0, 0)) |_| {} else |err| {
+                std.log.warn("failed to queue watchdog timeout SQE: {s}", .{@errorName(err)});
+            }
+
             @atomicStore(u8, &self.io.ring_blocked, 1, .seq_cst);
             mutex.unlock();
             defer {
@@ -362,6 +368,13 @@ fn poll_blocking_events(self: *Loop, mutex: *lock.Mutex, wait: bool, ready_queue
             const py_thread_state = PyEval_SaveThread();
             const res = self.io.ring.submit_and_wait(1);
             PyEval_RestoreThread(py_thread_state);
+
+            // Check for pending Python signals (e.g., KeyboardInterrupt
+            // from Ctrl-C). io_uring_enter may not be interrupted by
+            // signals on all kernels, so we check explicitly after every
+            // blocking wait.
+            if (python_c.PyErr_CheckSignals() < 0) return error.PythonError;
+            if (python_c.PyErr_Occurred() != null) return error.PythonError;
 
             _ = res catch |err| {
                 if (err == error.SignalInterrupt) {
