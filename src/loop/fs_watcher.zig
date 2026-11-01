@@ -42,14 +42,8 @@ pub fn deinit(self: *FSWatcher) void {
     self.watchers.deinit(self.loop.allocator);
 }
 
-fn ensure_inotify(self: *FSWatcher) !void {
-    if (self.inotify_fd >= 0) return;
-
-    const ret = std.os.linux.inotify_init1(std.os.linux.IN.NONBLOCK | std.os.linux.IN.CLOEXEC);
-    if (utils.getSyscallErrno(ret) != .SUCCESS) return error.SystemResources;
-    const fd: std.posix.fd_t = @intCast(ret);
-    errdefer _ = std.os.linux.close(fd);
-
+fn start_inotify_read(self: *FSWatcher, fd: std.posix.fd_t) !void {
+    if (self.inotify_task_id != 0) return;
     self.inotify_task_id = try self.loop.io.queue(.{ .WaitReadable = .{
         .fd = fd,
         .callback = .{
@@ -58,7 +52,23 @@ fn ensure_inotify(self: *FSWatcher) !void {
             .data = .{ .user_data = self },
         },
     } });
+}
 
+fn ensure_inotify(self: *FSWatcher) !void {
+    if (self.inotify_fd >= 0) {
+        // BUG-403: the fd survives the last remove_watch(), but the read is
+        // only re-armed while the watcher list is non-empty. A subsequent
+        // add_watch() must arm it again before adding the new watch.
+        try self.start_inotify_read(self.inotify_fd);
+        return;
+    }
+
+    const ret = std.os.linux.inotify_init1(std.os.linux.IN.NONBLOCK | std.os.linux.IN.CLOEXEC);
+    if (utils.getSyscallErrno(ret) != .SUCCESS) return error.SystemResources;
+    const fd: std.posix.fd_t = @intCast(ret);
+    errdefer _ = std.os.linux.close(fd);
+
+    try self.start_inotify_read(fd);
     self.inotify_fd = fd;
 }
 

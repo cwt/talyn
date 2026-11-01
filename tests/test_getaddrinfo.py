@@ -47,8 +47,18 @@ def test_getaddrinfo_different_port() -> None:
 def test_getaddrinfo_missing_host() -> None:
     async def main() -> None:
         loop = asyncio.get_running_loop()
-        with pytest.raises((ValueError, TypeError)):
-            await loop.getaddrinfo(None, 80)
+
+        # Without AI_PASSIVE, a NULL host means loopback (POSIX).
+        loopback = await loop.getaddrinfo(None, 80)
+        assert loopback
+        assert any(
+            entry[4][0] in ("127.0.0.1", "::1") for entry in loopback
+        )
+
+        # With AI_PASSIVE, it means the wildcard address.
+        passive = await loop.getaddrinfo(None, 80, flags=socket.AI_PASSIVE)
+        assert passive
+        assert any(entry[4][0] in ("0.0.0.0", "::") for entry in passive)
 
     talyn.run(main())
 

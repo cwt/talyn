@@ -55,8 +55,17 @@ pub fn loop_clear(self: ?*LoopObject) callconv(.c) c_int {
     if (loop_data.initialized) {
         const mutex = &loop_data.mutex;
         mutex.lock();
-        defer mutex.unlock();
-        loop_data.release();
+        // BUG-348/BUG-400: claim the teardown under the mutex, then run
+        // release_claimed() WITHOUT it. Watcher deinit paths call the
+        // locking IO.queue(), and the mutex is not recursive.
+        if (loop_data.running) {
+            mutex.unlock();
+            return 0;
+        }
+        loop_data.initialized = false;
+        mutex.unlock();
+
+        loop_data.release_claimed();
     }
 
     if (py_loop.weakref_list != null) {

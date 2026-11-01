@@ -185,7 +185,14 @@ pub fn link(self: *UnixSignals, sig: std.os.linux.SIG, callback: CallbackManager
     var prev_callback = self.callbacks.replace(@intCast(sig_idx), callback);
     if (prev_callback) |*v| {
         v.data.set_cancelled(true);
-        try Loop.Scheduling.Soon.dispatch_nonthreadsafe(self.loop, v);
+        Loop.Scheduling.Soon.dispatch_nonthreadsafe(self.loop, v) catch |err| {
+            // BUG-413: the new callback is already in the BTree. Restore the
+            // replaced entry before propagating the error; the caller's
+            // errdefer will free the new handle.
+            v.data.set_cancelled(false);
+            _ = self.callbacks.replace(@intCast(sig_idx), v.*);
+            return err;
+        };
     } else {
         try self.loop.reserve_slots(1);
     }

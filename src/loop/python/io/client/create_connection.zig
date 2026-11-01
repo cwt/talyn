@@ -139,7 +139,7 @@ inline fn z_loop_create_connection(self: *LoopObject, args: []?PyObject, knames:
     defer {
         python_c.py_xdecref(py_sock);
     }
-    errdefer python_c.deinitialize_object_fields(&creation_data, &.{ "future", "protocol_factory" });
+    errdefer python_c.deinitialize_object_fields(&creation_data, &.{});
 
     var dns_timeout: ?Resolv.DnsTimeout = null;
     if (creation_data.py_dns_timeout) |py_dns_timeout| {
@@ -641,6 +641,11 @@ fn submit_connect_for_address(mcs: *MultiConnectState, address: *const utils.Add
         .traverse = &SocketData.traverse,
     } };
 
+    // BUG-412: reserve the bookkeeping slot BEFORE queueing the SQE. If this
+    // fails, no kernel operation references socket_data yet, so the errdefer
+    // can safely destroy it. appendAssumeCapacity below is infallible.
+    try mcs.task_ids.ensureUnusedCapacity(allocator, 1);
+
     const task_id = create_socket_and_submit_connect_req(address, socket_data, loop) catch |err| {
         // Do NOT free socket_data here: the errdefer at the top of this
         // function already runs on every error return (including this one),
@@ -648,7 +653,7 @@ fn submit_connect_for_address(mcs: *MultiConnectState, address: *const utils.Add
         return err;
     };
     socket_data.task_id = task_id;
-    try mcs.task_ids.append(allocator, task_id);
+    mcs.task_ids.appendAssumeCapacity(task_id);
     mcs.pending += 1;
 }
 

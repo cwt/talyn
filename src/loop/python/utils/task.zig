@@ -1,6 +1,8 @@
 const python_c = @import("python_c");
 const PyObject = *python_c.PyObject;
 
+const std = @import("std");
+
 const utils = @import("utils");
 
 const Loop = @import("../../main.zig");
@@ -8,6 +10,23 @@ const Task = @import("../../../task/main.zig");
 
 const PythonLoopObject = Loop.Python.LoopObject;
 const PythonTaskObject = Task.PythonTaskObject;
+
+/// True only for CPython's "got an unexpected keyword argument" TypeError.
+/// BUG-409: retrying on every TypeError hides genuine factory failures and
+/// invokes the factory twice.
+fn isUnexpectedKeywordTypeError(exc: PyObject) bool {
+    const text = python_c.PyObject_Str(exc) orelse {
+        python_c.PyErr_Clear();
+        return false;
+    };
+    defer python_c.py_decref(text);
+
+    const cstr = python_c.PyUnicode_AsUTF8(text) orelse {
+        python_c.PyErr_Clear();
+        return false;
+    };
+    return std.mem.indexOf(u8, std.mem.span(cstr), "unexpected keyword argument") != null;
+}
 
 inline fn z_loop_create_task(self: *PythonLoopObject, args: []?PyObject, knames: ?PyObject) !*PythonTaskObject {
     if (args.len != 1) {
@@ -66,30 +85,41 @@ inline fn z_loop_create_task(self: *PythonLoopObject, args: []?PyObject, knames:
             const py_kwargs = python_c.PyDict_New() orelse return error.PythonError;
             defer python_c.py_decref(py_kwargs);
             if (context_passed) {
-                _ = python_c.PyDict_SetItemString(py_kwargs, "context\x00", context.?);
+                if (python_c.PyDict_SetItemString(py_kwargs, "context\x00", context.?) != 0) {
+                    return error.PythonError;
+                }
             }
             if (name) |n| {
-                _ = python_c.PyDict_SetItemString(py_kwargs, "name\x00", n);
+                if (python_c.PyDict_SetItemString(py_kwargs, "name\x00", n) != 0) {
+                    return error.PythonError;
+                }
             }
             const res = python_c.PyObject_Call(factory, py_args, py_kwargs);
             if (res) |t| {
                 task = t;
             } else {
-                // If custom factory failed with TypeError because it doesn't accept **kwargs
-                // (legacy 2-arg factory(loop, coro)), fall back to calling without kwargs.
-                if (python_c.PyErr_ExceptionMatches(python_c.PyExc_TypeError.?) != 0) {
-                    python_c.PyErr_Clear();
-                    task = python_c.PyObject_Call(factory, py_args, null) orelse return error.PythonError;
-                    if (name) |n| {
-                        const set_name_res = python_c.PyObject_CallMethod(task, "set_name\x00", "O\x00", n);
-                        if (set_name_res) |sn| {
-                            python_c.py_decref(sn);
-                        } else {
-                            python_c.PyErr_Clear();
-                        }
-                    }
-                } else {
+                // If custom factory failed with TypeError because it doesn't
+                // accept **kwargs (legacy 2-arg factory(loop, coro)), fall back
+                // to calling without kwargs. Only the specific unexpected-kwarg
+                // TypeError is retried; any other failure propagates unchanged.
+                const matches = python_c.PyErr_ExceptionMatches(python_c.PyExc_TypeError.?);
+                if (matches <= 0) return error.PythonError;
+
+                const exc = python_c.PyErr_GetRaisedException() orelse return error.PythonError;
+                defer python_c.py_decref(exc);
+                if (!isUnexpectedKeywordTypeError(exc)) {
+                    python_c.PyErr_SetRaisedException(python_c.py_newref(exc));
                     return error.PythonError;
+                }
+
+                task = python_c.PyObject_Call(factory, py_args, null) orelse return error.PythonError;
+                if (name) |n| {
+                    const set_name_res = python_c.PyObject_CallMethod(task, "set_name\x00", "O\x00", n);
+                    if (set_name_res) |sn| {
+                        python_c.py_decref(sn);
+                    } else {
+                        python_c.PyErr_Clear();
+                    }
                 }
             }
         } else {

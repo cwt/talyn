@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 385 |
-| Open | 14 |
+| Fixed | 399 |
+| Open | 0 |
 | False Positive | 13 |
 | **Total** | **412** |
 
@@ -435,18 +435,18 @@ Sorted by bug number. See individual bug files for details.
 | [397](397.md) | Duplicate `PySet_Discard` of task from `asyncio_tasks_set` in `set_result()` — `discard_from_asyncio_tasks_set` already does it | Low | Fixed |
 | [398](398.md) | `register_asyncio_task()` never invokes pure-Python task registry when C accelerator is absent | Medium | Fixed |
 | [399](399.md) | Ctrl-C / SIGINT hangs the event loop indefinitely because `io_uring_enter` blocks forever without signal interruption | High | Fixed |
-| [400](400.md) | `loop_clear` holds the loop mutex across `Loop.release()` — deadlock with FS/child watcher teardown under free-threading | Critical | Open |
-| [401](401.md) | `Future.__init__` re-initialization double-decrefs the loop reference, stealing a caller reference | Critical | Open |
-| [402](402.md) | `close_transports` stashes `pending_lost_exc` after `close()` can already fire `connection_lost(None)` on read errors | High | Open |
-| [403](403.md) | `FSWatcher` permanently disarms after the last watch is removed and a new watch is added | High | Open |
-| [404](404.md) | `ready_tasks_queue_capacity` overflow in `ceilPowerOfTwo`: ReleaseFast SIGSEGV, ReleaseSafe integer-overflow panic | Critical | Open |
-| [405](405.md) | Dotless hostnames are never resolved when `resolv.conf` has no search domains | High | Open |
-| [406](406.md) | `getaddrinfo`/`getnameinfo` flags are parsed and silently ignored; `host=None` with `AI_PASSIVE` rejects valid input | Medium | Open |
-| [407](407.md) | `create_datagram_endpoint` accepts an arbitrary `fileno()`: ReleaseFast truncates to a real fd, ReleaseSafe panics | High | Open |
-| [408](408.md) | `DatagramTransport` `buffer_size` is never released on cancelled/closed/error send completions | Medium | Open |
-| [409](409.md) | Custom task factory is invoked twice when it raises `TypeError`, discarding the original failure | Medium | Open |
-| [410](410.md) | Unconditional 10 ms `nanosleep` in the idle poll path adds ~10 ms to every I/O/timer completion | High | Open |
-| [411](411.md) | `create_connection` leaks the Future and `protocol_factory` references on post-setup errors | Medium | Open |
-| [412](412.md) | Connect callback state is destroyed while its io_uring SQE is still queued when `task_ids.append` fails | Critical | Open |
-| [413](413.md) | `UnixSignals.link` leaves a freed callback in the BTree when dispatching the replaced callback fails | Critical | Open |
+| [400](400.md) | `loop_clear` holds the loop mutex across `Loop.release()` — deadlock with FS/child watcher teardown under free-threading | Critical | Fixed |
+| [401](401.md) | `Future.__init__` re-initialization double-decrefs the loop reference, stealing a caller reference | Critical | Fixed |
+| [402](402.md) | `close_transports` stashes `pending_lost_exc` after `close()` can already fire `connection_lost(None)` on read errors | High | Fixed |
+| [403](403.md) | `FSWatcher` permanently disarms after the last watch is removed and a new watch is added | High | Fixed |
+| [404](404.md) | `ready_tasks_queue_capacity` overflow in `ceilPowerOfTwo`: ReleaseFast SIGSEGV, ReleaseSafe integer-overflow panic | Critical | Fixed |
+| [405](405.md) | Dotless hostnames are never resolved when `resolv.conf` has no search domains | High | Fixed |
+| [406](406.md) | `getaddrinfo`/`getnameinfo` flags are parsed and silently ignored; `host=None` with `AI_PASSIVE` rejects valid input | Medium | Fixed |
+| [407](407.md) | `create_datagram_endpoint` accepts an arbitrary `fileno()`: ReleaseFast truncates to a real fd, ReleaseSafe panics | High | Fixed |
+| [408](408.md) | `DatagramTransport` `buffer_size` is never released on cancelled/closed/error send completions | Medium | Fixed |
+| [409](409.md) | Custom task factory is invoked twice when it raises `TypeError`, discarding the original failure | Medium | Fixed |
+| [410](410.md) | Unconditional 10 ms `nanosleep` in the idle poll path adds ~10 ms to every I/O/timer completion | High | Fixed |
+| [411](411.md) | `create_connection` leaks the Future and `protocol_factory` references on post-setup errors | Medium | Fixed |
+| [412](412.md) | Connect callback state is destroyed while its io_uring SQE is still queued when `task_ids.append` fails | Critical | Fixed |
+| [413](413.md) | `UnixSignals.link` leaves a freed callback in the BTree when dispatching the replaced callback fails | Critical | Fixed |
 

@@ -124,9 +124,8 @@ inline fn z_future_init(self: *PythonFutureObject, args: ?PyObject, kwargs: ?PyO
         return error.PythonError;
     }
 
-    if (self.py_loop) |l| {
+    if (self.py_loop) |_| {
         _ = future_clear(self);
-        python_c.py_decref(l);
         self.py_loop = null;
     }
 

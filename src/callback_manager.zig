@@ -131,8 +131,11 @@ pub const Callback = struct {
     data: CallbackData,
 };
 
-fn ceilPowerOfTwo(val: usize) usize {
+fn ceilPowerOfTwo(val: usize) !usize {
     if (val <= 1) return 1;
+    // The next power of two above the largest representable power of two
+    // overflows. Reject it instead of wrapping to 0 (BUG-404).
+    if (val > (@as(usize, 1) << (@bitSizeOf(usize) - 1))) return error.OutOfMemory;
     var x = val - 1;
     x |= x >> 1;
     x |= x >> 2;
@@ -156,7 +159,7 @@ pub const DynamicRingBuffer = struct {
     allocator: std.mem.Allocator = undefined,
 
     pub fn init(self: *Self, allocator: std.mem.Allocator, capacity: usize) !void {
-        const actual_capacity = ceilPowerOfTwo(capacity);
+        const actual_capacity = try ceilPowerOfTwo(capacity);
         self.callbacks = try allocator.alloc(Callback, actual_capacity);
         errdefer allocator.free(self.callbacks);
         self.executed = try allocator.alloc(std.atomic.Value(bool), actual_capacity);
@@ -189,6 +192,7 @@ pub const DynamicRingBuffer = struct {
 
     fn grow(self: *Self) !void {
         const old_cap = self.capacity;
+        if (old_cap > std.math.maxInt(usize) / 2) return error.OutOfMemory;
         const new_cap = old_cap * 2;
         const n = self.count();
 

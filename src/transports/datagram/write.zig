@@ -29,6 +29,10 @@ fn sendto_completed(data: *const CallbackManager.CallbackData) !void {
     defer if (success) cleanup_sendto(@ptrCast(@alignCast(sd)));
 
     const self = sd.transport;
+    // BUG-408: every terminal outcome must release the bytes reserved by
+    // buffer_watermark_check(), not only the success path.
+    defer self.buffer_size -= @min(self.buffer_size, sd.buf.len);
+
     if (data.cancelled() or self.closed) {
         success = true;
         return;
@@ -43,13 +47,6 @@ fn sendto_completed(data: *const CallbackManager.CallbackData) !void {
         }
         success = true;
         return;
-    }
-
-    const written: usize = @intCast(@max(data.io_uring_res(), 0));
-    if (self.buffer_size >= written) {
-        self.buffer_size -= written;
-    } else {
-        self.buffer_size = 0;
     }
 
     if (!self.is_writing and self.buffer_size <= self.writing_low_water_mark) {

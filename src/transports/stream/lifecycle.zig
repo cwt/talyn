@@ -53,6 +53,13 @@ pub fn detach_server(transport: *StreamTransportObject) void {
 pub fn close_transports(transport: *StreamTransportObject, read_transport: *ReadTransport, write_transport: *WriteTransport, exception: PyObject) void {
     const closed_already = transport.closed;
 
+    // BUG-402: stash the exception BEFORE read/write close() can synchronously
+    // reach maybe_close_fd() and fire connection_lost. Otherwise the once-guard
+    // runs with a null pending_lost_exc and delivers Py_None.
+    if (!closed_already and transport.pending_lost_exc == null) {
+        transport.pending_lost_exc = python_c.py_newref(exception);
+    }
+
     read_transport.close() catch |err| std.log.warn("read_transport close failed: {s}", .{@errorName(err)});
     write_transport.close() catch |err| std.log.warn("write_transport close failed: {s}", .{@errorName(err)});
 
@@ -66,13 +73,6 @@ pub fn close_transports(transport: *StreamTransportObject, read_transport: *Read
 
     detach_server(transport);
 
-    // BUG-378: connection_lost() fires only at the fully-closed
-    // transition (both sides drained/force-closed), so stash the
-    // exception this close came with and let maybe_close_fd do the
-    // notify-once at the right moment.
-    if (transport.pending_lost_exc == null) {
-        transport.pending_lost_exc = python_c.py_newref(exception);
-    }
     maybe_close_fd(transport);
 }
 

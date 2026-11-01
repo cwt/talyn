@@ -12,6 +12,14 @@ const Future = @import("../../../../future/main.zig");
 const FutureObject = Future.Python.FutureObject;
 const Resolv = @import("../../../dns/resolv.zig");
 
+// Linux getaddrinfo(3) flag values. Keep these explicit so the public API
+// rejects flags that the resolver does not implement instead of ignoring them.
+const AI_PASSIVE: i32 = 0x0001;
+const AI_NUMERICHOST: i32 = 0x0004;
+const AI_ADDRCONFIG: i32 = 0x0020;
+const AI_NUMERICSERV: i32 = 0x0400;
+const AI_SUPPORTED: i32 = AI_PASSIVE | AI_NUMERICHOST | AI_ADDRCONFIG | AI_NUMERICSERV;
+
 const GetAddrInfoData = struct {
     future: *FutureObject,
     loop: *LoopObject,
@@ -207,6 +215,16 @@ inline fn z_loop_getaddrinfo(self: *LoopObject, args: []const ?PyObject, knames:
         break :blk try utils.checkedNarrow(i32, v, "invalid proto\x00");
     } else 0;
 
+    const flags: i32 = if (py_flags) |f| blk: {
+        const v = python_c.PyLong_AsLong(f);
+        if (python_c.PyErr_Occurred() != null) return error.PythonError;
+        break :blk try utils.checkedNarrow(i32, v, "invalid flags\x00");
+    } else 0;
+    if (flags & ~AI_SUPPORTED != 0) {
+        python_c.raise_python_value_error("unsupported getaddrinfo flags\x00");
+        return error.PythonError;
+    }
+
     var dns_timeout: ?Resolv.DnsTimeout = null;
     if (py_dns_timeout) |pt| {
         dns_timeout = try Resolv.parse_dns_timeout(pt);
@@ -217,9 +235,72 @@ inline fn z_loop_getaddrinfo(self: *LoopObject, args: []const ?PyObject, knames:
     const fut = try Future.Python.Constructors.fast_new_future(self);
     errdefer python_c.py_decref(@ptrCast(fut));
 
+    const future_data = utils.get_data_ptr(Future, fut);
+
+    // BUG-406: support host=None. AI_PASSIVE selects the wildcard address;
+    // without it, use the loopback address. This avoids decoding Py_None as a
+    // string (which used to raise TypeError).
+    if (python_c.is_none(py_host)) {
+        var addresses: [2]utils.Address = undefined;
+        var count: usize = 0;
+        const passive = (flags & AI_PASSIVE) != 0;
+
+        if (family == 0 or family == std.posix.AF.INET) {
+            addresses[count] = utils.Address.initIp4(
+                if (passive) .{ 0, 0, 0, 0 } else .{ 127, 0, 0, 1 },
+                port,
+            );
+            count += 1;
+        }
+        if ((family == 0 and loop_data.dns.ipv6_supported) or family == std.posix.AF.INET6) {
+            var ip6: [16]u8 = @splat(0);
+            if (!passive) ip6[15] = 1;
+            addresses[count] = utils.Address.initIp6(ip6, port, 0, 0);
+            count += 1;
+        }
+        if (count == 0) {
+            python_c.raise_python_value_error("unsupported address family\x00");
+            return error.PythonError;
+        }
+
+        const py_res = try build_result_tuple(addresses[0..count], port, family, socket_type, proto);
+        defer python_c.py_decref(py_res);
+        try Future.Python.Result.future_fast_set_result(future_data, py_res);
+        return fut;
+    }
+
     var c_size: python_c.Py_ssize_t = 0;
     const ptr = python_c.PyUnicode_AsUTF8AndSize(py_host, &c_size) orelse return error.PythonError;
-    const host_str = try alloc.dupe(u8, ptr[0..@intCast(c_size)]);
+    const host_slice = ptr[0..@intCast(c_size)];
+
+    // BUG-406: AI_NUMERICHOST must never reach DNS.
+    if (flags & AI_NUMERICHOST != 0) {
+        var addresses: [2]utils.Address = undefined;
+        var count: usize = 0;
+        if (family == 0 or family == std.posix.AF.INET) {
+            if (utils.Address.resolveIp(host_slice, port)) |addr| {
+                addresses[count] = addr;
+                count += 1;
+            } else |_| {}
+        }
+        if ((family == 0 or family == std.posix.AF.INET6) and count == 0) {
+            if (utils.Address.resolveIp6(host_slice, port)) |addr| {
+                addresses[count] = addr;
+                count += 1;
+            } else |_| {}
+        }
+        if (count == 0) {
+            python_c.raise_python_value_error("AI_NUMERICHOST requires a numeric host\x00");
+            return error.PythonError;
+        }
+
+        const py_res = try build_result_tuple(addresses[0..count], port, family, socket_type, proto);
+        defer python_c.py_decref(py_res);
+        try Future.Python.Result.future_fast_set_result(future_data, py_res);
+        return fut;
+    }
+
+    const host_str = try alloc.dupe(u8, host_slice);
     errdefer alloc.free(host_str);
 
     const gaid = try alloc.create(GetAddrInfoData);
@@ -254,8 +335,8 @@ inline fn z_loop_getaddrinfo(self: *LoopObject, args: []const ?PyObject, knames:
         // Result was in cache
         const py_res = try build_result_tuple(al, port, family, socket_type, proto);
         defer python_c.py_decref(py_res);
-        const future_data = utils.get_data_ptr(Future, fut);
-        try Future.Python.Result.future_fast_set_result(future_data, py_res);
+        const cached_future_data = utils.get_data_ptr(Future, fut);
+        try Future.Python.Result.future_fast_set_result(cached_future_data, py_res);
 
         // Cleanup gaid and host_str since callback won't be called
         python_c.py_decref(@ptrCast(gaid.future));

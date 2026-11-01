@@ -829,8 +829,10 @@ fn get_hostname_array(allocator: std.mem.Allocator, hostname: []const u8, suffix
         if (build_hostname(&hostnames_array.array[hostnames_array.len], hostname, &.{})) {
             hostnames_array.len += 1;
         }
-    } else if (suffixes.len > 0) {
-        // Non-FQDN with search domains: try with each search suffix first, then bare hostname
+    } else {
+        // Non-FQDN: try each search suffix first, then the bare hostname.
+        // BUG-405: the bare hostname must also be tried when there are no
+        // search domains, otherwise dotless names produce no candidates.
         for (suffixes) |suffix| {
             if (build_hostname(&hostnames_array.array[hostnames_array.len], hostname, suffix)) {
                 hostnames_array.len += 1;

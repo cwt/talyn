@@ -312,7 +312,16 @@ fn z_create_endpoint(dcd: *DatagramCreationData) !void {
         const raw_fd = python_c.PyObject_CallMethod(sock_obj, "fileno\x00", null) orelse return error.PythonError;
         defer python_c.py_decref(raw_fd);
         const lfd = python_c.PyLong_AsLong(raw_fd);
-        const dup_ret = std.os.linux.dup(@intCast(lfd));
+        if (python_c.PyErr_Occurred() != null) return error.PythonError;
+        // BUG-407: never trust fileno(); a negative or out-of-range value
+        // would otherwise truncate to a real fd in ReleaseFast or panic in
+        // ReleaseSafe.
+        const source_fd: std.posix.fd_t = try utils.checkedNarrow(std.posix.fd_t, lfd, "invalid file descriptor\x00");
+        if (source_fd < 0) {
+            python_c.raise_python_value_error("invalid file descriptor\x00");
+            return error.PythonError;
+        }
+        const dup_ret = std.os.linux.dup(source_fd);
         if (utils.getSyscallErrno(dup_ret) != .SUCCESS) return error.SystemResources;
         fd = @intCast(dup_ret);
         // Set nonblocking and cloexec

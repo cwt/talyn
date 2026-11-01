@@ -13,6 +13,27 @@ const FutureObject = Future.Python.FutureObject;
 const Parsers = @import("../../../dns/parsers.zig");
 const Resolv = @import("../../../dns/resolv.zig");
 
+// Linux getnameinfo(3) flag values.
+const NI_NUMERICHOST: i32 = 0x0001;
+const NI_NUMERICSERV: i32 = 0x0002;
+const NI_NOFQDN: i32 = 0x0004;
+const NI_NAMEREQD: i32 = 0x0008;
+const NI_DGRAM: i32 = 0x0010;
+const NI_SUPPORTED: i32 = NI_NUMERICHOST | NI_NUMERICSERV | NI_NOFQDN | NI_NAMEREQD | NI_DGRAM;
+
+/// Build the numeric (host, service) tuple without a DNS PTR lookup.
+fn build_numeric_nameinfo(addr: utils.Address) !PyObject {
+    const pair = try addr.toPyAddr();
+    defer python_c.py_decref(pair);
+
+    if (python_c.PyTuple_Check(pair) == 0) return error.UnsupportedAddressFamily;
+    const host = python_c.PyTuple_GetItem(pair, 0) orelse return error.PythonError;
+    const port = python_c.PyLong_FromLong(@intCast(addr.getPort())) orelse return error.PythonError;
+    defer python_c.py_decref(port);
+
+    return python_c.PyTuple_Pack(2, host, port) orelse error.PythonError;
+}
+
 const GetNameInfoData = struct {
     future: *FutureObject,
     loop: *LoopObject,
@@ -90,7 +111,12 @@ fn getnameinfo_callback(data: *const CallbackManager.CallbackData) !void {
         },
     };
 
-    const py_host = python_c.PyUnicode_FromStringAndSize(hostname.ptr, @intCast(hostname.len)) orelse {
+    var hostname_len = hostname.len;
+    if (gnid.flags & NI_NOFQDN != 0) {
+        if (std.mem.indexOfScalar(u8, hostname, '.')) |dot| hostname_len = dot;
+    }
+
+    const py_host = python_c.PyUnicode_FromStringAndSize(hostname.ptr, @intCast(hostname_len)) orelse {
         try resolve_future_error(gnid.future, "Failed to build nameinfo result\x00");
         return error.PythonError;
     };
@@ -113,6 +139,7 @@ fn getnameinfo_callback(data: *const CallbackManager.CallbackData) !void {
 
 inline fn z_loop_getnameinfo(self: *LoopObject, args: []const ?PyObject, knames: ?PyObject) !*FutureObject {
     if (Loop.Python.check_forked(self)) return error.PythonError;
+    if (Loop.Python.check_thread(self)) return error.PythonError;
 
     var merged: [3]?PyObject = undefined;
     try python_c.merge_vector_call_args(args, knames, &.{ "sockaddr", "flags", "dns_timeout" }, &merged);
@@ -127,8 +154,28 @@ inline fn z_loop_getnameinfo(self: *LoopObject, args: []const ?PyObject, knames:
         // BUG-361: unchecked i64 to i32 narrowing panicked.
         break :blk try utils.checkedNarrow(i32, v, "invalid flags\x00");
     } else 0;
+    if (flags & ~NI_SUPPORTED != 0) {
+        python_c.raise_python_value_error("unsupported getnameinfo flags\x00");
+        return error.PythonError;
+    }
 
     const addr = try utils.Address.fromPyAddr(py_addr, null);
+
+    const loop_data = utils.get_data_ptr(Loop, self);
+    const alloc = loop_data.allocator;
+
+    // BUG-406: NI_NUMERICHOST must not perform a PTR lookup.
+    if (flags & NI_NUMERICHOST != 0) {
+        const fut = try Future.Python.Constructors.fast_new_future(self);
+        errdefer python_c.py_decref(@ptrCast(fut));
+
+        const py_res = try build_numeric_nameinfo(addr);
+        defer python_c.py_decref(py_res);
+
+        const future_data = utils.get_data_ptr(Future, fut);
+        try Future.Python.Result.future_fast_set_result(future_data, py_res);
+        return fut;
+    }
 
     const dns_timeout = blk: {
         if (merged[2]) |pt| {
@@ -136,8 +183,6 @@ inline fn z_loop_getnameinfo(self: *LoopObject, args: []const ?PyObject, knames:
         } else break :blk null;
     };
 
-    const loop_data = utils.get_data_ptr(Loop, self);
-    const alloc = loop_data.allocator;
     const fut = try Future.Python.Constructors.fast_new_future(self);
     errdefer python_c.py_decref(@ptrCast(fut));
 
