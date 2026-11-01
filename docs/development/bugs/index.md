@@ -16,9 +16,9 @@ Sorted by bug number. See individual bug files for details.
 | Severity | Count |
 |---|---:|
 | Critical | 62 |
-| High | 135 |
+| High | 134 |
 | Medium-High | 37 |
-| Medium | 76 |
+| Medium | 77 |
 | Medium-Mid | 11 |
 | Medium-Low | 21 |
 | Low | 70 |
@@ -444,9 +444,9 @@ Sorted by bug number. See individual bug files for details.
 | [406](406.md) | `getaddrinfo`/`getnameinfo` flags are parsed and silently ignored; `host=None` with `AI_PASSIVE` rejects valid input | Medium | Open |
 | [407](407.md) | `create_datagram_endpoint` accepts an arbitrary `fileno()`: ReleaseFast truncates to a real fd, ReleaseSafe panics | High | Open |
 | [408](408.md) | `DatagramTransport` `buffer_size` is never released on cancelled/closed/error send completions | Medium | Open |
-| [409](409.md) | Custom task factory is invoked twice when it raises `TypeError`, masking the real failure | Medium | Open |
+| [409](409.md) | Custom task factory is invoked twice when it raises `TypeError`, discarding the original failure | Medium | Open |
 | [410](410.md) | Unconditional 10 ms `nanosleep` in the idle poll path adds ~10 ms to every I/O/timer completion | High | Open |
-| [411](411.md) | `create_connection` leaks the Future and `protocol_factory` references on post-setup errors | High | Open |
+| [411](411.md) | `create_connection` leaks the Future and `protocol_factory` references on post-setup errors | Medium | Open |
 | [412](412.md) | Connect callback state is destroyed while its io_uring SQE is still queued when `task_ids.append` fails | Critical | Open |
 | [413](413.md) | `UnixSignals.link` leaves a freed callback in the BTree when dispatching the replaced callback fails | Critical | Open |
 
