@@ -1316,7 +1316,7 @@ test "prepare_data error path does not double-free ControlData (BUG-269)" {
 
     try std.testing.expectError(
         error.InvalidHostname,
-        queue(&cache, loop, "abc", &callback, .{
+        queue(&cache, loop, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", &callback, .{
             .servers = &[_]utils.Address{},
             .search = &[_][]u8{},
         }, true, null, null),
@@ -1432,7 +1432,7 @@ test "synchronous error in prepare_data does not schedule user_callback onto Soo
 
     try std.testing.expectError(
         error.InvalidHostname,
-        queue(&cache, loop, "abc", &callback, .{
+        queue(&cache, loop, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", &callback, .{
             .servers = &[_]utils.Address{},
             .search = &[_][]u8{},
         }, true, null, null),

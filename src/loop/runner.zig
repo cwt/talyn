@@ -397,8 +397,8 @@ fn poll_blocking_events(self: *Loop, mutex: *lock.Mutex, wait: bool, ready_queue
 
             // Cancel the watchdog if a real completion won the race.
             if (watchdog != null) {
-                _ = self.io.ring.timeout_remove(0, watchdog_user_data, 0) catch {};
-                _ = self.io.ring.submit() catch {};
+                _ = self.io.ring.timeout_remove(0, watchdog_user_data, 0) catch |err| std.log.debug("timeout_remove failed: {s}", .{@errorName(err)});
+                _ = self.io.ring.submit() catch |err| std.log.debug("submit failed: {s}", .{@errorName(err)});
             }
 
             // Check for pending Python signals (e.g., KeyboardInterrupt
