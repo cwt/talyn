@@ -11,6 +11,13 @@ timestamp: "2026-10-07T00:00:00Z"
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
 
+## [2026-11-03] — Lessons 114 & 115: Split Commit Hygiene (commits 1205..1209)
+- Registered **[Split Commit Hygiene — Verified Refactoring (Lessons 114 & 115)](lessons/24-split-commit-hygiene-2026-11.md)** from the post-audit review of the 1205..1208 file-split series (`resolv/`, `socket/ops/`, `create_connection/`, `scheduling/io/types.zig`):
+  - **Lesson 114** — split commits must be self-contained: 1205's aggregators referenced `resolv/` and `ops/` submodule files that were only tracked in 1206, so a clean checkout of 1205 fails `zig build` with 11 `FileNotFound` errors (breaks `hg bisect`).
+  - **Lesson 115** — the default `zig build` (install → `src/lib.zig`) compiles a graph that `zig build test` and `zig build lint` do not reach (lazily analyzed imports); 1207–1208 shipped with `interleave_address_list` non-`pub` and a broken lib build, repaired in 1209. Pre-merge verification matrix: `zig fmt --check`, default `zig build`, `zig build test`, `zig build lint` on **both** Zig 0.16.0 and 0.17.0.
+- The audit itself confirmed all four splits are behavior-preserving (declaration-level byte-identical bodies, identical 82-test roster pre/post on 0.16.0 and 0.17.0, BUG-402/405/408/412 fixes intact at tip) — tip state is green; the lesson records the *process* gaps, not open code defects.
+- Lessons index updated: topic table (12 areas), quick-reference bullet, lesson-number cross-reference (114, 115).
+
 ## [2026-10-19] — v0.10.0 Release: Zero Open Bugs & Dual-Toolchain Stability (BUG-337..BUG-396)
 
 This release drives the bug tracker to **zero open bugs** (395 total, 382 Fixed, 13 False Positive) on top of dual-toolchain support, resolving 60 audit findings (BUG-337 through BUG-396) across I/O cancellation, DNS, Future/Task state machines, socket/transport lifecycles, GC traversal, and Python API compliance:

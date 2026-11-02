@@ -14,7 +14,7 @@ timestamp: "2026-08-27T00:00:00Z"
 This is the master index for all lessons learned during Talyn development (originally branched from Leviathan).
 Lessons have been grouped by topic for maximum readability. Each section links to a dedicated file.
 
-> **115 lessons** documented across **11 topic areas**.
+> **117 lessons** documented across **12 topic areas**.
 
 ---
 
@@ -33,6 +33,7 @@ Lessons have been grouped by topic for maximum readability. Each section links t
 | 9 | [Security & Input Validation](09-security-and-input-validation.md) | DNS transaction ID randomness & validation, DNS compression pointer bounds, IP parser strictness, ambiguous numeric format rejection |
 | 10 | [Defensive Programming & Code Quality](10-defensive-programming-and-code-quality.md) | Configuration fields, hardcoded constants, float approximate equality, off-by-one fd checks, dead code, debug prints in hot paths, timeout configurability |
 | 11 | [Registered Buffers & MEMLOCK (BUG-117)](23-bug-117-registered-buffer-fallback-2026.md) | io_uring registered-buffer registration failure, behavior-preserving fallback, per-process RLIMIT_MEMLOCK accounting, regression-test isolation |
+| 12 | [Split Commit Hygiene (1205..1209)](24-split-commit-hygiene-2026-11.md) | Verbatim-move audits for file splits, self-contained/bisectable changesets, lazy-import blind spots of `zig build test`, pre-merge build matrix |
 
 ---
 
@@ -70,6 +71,7 @@ These lessons have the highest ROI — apply them on every new feature:
 - **`else => {}`**: Bare default branches are silent bugs. Log dropped cases explicitly. → [Event Loop §Callback Semantics](03-event-loop-lifecycle.md)
 - **Use Config Fields**: If a configuration field exists, use it. A field that's never read is dead code or a bug. → [Defensive §Configuration](10-defensive-programming-and-code-quality.md)
 - **No Debug Prints in Hot Paths**: Any `std.debug.print` in a loop that runs millions of times/sec is a performance disaster. → [Defensive §Code Quality](10-defensive-programming-and-code-quality.md)
+- **Verified Refactors**: A split/refactor commit is only "good" once `hg clone -r REV && zig build && zig build test` passes on it — `zig build test` + lint alone never compile the `src/lib.zig` graph (lazy imports). → [Split Commit Hygiene](24-split-commit-hygiene-2026-11.md)
 
 ---
 
@@ -90,3 +92,4 @@ For historical references to lesson numbers in commit messages or bug reports:
 | 6, 32, 49, 50, 54, 55, 77, 87, 88, 102, 103, 106 | [Zig-Specific Patterns](08-zig-specific-patterns.md) |
 | 29, 33, 34, 58, 91, 92, 96 | [Security & Input Validation](09-security-and-input-validation.md) |
 | 57, 75, 76, 79, 82, 85, 86, 89, 90, 93, 97, 98, 101, 113 | [Defensive Programming & Code Quality](10-defensive-programming-and-code-quality.md) |
+| 114, 115 | [Split Commit Hygiene (1205..1209)](24-split-commit-hygiene-2026-11.md) |
