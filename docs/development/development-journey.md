@@ -35,6 +35,24 @@ Rather than maintaining separate version forks, Talyn adopted a portable common-
 
 ---
 
+## v0.11.0 — Python 3.15 Support, the 2026-11-01 Audit Sweep (BUG-400..413), and Verified-Refactor Discipline
+
+**v0.11.0** is the first release on the main line to carry full **Python 3.15** and free-threaded **3.15t** support: `scripts/test_all.sh` runs the whole suite across six interpreters (`3.13`, `3.14`, `3.15`, `3.13t`, `3.14t`, `3.15t`), and the pre-release verification passes 489 pytest tests on 3.15/3.15t. (The point releases v0.10.1–v0.10.4 tagged on the `pre-py315` branch predate 3.15 support and never emitted 3.15 wheels; main bypasses them to land at 0.11.0.)
+
+The centerpiece is the **2026-11-01 container audit** (14 confirmed findings, BUG-400..BUG-413) with all fixes resolved and regression-tested (`tests/test_review_regressions.py`, 10 tests; updated `getaddrinfo` host=None expectations):
+
+- **Loop teardown (BUG-400)**: `Loop.release()` now claims the teardown under the mutex and runs `release_claimed()` without it — the old hold-across-release deadlocked against FS/child-watcher teardown under free-threading.
+- **Future/Task correctness**: no double-decref of `py_loop` on Future re-init (BUG-401); `pending_lost_exc` is stashed before read/write `close()` can fire `connection_lost(None)` (BUG-402); custom task factories are retried only for the unexpected-kwarg `TypeError`, preserving the original exception (BUG-409).
+- **FSWatcher (BUG-403)**: `ensure_inotify` re-arms the read when a watch is re-added after the list drained.
+- **Overflow & validation (BUG-404/407/412)**: `ceilPowerOfTwo`/`grow` reject overflow as `MemoryError` (2⁶³+1 wrapped to 0 and SIGSEGV'd); `fileno()` values are narrowed and range-checked before `dup()`; connect SQEs reserve their `task_ids` slot *before* submission.
+- **DNS & socket API conformance (BUG-405/406)**: dotless hostnames resolve with no search domains; `getaddrinfo`/`getnameinfo` implement `AI_PASSIVE`, `AI_NUMERICHOST`, `NI_NUMERICHOST`, `NI_NOFQDN`, `host=None` semantics and reject unsupported flags.
+- **I/O & signals (BUG-408/410/413)**: datagram `buffer_size` is released on every terminal send outcome; the idle path's fixed 10 ms `nanosleep` became a bounded blocking wait with a 100 ms watchdog (1 ms timer median ≈1.4 ms); `UnixSignals.link` restores the replaced callback when dispatch fails.
+- **create_connection (BUG-411)**: futures and `protocol_factory` references are fully deinitialized on post-setup errors.
+
+Structurally, four self-contained files were split into focused submodules (`resolv/`, `socket/ops/`, `create_connection/`, `scheduling/io/types.zig`), each verified by a declaration-level audit as a *verbatim move* (61/61, 43/43, 38/38 + one dead-alias prune, 42/42) with an identical 82-test roster on Zig 0.16.0 and 0.17.0; the one broken intermediate followed by `pub`/dedup/dead-import repairs is captured as **Lessons 114/115** (self-contained bisectable changesets; `zig build test` + lint do not compile the lib graph — run the default `zig build` too). The milestone closes with tracker totals of **412 bugs: 399 Fixed, 13 False Positive, 0 Open**, 0 linter violations, and the build-runner's cosmetic `failed command:` noise tamed behind `--error-style minimal` in `scripts/test_all.sh`.
+
+---
+
 ## v0.10.0 — Zero Open Bugs & Dual-Toolchain Stability (BUG-337..BUG-396)
 
 **v0.10.0** is the stability milestone release: a deep audit pass (BUG-337 through BUG-396) drove the bug tracker to **zero open bugs** (395 total, 382 Fixed, 13 False Positive), on top of the dual-toolchain (Zig 0.16.0 + 0.17.0) support landed earlier in the cycle. The release resolves 60 new findings across I/O and io_uring cancellation, DNS resolution and caching, Future/Task state machines, socket and transport lifecycles, GC traversal, Python API compliance, and dead-code removal, with regression coverage added in `tests/test_server_and_endpoint_safety.py` and `tests/test_api_compliance_and_cleanup.py`. All 82 Zig unit tests pass on both toolchains (0 linter violations), and the Python suite passes (478 passed, 1 skipped).

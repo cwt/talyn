@@ -1,7 +1,7 @@
 # Talyn: Robust, Stable AsyncIO Event Loop for Python
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE.md)
-[![Python Compatibility](https://img.shields.io/badge/python-3.13%20%7C%203.14%20%7C%20Free--Threaded-blue.svg)](#-requirements)
+[![Python Compatibility](https://img.shields.io/badge/python-3.13%20%7C%203.14%20%7C%203.15%20%7C%20Free--Threaded-blue.svg)](#-requirements)
 [![Linux Compatibility](https://img.shields.io/badge/linux-7.0+%20%7C%20Fedora%2043--44-orange.svg)](#-requirements)
 [![Zig Compatibility](https://img.shields.io/badge/zig-0.16.0%20%7C%200.17.0-red.svg)](#-requirements)
 [![PyPI Version](https://img.shields.io/pypi/v/talyn.svg)](https://pypi.org/project/talyn/)
@@ -15,18 +15,18 @@ Talyn prioritizes **correctness, complete system safety, and high usability** ov
 ## 🚀 Features
 
 - **Realistic Speed**: Designed to deliver solid and reliable I/O performance on Linux by leveraging `io_uring`'s native kernel-side asynchronous completion queues.
-- **Robust & Crash-Resistant**: Meticulously hardened against circular reference memory leaks, stack alignment faults, signal interrupt deadlocks, and use-after-free bugs (332 bugs identified and resolved across audit passes with 0 open bugs).
+- **Robust & Crash-Resistant**: Meticulously hardened against circular reference memory leaks, stack alignment faults, signal interrupt deadlocks, and use-after-free bugs (412 bugs identified across audit passes — 399 fixed, 13 marked false positives, 0 open).
 - **Full Asyncio Compatibility**: Passes 100% of standard Python `asyncio`, `subprocess`, `transports`, and connection-lifecycle test suites.
 - **Offline AST Bug Hunter & Linter**: Enforces strict invariant safety rules (preventing memory leaks, discarded syscalls, panics, and UAFs) via a built-in, sub-15ms Zig and Python AST static analyzer (`zig build lint`).
 - **Open Knowledge Documentation**: Built with comprehensive architectural mandates, lessons learned, and bug tracking under Google Open Knowledge Format (OKF v0.2).
 - **Modern Packaging**: Fully migrated to PEP 517/518 standard declarative `pyproject.toml` configuration.
-- **GIL-Disabled Free-Threading Ready**: Fully compatible with `python3.13t` and `python3.14t` without memory races.
+- **GIL-Disabled Free-Threading Ready**: Fully compatible with `python3.13t`, `python3.14t`, and `python3.15t` without memory races.
 
 ---
 
 ## 📜 Requirements
 
-- **Python**: `>= 3.13` (Tested and verified under CPython `3.13`, `3.14`, `3.13t` (free-threaded), and `3.14t` (free-threaded))
+- **Python**: `>= 3.13` (Tested and verified under CPython `3.13`, `3.14`, `3.15`, `3.13t` (free-threaded), `3.14t` (free-threaded), and `3.15t` (free-threaded))
 - **Linux Kernel**: `>= 7.0` (Verified on Linux Kernel `7.0.x`)
 - **Zig Compiler** (for source builds): `0.16.0` or `0.17.0` (Fedora packages / upstream release)
 
@@ -364,7 +364,7 @@ To honor the project's roots and Enrique's early work:
 
 ## 📖 Project Story & Documentation
 
-- **[Master Documentation Index](docs/index.md)** — Architectural mandates, bug tracker (332 resolved bugs), and lessons learned under OKF v0.2.
+- **[Master Documentation Index](docs/index.md)** — Architectural mandates, bug tracker (412 bugs: 399 fixed, 13 false positives, 0 open), and lessons learned under OKF v0.2.
 - **[Development Journey](docs/development/development-journey.md)** — The full story: from discovery to challenges, the shift from "ultra-fast" to "realistic fast and stable", and how Talyn was built.
 - **[Why Talyn?](docs/development/talyn-naming.md)** — The personal story and meaning behind the new name.
 
