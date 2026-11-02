@@ -18,6 +18,12 @@ RUN dnf -y update && dnf -y install \
     python3.14-freethreading-devel \
     python3-test \
     python3.14-freethreading-test \
+    python3.15 \
+    python3.15-devel \
+    python3.15-freethreading \
+    python3.15-freethreading-devel \
+    python3.15-test \
+    python3.15-freethreading-test \
     openssl \
     git \
     findutils \
@@ -27,14 +33,18 @@ RUN dnf -y update && dnf -y install \
 RUN python3.13 -m ensurepip --upgrade && \
     python3.13t -m ensurepip --upgrade && \
     python3.14 -m ensurepip --upgrade && \
-    python3.14t -m ensurepip --upgrade
+    python3.14t -m ensurepip --upgrade && \
+    python3.15 -m ensurepip --upgrade && \
+    python3.15t -m ensurepip --upgrade
 
 # Pre-install pytest, pytest-asyncio, and benchmark dependencies for all Python versions to speed up runs.
 # --break-system-packages is required as we are installing globally inside the container.
 RUN python3.13 -m pip install --no-cache-dir --break-system-packages pytest pytest-asyncio prettytable matplotlib pillow uvloop && \
     python3.13t -m pip install --no-cache-dir --break-system-packages pytest pytest-asyncio prettytable matplotlib pillow || true && \
     python3.14 -m pip install --no-cache-dir --break-system-packages pytest pytest-asyncio prettytable matplotlib pillow uvloop && \
-    python3.14t -m pip install --no-cache-dir --break-system-packages pytest pytest-asyncio prettytable matplotlib pillow || true
+    python3.14t -m pip install --no-cache-dir --break-system-packages pytest pytest-asyncio prettytable matplotlib pillow || true && \
+    python3.15 -m pip install --no-cache-dir --break-system-packages pytest pytest-asyncio prettytable matplotlib pillow uvloop && \
+    python3.15t -m pip install --no-cache-dir --break-system-packages pytest pytest-asyncio prettytable matplotlib pillow || true
 
 # Create and set the workspace directory
 WORKDIR /workspace

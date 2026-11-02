@@ -128,7 +128,7 @@ The generated comparison plots will be automatically saved to `benchmarks/output
 If you are developing on macOS (Apple Silicon) and need to build and publish wheels for **both `aarch64` and `x86_64`** architectures to PyPI, you can do so in a single command using Podman's emulation:
 
 1. **Build all wheels**:
-   This script builds a native `aarch64` container image and an emulated `x86_64` container image, runs `scripts/build.sh` inside both, and collects all 8 wheels (4 Python versions × 2 architectures) in the `./dist/` directory:
+   This script builds a native `aarch64` container image and an emulated `x86_64` container image, runs `scripts/build.sh` inside both, and collects all 12 wheels (6 Python variants × 2 architectures) in the `./dist/` directory:
 
    ```bash
    ./scripts/macos/build_all_wheels.sh
@@ -151,19 +151,21 @@ All of Talyn's development—including **aarch64** and **riscv64** wheels and fu
 
 ### 📋 1. Fedora 44 required packages
 
-Install Zig, all four Python interpreters with development headers, and the stdlib test suites:
+Install Zig, all six Python interpreters with development headers, and the stdlib test suites:
 
 ```bash
 sudo dnf install zig \
     python3.13 python3.13-devel python3.13-freethreading \
     python3.14 python3.14-devel python3.14-freethreading python3.14-freethreading-devel \
-    python3.13-test python3.14-test python3.14-freethreading-test
+    python3.15 python3.15-devel python3.15-freethreading python3.15-freethreading-devel \
+    python3.13-test python3.14-test python3.14-freethreading-test \
+    python3.15-test python3.15-freethreading-test
 ```
 
 Bootstrap pip and the test tooling for each interpreter:
 
 ```bash
-for p in python3.13 python3.13t python3.14 python3.14t; do
+for p in python3.13 python3.13t python3.14 python3.14t python3.15 python3.15t; do
     $p -m ensurepip --upgrade
     $p -m pip install --user pytest pytest-asyncio
 done
@@ -185,7 +187,7 @@ sudo dnf install qemu-system-aarch64 edk2-aarch64 qemu-system-riscv edk2-riscv64
 ./scripts/linux/build_all_wheels.sh
 ```
 
-Uses Zig's native cross-compiler — no QEMU needed. Produces **12 wheels** (4 Python variants × 3 architectures) in `./dist/`, ready for `./scripts/publish.sh`.
+Uses Zig's native cross-compiler — no QEMU needed. Produces **18 wheels** (6 Python variants × 3 architectures) in `./dist/`, ready for `./scripts/publish.sh`.
 
 ### 🧪 3. Run the test suite natively (x86_64)
 
@@ -228,7 +230,7 @@ For the complete catalog of rules, see [docs/development/ast-linter.md](docs/dev
 
 ### ⏱️ Measured timings
 
-`scripts/test_all.sh --starburst` (4 Python variants: pytest suite + stdlib asyncio suite):
+`scripts/test_all.sh --starburst` (6 Python variants: pytest suite + stdlib asyncio suite):
 
 | Environment | Total time |
 |---|---|

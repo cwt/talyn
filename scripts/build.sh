@@ -14,7 +14,7 @@ NC='\033[0m'
 DIST_DIR="./dist"
 
 echo "=== Talyn Multi-Python Wheel Builder ==="
-echo "Targeting Python environments: python3.13, python3.14, python3.13t, python3.14t"
+echo "Targeting Python environments: python3.13, python3.14, python3.15, python3.13t, python3.14t, python3.15t"
 echo ""
 
 # Ensure the dist directory exists
@@ -24,7 +24,7 @@ mkdir -p "$DIST_DIR"
 printf "${YELLOW}Cleaning stale .so files from source tree...${NC}\n"
 find talyn/ -name '*.so' -delete 2>/dev/null || true
 
-PYTHONS=("python3.13" "python3.14" "python3.13t" "python3.14t")
+PYTHONS=("python3.13" "python3.14" "python3.15" "python3.13t" "python3.14t" "python3.15t")
 BUILT_COUNT=0
 
 # Detect the host architecture and the requested build architecture.

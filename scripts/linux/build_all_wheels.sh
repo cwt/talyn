@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Builds all wheels (x86_64 + aarch64 + riscv64 x 4 Python variants) natively
+# Builds all wheels (x86_64 + aarch64 + riscv64 x 6 Python variants) natively
 # on a Linux host. Zig's native cross-compiler produces the foreign-architecture
 # wheels at full host speed - no QEMU, no containers.
 # The wheels are collected in ./dist, ready for publication to PyPI.
@@ -23,10 +23,10 @@ for tool in zig; do
         exit 1
     fi
 done
-for py in python3.13 python3.13t python3.14 python3.14t; do
+for py in python3.13 python3.13t python3.14 python3.14t python3.15 python3.15t; do
     if ! command -v "$py" &>/dev/null; then
         echo "Error: '$py' not found."
-        echo "Please install python3.13/3.14, their free-threading variants, and -devel headers."
+        echo "Please install python3.13/3.14/3.15, their free-threading variants, and -devel headers."
         exit 1
     fi
 done

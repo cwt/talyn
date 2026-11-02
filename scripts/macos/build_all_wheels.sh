@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# This script builds both aarch64 and x86_64 wheels for all 4 Python versions
+# This script builds both aarch64 and x86_64 wheels for all 6 Python variants
 # on macOS (Apple Silicon) using Podman.
 # The wheels are collected in the ./dist directory, ready for publication to PyPI.
 
