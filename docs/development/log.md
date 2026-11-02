@@ -17,6 +17,7 @@ This log tracks modifications to the Talyn Documentation OKF bundle.
   - **Lesson 115** — the default `zig build` (install → `src/lib.zig`) compiles a graph that `zig build test` and `zig build lint` do not reach (lazily analyzed imports); 1207–1208 shipped with `interleave_address_list` non-`pub` and a broken lib build, repaired in 1209. Pre-merge verification matrix: `zig fmt --check`, default `zig build`, `zig build test`, `zig build lint` on **both** Zig 0.16.0 and 0.17.0.
 - The audit itself confirmed all four splits are behavior-preserving (declaration-level byte-identical bodies, identical 82-test roster pre/post on 0.16.0 and 0.17.0, BUG-402/405/408/412 fixes intact at tip) — tip state is green; the lesson records the *process* gaps, not open code defects.
 - Lessons index updated: topic table (12 areas), quick-reference bullet, lesson-number cross-reference (114, 115).
+- **Tamed the cosmetic `failed command:` artifact** described in Lesson 24: `scripts/test_all.sh` now passes `--error-style minimal` to both verbose `zig build test` invocations (suppressed for successful steps whenever captured stderr is non-empty, e.g. the expected BUG-117 fallback warn), replacing a `grep -v` pipe whose exit-code handling masked real failures in the parallel branch. Verified artifact-free with `--summary all` on Zig 0.16.0 and 0.17.0.
 
 ## [2026-10-19] — v0.10.0 Release: Zero Open Bugs & Dual-Toolchain Stability (BUG-337..BUG-396)
 

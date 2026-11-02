@@ -115,6 +115,30 @@ Do not summarize as "build passes" from test+lint alone; the lib graph is a dist
 
 ---
 
+### Appendix — the cosmetic `failed command:` artifact (and how it is tamed)
+
+The build runner prints `failed command: <test binary> --seed=<random> --listen=-` **even
+for successful run steps**. Mechanism (Zig 0.16/0.17, `compiler/build_runner.zig` /
+`Maker/Step/Run.zig`): the command string is pre-allocated into
+`step.result_failed_command` at spawn time and the error-context printer — invoked for
+every step whose captured stderr is non-empty, *"no matter the result"* — prints it under
+the default (`verbose`) error style. The trailing `--seed=` is a fresh per-run PRNG seed
+(unit-test flakiness by seed was ruled out: every seed passes).
+
+- **Companion warning is also expected:** `[default] (warn): io_uring buffer registration
+  failed; continuing with heap buffers: SystemResources` is the BUG-117 graceful fallback
+  (deliberately exercised by the BUG-117 unit test, which clamps `RLIMIT_MEMLOCK`).
+- **First-descent flag:** a cold (fresh) build surfaces the noise next to long compiler
+  chatter; warm runs print it too (verified) whenever stderr capture is non-empty.
+- **Taming knobs** — the default `error_style` is `verbose`; `verboseContext()` gates the
+  `failed command:` block:
+  - `zig build test --error-style minimal` (or `--color off`): suppresses the artifact while
+    `--summary all`, exit codes, and real failure reporting stay intact. Verified on 0.16.0
+    and 0.17.0.
+  - Wired as the default in `scripts/test_all.sh` (both thin/parallel invocation sites),
+    replacing a prior `| grep -v 'failed command:'` pipe whose exit-code handling silently
+    masked failures in the parallel branch (no `pipefail` in the script).
+
 ### Cross-references
 
 - Repair commit: **1209 — `fix: repair 1205..1208 split regressions — pub visibility, dedup, dead imports`**.

@@ -371,7 +371,11 @@ run_zig_unit_tests() {
         # Parallel mode
         local rc=0
         if $VERBOSE; then
-            "$zig_bin" build test $extra_flags $ZIG_OPTS 2>&1 | grep -v 'failed command:' > "$log_file" 2>&1 || rc=$?
+            # --error-style minimal suppresses the build runner's cosmetic
+            # "failed command:" context line, which it prints EVEN FOR PASSING
+            # run steps whenever captured stderr is non-empty (the BUG-117
+            # fallback warn guarantees that). See lessons/24-split-commit-hygiene-2026-11.md.
+            "$zig_bin" build test $extra_flags $ZIG_OPTS --error-style minimal > "$log_file" 2>&1 || rc=$?
         else
             "$zig_bin" build test $extra_flags $ZIG_OPTS > "$log_file" 2>&1 || rc=$?
         fi
@@ -400,7 +404,8 @@ run_zig_unit_tests() {
         test_log="$(mktemp)"
         local rc=0
         if $VERBOSE; then
-            "$zig_bin" build test $extra_flags $ZIG_OPTS 2>&1 | grep -v 'failed command:' | tee "$test_log"
+            # Same --error-style minimal rationale as the parallel branch.
+            "$zig_bin" build test $extra_flags $ZIG_OPTS --error-style minimal 2>&1 | tee "$test_log"
             rc=${PIPESTATUS[0]}
         else
             "$zig_bin" build test $extra_flags $ZIG_OPTS >"$test_log" 2>&1
