@@ -3,17 +3,9 @@ const std = @import("std");
 const CallbackManager = @import("callback_manager");
 const IO = @import("main.zig");
 
-pub const ConnectData = struct {
-    callback: CallbackManager.Callback,
-    addr: *const std.posix.sockaddr,
-    len: std.posix.socklen_t,
-    socket_fd: std.posix.fd_t
-};
+pub const ConnectData = struct { callback: CallbackManager.Callback, addr: *const std.posix.sockaddr, len: std.posix.socklen_t, socket_fd: std.posix.fd_t };
 
-pub const ShutdownData = struct {
-    socket_fd: std.posix.fd_t,
-    how: u32
-};
+pub const ShutdownData = struct { socket_fd: std.posix.fd_t, how: u32 };
 
 pub const AcceptData = struct {
     callback: CallbackManager.Callback,
@@ -27,9 +19,7 @@ pub fn connect(ring: *std.os.linux.IoUring, set: *IO.BlockingTasksSet, data: Con
     const data_ptr = try set.push(.SocketConnect, &data.callback);
     errdefer data_ptr.discard();
 
-    _ = try ring.connect(
-        @intCast(@intFromPtr(data_ptr)), data.socket_fd, data.addr, data.len
-    );
+    _ = try ring.connect(@intCast(@intFromPtr(data_ptr)), data.socket_fd, data.addr, data.len);
 
     // Deferred: ring.connect stores a pointer to data.addr which points to
     // heap-allocated SockConnectData — safe until completion.

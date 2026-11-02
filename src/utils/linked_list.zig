@@ -3,16 +3,11 @@ const builtin = @import("builtin");
 
 pub fn LinkedList(comptime T: type) type {
     return struct {
-        pub const _linked_list_node = struct {
-            data: T,
-
-            prev: ?*_linked_list_node,
-            next: ?*_linked_list_node
-        };
+        pub const _linked_list_node = struct { data: T, prev: ?*_linked_list_node, next: ?*_linked_list_node };
 
         pub const Node = *_linked_list_node;
 
-        pub const errors = error {
+        pub const errors = error{
             CannotHasElementsWhenRealasing,
             LinkedListEmpty,
             NodeNotInList,
@@ -61,13 +56,13 @@ pub fn LinkedList(comptime T: type) type {
 
             if (prev_node) |n| {
                 n.next = next_node;
-            }else{
+            } else {
                 self.first = next_node;
             }
 
             if (next_node) |n| {
                 n.prev = prev_node;
-            }else{
+            } else {
                 self.last = prev_node;
             }
 
@@ -131,7 +126,7 @@ pub fn LinkedList(comptime T: type) type {
                 prev_node.next = null;
                 self.last = prev_node;
                 last_node.prev = null;
-            }else{
+            } else {
                 self.first = null;
                 self.last = null;
             }
@@ -154,7 +149,7 @@ pub fn LinkedList(comptime T: type) type {
                 next_node.prev = null;
                 self.first = next_node;
                 first_node.next = null;
-            }else{
+            } else {
                 self.first = null;
                 self.last = null;
             }
@@ -220,7 +215,7 @@ pub fn LinkedList(comptime T: type) type {
             if (self.last) |l_node| {
                 f_node2.prev = l_node;
                 l_node.next = f_node2;
-            }else{
+            } else {
                 self.first = f_node2;
             }
 
@@ -242,7 +237,7 @@ test "LinkedList append adds elements in order" {
     var list = LinkedList(usize).init(std.testing.allocator);
     defer list.clear();
 
-    const elements = [_]usize{10, 20, 100, 10, 10, 20};
+    const elements = [_]usize{ 10, 20, 100, 10, 10, 20 };
     for (elements) |elem| {
         try list.append(elem);
     }
@@ -261,7 +256,7 @@ test "LinkedList appendleft adds elements in reverse order" {
     var list = LinkedList(usize).init(std.testing.allocator);
     defer list.clear();
 
-    const elements = [_]usize{10, 20, 100, 10, 10, 20};
+    const elements = [_]usize{ 10, 20, 100, 10, 10, 20 };
     for (elements) |elem| {
         try list.appendleft(elem);
     }
@@ -283,7 +278,7 @@ test "LinkedList pop and popleft remove elements correctly" {
     try std.testing.expectError(LinkedList(usize).errors.LinkedListEmpty, list.pop());
     try std.testing.expectError(LinkedList(usize).errors.LinkedListEmpty, list.popleft());
 
-    const elements = [_]usize{2, 3, 10, 40};
+    const elements = [_]usize{ 2, 3, 10, 40 };
     for (elements) |elem| {
         try list.append(elem);
     }
@@ -314,7 +309,7 @@ test "LinkedList clear method removes all elements" {
     var list = LinkedList(usize).init(std.testing.allocator);
     defer list.clear();
 
-    const elements = [_]usize{1, 2, 3, 4, 5};
+    const elements = [_]usize{ 1, 2, 3, 4, 5 };
     for (elements) |elem| {
         try list.append(elem);
     }
@@ -329,4 +324,3 @@ test "LinkedList clear method removes all elements" {
     try std.testing.expect(list.first == null);
     try std.testing.expect(list.last == null);
 }
-

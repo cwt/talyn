@@ -8,90 +8,9 @@ pub const Result = @import("result.zig");
 pub const Cancel = @import("cancel.zig");
 const Callbacks = @import("callbacks.zig");
 
-const PythonFutureMethods: []const python_c.PyMethodDef = &[_]python_c.PyMethodDef{
-    python_c.PyMethodDef{
-        .ml_name = "result\x00",
-        .ml_meth = @ptrCast(&Result.future_result),
-        .ml_doc = "Return the result of the Future\x00",
-        .ml_flags = python_c.METH_NOARGS
-    },
-    python_c.PyMethodDef{
-        .ml_name = "set_result\x00",
-        .ml_meth = @ptrCast(&Result.future_set_result),
-        .ml_doc = "Mark the Future as done and set its result.\x00",
-        .ml_flags = python_c.METH_O
-    },
-    python_c.PyMethodDef{
-        .ml_name = "exception\x00",
-        .ml_meth = @ptrCast(&Result.future_exception),
-        .ml_doc = "Return the exception raised by the Future\x00",
-        .ml_flags = python_c.METH_NOARGS
-    },
-    python_c.PyMethodDef{
-        .ml_name = "set_exception\x00",
-        .ml_meth = @ptrCast(&Result.future_set_exception),
-        .ml_doc = "Mark the Future as done and set its exception.\x00",
-        .ml_flags = python_c.METH_O
-    },
-    python_c.PyMethodDef{
-        .ml_name = "cancel\x00",
-        .ml_meth = @ptrCast(&Cancel.future_cancel),
-        .ml_doc = "Cancel the Future and schedule callbacks.\x00",
-        .ml_flags = python_c.METH_FASTCALL | python_c.METH_KEYWORDS
-    },
-    python_c.PyMethodDef{
-        .ml_name = "cancelled\x00",
-        .ml_meth = @ptrCast(&Cancel.future_cancelled),
-        .ml_doc = "Return True if the Future was cancelled.\x00",
-        .ml_flags = python_c.METH_NOARGS
-    },
-    python_c.PyMethodDef{
-        .ml_name = "done\x00",
-        .ml_meth = @ptrCast(&Result.future_done),
-        .ml_doc = "Return True if the Future is done.\x00",
-        .ml_flags = python_c.METH_NOARGS
-    },
-    python_c.PyMethodDef{
-        .ml_name = "add_done_callback\x00",
-        .ml_meth = @ptrCast(&Callbacks.future_add_done_callback),
-        .ml_doc = "Add a callback to be run when the Future is done.\x00",
-        .ml_flags = python_c.METH_FASTCALL | python_c.METH_KEYWORDS
-    },
-    python_c.PyMethodDef{
-        .ml_name = "remove_done_callback\x00",
-        .ml_meth = @ptrCast(&Callbacks.future_remove_done_callback),
-        .ml_doc = "Remove callback from the callbacks list.\x00",
-        .ml_flags = python_c.METH_O
-    },
-    python_c.PyMethodDef{
-        .ml_name = "get_loop\x00",
-        .ml_meth = @ptrCast(&Constructors.future_get_loop),
-        .ml_doc = "Return the event loop.\x00",
-        .ml_flags = python_c.METH_NOARGS
-    },
-    python_c.PyMethodDef{
-        .ml_name = "_make_cancelled_error\x00",
-        .ml_meth = @ptrCast(&Cancel.future_make_cancelled_error),
-        .ml_doc = "Create the CancelledError to raise if the Future is cancelled.\x00",
-        .ml_flags = python_c.METH_NOARGS
-    },
-    python_c.PyMethodDef{
-        .ml_name = null, .ml_meth = null, .ml_doc = null, .ml_flags = 0
-    }
-};
+const PythonFutureMethods: []const python_c.PyMethodDef = &[_]python_c.PyMethodDef{ python_c.PyMethodDef{ .ml_name = "result\x00", .ml_meth = @ptrCast(&Result.future_result), .ml_doc = "Return the result of the Future\x00", .ml_flags = python_c.METH_NOARGS }, python_c.PyMethodDef{ .ml_name = "set_result\x00", .ml_meth = @ptrCast(&Result.future_set_result), .ml_doc = "Mark the Future as done and set its result.\x00", .ml_flags = python_c.METH_O }, python_c.PyMethodDef{ .ml_name = "exception\x00", .ml_meth = @ptrCast(&Result.future_exception), .ml_doc = "Return the exception raised by the Future\x00", .ml_flags = python_c.METH_NOARGS }, python_c.PyMethodDef{ .ml_name = "set_exception\x00", .ml_meth = @ptrCast(&Result.future_set_exception), .ml_doc = "Mark the Future as done and set its exception.\x00", .ml_flags = python_c.METH_O }, python_c.PyMethodDef{ .ml_name = "cancel\x00", .ml_meth = @ptrCast(&Cancel.future_cancel), .ml_doc = "Cancel the Future and schedule callbacks.\x00", .ml_flags = python_c.METH_FASTCALL | python_c.METH_KEYWORDS }, python_c.PyMethodDef{ .ml_name = "cancelled\x00", .ml_meth = @ptrCast(&Cancel.future_cancelled), .ml_doc = "Return True if the Future was cancelled.\x00", .ml_flags = python_c.METH_NOARGS }, python_c.PyMethodDef{ .ml_name = "done\x00", .ml_meth = @ptrCast(&Result.future_done), .ml_doc = "Return True if the Future is done.\x00", .ml_flags = python_c.METH_NOARGS }, python_c.PyMethodDef{ .ml_name = "add_done_callback\x00", .ml_meth = @ptrCast(&Callbacks.future_add_done_callback), .ml_doc = "Add a callback to be run when the Future is done.\x00", .ml_flags = python_c.METH_FASTCALL | python_c.METH_KEYWORDS }, python_c.PyMethodDef{ .ml_name = "remove_done_callback\x00", .ml_meth = @ptrCast(&Callbacks.future_remove_done_callback), .ml_doc = "Remove callback from the callbacks list.\x00", .ml_flags = python_c.METH_O }, python_c.PyMethodDef{ .ml_name = "get_loop\x00", .ml_meth = @ptrCast(&Constructors.future_get_loop), .ml_doc = "Return the event loop.\x00", .ml_flags = python_c.METH_NOARGS }, python_c.PyMethodDef{ .ml_name = "_make_cancelled_error\x00", .ml_meth = @ptrCast(&Cancel.future_make_cancelled_error), .ml_doc = "Create the CancelledError to raise if the Future is cancelled.\x00", .ml_flags = python_c.METH_NOARGS }, python_c.PyMethodDef{ .ml_name = null, .ml_meth = null, .ml_doc = null, .ml_flags = 0 } };
 
-pub const FutureObject = extern struct {
-    ob_base: python_c.PyObject,
-    data: [@sizeOf(Future)]u8 align(@alignOf(Future)),
-
-    py_loop: ?PyObject,
-    exception: ?PyObject,
-
-    cancel_msg_py_object: ?PyObject,
-    cancelled_exc: ?PyObject,
-    blocking: u64,
-    log_destroy_pending: u64
-};
+pub const FutureObject = extern struct { ob_base: python_c.PyObject, data: [@sizeOf(Future)]u8 align(@alignOf(Future)), py_loop: ?PyObject, exception: ?PyObject, cancel_msg_py_object: ?PyObject, cancelled_exc: ?PyObject, blocking: u64, log_destroy_pending: u64 };
 
 const PythonFutureMembers: []const python_c.PyMemberDef = &[_]python_c.PyMemberDef{
     python_c.PyMemberDef{ // Just for be supported by asyncio.isfuture
@@ -112,9 +31,7 @@ const PythonFutureMembers: []const python_c.PyMemberDef = &[_]python_c.PyMemberD
         .offset = @offsetOf(FutureObject, "cancel_msg_py_object"),
         .doc = null,
     },
-    python_c.PyMemberDef{
-        .name = null, .flags = 0, .offset = 0, .doc = null
-    }
+    python_c.PyMemberDef{ .name = null, .flags = 0, .offset = 0, .doc = null },
 };
 
 const PythonFutureAsyncMethods = python_c.PyAsyncMethods{

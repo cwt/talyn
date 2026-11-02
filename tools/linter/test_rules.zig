@@ -393,4 +393,3 @@ test "TALYN-015: sqe pointer lifetime" {
     , sqe_pointer_lifetime.check);
     try std.testing.expectEqual(@as(usize, 0), diags_ok);
 }
-
