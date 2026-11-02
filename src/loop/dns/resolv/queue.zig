@@ -1,7 +1,5 @@
 const std = @import("std");
 const utils = @import("utils");
-const python_c = @import("python_c");
-const PyObject = *python_c.PyObject;
 const Loop = @import("../../main.zig");
 const CallbackManager = @import("callback_manager");
 const types = @import("types.zig");

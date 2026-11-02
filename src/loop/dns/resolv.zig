@@ -1,6 +1,4 @@
 const types = @import("resolv/types.zig");
-const parse_mod = @import("resolv/parse.zig");
-const response_mod = @import("resolv/response.zig");
 const queue_mod = @import("resolv/queue.zig");
 
 pub const ControlData = types.ControlData;

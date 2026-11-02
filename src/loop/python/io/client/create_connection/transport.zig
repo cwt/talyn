@@ -8,13 +8,10 @@ const utils = @import("utils");
 const CallbackManager = @import("callback_manager");
 
 const Loop = @import("../../../../main.zig");
-const LoopObject = Loop.Python.LoopObject;
 
 const Future = @import("../../../../../future/main.zig");
-const FutureObject = Future.Python.FutureObject;
 
 const Stream = @import("../../../../../transports/stream/main.zig");
-const Resolv = @import("../../../../dns/resolv.zig");
 const types = @import("types.zig");
 const set_future_exception = Future.Python.Result.set_future_exception;
 const TransportCreationData = types.TransportCreationData;

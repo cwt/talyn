@@ -1,15 +1,10 @@
 const std = @import("std");
-const builtin = @import("builtin");
-
-const utils = @import("utils");
-const python_c = @import("python_c");
 
 const CallbackManager = @import("callback_manager");
 const Read = @import("read.zig");
 const Write = @import("write.zig");
 const Timer = @import("timer.zig");
 const Socket = @import("socket.zig");
-const Loop = @import("../../main.zig");
 
 pub const TotalTasksItems = 1024;
 

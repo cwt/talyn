@@ -8,17 +8,12 @@ const utils = @import("utils");
 const CallbackManager = @import("callback_manager");
 
 const Loop = @import("../../../../main.zig");
-const LoopObject = Loop.Python.LoopObject;
 
 const Future = @import("../../../../../future/main.zig");
-const FutureObject = Future.Python.FutureObject;
 
-const Stream = @import("../../../../../transports/stream/main.zig");
-const Resolv = @import("../../../../dns/resolv.zig");
 const types = @import("types.zig");
 const transport_mod = @import("transport.zig");
 const interleave_mod = @import("interleave.zig");
-const SocketCreationData = types.SocketCreationData;
 const TransportCreationData = types.TransportCreationData;
 const SocketConnectionData = types.SocketConnectionData;
 const MultiConnectState = types.MultiConnectState;
@@ -26,7 +21,6 @@ const set_future_exception = Future.Python.Result.set_future_exception;
 const interleave_address_list = interleave_mod.interleave_address_list;
 const SocketData = types.SocketData;
 const z_create_transport_and_set_future_result = transport_mod.z_create_transport_and_set_future_result;
-const create_transport_and_set_future_result = transport_mod.create_transport_and_set_future_result;
 
 fn create_socket_and_submit_connect_req(address: *const utils.Address, data: *SocketData, loop: *Loop) !usize {
     const flags = std.posix.SOCK.STREAM | std.posix.SOCK.NONBLOCK | std.posix.SOCK.CLOEXEC;

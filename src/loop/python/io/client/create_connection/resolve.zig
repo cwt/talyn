@@ -14,13 +14,8 @@ const utils = @import("utils");
 const CallbackManager = @import("callback_manager");
 
 const Loop = @import("../../../../main.zig");
-const LoopObject = Loop.Python.LoopObject;
 
 const Future = @import("../../../../../future/main.zig");
-const FutureObject = Future.Python.FutureObject;
-
-const Stream = @import("../../../../../transports/stream/main.zig");
-const Resolv = @import("../../../../dns/resolv.zig");
 
 pub fn get_host_slice(data: *SocketCreationData) ![]const u8 {
     const py_host = data.py_host orelse {

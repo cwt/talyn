@@ -15,8 +15,6 @@ const LoopObject = Loop.Python.LoopObject;
 const Future = @import("../../../../../future/main.zig");
 const FutureObject = Future.Python.FutureObject;
 
-const Stream = @import("../../../../../transports/stream/main.zig");
-
 pub const SocketCreationData = struct {
     py_host: ?PyObject = null,
     py_port: ?PyObject = null,

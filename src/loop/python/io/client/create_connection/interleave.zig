@@ -1,24 +1,8 @@
 const std = @import("std");
 
-const python_c = @import("python_c");
-const PyObject = *python_c.PyObject;
-
 const utils = @import("utils");
 
-const CallbackManager = @import("callback_manager");
-
-const Loop = @import("../../../../main.zig");
-const LoopObject = Loop.Python.LoopObject;
-
-const Future = @import("../../../../../future/main.zig");
-const FutureObject = Future.Python.FutureObject;
-
-const Stream = @import("../../../../../transports/stream/main.zig");
-const Resolv = @import("../../../../dns/resolv.zig");
-
-const types = @import("types.zig");
-
-fn interleave_address_list(allocator: std.mem.Allocator, address_list: []utils.Address, interleave: usize) !void {
+pub fn interleave_address_list(allocator: std.mem.Allocator, address_list: []utils.Address, interleave: usize) !void {
     const tmp_list = try allocator.alloc(utils.Address, address_list.len * 2);
     defer allocator.free(tmp_list);
 

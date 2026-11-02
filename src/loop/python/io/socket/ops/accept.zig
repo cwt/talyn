@@ -15,18 +15,7 @@ const AddressUtils = utils.Address;
 
 const set_future_exception = Future.Python.Result.set_future_exception;
 
-/// BUG-356: `set_future_exception` STEALS the pending Python exception
-/// (`PyErr_GetRaisedException`); if none is set it silently does nothing
-/// and the future stays pending forever (infinite hang on `await`).
-fn ensure_exception(err: anyerror) void {
-    if (python_c.PyErr_Occurred() == null) {
-        if (err == error.PythonError) {
-            python_c.raise_python_runtime_error("Socket operation failed");
-        } else {
-            utils.handle_zig_function_error(err, {});
-        }
-    }
-}
+const ensure_exception = @import("common.zig").ensure_exception;
 
 // ============================================================
 // sock_accept

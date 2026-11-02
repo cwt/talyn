@@ -13,14 +13,12 @@ const LoopObject = Loop.Python.LoopObject;
 const Future = @import("../../../../../future/main.zig");
 const FutureObject = Future.Python.FutureObject;
 
-const Stream = @import("../../../../../transports/stream/main.zig");
 const Resolv = @import("../../../../dns/resolv.zig");
 const types = @import("types.zig");
 const SocketCreationData = types.SocketCreationData;
 const TransportCreationData = types.TransportCreationData;
 const resolve_mod = @import("resolve.zig");
 const transport_mod = @import("transport.zig");
-const set_future_exception = Future.Python.Result.set_future_exception;
 
 inline fn z_loop_create_connection(self: *LoopObject, args: []?PyObject, knames: ?PyObject) !*FutureObject {
     if (Loop.Python.check_forked(self)) return error.PythonError;
