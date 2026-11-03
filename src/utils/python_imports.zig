@@ -53,6 +53,17 @@ pub fn get(comptime name: []const u8) PyObject {
 /// needed. Registration is best-effort: errors are cleared because a missing
 /// registry must never fail task creation.
 pub fn register_asyncio_task(task: PyObject) void {
+    // Tries to run the C accelerated `_register_task` binding first (BUG-268)
+    // then the pure-Python `_py_register_task` fallback when the two are
+    // distinct objects (they are on 3.14/3.15: the pointer equality guard
+    // keeps the pure registry populated when the accelerator maps only the
+    // builtin registry). The dual-call contract is asserted by
+    // tests/test_task_registry.py::test_default_task_visible_in_all_tasks
+    // (both `_asyncio` C registry and `asyncio.tasks._py_all_tasks` on 3.14+).
+    // P23: stage 1 measured this path's cost and the py-side Python-frame
+    // is the dominant bite; the v0.11.2 replacement is a native equivalent
+    // of `_py_register_task` (weakref+registry add executed from Zig) so
+    // both registries stay exact without the Python frame cost.
     if (register_task_func.load(.acquire)) |func| {
         if (python_c.PyObject_CallOneArg(func, task)) |ret| {
             // BUG-373: the registrar's return value (Py_None or a patched

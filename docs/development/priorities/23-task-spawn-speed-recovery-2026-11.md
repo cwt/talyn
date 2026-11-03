@@ -39,23 +39,40 @@ Verified so far:
   job. So the task-churn footprint high-water of BUG-414 is a *separate* defect
   (probably a per-round arena/queue high-water), not registry bookkeeping.
 
-## Recovery plan
+## Registered In-Progress Status (2026-11-03, stage 1)
 
-1. **Cheap-by-design registry** (top priority, ~75% of the budget):
-   - Perf-attribute the actual sub-costs inside `_asyncio._register_task_impl` calls
-     (weakref creation vs set insert vs Python frame) — measured with variants of
-     "direct C invocation", then drop or merge per-task costs that are pure
-     bookkeeping noise. Candidates observed in the call path (`get_or_create_weakref`,
-     `PyDict_SetDefaultRef` intern storm, `_all_tasks` set insert) — reduce to a
-     **C-side fast path** in `utils.PythonImports`: e.g. bypass the generic
-     `_PyObject_CallOneArg` per task and cache the pre-registered `PyCFunction`
-     pointer when available.
-   - Semantics to preserve: BUG-268 registry visibility (per `tests/test_task_registry.py`),
-     BUG-398 pure-Python fallback path (when the C accelerator is absent), free-threading
-     concurrency semantics (per `tests/test_free_threading*.py`).
-2. **SBO inline capacity on Future callbacks/exceptions containers** — kills both
-   per-task ArrayList allocations (BUG-414's high-water + this priority's ~40 B/task churn),
-   expected also to lift payout on the producer/fiesta benchmarks.
+**Measured scope narrowing (rev 1219 frontier):** with the *pure-Python* second registrar
+call disabled (C accelerator-only), Task Spawn moved v0.10-era **0.95× → 1.25×** (py3.14
+0.1053 s; py3.15 0.1072 s): ≈45% of the era-loss, from one full Python frame + weakref-set
+insert per task. The remaining ~55% (the 1.25× → 1.74× distance) maps to the same band's
+remaining work — and the *surgical-disable* result (1.57× on the v0.9.6 tree with BOTH the
+py-registrar *and* the BUG-279 discard disabled) implies the **BUG-279 completions-side
+`PySet_Discard` stops** carry ~2/3 of what remains. The discard is native but is executed
+up to three times per task (set_result paths) against `loop_obj.asyncio_tasks_set`.
+
+**Contract kept:** the dual-call *semantics* is required — `tests/test_task_registry.py::
+test_default_task_visible_in_all_tasks` asserts tasks appear in **both** the `_asyncio` C
+registry *and* `asyncio.tasks._py_all_tasks(loop)` on 3.14+/3.15 — so the "call only the C
+registrar" narrowing was **reverted** (stage 1 keeps the dual call).
+**Stage 2 (v0.11.2 implementation route)**: keep both contracts *and* remove the Python-frame
+cost — register the pure registry **natively from Zig** by replicating
+`_py_register_task`'s bookkeeping with direct C-API calls (weakref creation + registry-set
+add) instead of `PyObject_CallOneArg`; validation unchanged (BUG-268/398/279 semantics +
+registry tests + BUG-414 footprint gate + era bench).
+
+**Attribution note:** native `_asyncio._register_task(task)` costs **27 ns/call** on this
+3.15 (micro-bench); the pure-Python alias `_py_register_task` costs **91 ns** (frame + dict
+lookup). The remaining 1.25×→1.74× distance must therefore come from the *combination* of
+(1) the *completion-side* discards and task-frame allocations (dict/weakref churn measured
+by dhat at ~1.4 bytes of arena/tick), plus (2) the *runner/start* atomic-count increase
+(`std/atomic.zig` in `loop.runner.start`: **+531 M Ir (+14%) in the slow band**), visible in
+the cachegrind era diff — both are open work items under P23 (runner-loop atomic trimming
+needs its own measured iteration before the BUG-117/BUG-283's invariants provide the safety
+net).
+
+**Status: IN PROGRESS. The recovery is data-validated; the ship step is stage 2 (native
+py-registry replication) plus the runner-loop atomic-cycle trim.**
+2. **SBO inline capacity** (SHIPPED in rev 1219 — bench-neutral, keeps for churn reduction).
 3. **Validate** with: `zig build test` (both toolchains), `pytest tests/test_task_registry.py
    tests/test_task*.py tests/test_future*.py tests/test_review_regressions.py`, the
    **BUG-414 footprint gate** (`tests/test_longrun_leak_gate.py`), and the **era bench
