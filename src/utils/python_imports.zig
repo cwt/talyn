@@ -29,7 +29,7 @@ pub var enter_task_func: Atomic(?PyObject) = Atomic(?PyObject).init(null);
 pub var leave_task_func: Atomic(?PyObject) = Atomic(?PyObject).init(null);
 pub var py_enter_task_func: Atomic(?PyObject) = Atomic(?PyObject).init(null);
 pub var py_leave_task_func: Atomic(?PyObject) = Atomic(?PyObject).init(null);
-pub var py_current_task_func: Atomic(?PyObject) = Atomic(?PyObject).init(null);
+pub var py_current_tasks_dict: Atomic(?PyObject) = Atomic(?PyObject).init(null);
 pub var register_task_func: Atomic(?PyObject) = Atomic(?PyObject).init(null);
 pub var py_register_task_func: Atomic(?PyObject) = Atomic(?PyObject).init(null);
 
@@ -114,7 +114,6 @@ pub fn initialize_python_imports() !void {
     leave_task_func.store(python_c.PyObject_GetAttrString(a_mod, "_leave_task\x00") orelse return error.PythonError, .release);
     register_task_func.store(python_c.PyObject_GetAttrString(a_mod, "_register_task\x00") orelse return error.PythonError, .release);
 
-
     // The pure-Python registry aliases (_scheduled_tasks WeakSet / the
     // _current_tasks dict). They are what asyncio.all_tasks()/current_task()
     // read when the C accelerator is absent or when the registries are
@@ -127,7 +126,7 @@ pub fn initialize_python_imports() !void {
         py_register_task_func.store(python_c.PyObject_GetAttrString(tasks_mod, "_py_register_task\x00") orelse return error.PythonError, .release);
         py_enter_task_func.store(python_c.PyObject_GetAttrString(tasks_mod, "_py_enter_task\x00") orelse return error.PythonError, .release);
         py_leave_task_func.store(python_c.PyObject_GetAttrString(tasks_mod, "_py_leave_task\x00") orelse return error.PythonError, .release);
-        py_current_task_func.store(python_c.PyObject_GetAttrString(tasks_mod, "_py_current_task\x00") orelse return error.PythonError, .release);
+        py_current_tasks_dict.store(python_c.PyObject_GetAttrString(tasks_mod, "_current_tasks\x00") orelse return error.PythonError, .release);
 
         // P23: when the accelerator is present, bind `asyncio.tasks._py_all_tasks`
         // to the accelerator's `asyncio.all_tasks` as a pure-registry view. The

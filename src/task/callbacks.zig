@@ -23,16 +23,53 @@ fn enter_or_leave_task(loop: PyObject, task: PyObject, comptime entering: bool) 
     const ret = python_c.PyObject_Vectorcall(func, &args, 2, null) orelse return null;
     python_c.py_decref(ret);
 
-    if (py_func != func) {
-        const py_ret = python_c.PyObject_Vectorcall(py_func, &args, 2, null) orelse {
+    pure_sync: {
+        if (py_func == func) break :pure_sync;
+
+        // P23 stage 3b: the pure impl's `_py_enter_task`/`_py_leave_task` are
+        // one-line dict operations against `asyncio.tasks._current_tasks` —
+        // calling them costs two full Python frames per task-step and was the
+        // dominant interpreter-side churn of the v0.9.x regression era. With
+        // the pure dict captured at init, both operations run natively with
+        // identical semantics; the fast path replaces the plain dict
+        // write/delete, and any contract mismatch (another task already
+        // current on enter, a stale or foreign task on leave) falls back to
+        // the real pure function so its RuntimeError propagates exactly as
+        // the stdlib would raise it.
+        // captured at import: the pure `asyncio.tasks._current_tasks` dict.
+        const pure_dict = utils.PythonImports.get("py_current_tasks_dict");
+
+        // PyDict_GetItemWithError borrows its result; absent keys return a
+        // raw NULL without an exception (identity-hashed talyn Loop key).
+        const existing_raw = python_c.PyDict_GetItemWithError(pure_dict, loop);
+        if (python_c.PyErr_Occurred() != null) return null;
+        const existing: ?PyObject = if (existing_raw == null) null else existing_raw.?;
+
+        const fast_path = if (entering)
+            existing == null // no other task is current: plain SetItem
+        else
+            (existing != null and existing.? == task); // exactly ours: DelItem
+
+        if (fast_path) {
             if (entering) {
-                const rollback_leave = python_c.PyObject_Vectorcall(utils.PythonImports.get("leave_task_func"), &args, 2, null);
-                if (rollback_leave) |rl| python_c.py_decref(rl);
+                if (python_c.PyDict_SetItem(pure_dict, loop, task) < 0) break :pure_sync;
+            } else {
+                if (python_c.PyDict_DelItem(pure_dict, loop) < 0) break :pure_sync;
             }
-            return null;
-        };
-        python_c.py_decref(py_ret);
+            return python_c.get_py_none();
+        }
+        // mismatch -> stdlib raises; fall through to the pure function call
+        // so its RuntimeError (message included) propagates unchanged.
     }
+
+    const py_ret = python_c.PyObject_Vectorcall(py_func, &args, 2, null) orelse {
+        if (entering) {
+            const rollback_leave = python_c.PyObject_Vectorcall(utils.PythonImports.get("leave_task_func"), &args, 2, null);
+            if (rollback_leave) |rl| python_c.py_decref(rl);
+        }
+        return null;
+    };
+    python_c.py_decref(py_ret);
 
     return python_c.get_py_none();
 }
