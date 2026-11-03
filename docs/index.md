@@ -32,6 +32,7 @@ Welcome to the Talyn TODO and project tracking documentation. This serves as the
 - [✅ PRIORITY 20: TLS/SSL Completion — DONE (2026-05-25)](development/priorities/20-tls-ssl-completion-2026-05.md)
 - [✅ PRIORITY 21: Advanced Event Loop Optimization — ✅ DONE (2026-05-28)](development/priorities/21-advanced-event-loop-optimization-2026.md)
 - [✅ PRIORITY 22: Fused User-Space Socket State Machine — ABANDONED (2026-05-28 → 2026-05-29)](development/priorities/22-fused-user-space-socket-state-machine-2026.md)
+- [🔵 PRIORITY 23: Task Spawn Speed Recovery — IN PROGRESS (2026-11-03)](development/priorities/23-task-spawn-speed-recovery-2026-11.md)
 
 ## Knowledge Base
 

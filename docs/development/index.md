@@ -34,6 +34,7 @@ This is the development bundle for Talyn. It covers project priorities, lessons 
 | [20](priorities/20-tls-ssl-completion-2026-05.md) | TLS/SSL Completion | ✅ DONE |
 | [21](priorities/21-advanced-event-loop-optimization-2026.md) | Advanced Event Loop Optimization | ✅ DONE |
 | [22](priorities/22-fused-user-space-socket-state-machine-2026.md) | Fused User-Space Socket State Machine | ✅ DONE |
+| [23](priorities/23-task-spawn-speed-recovery-2026-11.md) | Task Spawn Speed Recovery | 🟡 IN PROGRESS |
 
 ## Knowledge Base
 

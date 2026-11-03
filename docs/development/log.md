@@ -11,6 +11,14 @@ timestamp: "2026-10-07T00:00:00Z"
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
 
+## [2026-11-03] — 🟡 P23 registered: Task Spawn Speed Recovery (bisect localizes the v0.9.0-era regression to revs 992..1002)
+- **Era bisect multi-clone measurement** completed on this Core Ultra 7-265 host (same interpreter, 12 interleaved repeats with in-process asyncio anchoring):
+  - talyn fast through **rev 991** (0.0711 s / 1.76×), slow from **rev 1002** (0.1274 s / 0.96×) — regression window is **revs 992..1002** (BUG-268..BUG-304 band between v0.9.0 and v0.9.6). Reads at 979 (1.73×), 1024 (0.96×) bracket it.
+  - `hg backout` of all five suspects on a v0.9.6 tree: **false negative** (the tree still carried the mechanism — later changesets re-plumbed it). Recorded as the process lesson: validate post-backout by grepping the mechanism before trusting an exclusion result.
+  - **Surgical exclusion** (delete `register_asyncio_task` call sites + disable `discard_from_asyncio_tasks_set`, direct file edits): talyn recovers to **0.0813 s / 1.57×** — the BUG-268/279 **registry bookkeeping accounts for ≈75% of the loss**; the residual ~10% is owner/constructor churn in the same window.
+  - BUG-414 linkage disproven: the tokenized registry-on wheel (rev 1002) and the registry-off surgical build both sit ≈43–44 MB at the same 0.4-M-task churn — the footprint high-water is *not* registry bookkeeping.
+- Registered **[P23: Task Spawn Speed Recovery](priorities/23-task-spawn-speed-recovery-2026-11.md)**: recovery plan, strategy (cheap-by-design registration + SBO inline capacity on Future callback containers), guard rails (BUG-414 footprint gate, BUG-268/398 semantics must hold, dual-toolchain builds), shipping target **v0.11.2 after v0.11.1**.
+
 ## [2026-11-03] — v0.11.1 Prep: Python 3.15/3.15t benchmark archives & BUG-414 (long-run leak)
 - **Benchmarks archived**: the v0.11.0 Python 3.15 and 3.15t run records moved from the repo root into the raw dataset bundle as [core-ultra-7-265/benchmarks-v0.11.0-3.15-starburst.txt](../benchmarks/core-ultra-7-265/benchmarks-v0.11.0-3.15-starburst.txt) and [core-ultra-7-265/benchmarks-v0.11.0-3.15t-starburst.txt](../benchmarks/core-ultra-7-265/benchmarks-v0.11.0-3.15t-starburst.txt), matching the pre-existing `benchmarks-v0.7.0-3.1[4]t-starburst.txt` naming; benchmarks index updated.
 - **Era-over-era comparison (same Core Ultra 7-265 host; asyncio/uvloop anchors stable within ±3–5% across eras)**: talyn's Task Spawn regressed from **1.75× vs asyncio at v0.7.0 to 0.95–0.96× at v0.10.0/v0.11.0**; Event Fiesta (+69%), Async Task Workflow (+31–69%) and Producer-Consumer (+36–59%) regressed in the v0.8–v0.10 hardening band, while the raw-socket paths held (+0–9%; UDP unchanged). The v0.11 audit sweep (BUG-400..413) cost ~0 on the task hot path (v0.10 → v0.11 slightly faster).
