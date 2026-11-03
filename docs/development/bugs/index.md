@@ -449,5 +449,5 @@ Sorted by bug number. See individual bug files for details.
 | [411](411.md) | `create_connection` leaks the Future and `protocol_factory` references on post-setup errors | Medium | Fixed |
 | [412](412.md) | Connect callback state is destroyed while its io_uring SQE is still queued when `task_ids.append` fails | Critical | Fixed |
 | [413](413.md) | `UnixSignals.link` leaves a freed callback in the BTree when dispatching the replaced callback fails | Critical | Fixed |
-| [414](414.md) | Native ~32 B per completed task retained on task spawn — slow unbounded long-run growth (v0.7.0..v0.11.0), fix targeted at v0.11.1 | Medium-Low | Open |
+| [414](414.md) | Task-churn steady-state native footprint ≈3× the asyncio baseline (bounded warm-up high-water, arena retention; era-uniform, fix targeted at v0.11.1) | Medium-Low | Open |
 

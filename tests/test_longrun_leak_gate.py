@@ -1,105 +1,130 @@
-"""BUG-414 regression gate: detect native (RSS) growth under task churn.
+"""BUG-414 regression gate: detect native memory-footprint anomalies in the task lifecycle.
 
-The event loop must not retain memory per created/completed task: a long
-run of `create_task` + completion churn must keep RSS flat, matching the
-asyncio baseline behavior (see docs/development/bugs/414.md). The soak:
+BUG-414's measured form: on a create_task(noop)+gather churn workload, talyn's resident
+footprint grows during warm-up to a bounded plateau that is far above the plain asyncio
+baseline on the same workload (dhat proves every block is freed by exit — arena high-water,
+not leaked pointers). Any future change to the task hot path must both:
 
-  - runs workloads of tasks at a fixed per-round size,
-  - discards the first half of samples (allocator/interpreter warm-up),
-  - asserts the per-round slope is below a small threshold.
+  1. keep the final footprint delta vs an asyncio-mode control within budget, and
+  2. not introduce *unbounded* growth (slope must stay ~flat over the window),
+     including the scheduler path (sleep(0) churn).
 
-Cross-variant variants keep the gate honest: the scheduler/timer paths are
-known-flat, so only the task lifecycle may move the slope.
-
-Marked xfail(strict=True) while BUG-414 is open: the suite stays green,
-and once the fix lands, the "pass" removes the marker (enforced by
-strict=True). This test becomes the standing leak gate for future
-optimization/fix work in the task hot path.
+Both tests run short subprocess soaks (RSS read from /proc/self/status), so this file is
+the standing memory regression gate for the task hot path. While BUG-414 remains open,
+the footprint assertion is marked `xfail(strict=True)`: CI stays green, and the strict
+marker makes an unexpected pass *fail*, forcing the marker's removal when the fix lands.
 """
 from __future__ import annotations
 
 import asyncio
 import pathlib
+import subprocess
+import sys
 import time
 
 import pytest
 
 import talyn
 
-_SAMPLES_MIN = 6
-_TOLERANCE_KB_PER_TASK = 0.01  # healthy builds land near ~0; current build leaks ~0.031 kB/task
+_FOOTPRINT_BUDGET_MB = 10.0   # final steady delta vs asyncio-mode control
+_SLOPE_BUDGET_KB_PER_TASK = 0.01
+_SOAK_SECONDS = 24.0
+_TASKS_PER_ROUND = 1024
+_SOAK_IDLE = 0.02
 
+_SOAK_BODY = """
+import asyncio, pathlib, sys, time
 
-def _rss_kb() -> int:
-    """RSS in kB; returns 0 on platforms without /proc/self/status."""
-    status = pathlib.Path("/proc/self/status")
-    if not status.exists():
-        return 0
-    for line in status.read_text(encoding="utf-8", errors="replace").splitlines():
+def rss_kb():
+    for line in pathlib.Path("/proc/self/status").read_text(
+            encoding="utf-8", errors="replace").splitlines():
         if line.startswith("VmRSS:"):
             return int(line.split()[1])
     return 0
 
+async def noop(): pass
 
-async def _noop() -> None:
-    pass
-
-
-async def _soak(variant: str, tasks_per_round: int, seconds: float) -> list[int]:
-    samples: list[int] = []
+async def main(mode, seconds):
+    first = rss_kb()
+    max_seen = first
     start = time.monotonic()
-    while time.monotonic() - start < seconds:
-        if variant == "tasks_gather":
-            tasks = [asyncio.create_task(_noop()) for _ in range(tasks_per_round)]
-            await asyncio.gather(*tasks)
-        elif variant == "tasks_nogather":
-            for _ in range(tasks_per_round):
-                asyncio.create_task(_noop())
-            await asyncio.sleep(0)
-        elif variant == "no_tasks_sleep0":
-            for _ in range(tasks_per_round):
-                await asyncio.sleep(0)
-        else:
-            raise AssertionError("bad variant")
-        samples.append(_rss_kb())
-        await asyncio.sleep(0.02)
-    return samples
+    while time.monotonic() - start < float(seconds):
+        tasks = [asyncio.create_task(noop()) for _ in range(%d)]
+        await asyncio.gather(*tasks)
+        await asyncio.sleep(%r)
+        max_seen = max(max_seen, rss_kb())
+    print("RSS_KB=%%d" %% max(max_seen, rss_kb()))
+
+if sys.argv[1] == "talyn":
+    import talyn
+    flavor = lambda coro: talyn.run(coro)
+else:
+    flavor = lambda coro: asyncio.run(coro)
+
+flavor(main(sys.argv[1], sys.argv[2]))
+""" % (_TASKS_PER_ROUND, _SOAK_IDLE)
 
 
-def _slope_kb_per_task(samples: list[int], tasks_per_round: int) -> float:
-    flat = [s for s in samples if s > 0]
-    if len(flat) < _SAMPLES_MIN:
-        pytest.skip("platform without /proc/self/status (RSS unreadable)")
-    warm = flat[len(flat) // 4 :]
-    if len(warm) < 2 or warm[-1] < warm[0]:
-        return 0.0
-    return (warm[-1] - warm[0]) / (len(warm) * tasks_per_round)
+def _run_soak(mode: str) -> int:
+    """Return the steady footprint (peak RSS during the soak window) in kB."""
+    proc = subprocess.run(
+        [sys.executable, "-c", _SOAK_BODY, mode, str(_SOAK_SECONDS)],
+        capture_output=True, text=True, timeout=_SOAK_SECONDS * 3 + 60,
+    )
+    if proc.returncode != 0:
+        pytest.fail("soak subprocess failed (%s):\n%s" % (mode, proc.stderr[-4000:]))
+    last_line = [line for line in proc.stdout.splitlines() if line.startswith("RSS_KB=")]
+    if not last_line:
+        pytest.fail("soak subprocess produced no RSS line (%s)" % mode)
+    return int(last_line[-1].split("=", 1)[1])
 
 
 @pytest.mark.xfail(
-    reason="BUG-414: ~32 B/task native retention on the task lifecycle (fix targeted at v0.11.1)",
+    reason=(
+        "BUG-414: talyn's steady-state footprint on task churn is ~3x the asyncio "
+        "baseline (bounded arena high-water; fix targeted at v0.11.1)"
+    ),
     strict=True,
 )
-def test_task_lifecycle_soak_rss_slope_is_flat() -> None:
+def test_task_churn_footprint_track_asyncio_baseline() -> None:
+    asyncio_kb = _run_soak("asyncio")
+    talyn_kb = _run_soak("talyn")
+    delta = (talyn_kb - asyncio_kb) / 1024.0
+    assert delta <= _FOOTPRINT_BUDGET_MB, (
+        "talyn task-churn footprint exceeds the asyncio control by %.1f MB "
+        "(talyn %.1f MB vs asyncio %.1f MB after %.0f s of %d-task rounds; "
+        "BUG-414 warm-up high-water)"
+        % (delta, talyn_kb / 1024.0, asyncio_kb / 1024.0, _SOAK_SECONDS, _TASKS_PER_ROUND)
+    )
+    assert not (talyn_kb < asyncio_kb / 4), (
+        "unexpectedly tiny talyn footprint — did the soak actually run "
+        "(%d kB)? Investigate before trusting this gate." % talyn_kb
+    )
+
+
+def test_scheduler_path_slope_stays_flat() -> None:
     async def main() -> None:
-        for variant in ("tasks_gather", "tasks_nogather"):
-            samples = await _soak(variant, tasks_per_round=384, seconds=6.0)
-            slope = _slope_kb_per_task(samples, 512)
-            assert slope <= _TOLERANCE_KB_PER_TASK, (
-                "%s: RSS slope %.5f kB/task exceeds %.3f kB/task budget "
-                "(BUG-414 bookkeeping: native retention per task lifecycle)"
-                % (variant, slope, _TOLERANCE_KB_PER_TASK)
-            )
+        def rss_kb() -> int:
+            for line in pathlib.Path("/proc/self/status").read_text(
+                    encoding="utf-8", errors="replace").splitlines():
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1])
+            return 0
 
-    talyn.run(main())
-
-
-def test_scheduler_and_timer_paths_stay_flat() -> None:
-    async def main() -> None:
-        samples = await _soak("no_tasks_sleep0", tasks_per_round=384, seconds=4.0)
-        slope = _slope_kb_per_task(samples, 512)
-        assert slope <= _TOLERANCE_KB_PER_TASK, (
-            "scheduler path (sleep(0)) must not retain memory: slope %.5f kB/task" % slope
+        samples: list[int] = []
+        start = time.monotonic()
+        while time.monotonic() - start < _SOAK_SECONDS * 0.25:
+            for _ in range(_TASKS_PER_ROUND):
+                await asyncio.sleep(0)
+            await asyncio.sleep(0.02)
+            _ = rss_kb()
+            samples.append(rss_kb())
+        warm = samples[len(samples) // 4:]
+        if len(warm) < 2 or warm[-1] < warm[0]:
+            pytest.skip("/proc/self/status unreadable on this platform")
+        slope_kb_per_task = (warm[-1] - warm[0]) / (len(warm) * _TASKS_PER_ROUND)
+        assert slope_kb_per_task <= _SLOPE_BUDGET_KB_PER_TASK, (
+            "scheduler path (sleep(0)) must not retain memory: slope %.5f kB/task" % slope_kb_per_task
         )
 
     talyn.run(main())

@@ -208,7 +208,13 @@ pub inline fn add_done_callback(self: *Future, callback_data: Data) !void {
     });
     errdefer _ = self.callbacks_queue.pop();
 
-    try self.exceptions_queue.ensureTotalCapacity(self.loop.allocator, self.callbacks_queue.items.len);
+    // BUG-414: the exceptions_queue used to be eagerly grown to the
+    // callbacks count here. Its appends in run_python_future_set_callbacks
+    // are already lazy (only when a callback actually raises), so most
+    // Futures never write a single entry — the eager chunk allocated
+    // ~32 B of never-reused native arena per task-spawn and is why RSS grew
+    // linearly on the task lifecycle. Appends grow the queue on demand
+    // instead; every consumer iterates values, none index positionally.
 }
 
 /// BUG-370: Python callbacks are compared by PyObject equality (Py_EQ),
