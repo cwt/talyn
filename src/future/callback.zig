@@ -38,7 +38,78 @@ pub const Data = union(enum) {
 
 pub const Callback = struct { data: Data, cancelled: bool = false, executed: bool = false };
 
-pub const CallbacksSetData = std.ArrayList(Callback);
+/// BUG-414: small-buffer-optimized queue for the Future's per-callback
+/// bookkeeping. The common case is exactly one done-callback (talyn tasks
+/// step through `py_wake_up`) and zero exceptions; keeping both inline
+/// removes the per-Future glibc/pymalloc arena churn that produced the
+/// ~3x task-churn footprint high-water. Falls back to a heap ArrayList
+/// beyond the inline capacity, with identical semantics.
+pub fn InlineQueue(comptime T: type, comptime N: usize) type {
+    return struct {
+        const Self = @This();
+
+        pub const Heap = std.ArrayList(T);
+
+        inline_buf: [N]T = undefined,
+        inline_len: usize = 0,
+        heap: Heap = .empty,
+
+        pub inline fn items(self: *const Self) []const T {
+            return if (self.heap.items.len > 0)
+                self.heap.items
+            else
+                self.inline_buf[0..self.inline_len];
+        }
+
+        pub inline fn itemsMut(self: *Self) []T {
+            return if (self.heap.items.len > 0)
+                self.heap.items
+            else
+                self.inline_buf[0..self.inline_len];
+        }
+
+        pub fn append(self: *Self, alloc: std.mem.Allocator, value: T) !void {
+            if (self.heap.items.len > 0) {
+                try self.heap.append(alloc, value);
+                return;
+            }
+            if (self.inline_len < N) {
+                self.inline_buf[self.inline_len] = value;
+                self.inline_len += 1;
+                return;
+            }
+            // promote the inline buffer to the heap, then append
+            var heap: Heap = .empty;
+            errdefer heap.deinit(alloc);
+            try heap.ensureTotalCapacity(alloc, N + 1);
+            heap.appendSliceAssumeCapacity(self.inline_buf[0..self.inline_len]);
+            heap.appendAssumeCapacity(value);
+            self.heap = heap;
+        }
+
+        pub fn pop(self: *Self) T {
+            const items_mut = self.itemsMut();
+            const value = items_mut[items_mut.len - 1];
+            if (self.heap.items.len > 0) {
+                self.heap.items.len -= 1;
+            } else {
+                self.inline_len -= 1;
+            }
+            return value;
+        }
+
+        pub const empty = Self{};
+
+        pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
+            self.heap.deinit(alloc);
+            self.heap = .empty;
+            self.inline_len = 0;
+        }
+    };
+}
+
+pub const CallbacksSetData = InlineQueue(Callback, 2);
+pub const ExceptionsQueueData = InlineQueue(?*python_c.PyObject, 1);
 
 fn release_python_future_data(data: ?*anyopaque) void {
     const future: *Future = @ptrCast(@alignCast(data.?));
@@ -83,17 +154,19 @@ fn run_python_future_set_callbacks(data: *const CallbackManager.CallbackData) !v
         return;
     }
 
-    const callbacks_items = future.callbacks_queue.items;
+    var callbacks_items = future.callbacks_queue.itemsMut();
     var exceptions_array = &future.exceptions_queue;
     errdefer {
-        for (exceptions_array.items) |*exc| {
+        for (exceptions_array.itemsMut()) |*exc| {
             python_c.py_xdecref(exc.*);
             exc.* = null;
         }
-        exceptions_array.clearRetainingCapacity();
+        while (exceptions_array.itemsMut().len > 0) _ = exceptions_array.pop();
     }
 
-    for (callbacks_items) |*callback| {
+    var ci: usize = 0;
+    while (ci < callbacks_items.len) : (ci += 1) {
+        const callback = &callbacks_items[ci];
         if (callback.cancelled or callback.executed) continue;
         callback.executed = true;
 
@@ -127,12 +200,12 @@ fn run_python_future_set_callbacks(data: *const CallbackManager.CallbackData) !v
         }
     }
 
-    const exceptions_len = exceptions_array.items.len;
+    const exceptions_len = exceptions_array.items().len;
     if (exceptions_len > 0) {
         const exc_tuple = python_c.PyTuple_New(@intCast(exceptions_len)) orelse return error.PythonError;
         defer python_c.py_decref(exc_tuple);
 
-        for (0.., exceptions_array.items) |i, *exc| {
+        for (0.., exceptions_array.itemsMut()) |i, *exc| {
             if (python_c.PyTuple_SetItem(exc_tuple, @intCast(i), exc.*) < 0) {
                 return error.PythonError;
             }
@@ -157,7 +230,7 @@ fn run_python_future_set_callbacks(data: *const CallbackManager.CallbackData) !v
 }
 
 pub fn traverse_callbacks_queue(queue: *const CallbacksSetData, visit: python_c.visitproc, arg: ?*anyopaque) c_int {
-    for (queue.items) |callback| {
+    for (queue.items()) |callback| {
         if (callback.executed or callback.cancelled) continue;
         switch (callback.data) {
             .PythonGeneric => |data| {
@@ -180,7 +253,7 @@ pub fn traverse_callbacks_queue(queue: *const CallbacksSetData, visit: python_c.
 }
 
 pub fn release_callbacks_queue(queue: *CallbacksSetData) void {
-    for (queue.items) |*callback| {
+    for (queue.itemsMut()) |*callback| {
         if (callback.executed) continue;
         callback.executed = true;
         switch (callback.data) {
@@ -230,9 +303,9 @@ pub fn remove_done_callback(self: *Future, py_callback: PyObject) !usize {
 
     var removed_count: usize = 0;
     var i: usize = 0;
-    while (i < self.callbacks_queue.items.len) : (i += 1) {
+    while (i < self.callbacks_queue.items().len) : (i += 1) {
         if (self.status != .pending or self.released) break;
-        const entry = self.callbacks_queue.items[i];
+        const entry = self.callbacks_queue.items()[i];
         if (entry.cancelled or entry.executed) continue;
         switch (entry.data) {
             .ZigGeneric => {},
@@ -249,8 +322,8 @@ pub fn remove_done_callback(self: *Future, py_callback: PyObject) !usize {
                     return error.PythonError;
                 }
                 if (equal == 1) {
-                    if (self.released or i >= self.callbacks_queue.items.len) break;
-                    const slot = &self.callbacks_queue.items[i];
+                    if (self.released or i >= self.callbacks_queue.items().len) break;
+                    const slot = &self.callbacks_queue.itemsMut()[i];
                     if (slot.cancelled or slot.executed) continue;
                     switch (slot.data) {
                         .ZigGeneric => {},
@@ -278,7 +351,7 @@ pub fn call_done_callbacks(self: *Future, new_status: Future.FutureStatus) !void
 
     self.status = new_status;
 
-    if (self.callbacks_queue.items.len == 0) {
+    if (self.callbacks_queue.items().len == 0) {
         self.loop.reserved_slots -= 1;
         return;
     }

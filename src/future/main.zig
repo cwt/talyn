@@ -10,7 +10,7 @@ result: ?*anyopaque = null,
 status: FutureStatus = .pending,
 
 callbacks_queue: Callback.CallbacksSetData = undefined,
-exceptions_queue: std.ArrayList(?*python_c.PyObject) = undefined,
+exceptions_queue: Callback.ExceptionsQueueData = undefined,
 loop: *Loop,
 
 released: bool = false,
@@ -41,7 +41,7 @@ pub fn release(self: *Future) void {
     }
     Callback.release_callbacks_queue(&self.callbacks_queue);
     self.callbacks_queue.deinit(self.loop.allocator);
-    for (self.exceptions_queue.items) |*exc| {
+    for (self.exceptions_queue.itemsMut()) |*exc| {
         python_c.py_xdecref(exc.*);
         exc.* = null;
     }
