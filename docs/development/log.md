@@ -23,7 +23,7 @@ A maintenance release focused on the task lifecycle's memory story and the *meas
 - Verification: `zig build` + `zig build test` (82/82) + `zig build lint` (0 violations) on **Zig 0.16.0 and 0.17.0**; clean-venv pytest (future/task/review suites 88 passed); the earlier refcount flake in `tests/test_future.py` was reproduced as a system-site-packages artifact only (passes in every clean venv with the identical wheel).
 - **Version Bump**: `pyproject.toml`, `build.zig.zon`, and the AST linter banner (`v0.11.1-dev`); README tracker note refreshed to reflect BUG-414's shared-scope status.
 
-## [2026-11-03] — 🟡 P23 registered: Task Spawn Speed Recovery (bisect localizes the v0.9.0-era regression to revs 992..1002)
+## [2026-11-03] — ✅ P23 landed: Task Spawn Speed Recovery (revs 1224..1229, plateau 1.34× py3.14 / 1.31× py3.15)
 - **Era bisect multi-clone measurement** completed on this Core Ultra 7-265 host (same interpreter, 12 interleaved repeats with in-process asyncio anchoring):
   - talyn fast through **rev 991** (0.0711 s / 1.76×), slow from **rev 1002** (0.1274 s / 0.96×) — regression window is **revs 992..1002** (BUG-268..BUG-304 band between v0.9.0 and v0.9.6). Reads at 979 (1.73×), 1024 (0.96×) bracket it.
   - `hg backout` of all five suspects on a v0.9.6 tree: **false negative** (the tree still carried the mechanism — later changesets re-plumbed it). Recorded as the process lesson: validate post-backout by grepping the mechanism before trusting an exclusion result.
