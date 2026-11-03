@@ -70,7 +70,20 @@ the cachegrind era diff — both are open work items under P23 (runner-loop atom
 needs its own measured iteration before the BUG-117/BUG-283's invariants provide the safety
 net).
 
-**Status: IN PROGRESS. Stage 2 SHIPPED (2026-11-03): accelerator-only registration +
+**Stage 3a SHIPPED (2026-11-03):** removed the per-step `_py_current_task` probe — on
+3.14+/3.15 the C and pure dicts are separate by design, so the probe always triggered the
+pure update while costing 2 pure-Python frames per task-step. Now dataset Task Spawn
+0.1009 s (1.27×) / py3.15 0.1021 s (1.26×); cProfile per-task Python calls now match the
+asyncio baseline minus the registry calls; full matrix 484 passed (6 known filesystem
+artifacts identical on the pre-stage wheel).
+
+**Status: IN PROGRESS. Stage 3 entry: stage 3a delivered; **the remaining levers are stage 3b:**
+- runner-loop atomic churn (std/atomic.zig +531 M Ir in the slow band; `ring_blocked`
+  seq_cst stores per blocking iteration; `ring_has_submitted` write pattern); and
+- per-task interpreter-side churn (BUG-414 plateau: cProfile per-task frames now at
+  asyncio baseline; the remaining delta is task-object allocation/service cost inside
+  CPython itself).
+**
 `asyncio.tasks._py_all_tasks` rebound to the accelerator's all_tasks view → 1.25× on
 py3.14/py3.15 with the dual-registry contract intact (verified). The remaining lever is
 stage 3: trim the runner-loop atomic churn (std/atomic.zig +531 M Ir in the slow band;
