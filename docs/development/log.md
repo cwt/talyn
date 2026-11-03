@@ -11,6 +11,18 @@ timestamp: "2026-10-07T00:00:00Z"
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
 
+## [2026-11-03] — v0.11.1 Release: BUG-414 footprint stages 1+2 & the measurement infrastructure
+
+A maintenance release focused on the task lifecycle's memory story and the *measurement infrastructure* it exposed. BUG-414 stays **Open by evidence** — the release ships its two verified remediation stages and pins the remaining lever to P23 (v0.11.2):
+
+- **BUG-414 stage 1 (lazy exceptions growth)**: `Future.add_done_callback` no longer eagerly grows `exceptions_queue` to the callbacks count — its appends were already lazy and nothing indexes into the queue (~136 B native churn per task removed; semantics-preserving; verified 82/82 on both toolchains).
+- **BUG-414 stage 2 (SBO, rev 1219)**: `Future`'s per-task containers became `InlineQueue` small-buffer types (`callbacks_queue` InlineQueue(Callback,2), `exceptions_queue` InlineQueue(?*PyObject,1)) — the common case carries **zero native heap traffic**.
+- **Measured outcome (pinned the true shape of BUG-414)**: the 3-minute task-churn soak **plateau is unchanged (~61 MB vs the asyncio control's ~22 MB)** after both stages — with talyn-side dynamic allocations now at zero, the remaining high-water is **CPython-side per-task object churn** whose volume only shrinks with P23's reduced per-task work; the "32 B/task linear forever" readout was retracted (warm-up-dominated sampling) and the era `hg backout` false-negative lesson was recorded. Full trail in [development/bugs/414.md](bugs/414.md).
+- **Leak/footprint gate** shipped: `tests/test_longrun_leak_gate.py` — peak steady-state footprint delta vs an asyncio-mode control (10 MB budget, subprocess soak) + scheduler-path slope probe; `xfail(strict=True)` until the plateau meets its control, then the standing regression gate.
+- **P23 registered** ([development/priorities/23-task-spawn-speed-recovery-2026-11.md](priorities/23-task-spawn-speed-recovery-2026-11.md)): the era bisect pinned the v0.10-era Task Spawn regression (1.74× → 0.95×) to **revs 992..1002** and attributed ≈75% of it to the BUG-268/279 per-task `_asyncio` registry bookkeeping (verified by surgical exclusion: 1.57×). In-progress; ships as **v0.11.2** together with the BUG-414 plateau-fitting shared lever.
+- Verification: `zig build` + `zig build test` (82/82) + `zig build lint` (0 violations) on **Zig 0.16.0 and 0.17.0**; clean-venv pytest (future/task/review suites 88 passed); the earlier refcount flake in `tests/test_future.py` was reproduced as a system-site-packages artifact only (passes in every clean venv with the identical wheel).
+- **Version Bump**: `pyproject.toml`, `build.zig.zon`, and the AST linter banner (`v0.11.1-dev`); README tracker note refreshed to reflect BUG-414's shared-scope status.
+
 ## [2026-11-03] — 🟡 P23 registered: Task Spawn Speed Recovery (bisect localizes the v0.9.0-era regression to revs 992..1002)
 - **Era bisect multi-clone measurement** completed on this Core Ultra 7-265 host (same interpreter, 12 interleaved repeats with in-process asyncio anchoring):
   - talyn fast through **rev 991** (0.0711 s / 1.76×), slow from **rev 1002** (0.1274 s / 0.96×) — regression window is **revs 992..1002** (BUG-268..BUG-304 band between v0.9.0 and v0.9.6). Reads at 979 (1.73×), 1024 (0.96×) bracket it.

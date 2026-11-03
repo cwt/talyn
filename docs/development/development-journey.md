@@ -35,6 +35,12 @@ Rather than maintaining separate version forks, Talyn adopted a portable common-
 
 ---
 
+## v0.11.1 — BUG-414 Footprint Stages 1+2 & the Measurement Infrastructure
+
+**v0.11.1** is a maintenance release born of the v0.11.0-era deep-dive: the task lifecycle's memory behavior got measured honestly, and two verified remediation stages shipped for **BUG-414** (lazy `exceptions_queue` growth + `InlineQueue` small-buffer Optimization for the per-Future callbacks/exceptions containers). The release's true outcome is *scientific*: a 3-minute task-churn soak (plateau ~61 MB vs the asyncio control's ~22 MB, stable across era wheels) proved the remaining high-water is **CPython-side per-task object churn** — a *shared* lever with the task-spawn-speed recovery, since the ~75%-attributed registry bookkeeping (BUG-268/279) and the interpreter churn sit on the same per-task path. The era bisect machinery (same-host 12-repeat anchored bench, tagged-clone builds) plus the falsified-hypotheses catalog ([BUG-414](bugs/414.md)) and a `hg backout` false-negative process lesson are all recorded. The `tests/test_longrun_leak_gate.py` comparative footprint gate ships in `xfail(strict=True)` state, becoming mandatory once BUG-414's plateau meets its control. BUG-414 stays Open by evidence; the fix lever lands with **P23** as **v0.11.2**. Verification: dual-toolchain 82/82, lint 0, clean-venv pytest green (the `test_future.py` refcount flake was pinned as a system-site-packages-only artifact).
+
+---
+
 ## v0.11.0 — Python 3.15 Support, the 2026-11-01 Audit Sweep (BUG-400..413), and Verified-Refactor Discipline
 
 **v0.11.0** is the first release on the main line to carry full **Python 3.15** and free-threaded **3.15t** support: `scripts/test_all.sh` runs the whole suite across six interpreters (`3.13`, `3.14`, `3.15`, `3.13t`, `3.14t`, `3.15t`), and the pre-release verification passes 489 pytest tests on 3.15/3.15t. (The point releases v0.10.1–v0.10.4 tagged on the `pre-py315` branch predate 3.15 support and never emitted 3.15 wheels; main bypasses them to land at 0.11.0.)

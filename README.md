@@ -15,7 +15,7 @@ Talyn prioritizes **correctness, complete system safety, and high usability** ov
 ## 🚀 Features
 
 - **Realistic Speed**: Designed to deliver solid and reliable I/O performance on Linux by leveraging `io_uring`'s native kernel-side asynchronous completion queues.
-- **Robust & Crash-Resistant**: Meticulously hardened against circular reference memory leaks, stack alignment faults, signal interrupt deadlocks, and use-after-free bugs (413 bugs identified across audit passes — 399 fixed, 13 marked false positives, 1 open: BUG-414, fix targeted at v0.11.1).
+- **Robust & Crash-Resistant**: Meticulously hardened against circular reference memory leaks, stack alignment faults, signal interrupt deadlocks, and use-after-free bugs (413 bugs identified across audit passes — 399 fixed, 13 marked false positives, 1 open: BUG-414, in progress with v0.11.1's footprint-stage fixes completing in v0.11.2 alongside P23).
 - **Full Asyncio Compatibility**: Passes 100% of standard Python `asyncio`, `subprocess`, `transports`, and connection-lifecycle test suites.
 - **Offline AST Bug Hunter & Linter**: Enforces strict invariant safety rules (preventing memory leaks, discarded syscalls, panics, and UAFs) via a built-in, sub-15ms Zig and Python AST static analyzer (`zig build lint`).
 - **Open Knowledge Documentation**: Built with comprehensive architectural mandates, lessons learned, and bug tracking under Google Open Knowledge Format (OKF v0.2).
