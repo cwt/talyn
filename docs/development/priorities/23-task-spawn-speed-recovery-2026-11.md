@@ -70,8 +70,12 @@ the cachegrind era diff — both are open work items under P23 (runner-loop atom
 needs its own measured iteration before the BUG-117/BUG-283's invariants provide the safety
 net).
 
-**Status: IN PROGRESS. The recovery is data-validated; the ship step is stage 2 (native
-py-registry replication) plus the runner-loop atomic-cycle trim.**
+**Status: IN PROGRESS. Stage 2 SHIPPED (2026-11-03): accelerator-only registration +
+`asyncio.tasks._py_all_tasks` rebound to the accelerator's all_tasks view → 1.25× on
+py3.14/py3.15 with the dual-registry contract intact (verified). The remaining lever is
+stage 3: trim the runner-loop atomic churn (std/atomic.zig +531 M Ir in the slow band;
+candidates: `ring_has_submitted` write pattern, per-completion lock sessions) and the
+remaining interpreter-side churn measured by BUG-414's plateau.**
 2. **SBO inline capacity** (SHIPPED in rev 1219 — bench-neutral, keeps for churn reduction).
 3. **Validate** with: `zig build test` (both toolchains), `pytest tests/test_task_registry.py
    tests/test_task*.py tests/test_future*.py tests/test_review_regressions.py`, the
