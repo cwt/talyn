@@ -351,11 +351,11 @@ fn poll_blocking_events(self: *Loop, mutex: *lock.Mutex, wait: bool, ready_queue
     var nevents: u32 = undefined;
     while (true) {
         if (should_wait and ready_queue.is_empty()) {
-            @atomicStore(u8, &self.io.ring_blocked, 1, .seq_cst);
+            @atomicStore(u8, &self.io.ring_blocked, 1, .release);
             mutex.unlock();
             defer {
                 mutex.lock();
-                @atomicStore(u8, &self.io.ring_blocked, 0, .seq_cst);
+                @atomicStore(u8, &self.io.ring_blocked, 0, .release);
             }
 
             const py_thread_state = PyEval_SaveThread();

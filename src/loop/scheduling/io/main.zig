@@ -404,7 +404,7 @@ pub fn init(self: *IO, loop: *Loop, allocator: std.mem.Allocator) !void {
     self.blocking_ready_tasks = try allocator.alloc(std.os.linux.io_uring_cqe, TotalTasksItems);
     errdefer allocator.free(self.blocking_ready_tasks);
 
-    @atomicStore(u8, &self.ring_blocked, 0, .seq_cst);
+    @atomicStore(u8, &self.ring_blocked, 0, .release);
 
     // Initialize fixed file table for IOSQE_FIXED_FILE optimization.
     // BUG-260: Do NOT clamp RLIMIT_NOFILE to the io_uring SQE depth. The old
@@ -852,7 +852,7 @@ pub fn queue_unlocked(self: *IO, event: BlockingOperationData) !usize {
         _ = try self.flush_pending_sqes();
     }
 
-    if (@atomicLoad(u8, &self.ring_blocked, .seq_cst) != 0) {
+    if (@atomicLoad(u8, &self.ring_blocked, .acquire) != 0) {
         try self.wakeup_eventfd();
     }
 
