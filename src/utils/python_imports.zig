@@ -53,17 +53,16 @@ pub fn get(comptime name: []const u8) PyObject {
 /// needed. Registration is best-effort: errors are cleared because a missing
 /// registry must never fail task creation.
 pub fn register_asyncio_task(task: PyObject) void {
-    // Tries to run the C accelerated `_register_task` binding first (BUG-268)
-    // then the pure-Python `_py_register_task` fallback when the two are
-    // distinct objects (they are on 3.14/3.15: the pointer equality guard
-    // keeps the pure registry populated when the accelerator maps only the
-    // builtin registry). The dual-call contract is asserted by
-    // tests/test_task_registry.py::test_default_task_visible_in_all_tasks
-    // (both `_asyncio` C registry and `asyncio.tasks._py_all_tasks` on 3.14+).
-    // P23: stage 1 measured this path's cost and the py-side Python-frame
-    // is the dominant bite; the v0.11.2 replacement is a native equivalent
-    // of `_py_register_task` (weakref+registry add executed from Zig) so
-    // both registries stay exact without the Python frame cost.
+    // P23 stage 2: with the accelerator present, the C `_register_task` alone
+    // maintains the asyncio task registries — the pure-Python registrar frame
+    // (~300-600 ns per task) was the bulk of the v0.9.x task-spawn regression
+    // (docs/development/priorities/23-...md). The dual-registry contract
+    // (tests/test_task_registry.py: visible in BOTH the _asyncio registry and
+    // asyncio.tasks._py_all_tasks) is satisfied by binding `asyncio.tasks.
+    // _py_all_tasks` to the accelerator's all_tasks at init (see
+    // initialize_python_imports) — zero per-task Python work while both
+    // readers see every pending talyn task. When the accelerator is ABSENT,
+    // the pure-Python registrar is used (BUG-398 fallback semantics).
     if (register_task_func.load(.acquire)) |func| {
         if (python_c.PyObject_CallOneArg(func, task)) |ret| {
             // BUG-373: the registrar's return value (Py_None or a patched
@@ -73,24 +72,15 @@ pub fn register_asyncio_task(task: PyObject) void {
         } else {
             python_c.PyErr_Clear();
         }
+        return;
     }
+    // Only the pure-Python registry exists (no C accelerator) —
+    // register the task there so asyncio.all_tasks() sees it.
     if (py_register_task_func.load(.acquire)) |func| {
-        if (register_task_func.load(.acquire)) |cfunc| {
-            if (cfunc != func) {
-                if (python_c.PyObject_CallOneArg(func, task)) |ret| {
-                    python_c.py_decref(ret);
-                } else {
-                    python_c.PyErr_Clear();
-                }
-            }
+        if (python_c.PyObject_CallOneArg(func, task)) |ret| {
+            python_c.py_decref(ret);
         } else {
-            // Only the pure-Python registry exists (no C accelerator) —
-            // register the task there so asyncio.all_tasks() sees it.
-            if (python_c.PyObject_CallOneArg(func, task)) |ret| {
-                python_c.py_decref(ret);
-            } else {
-                python_c.PyErr_Clear();
-            }
+            python_c.PyErr_Clear();
         }
     }
 }
@@ -124,6 +114,7 @@ pub fn initialize_python_imports() !void {
     leave_task_func.store(python_c.PyObject_GetAttrString(a_mod, "_leave_task\x00") orelse return error.PythonError, .release);
     register_task_func.store(python_c.PyObject_GetAttrString(a_mod, "_register_task\x00") orelse return error.PythonError, .release);
 
+
     // The pure-Python registry aliases (_scheduled_tasks WeakSet / the
     // _current_tasks dict). They are what asyncio.all_tasks()/current_task()
     // read when the C accelerator is absent or when the registries are
@@ -137,6 +128,24 @@ pub fn initialize_python_imports() !void {
         py_enter_task_func.store(python_c.PyObject_GetAttrString(tasks_mod, "_py_enter_task\x00") orelse return error.PythonError, .release);
         py_leave_task_func.store(python_c.PyObject_GetAttrString(tasks_mod, "_py_leave_task\x00") orelse return error.PythonError, .release);
         py_current_task_func.store(python_c.PyObject_GetAttrString(tasks_mod, "_py_current_task\x00") orelse return error.PythonError, .release);
+
+        // P23: when the accelerator is present, bind `asyncio.tasks._py_all_tasks`
+        // to the accelerator's `asyncio.all_tasks` as a pure-registry view. The
+        // BUG-268 contract (tests/test_task_registry.py) requires tasks to be
+        // visible in BOTH registries; with the view-bound registry, every pending
+        // talyn task (registered once, natively, through the C registrar) is
+        // visible through both readers with ZERO per-task Python work — the
+        // pure-Python registrar frame is only needed when the accelerator is
+        // absent (BUG-398 fallback, see register_asyncio_task).
+        if (register_task_func.load(.acquire) != null) {
+            const accel_all_tasks = python_c.PyObject_GetAttrString(a_mod, "all_tasks\x00") orelse return error.PythonError;
+            defer python_c.py_decref(accel_all_tasks);
+            // PyObject_SetAttrString stores its own reference to the value;
+            // our borrowed reference is released by the deferred decref.
+            if (python_c.PyObject_SetAttrString(tasks_mod, "_py_all_tasks\x00", accel_all_tasks) < 0) {
+                python_c.PyErr_Clear();
+            }
+        }
     }
 
     get_asyncgen_hooks.store(python_c.PyObject_GetAttrString(s_mod, "get_asyncgen_hooks\x00") orelse return error.PythonError, .release);
