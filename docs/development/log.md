@@ -11,6 +11,20 @@ timestamp: "2026-10-07T00:00:00Z"
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
 
+## [2026-11-03] — v0.11.2 Release: Task Spawn Speed Recovery (P23) — 1.34× py3.14 / 1.31× py3.15
+
+This release lands **P23** (revs 1224..1229): the recovery of the task-spawn throughput lost in the v0.9.x hardening band, *without reverting a single fix* — every BUG-268/279/398/397 contract is verified before and after:
+
+- **Root cause, pinned by bisect**: the era cliff sits in **revs 992..1002** (BUG-268..BUG-304 band between v0.9.0 and v0.9.6); the era-uniform anchor method (asyncio/uvloop baselines within ±3–5% across eras, same host) keeps the attribution honest.
+- **Stage 2 (rev 1224)**: accelerator-only task registration — the pure-Python registrar frame (~91–600 ns/task incl. weakref machinery) runs only when the C accelerator is absent (BUG-398 fallback kept); the dual-registry contract (`_asyncio` registry + `asyncio.tasks._py_all_tasks`) is preserved by rebinding `_py_all_tasks` to the accelerator's `all_tasks` at init (zero per-task Python work). Task Spawn **0.96× → 1.25×**.
+- **Stage 3a (rev 1226)**: the per-step `_py_current_task` probe removed — on 3.14+/3.15 the C and pure `_current_tasks` dicts are separate *by design*, so the probe always triggered the update while paying 2 pure-Python frames per task-step. **→ 1.27×**.
+- **Stage 3b(i) (rev 1228)**: the pure-registry sync runs **natively** — `asyncio.tasks._current_tasks` captured at init; enter/leave do the dict write/delete directly, with stdlib-parity fallbacks (any contract mismatch delegates to the real pure function so its RuntimeError propagates unchanged). **→ 1.32×**.
+- **Stage 3b(ii) (rev 1229)**: `ring_blocked` demoted from seq_cst to release/acquire — the runner's mutex pair already orders the critical section. **→ 1.34× (0.0957 s) py3.14 / 1.31× py3.15**.
+- **Discipline recorded**: a naive `hg backout` exclusion measured a **false negative** (later changesets re-plumbed the mechanism — always grep the post-backout source); a loop-carried registry cache measured below bench resolution and was **reverted** (sub-noise win, GC-invisible borrow cost). Both are in [development/priorities/23-task-spawn-speed-recovery-2026-11.md](priorities/23-task-spawn-speed-recovery-2026-11.md) with the full stage scoreboard.
+- **BUG-414 linkage resolved**: the footprint high-water is *not* registry bookkeeping (registry-on/off wheels measure the same ~43–44 MB at identical churn) — it is CPython-side per-task object churn; BUG-414 stays Open with the leak gate tracking its plateau; BUG-414's remediation stages (lazy exceptions growth, SBO InlineQueue) shipped in v0.11.1.
+- Verification per stage: dual-toolchain `zig build` + `zig build test` (82/82) + lint (0 violations); pytest task/registry/future/review suites in clean venvs on built wheels (89 passed; the 6 repro-subprocess import-shadow artifacts are pre-existing); the 12-repeat anchored era bench.
+- **Version Bump**: `pyproject.toml`, `build.zig.zon`, and the AST linter banner (`v0.11.2-dev`).
+
 ## [2026-11-03] — v0.11.1 Release: BUG-414 footprint stages 1+2 & the measurement infrastructure
 
 A maintenance release focused on the task lifecycle's memory story and the *measurement infrastructure* it exposed. BUG-414 stays **Open by evidence** — the release ships its two verified remediation stages and pins the remaining lever to P23 (v0.11.2):
