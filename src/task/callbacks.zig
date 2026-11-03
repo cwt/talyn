@@ -10,8 +10,11 @@ const PyObject = *python_c.PyObject;
 ///
 /// Python 3.13's C and pure-Python variants share the same `_current_tasks`
 /// dict (the default call already updates it), while 3.14 keeps separate
-/// registries. Probe the pure-Python registry after the default call and
-/// skip the second call when it is already in sync.
+/// registries. The per-task `_py_current_task` probe historically skipped
+/// the second call when already in sync, but on 3.14+/3.15 the dicts are
+/// separate BY DESIGN (the C call never touches the pure dict), so the
+/// probe always triggered the update anyway while paying one extra Python
+/// frame per step (P23 stage 3: 2 pure-Python frames per task removed).
 fn enter_or_leave_task(loop: PyObject, task: PyObject, comptime entering: bool) ?PyObject {
     const args = [2]PyObject{ loop, task };
     const func = if (entering) utils.PythonImports.get("enter_task_func") else utils.PythonImports.get("leave_task_func");
@@ -21,34 +24,14 @@ fn enter_or_leave_task(loop: PyObject, task: PyObject, comptime entering: bool) 
     python_c.py_decref(ret);
 
     if (py_func != func) {
-        const get_cur = utils.PythonImports.get("py_current_task_func");
-        const cur = python_c.PyObject_CallOneArg(get_cur, loop) orelse {
-            // Probe failed — fall back to updating the py registry directly.
-            python_c.PyErr_Clear();
-            const py_ret = python_c.PyObject_Vectorcall(py_func, &args, 2, null) orelse {
-                if (entering) {
-                    const rollback_leave = python_c.PyObject_Vectorcall(utils.PythonImports.get("leave_task_func"), &args, 2, null);
-                    if (rollback_leave) |rl| python_c.py_decref(rl);
-                }
-                return null;
-            };
-            python_c.py_decref(py_ret);
-            return python_c.get_py_none();
+        const py_ret = python_c.PyObject_Vectorcall(py_func, &args, 2, null) orelse {
+            if (entering) {
+                const rollback_leave = python_c.PyObject_Vectorcall(utils.PythonImports.get("leave_task_func"), &args, 2, null);
+                if (rollback_leave) |rl| python_c.py_decref(rl);
+            }
+            return null;
         };
-        const is_current = cur == task;
-        python_c.py_xdecref(cur);
-
-        const needs_update = if (entering) !is_current else is_current;
-        if (needs_update) {
-            const py_ret = python_c.PyObject_Vectorcall(py_func, &args, 2, null) orelse {
-                if (entering) {
-                    const rollback_leave = python_c.PyObject_Vectorcall(utils.PythonImports.get("leave_task_func"), &args, 2, null);
-                    if (rollback_leave) |rl| python_c.py_decref(rl);
-                }
-                return null;
-            };
-            python_c.py_decref(py_ret);
-        }
+        python_c.py_decref(py_ret);
     }
 
     return python_c.get_py_none();
