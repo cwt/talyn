@@ -1,7 +1,7 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 412 bugs (numbered 1–413) discovered across audit passes."
+description: "Individual bug entries for talyn, one file per bug. 413 bugs (numbered 1–414) discovered across audit passes."
 timestamp: "2026-11-01T00:00:00Z"
 ---
 
@@ -20,18 +20,18 @@ Sorted by bug number. See individual bug files for details.
 | Medium-High | 37 |
 | Medium | 77 |
 | Medium-Mid | 11 |
-| Medium-Low | 21 |
+| Medium-Low | 22 |
 | Low | 70 |
-| **Total** | **412** |
+| **Total** | **413** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
 | Fixed | 399 |
-| Open | 0 |
+| Open | 1 |
 | False Positive | 13 |
-| **Total** | **412** |
+| **Total** | **413** |
 
 ## All Bugs
 
@@ -449,4 +449,5 @@ Sorted by bug number. See individual bug files for details.
 | [411](411.md) | `create_connection` leaks the Future and `protocol_factory` references on post-setup errors | Medium | Fixed |
 | [412](412.md) | Connect callback state is destroyed while its io_uring SQE is still queued when `task_ids.append` fails | Critical | Fixed |
 | [413](413.md) | `UnixSignals.link` leaves a freed callback in the BTree when dispatching the replaced callback fails | Critical | Fixed |
+| [414](414.md) | Native ~32 B per completed task retained on task spawn — slow unbounded long-run growth (v0.7.0..v0.11.0), fix targeted at v0.11.1 | Medium-Low | Open |
 

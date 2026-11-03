@@ -22,6 +22,6 @@ This directory archives performance benchmark reports, comparative analyses agai
 
 ## Raw Hardware Datasets
 
-- `core-ultra-7-265/`: Intel Core Ultra 7 265 hybrid-core desktop benchmarks across Python 3.14 and 3.14t runtimes.
+- `core-ultra-7-265/`: Intel Core Ultra 7 265 hybrid-core desktop benchmarks across Python 3.14, 3.14t, and — since v0.11.0 — 3.15 / 3.15t runtimes (`benchmarks-v0.11.0-3.15[-t]-starburst.txt`).
 - `macbook-neo/`: Apple Silicon ARM64 virtualized Linux container benchmark runs.
 - `n6000/`: Intel Celeron N6000 low-power mobile CPU benchmark datasets.

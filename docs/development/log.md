@@ -11,6 +11,12 @@ timestamp: "2026-10-07T00:00:00Z"
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
 
+## [2026-11-03] — v0.11.1 Prep: Python 3.15/3.15t benchmark archives & BUG-414 (long-run leak)
+- **Benchmarks archived**: the v0.11.0 Python 3.15 and 3.15t run records moved from the repo root into the raw dataset bundle as [core-ultra-7-265/benchmarks-v0.11.0-3.15-starburst.txt](../benchmarks/core-ultra-7-265/benchmarks-v0.11.0-3.15-starburst.txt) and [core-ultra-7-265/benchmarks-v0.11.0-3.15t-starburst.txt](../benchmarks/core-ultra-7-265/benchmarks-v0.11.0-3.15t-starburst.txt), matching the pre-existing `benchmarks-v0.7.0-3.1[4]t-starburst.txt` naming; benchmarks index updated.
+- **Era-over-era comparison (same Core Ultra 7-265 host; asyncio/uvloop anchors stable within ±3–5% across eras)**: talyn's Task Spawn regressed from **1.75× vs asyncio at v0.7.0 to 0.95–0.96× at v0.10.0/v0.11.0**; Event Fiesta (+69%), Async Task Workflow (+31–69%) and Producer-Consumer (+36–59%) regressed in the v0.8–v0.10 hardening band, while the raw-socket paths held (+0–9%; UDP unchanged). The v0.11 audit sweep (BUG-400..413) cost ~0 on the task hot path (v0.10 → v0.11 slightly faster).
+- **BUG-414 filed (Open, Medium-Low, fix targeted v0.11.1)**: a 40-second create/gather RSS soak shows **~32 B per created task retained on the native side** — linear across the whole run on talyn v0.7.0, v0.10.0 and v0.11.0 wheel builds (Python 3.14, 3.15 and 3.15t), while plain asyncio plateaus; `tracemalloc` shows the Python side is clean, so the retention is a Zig-side allocation that survived every audit. See [development/bugs/414.md](../bugs/414.md) for the repro and evidence.
+- README bug-tracker counts updated: **413 bugs: 399 fixed, 13 false positives, 1 open** (BUG-414, v0.11.1).
+
 ## [2026-11-03] — v0.11.0 Release: Python 3.15 Support, BUG-400..413 Resolution, Verified Submodule Splits
 
 This release lands **Python 3.15 & 3.15t (free-threaded) support** on the main line (six-interpreter matrix in `scripts/test_all.sh`; pre-release ran 489 pytest tests on 3.15/3.15t), resolves the fourteen findings from the **2026-11-01 container audit** (BUG-400..413), and restructures four oversized core files into verified, behavior-preserving submodules:

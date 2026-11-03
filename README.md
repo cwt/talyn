@@ -15,7 +15,7 @@ Talyn prioritizes **correctness, complete system safety, and high usability** ov
 ## 🚀 Features
 
 - **Realistic Speed**: Designed to deliver solid and reliable I/O performance on Linux by leveraging `io_uring`'s native kernel-side asynchronous completion queues.
-- **Robust & Crash-Resistant**: Meticulously hardened against circular reference memory leaks, stack alignment faults, signal interrupt deadlocks, and use-after-free bugs (412 bugs identified across audit passes — 399 fixed, 13 marked false positives, 0 open).
+- **Robust & Crash-Resistant**: Meticulously hardened against circular reference memory leaks, stack alignment faults, signal interrupt deadlocks, and use-after-free bugs (413 bugs identified across audit passes — 399 fixed, 13 marked false positives, 1 open: BUG-414, fix targeted at v0.11.1).
 - **Full Asyncio Compatibility**: Passes 100% of standard Python `asyncio`, `subprocess`, `transports`, and connection-lifecycle test suites.
 - **Offline AST Bug Hunter & Linter**: Enforces strict invariant safety rules (preventing memory leaks, discarded syscalls, panics, and UAFs) via a built-in, sub-15ms Zig and Python AST static analyzer (`zig build lint`).
 - **Open Knowledge Documentation**: Built with comprehensive architectural mandates, lessons learned, and bug tracking under Google Open Knowledge Format (OKF v0.2).
@@ -366,7 +366,7 @@ To honor the project's roots and Enrique's early work:
 
 ## 📖 Project Story & Documentation
 
-- **[Master Documentation Index](docs/index.md)** — Architectural mandates, bug tracker (412 bugs: 399 fixed, 13 false positives, 0 open), and lessons learned under OKF v0.2.
+- **[Master Documentation Index](docs/index.md)** — Architectural mandates, bug tracker (413 bugs: 399 fixed, 13 false positives, 1 open), and lessons learned under OKF v0.2.
 - **[Development Journey](docs/development/development-journey.md)** — The full story: from discovery to challenges, the shift from "ultra-fast" to "realistic fast and stable", and how Talyn was built.
 - **[Why Talyn?](docs/development/talyn-naming.md)** — The personal story and meaning behind the new name.
 
