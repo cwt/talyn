@@ -8,6 +8,8 @@ const Atomic = std.atomic.Value;
 pub var asyncio_module: Atomic(?PyObject) = Atomic(?PyObject).init(null);
 pub var sys_module: Atomic(?PyObject) = Atomic(?PyObject).init(null);
 pub var weakref_module: Atomic(?PyObject) = Atomic(?PyObject).init(null);
+pub var tasks_module: Atomic(?PyObject) = Atomic(?PyObject).init(null);
+pub var py_all_tasks_original: Atomic(?PyObject) = Atomic(?PyObject).init(null);
 pub var socket_module: Atomic(?PyObject) = Atomic(?PyObject).init(null);
 
 pub var socket_class: Atomic(?PyObject) = Atomic(?PyObject).init(null);
@@ -89,6 +91,7 @@ pub fn initialize_python_imports() !void {
     errdefer release_python_imports();
     const a_mod = python_c.PyImport_ImportModule("asyncio\x00") orelse return error.PythonError;
     asyncio_module.store(a_mod, .release);
+    tasks_module.store(python_c.PyImport_ImportModule("asyncio.tasks\x00") orelse return error.PythonError, .release);
     const s_mod = python_c.PyImport_ImportModule("sys\x00") orelse return error.PythonError;
     sys_module.store(s_mod, .release);
     weakref_module.store(python_c.PyImport_ImportModule("weakref\x00") orelse return error.PythonError, .release);
@@ -128,20 +131,20 @@ pub fn initialize_python_imports() !void {
         py_leave_task_func.store(python_c.PyObject_GetAttrString(tasks_mod, "_py_leave_task\x00") orelse return error.PythonError, .release);
         py_current_tasks_dict.store(python_c.PyObject_GetAttrString(tasks_mod, "_current_tasks\x00") orelse return error.PythonError, .release);
 
-        // P23: when the accelerator is present, bind `asyncio.tasks._py_all_tasks`
-        // to the accelerator's `asyncio.all_tasks` as a pure-registry view. The
-        // BUG-268 contract (tests/test_task_registry.py) requires tasks to be
-        // visible in BOTH registries; with the view-bound registry, every pending
-        // talyn task (registered once, natively, through the C registrar) is
-        // visible through both readers with ZERO per-task Python work — the
-        // pure-Python registrar frame is only needed when the accelerator is
-        // absent (BUG-398 fallback, see register_asyncio_task).
+        // P23 (v0.11.2 review): when the accelerator is present, bind
+        // `asyncio.tasks._py_all_tasks` to the accelerator's `all_tasks` as
+        // a pure-registry view. The ORIGINAL binding is captured now and
+        // RESTORED at module release (release_python_imports) so the stdlib
+        // module is not left process-globals-mutated after talyn unloads;
+        // a rebinding failure logs LOUDLY instead of silently degrading
+        // the narrowed registration shape.
         if (register_task_func.load(.acquire) != null) {
             const accel_all_tasks = python_c.PyObject_GetAttrString(a_mod, "all_tasks\x00") orelse return error.PythonError;
             defer python_c.py_decref(accel_all_tasks);
-            // PyObject_SetAttrString stores its own reference to the value;
-            // our borrowed reference is released by the deferred decref.
+            // original `_py_all_tasks` for restore-on-release (owned here)
+            py_all_tasks_original.store(python_c.PyObject_GetAttrString(tasks_mod, "_py_all_tasks\x00") orelse return error.PythonError, .release);
             if (python_c.PyObject_SetAttrString(tasks_mod, "_py_all_tasks\x00", accel_all_tasks) < 0) {
+                std.log.err("talyn: asyncio.tasks._py_all_tasks rebind failed; the dual-registry contract degrades to C-registry-only (BUG-268 narrowed registration stays active)", .{});
                 python_c.PyErr_Clear();
             }
         }
@@ -158,6 +161,23 @@ pub fn initialize_python_imports() !void {
 }
 
 pub fn release_python_imports() void {
+    // P23 (v0.11.2 review): restore the stdlib binding the accelerator view
+    // replaced — the _py_all_tasks attribute must not stay process-globals
+    // mutated after talyn unloads. Runs BEFORE the generic decref loop (the
+    // loop swap-extracts & decrefs every cached reference, which would
+    // otherwise kill the objects we still need for the restore).
+    {
+        const tasks_mod = tasks_module.swap(null, .acq_rel);
+        const orig = py_all_tasks_original.swap(null, .acq_rel);
+        if (tasks_mod != null and orig != null) {
+            if (python_c.PyObject_SetAttrString(tasks_mod.?, "_py_all_tasks\x00", orig.?) < 0) {
+                std.log.warn("talyn: restore of asyncio.tasks._py_all_tasks failed during cleanup", .{});
+                python_c.PyErr_Clear();
+            }
+        }
+        if (tasks_mod) |tm| python_c.py_decref(tm);
+        if (orig) |o| python_c.py_decref(o);
+    }
     const decls = comptime std.meta.declarations(@This());
     inline for (decls) |decl| {
         const decl_name = if (comptime @typeInfo(@TypeOf(decl)) == .@"struct") decl.name else decl;
