@@ -62,14 +62,24 @@ fn enter_or_leave_task(loop: PyObject, task: PyObject, comptime entering: bool) 
         // so its RuntimeError (message included) propagates unchanged.
     }
 
-    const py_ret = python_c.PyObject_Vectorcall(py_func, &args, 2, null) orelse {
-        if (entering) {
-            const rollback_leave = python_c.PyObject_Vectorcall(utils.PythonImports.get("leave_task_func"), &args, 2, null);
-            if (rollback_leave) |rl| python_c.py_decref(rl);
-        }
-        return null;
-    };
-    python_c.py_decref(py_ret);
+    // v0.11.2 review finding: this fallback must be GUARDED — when the
+    // accelerator is ABSENT (the BUG-398 pure-only configuration), the two
+    // bindings are the SAME object: the default call above IS the pure
+    // register/leave, and an UNguarded second call would double-enter and
+    // double-leave (the second leave finds current None != task and raises
+    // RuntimeError, failing every task-step's leave). Guarded, the
+    // accel-absent mode runs exactly one enter/leave; accel-present keeps
+    // the mismatch fallback (stdlib raises, BUG-268 sync semantics).
+    if (py_func != func) {
+        const py_ret = python_c.PyObject_Vectorcall(py_func, &args, 2, null) orelse {
+            if (entering) {
+                const rollback_leave = python_c.PyObject_Vectorcall(utils.PythonImports.get("leave_task_func"), &args, 2, null);
+                if (rollback_leave) |rl| python_c.py_decref(rl);
+            }
+            return null;
+        };
+        python_c.py_decref(py_ret);
+    }
 
     return python_c.get_py_none();
 }

@@ -378,3 +378,85 @@ pub fn call_done_callbacks(self: *Future, new_status: Future.FutureStatus) !void
     try Loop.Scheduling.Soon.dispatch_guaranteed(self.loop, &callback);
     python_c.py_incref(@ptrCast(pyfut));
 }
+
+test "InlineQueue span discipline across promotion and heap drain" {
+    // v0.11.2 review finding (BUG-414 stage-2 follow-up): `append` promoted
+    // the inline buffer into `heap` WITHOUT clearing `inline_len`, so once
+    // the heap portion was drained (the ExceptionGroup tuple build nulls
+    // entries that the later errdefer pop removes), items()/itemsMut()
+    // fell back to the STALE inline span — entries already owned/stolen by
+    // an ExceptionGroup tuple. Future.release then py_decref'd them again
+    // (double decref / premature free), and the GC traverse visited them.
+    // The promotion must flip the queue to heap-authoritative: the inline
+    // span must be empty from promote onward.
+    const testing = std.testing;
+
+    // Shape of the exceptions queue: optional PyObject, inline capacity 1.
+    const Q = InlineQueue(?*python_c.PyObject, 1);
+    var q: Q = .empty;
+    defer q.deinit(testing.allocator);
+
+    // usize-backed sentinels: alignment >= PyObject alignment, all distinct.
+    var a: usize = 0;
+    var b: usize = 1;
+    var c: usize = 2;
+    const a_ptr: ?*python_c.PyObject = @ptrCast(@alignCast(&a));
+    const b_ptr: ?*python_c.PyObject = @ptrCast(@alignCast(&b));
+    const c_ptr: ?*python_c.PyObject = @ptrCast(@alignCast(&c));
+
+    // append 1: inline
+    try q.append(testing.allocator, a_ptr);
+    try testing.expectEqual(@as(usize, 1), q.items().len);
+    // append 2: PROMOTES (inline_len must be cleared here)
+    try q.append(testing.allocator, b_ptr);
+    try testing.expect(q.heap.items.len > 0);
+    // append 3: still heap-authoritative
+    try q.append(testing.allocator, c_ptr);
+    try testing.expectEqual(@as(usize, 3), q.items().len);
+
+    // Simulate the ExceptionGroup tuple build: steal entries and null the
+    // heap slots — the tuple now OWNS the exceptions.
+    var touched: usize = 0;
+    for (q.itemsMut()) |*exc| {
+        exc.* = null; // tuple build steals the entry and nulls the slot
+        touched += 1;
+    }
+    // all three heap-authoritative entries were visited through itemsMut()
+    try testing.expectEqual(@as(usize, 3), touched);
+
+    // The dispatch error path (BUG-tail): drain the heap via the errdefer pop.
+    while (q.itemsMut().len > 0) _ = q.pop();
+
+    // THE REGRESSION: after the heap drains, the span must be EMPTY. On the
+    // stale-inline pre-fix build this returns inline_buf[0..1] holding the
+    // tuple-owned exception -> Future.release py_xdecref's it again.
+    try testing.expectEqual(@as(usize, 0), q.items().len);
+    try testing.expectEqual(@as(usize, 0), q.itemsMut().len);
+}
+
+test "InlineQueue promotion while heap mode stays authoritative" {
+    // The callbacks queue shape: non-optional entries, inline capacity 2.
+    const testing = std.testing;
+    const Q = InlineQueue(Callback, 2);
+    var q: Q = .empty;
+    defer q.deinit(testing.allocator);
+
+    const one: Callback = .{ .data = .{ .PythonGeneric = .{ .callback = null, .context = null } } };
+    const two: Callback = .{ .data = .{ .PythonGeneric = .{ .callback = null, .context = null } } };
+    const three: Callback = .{ .data = .{ .PythonGeneric = .{ .callback = null, .context = null } } };
+
+    try q.append(testing.allocator, one);
+    try q.append(testing.allocator, two);
+    try testing.expectEqual(@as(usize, 0), q.heap.items.len); // still inline
+    try q.append(testing.allocator, three);
+    try testing.expect(q.heap.items.len > 0); // promoted
+    // post-promote appends land in the heap and the span stays heap-bound
+    try testing.expectEqual(@as(usize, 3), q.items().len);
+    var seen: usize = 0;
+    for (q.itemsMut()) |*cb| {
+        // mutate through the mutable span; entries must stay addressable
+        cb.executed = true;
+        seen += 1;
+    }
+    try testing.expectEqual(@as(usize, 3), seen);
+}

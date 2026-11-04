@@ -8,4 +8,7 @@ pub const Transports = @import("transports/main.zig");
 test {
     _ = Loop;
     _ = Transports;
+    // P23/Future container regression tests live in future/callback.zig
+    // (InlineQueue span discipline); pull them into the talyn test root.
+    _ = @import("future/callback.zig");
 }
