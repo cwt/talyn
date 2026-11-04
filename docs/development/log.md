@@ -11,6 +11,17 @@ timestamp: "2026-10-07T00:00:00Z"
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
 
+## [2026-11-04] — v0.11.3 Release: v0.11.2 review fixes & contract hardening
+
+The v0.11.2-tagged code review found two review-path defects (both confirmed statically and handled with measured-first validation); this release ships the fixes plus the validation matrix additions:
+
+- **Pure-only (accelerator-absent) double enter/leave — FIXED (1234)**: the stage-3b pure_sync block skipped the native fast path when `py_func == func`, but left the *pure* enter/leave fallback call unguarded — in the BUG-398 pure-only configuration the two bindings are the same object, so every task-step entered/left the registry TWICE and the second leave raised the stdlib RuntimeError (failing every step's leave). The fallback is now guarded by `py_func != func`: the pure-only mode runs exactly one enter/leave; the accel-present mode keeps the mismatch-fallback semantics. Evidence: a pure-binding exclusion wheel pre-fix ran task suites **4 passed / 11 FAILED** with the RuntimeError storm; post-fix the same suites are green.
+- **BUG-414 stage-2 SBO stale-span claim — measured FALSE POSITIVE** (1233): the promotion *does* leave `inline_len` set, but the exception-delivery errdefer's `while (... > 0) pop()` drains *through* the queue (heap → stale span), self-healing the registry to empty before any external observer — `Future.release`/traverse see span len 0. Deterministic Zig unit tests capture the span discipline (added to `future/callback.zig`, now wired into `src/main.zig`'s test root — rev 1219's omission, which was why they never ran).
+- **`asyncio.tasks._py_all_tasks` rebind — restore-on-release + loud degrade (1234)**: the original binding is captured at init and *restored* at module release (the stdlib module is no longer process-globals-mutated after talyn unloads); a rebinding failure logs `std.log.err` loudly instead of silently degrading to the narrowed registration shape.
+- **Review follow-up docs** (1235): BUG-414's "fully CPython-side" marked as *inference by negative evidence* (not code-proven); the leak-gate 24 s window documented as measuring the warm-up peak (the plateau arrives 60–90 s); P23's validation scope corrected (accelerator-present runs; the pure-only path now covered by the exclusion regression); README documents the **source-build floor** (CPython 3.13+ headers; `PyLong_AsInt`/`Py_mod_gil` are 3.13+ APIs).
+- **Ring_blocked demotion accepted as reviewed**: the release/acquire demotion holds under the audited call graph (Soon.dispatch / IO.queue / handle_cancel / call_soon_threadsafe lock first; the 100 ms watchdog bounds a missed wakeup to delay, not hang).
+- **Version Bump**: `pyproject.toml`, `build.zig.zon`, and the AST linter banner (`v0.11.3-dev`).
+
 ## [2026-11-03] — v0.11.2 Release: Task Spawn Speed Recovery (P23) — 1.34× py3.14 / 1.31× py3.15
 
 This release lands **P23** (revs 1224..1229): the recovery of the task-spawn throughput lost in the v0.9.x hardening band, *without reverting a single fix* — every BUG-268/279/398/397 contract is verified before and after:
