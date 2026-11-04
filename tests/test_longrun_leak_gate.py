@@ -10,7 +10,10 @@ not leaked pointers). Any future change to the task hot path must both:
      including the scheduler path (sleep(0) churn).
 
 Both tests run short subprocess soaks (RSS read from /proc/self/status), so this file is
-the standing memory regression gate for the task hot path. While BUG-414 remains open,
+the standing memory regression gate for the task hot path. NOTE the 24 s/1024-task window
+measures the WARM-UP PEAK — the documented BUG-414 plateau shape arrives at 60–90 s, so a
+fuller plateau-soak is a longer-running watch item (see docs/development/bugs/414.md).
+While BUG-414 remains open,
 the footprint assertion is marked `xfail(strict=True)`: CI stays green, and the strict
 marker makes an unexpected pass *fail*, forcing the marker's removal when the fix lands.
 """

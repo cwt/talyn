@@ -20,6 +20,7 @@ Talyn prioritizes **correctness, complete system safety, and high usability** ov
 - **Offline AST Bug Hunter & Linter**: Enforces strict invariant safety rules (preventing memory leaks, discarded syscalls, panics, and UAFs) via a built-in, sub-15ms Zig and Python AST static analyzer (`zig build lint`).
 - **Open Knowledge Documentation**: Built with comprehensive architectural mandates, lessons learned, and bug tracking under Google Open Knowledge Format (OKF v0.2).
 - **Modern Packaging**: Fully migrated to PEP 517/518 standard declarative `pyproject.toml` configuration.
+- **Build Floor**: Building from source requires CPython **3.13+ headers** (`PyLong_AsInt` / `Py_mod_gil` are 3.13+ APIs — no `@hasDecl` fallback is shipped; a plain `zig build` against 3.12 headers fails).
 - **GIL-Disabled Free-Threading Ready**: Fully compatible with `python3.13t`, `python3.14t`, and `python3.15t` without memory races.
 
 ---
