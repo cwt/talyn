@@ -1,7 +1,7 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 413 bugs (numbered 1–414) discovered across audit passes."
+description: "Individual bug entries for talyn, one file per bug. 414 bugs (numbered 1–415) discovered across audit passes."
 timestamp: "2026-11-01T00:00:00Z"
 ---
 
@@ -22,16 +22,16 @@ Sorted by bug number. See individual bug files for details.
 | Medium-Mid | 11 |
 | Medium-Low | 22 |
 | Low | 70 |
-| **Total** | **413** |
+| **Total** | **414** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
-| Fixed | 399 |
+| Fixed | 400 |
 | Open | 1 |
 | False Positive | 13 |
-| **Total** | **413** |
+| **Total** | **414** |
 
 ## All Bugs
 
@@ -450,4 +450,5 @@ Sorted by bug number. See individual bug files for details.
 | [412](412.md) | Connect callback state is destroyed while its io_uring SQE is still queued when `task_ids.append` fails | Critical | Fixed |
 | [413](413.md) | `UnixSignals.link` leaves a freed callback in the BTree when dispatching the replaced callback fails | Critical | Fixed |
 | [414](414.md) | Task-churn steady-state native footprint ≈3× the asyncio baseline (bounded warm-up high-water, arena retention; era-uniform, fix targeted at v0.11.1) | Medium-Low | Open |
+| [415](415.md) | The BUG-399/BUG-410 watchdog's own cancellation CQE unblocks every later wait, spinning an idle runner at ~3.2k iterations/s and starving foreign GIL threads (wormhole ad-block update freeze; the `reserved_slots == 0` downgrade co-produces the same spin in true idling) | High | Fixed |
 

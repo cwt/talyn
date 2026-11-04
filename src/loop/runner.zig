@@ -342,11 +342,36 @@ fn fetch_completed_tasks(self: *Loop, blocking_ready_tasks: []std.os.linux.io_ur
 fn poll_blocking_events(self: *Loop, mutex: *lock.Mutex, wait: bool, ready_queue: *CallbackManager.DynamicRingBuffer) !void {
     const blocking_ready_tasks = self.io.blocking_ready_tasks;
 
-    // If nothing is in-flight, there's nothing to wait for.
-    var should_wait = wait;
-    if (should_wait and self.reserved_slots == 0) {
-        should_wait = false;
-    }
+    // BUG-415: the blocking branch must ACTUALLY PARK.
+    //
+    // Two failures fed one freeze in the BUG-399/BUG-410 watchdog rewrite:
+    //
+    //   1. The blocking wait entered copy_cqes(, 1) without first draining
+    //      stale completions. Each blocking entry arms a 100 ms watchdog and
+    //      cancels it after the wait; the CANCELLATION itself yields a CQE,
+    //      so from the second entry onward the ring always held one
+    //      self-generated CQE and copy_cqes(, 1) returned instantly — the
+    //      "blocking" branch degenerated into a full-speed spin (~3.2k
+    //      iterations/s) that save/restored the GIL every cycle and starved
+    //      every foreign Python thread. wormhole's 150k-row aiosqlite
+    //      executemany advanced ~16 KB in 30 s (v0.10.0, which still used
+    //      submit_and_wait(1), completed the same flow in ~2 s).
+    //
+    //   2. The reserved_slots == 0 downgrade turned true idling (no native
+    //      IO in flight, no callbacks, no hooks) into the same full-speed
+    //      spin, with no GIL release at all between iterations.
+    //
+    // The fix: drain first, park only on an empty CQE ring, keep the
+    // bounded-wait watchdog (submit its cancellation AFTER the wait, so it
+    // can never unblock its own park), and drop the downgrade — with zero
+    // reserved slots the park is bounded by the watchdog anyway, and every
+    // audited Python-side push site (Soon.dispatch / dispatch_guaranteed /
+    // IO.queue / handle_cancel / call_soon_threadsafe — all lock the loop
+    // mutex first) wakes the parked ring through the persistent eventfd
+    // read (io.wakeup_eventfd). Timers are ring timeouts (WaitTimer SQEs)
+    // that hold reserved slots, so deadline wakes keep their real-CQE path.
+
+    const should_wait = wait;
 
     var nevents: u32 = undefined;
     while (true) {
@@ -359,44 +384,94 @@ fn poll_blocking_events(self: *Loop, mutex: *lock.Mutex, wait: bool, ready_queue
             }
 
             const py_thread_state = PyEval_SaveThread();
+            var park_err: ?anyerror = null;
+            var watchdog_armed = false;
 
-            // BUG-399/BUG-410: keep the blocking wait bounded with a watchdog
-            // timeout, then wait for a real completion instead of sleeping for
-            // a fixed 10 ms. The watchdog completion uses a reserved user_data
-            // that fetch_completed_tasks() skips, so it only serves as a wake
-            // source on kernels where io_uring_enter is not interrupted by
-            // signals.
-            const watchdog_ts = std.os.linux.kernel_timespec{ .sec = 0, .nsec = 100_000_000 };
-            const watchdog = self.io.ring.timeout(watchdog_user_data, &watchdog_ts, 0, 0) catch null;
-
-            var submit_ok = true;
-            _ = self.io.ring.submit() catch |err| {
-                std.log.warn("submit failed: {s}", .{@errorName(err)});
-                submit_ok = false;
-            };
-            self.io.ring_has_submitted = true;
-
-            var cq_err: ?anyerror = null;
-            if (watchdog != null and submit_ok) {
-                nevents = self.io.ring.copy_cqes(blocking_ready_tasks, 1) catch |err| blk: {
-                    cq_err = err;
-                    break :blk 0;
+            // BUG-415: drain completed CQEs BEFORE parking. The old flow
+            // entered copy_cqes(, 1) directly while stale completions from
+            // previous iterations (producer: the watchdog's own
+            // timeout_cancel CQE) still sat in the CQE ring, so the "blocking"
+            // wait returned instantly and the loop degenerated into a
+            // full-speed spin (~3.2k iterations/s at wormhole's idle shape)
+            // that save/restored the GIL every cycle and starved any foreign
+            // Python thread (its 150k-row aiosqlite executemany advanced
+            // ~16 KB in 30 s). Drain first; park only when the ring is truly
+            // empty. Python may NOT be called inside this window (the GIL is
+            // dropped): SignalInterrupt retries here; delivery happens in the
+            // post-Restore PyErr_CheckSignals.
+            nevents = 0;
+            while (true) {
+                const n = self.io.ring.copy_cqes(blocking_ready_tasks, 0) catch |err| {
+                    if (err == error.SignalInterrupt) continue;
+                    park_err = err;
+                    break;
                 };
-            } else {
-                // Watchdog or submission failed; fall back to the bounded
-                // sleep + non-blocking poll so the loop cannot hang.
-                const sleep_ts = std.os.linux.timespec{ .sec = 0, .nsec = 10_000_000 };
-                _ = std.os.linux.nanosleep(&sleep_ts, null);
-                nevents = self.io.ring.copy_cqes(blocking_ready_tasks, 0) catch |err| blk: {
-                    cq_err = err;
-                    break :blk 0;
+                nevents = n;
+                break;
+            }
+            while (nevents > 0 and nevents == blocking_ready_tasks.len) {
+                const n = self.io.ring.copy_cqes(blocking_ready_tasks, 0) catch |err| {
+                    if (err == error.SignalInterrupt) continue;
+                    // Full batch consumed; a partial error keeps the harvest
+                    // for the accounting pass below.
+                    park_err = err;
+                    break;
                 };
+                if (n == 0) break;
+                nevents = n;
+            }
+
+            if (nevents == 0 and park_err == null) {
+                // Ring is truly empty: arm the BUG-410 watchdog (bounded
+                // 100 ms wait) and block until a REAL CQE arrives (io
+                // completion, eventfd wake-up read) or the watchdog timers
+                // out. The watchdog's completion uses the reserved user_data
+                // that fetch_completed_tasks() skips.
+                const watchdog_ts = std.os.linux.kernel_timespec{ .sec = 0, .nsec = 100_000_000 };
+                const watchdog = self.io.ring.timeout(watchdog_user_data, &watchdog_ts, 0, 0) catch null;
+
+                var submit_ok = true;
+                _ = self.io.ring.submit() catch |err| {
+                    std.log.warn("submit failed: {s}", .{@errorName(err)});
+                    submit_ok = false;
+                };
+                self.io.ring_has_submitted = true;
+
+                if (watchdog != null and submit_ok) {
+                    watchdog_armed = true;
+                    while (true) {
+                        nevents = self.io.ring.copy_cqes(blocking_ready_tasks, 1) catch |err| {
+                            if (err == error.SignalInterrupt) continue; // bounded by the 100 ms watchdog
+                            park_err = err;
+                            nevents = 0;
+                            break;
+                        };
+                        break;
+                    }
+                } else {
+                    // Watchdog or submission failed; fall back to the bounded
+                    // sleep + non-blocking poll so the loop cannot hang.
+                    const sleep_ts = std.os.linux.timespec{ .sec = 0, .nsec = 10_000_000 };
+                    _ = std.os.linux.nanosleep(&sleep_ts, null);
+                    while (true) {
+                        const n = self.io.ring.copy_cqes(blocking_ready_tasks, 0) catch |err| {
+                            if (err == error.SignalInterrupt) continue;
+                            park_err = err;
+                            nevents = 0;
+                            break;
+                        };
+                        nevents = n;
+                        break;
+                    }
+                }
             }
 
             PyEval_RestoreThread(py_thread_state);
 
-            // Cancel the watchdog if a real completion won the race.
-            if (watchdog != null) {
+            // Cancel the watchdog if a real completion won the race. The
+            // removal is submitted AFTER the wait, so its own CQE can never
+            // unblock a parked wait (the BUG-415 self-referential loop).
+            if (watchdog_armed) {
                 _ = self.io.ring.timeout_remove(0, watchdog_user_data, 0) catch |err| std.log.debug("timeout_remove failed: {s}", .{@errorName(err)});
                 _ = self.io.ring.submit() catch |err| std.log.debug("submit failed: {s}", .{@errorName(err)});
             }
@@ -406,10 +481,7 @@ fn poll_blocking_events(self: *Loop, mutex: *lock.Mutex, wait: bool, ready_queue
             if (python_c.PyErr_CheckSignals() < 0) return error.PythonError;
             if (python_c.PyErr_Occurred() != null) return error.PythonError;
 
-            if (cq_err) |err| {
-                if (err != error.SignalInterrupt) return err;
-                nevents = try copy_cqes_eintr_safe(&self.io.ring, blocking_ready_tasks);
-            }
+            if (park_err) |err| return err;
         } else {
             // Non-blocking: flush pending SQEs, then peek at CQEs.
             _ = try self.io.flush_pending_sqes();
