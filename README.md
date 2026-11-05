@@ -5,6 +5,7 @@
 [![Linux Compatibility](https://img.shields.io/badge/linux-7.0+%20%7C%20Fedora%2043--44-orange.svg)](#-requirements)
 [![Zig Compatibility](https://img.shields.io/badge/zig-0.16.0%20%7C%200.17.0-red.svg)](#-requirements)
 [![PyPI Version](https://img.shields.io/pypi/v/talyn.svg)](https://pypi.org/project/talyn/)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/cwt/talyn)
 
 **Talyn** is a robust, exceptionally stable, and realistically fast `asyncio` event loop drop-in replacement for Python, powered by the asynchronous capabilities of **Zig** and **io_uring**.
 
