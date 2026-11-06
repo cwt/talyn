@@ -269,6 +269,20 @@ class Loop(_Loop):
         self._exception_handler: Callable[[ExceptionContext], None] = (
             self.default_exception_handler
         )
+        # BUG-416: the *user* handler as passed to set_exception_handler, for
+        # `get_exception_handler` semantics. `self._exception_handler` keeps
+        # the dispatch binding (default_exception_handler is pre-bound so the
+        # Zig layer can call it with one argument); asyncio's contract is that
+        # the getter returns None while the default handler is in use.
+        self._user_exception_handler: Callable[[Any, ExceptionContext], None] | None = None
+
+        # BUG-416 (amended during the consumer canary): mirror asyncio's
+        # `slow_callback_duration` for consumers that snapshot and restore
+        # it (prompt_toolkit's set_callback_duration in
+        # Application.run_async). The native slow-callback reporter keeps
+        # its own threshold (see runner.zig call_once → DebugState); this
+        # Python-side attribute is the consumer-facing surface.
+        self.slow_callback_duration: float = 0.1
 
         self._default_executor: ThreadPoolExecutor | None = None
         self._shutdown_executor_called: bool = False
@@ -360,6 +374,18 @@ class Loop(_Loop):
                     f"A callable object or None is expected, got {handler!r}"
                 )
             self._exception_handler = handler
+        self._user_exception_handler = handler
+
+    def get_exception_handler(self) -> Callable[[Any, ExceptionContext], None] | None:
+        """BUG-416: return the handler set via `set_exception_handler`, or
+        None when the default handler is in use (asyncio.BaseEventLoop
+        semantics). This method was inherited from the concrete-helpers era
+        of asyncio.events.AbstractEventLoop, which on Python 3.14+/3.15 is an
+        abstract stub raising NotImplementedError — any consumer that
+        snapshots the previous handler before installing its own
+        (prompt_toolkit's set_exception_handler_ctx) crashed at boot.
+        """
+        return self._user_exception_handler
 
     # --------------------------------------------------------------------------------------------------------
     # P15 Phase 1: Completion batch dispatch handlers.

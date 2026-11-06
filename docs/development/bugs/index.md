@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 400 |
-| Open | 4 |
+| Fixed | 401 |
+| Open | 3 |
 | False Positive | 13 |
 | **Total** | **417** |
 
@@ -451,7 +451,7 @@ Sorted by bug number. See individual bug files for details.
 | [413](413.md) | `UnixSignals.link` leaves a freed callback in the BTree when dispatching the replaced callback fails | Critical | Fixed |
 | [414](414.md) | Task-churn steady-state native footprint ≈3× the asyncio baseline (bounded warm-up high-water, arena retention; era-uniform, fix targeted at v0.11.1) | Medium-Low | Open |
 | [415](415.md) | The BUG-399/BUG-410 watchdog's own cancellation CQE unblocks every later wait, spinning an idle runner at ~3.2k iterations/s and starving foreign GIL threads (wormhole ad-block update freeze; the `reserved_slots == 0` downgrade co-produces the same spin in true idling) | High | Fixed |
-| [416](416.md) | `Loop.get_exception_handler` missing - prompt_toolkit et al. crash at boot with `NotImplementedError` (three sibling exception-handler APIs implemented, the getter fell through to the abstract stub) | High | Open |
+| [416](416.md) | `Loop.get_exception_handler` missing - prompt_toolkit et al. crash at boot with `NotImplementedError` (three sibling exception-handler APIs implemented, the getter fell through to the abstract stub) | High | Fixed |
 | [417](417.md) | `add_reader` wake-up quantization ~100 us under sporadic single-byte reads (min 3.2 us exists; most wakes land on a tick - reader completion wait path) | Low | Open |
-| [418](418.md) | Chained `run_in_executor` hand-off 2.4x slower than stdloop (77 us vs 32 us); pipelined batches parity-fast - executor-completion wake integration, sibling of BUG-417 | Low | Open |
+| [418](418.md) | Chained `run_in_executor` hand-off slower than stdloop (77 us vs 32 us on the audit host; locally confirmed 3x) - executor-completion wake integration | Low | Open |
 
