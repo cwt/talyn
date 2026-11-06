@@ -479,3 +479,10 @@ This release fixes 9 bugs (BUG-122 through BUG-130) discovered by a Zig 0.16.0 c
 
 ## [2026-07-15] — OKF Bundle Cleanup
 - Removed 16 zero-byte `docs/priorities/*.orig` backup files left over from the 2026-07-07 OKF conversion. These were empty artifacts and not valid OKF documents.
+
+## [2026-11-06] — BUG-416/417/418 filed from a consumer audit (pyvim + prompt_toolkit 3.0.53 host workload)
+
+- **[BUG-416](bugs/416.md) (High, Open)**: `Loop.get_exception_handler` is missing from `talyn/loop.py`; it falls through to `asyncio.events.AbstractEventLoop`'s abstract stub (`NotImplementedError`) on Python 3.15, so every prompt_toolkit-based TUI crashes at boot (`set_exception_handler_ctx` at PTK `application.py:827`). The three sibling APIs (`set`/`default`/`call`) are implemented — this is one missing override. Consumer proof: with a two-line shim implementing only the getter, a full pyvim Editor boots and exits cleanly under talyn.
+- **[BUG-417](bugs/417.md) (Low, Open)**: `add_reader` reader-wake quantization: min ≈3.2 µs but median ≈100 µs on sporadic single-byte pipe reads (stdloop/uvloop both medians ≈3 µs). Suspects: conservative wait timeout / completion batching / spin-then-sleep quantum in the read-completion path.
+- **[BUG-418](bugs/418.md) (Low, Open)**: chained `run_in_executor` hand-off 2.4× stdloop (77 µs vs 32 µs) while pipelined batches are parity-fast and the `call_soon_threadsafe` hop is the fastest of all three loops measured — isolating the executor-completion→loop-wake integration; likely the same tick as BUG-417.
+- Not fixed in this changeset: filed as the audit record only (Zig/wheel v0.11.4 host: Python 3.15.2, kernel 7.2.15, io_uring enabled; uvloop 0.23.0 used as the reference loop).

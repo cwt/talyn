@@ -1,7 +1,7 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 414 bugs (numbered 1–415) discovered across audit passes."
+description: "Individual bug entries for talyn, one file per bug. 417 bugs (numbered 1–418) discovered across audit passes."
 timestamp: "2026-11-01T00:00:00Z"
 ---
 
@@ -16,22 +16,22 @@ Sorted by bug number. See individual bug files for details.
 | Severity | Count |
 |---|---:|
 | Critical | 62 |
-| High | 134 |
+| High | 135 |
 | Medium-High | 37 |
 | Medium | 77 |
 | Medium-Mid | 11 |
 | Medium-Low | 22 |
-| Low | 70 |
-| **Total** | **414** |
+| Low | 72 |
+| **Total** | **417** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
 | Fixed | 400 |
-| Open | 1 |
+| Open | 4 |
 | False Positive | 13 |
-| **Total** | **414** |
+| **Total** | **417** |
 
 ## All Bugs
 
@@ -451,4 +451,7 @@ Sorted by bug number. See individual bug files for details.
 | [413](413.md) | `UnixSignals.link` leaves a freed callback in the BTree when dispatching the replaced callback fails | Critical | Fixed |
 | [414](414.md) | Task-churn steady-state native footprint ≈3× the asyncio baseline (bounded warm-up high-water, arena retention; era-uniform, fix targeted at v0.11.1) | Medium-Low | Open |
 | [415](415.md) | The BUG-399/BUG-410 watchdog's own cancellation CQE unblocks every later wait, spinning an idle runner at ~3.2k iterations/s and starving foreign GIL threads (wormhole ad-block update freeze; the `reserved_slots == 0` downgrade co-produces the same spin in true idling) | High | Fixed |
+| [416](416.md) | `Loop.get_exception_handler` missing - prompt_toolkit et al. crash at boot with `NotImplementedError` (three sibling exception-handler APIs implemented, the getter fell through to the abstract stub) | High | Open |
+| [417](417.md) | `add_reader` wake-up quantization ~100 us under sporadic single-byte reads (min 3.2 us exists; most wakes land on a tick - reader completion wait path) | Low | Open |
+| [418](418.md) | Chained `run_in_executor` hand-off 2.4x slower than stdloop (77 us vs 32 us); pipelined batches parity-fast - executor-completion wake integration, sibling of BUG-417 | Low | Open |
 
