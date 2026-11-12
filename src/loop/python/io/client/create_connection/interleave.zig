@@ -38,7 +38,13 @@ pub fn interleave_address_list(allocator: std.mem.Allocator, address_list: []uti
         } else if (ipv6_index < ipv6_addresses) {
             v.* = tmp_list[address_list.len + ipv6_index];
             ipv6_index += 1;
-            interleave_count -= 1;
+            // BUG-423: once IPv4 is exhausted the first branch stops
+            // resetting the counter, and this decrement ran at 0 —
+            // integer-overflow panic in Debug/ReleaseSafe, silent wrap +
+            // wrong ordering in ReleaseFast (residual of BUG-212's guard).
+            // Reached from create_connection(..., interleave=N) and the
+            // happy_eyeballs path (interleave == 0 → interleave(..., 1)).
+            if (interleave_count > 0) interleave_count -= 1;
         } else if (ipv4_index < ipv4_addresses) {
             // Defensive bounds guard: should be unreachable when counts are
             // correct, but protect against off-by-one in future refactors.
@@ -163,10 +169,38 @@ test "interleave_address_list with many IPv6 and few IPv4 (BUG-212)" {
 
     try interleave_address_list(allocator, addresses, 1);
 
-    // Order: IPv6, IPv4, IPv6, IPv6, IPv6
+    // Order: IPv6, IPv4, IPv6, IPv6, IPv6 — after the IPv4 slot is used
+    // up, the remaining IPv6 addresses append without touching the
+    // counter (BUG-423: the decrement used to underflow at 0 here).
     try std.testing.expectEqual(std.posix.AF.INET6, addresses[0].any.family);
     try std.testing.expectEqual(std.posix.AF.INET, addresses[1].any.family);
     try std.testing.expectEqual(std.posix.AF.INET6, addresses[2].any.family);
     try std.testing.expectEqual(std.posix.AF.INET6, addresses[3].any.family);
     try std.testing.expectEqual(std.posix.AF.INET6, addresses[4].any.family);
+}
+
+test "interleave_address_list underflow guard when IPv4 exhausted mid-run (BUG-423)" {
+    // 1 IPv4 + 6 IPv6, interleave = 2: the counter hits 0 right after the
+    // IPv4 slot is consumed and then must NOT be decremented again. Pre-fix
+    // this panicked with an integer overflow in Debug/ReleaseSafe.
+    const allocator = std.testing.allocator;
+    const addresses = try allocator.alloc(utils.Address, 7);
+    defer allocator.free(addresses);
+
+    addresses[0] = utils.Address{ .any = .{ .family = std.posix.AF.INET, .data = undefined } };
+    for (addresses[1..]) |*a| {
+        a.* = utils.Address{ .any = .{ .family = std.posix.AF.INET6, .data = undefined } };
+    }
+
+    try interleave_address_list(allocator, addresses, 2);
+
+    // Order: IPv6, IPv6, IPv4, IPv6, IPv6, IPv6, IPv6
+    const expect_v6 = [_]bool{ true, true, false, true, true, true, true };
+    for (addresses, 0..) |*a, i| {
+        if (expect_v6[i]) {
+            try std.testing.expectEqual(std.posix.AF.INET6, a.any.family);
+        } else {
+            try std.testing.expectEqual(std.posix.AF.INET, a.any.family);
+        }
+    }
 }

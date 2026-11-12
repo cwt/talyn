@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 406 |
-| Open | 25 |
+| Fixed | 407 |
+| Open | 24 |
 | False Positive | 14 |
 | **Total** | **447** |
 
@@ -458,7 +458,7 @@ Sorted by bug number. See individual bug files for details.
 | [420](420.md) | `task_clear` decrefs `result` before nulling (re-entrant finalizer UAF) | High | Open |
 | [421](421.md) | DNS resolv.conf short `read()` parses uninitialized bytes | High | Fixed |
 | [422](422.md) | BTree split OOM leaves an overfull node (next insert out-of-bounds) | High | Fixed |
-| [423](423.md) | `interleave_address_list` integer underflow (panic / mis-order) | High | Open |
+| [423](423.md) | `interleave_address_list` integer underflow (panic / mis-order) | High | Fixed |
 | [424](424.md) | `stream_clear` frees the loop reference before unregistering the fixed file | High | Open |
 | [425](425.md) | `transport_force_close` never settles `connection_lost` directly (latent hardening gap) | High | Open |
 | [426](426.md) | Stream transport init error paths miss `PyObject_GC_UnTrack` | High | Open |

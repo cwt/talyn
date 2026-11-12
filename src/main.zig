@@ -11,4 +11,8 @@ test {
     // P23/Future container regression tests live in future/callback.zig
     // (InlineQueue span discipline); pull them into the talyn test root.
     _ = @import("future/callback.zig");
+    // BUG-423: the interleave regression tests (BUG-212 + the underflow
+    // guard) live in a file that lazy analysis never reaches — reference
+    // it explicitly so its tests run in this root.
+    _ = @import("loop/python/io/client/create_connection/interleave.zig");
 }
