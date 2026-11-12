@@ -1,10 +1,10 @@
 # Talyn: Robust, Stable AsyncIO Event Loop for Python
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE.md)
-[![Python Compatibility](https://img.shields.io/badge/python-3.13%20%7C%203.14%20%7C%203.15%20%7C%20Free--Threaded-blue.svg)](#-requirements)
-[![Linux Compatibility](https://img.shields.io/badge/linux-7.0+%20%7C%20Fedora%2043--44-orange.svg)](#-requirements)
-[![Zig Compatibility](https://img.shields.io/badge/zig-0.16.0%20%7C%200.17.0-red.svg)](#-requirements)
+[![License](https://img.shields.io/pypi/l/talyn)](LICENSE.md)
+[![Python Compatibility](https://img.shields.io/pypi/pyversions/talyn)](#-requirements)
 [![PyPI Version](https://img.shields.io/pypi/v/talyn.svg)](https://pypi.org/project/talyn/)
+[![Linux Compatibility](https://img.shields.io/badge/linux-7.0+%20%7C%20Fedora%2043--45-orange.svg)](#-requirements)
+[![Zig Compatibility](https://img.shields.io/badge/zig-0.16.0%20%7C%200.17.1-red.svg)](#-requirements)
 [![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-blue)](https://deepwiki.com/cwt/talyn)
 <!-- [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/cwt/talyn) -->
 
