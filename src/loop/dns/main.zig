@@ -79,10 +79,25 @@ fn load_configuration(self: *DNS, allocator: std.mem.Allocator) !void {
     const content = try allocator.alloc(u8, size);
     defer allocator.free(content);
 
-    const read_ret = std.os.linux.read(fd, content.ptr, content.len);
-    if (utils.getSyscallErrno(read_ret) != .SUCCESS) return error.Unexpected;
+    // BUG-421: read(2) may legitimately return fewer bytes than requested
+    // (file truncated between statx and read, signal interruption) and the
+    // tail of `content` would stay uninitialized — parsing the full
+    // statx-sized slice could inject garbage nameservers/search domains.
+    // Accumulate the actual byte count and parse only the defined prefix;
+    // an empty read of a non-empty file is rejected as a hard error.
+    var n: usize = 0;
+    while (n < content.len) {
+        const read_ret = std.os.linux.read(fd, content.ptr + n, content.len - n);
+        const errno = utils.getSyscallErrno(read_ret);
+        if (errno == .INTR) continue;
+        if (errno != .SUCCESS) return error.Unexpected;
+        const got: usize = read_ret;
+        if (got == 0) break; // EOF: file shrank between statx and read
+        n += got;
+    }
+    if (n == 0 and size > 0) return error.Unexpected;
 
-    self.configuration = try Parsers.parse_resolv_configuration(allocator, content);
+    self.configuration = try Parsers.parse_resolv_configuration(allocator, content[0..n]);
 }
 
 pub fn get_cache_slot(self: *DNS, hostname: []const u8) *Cache {
