@@ -23,6 +23,11 @@ pub const BlockingTask = struct {
     data: BlockingTaskData,
     operation: BlockingOperation,
     index: u16,
+    /// BUG-435: liveness marker. `pop()`/`reset()` poison completed slots
+    /// to `data = .none` — identical to a live null-callback push
+    /// (Socket.shutdown) by `data` alone — so teardown sweeping needs an
+    /// explicit flag to know which slots still hold a reserved loop slot.
+    live: bool = false,
 
     /// Persistent storage for io_uring pointer target data.
     /// io_uring stores pointers in sqe.addr that the kernel dereferences
@@ -57,6 +62,8 @@ pub const BlockingTask = struct {
         self.data = .none;
         // BUG-290: poison the operation instead of leaving it undefined.
         self.operation = .CancelIO;
+        // BUG-435: the slot is no longer live (see BlockingTask.live).
+        self.live = false;
 
         return set;
     }
@@ -200,7 +207,22 @@ pub const BlockingTasksSet = struct {
                     data.data.set_cancelled(true);
                     try Loop.Scheduling.Soon.dispatch_guaranteed_nonthreadsafe(loop, data);
                 },
-                .none => {},
+                .none => {
+                    // BUG-435: null-callback pushes (Socket.shutdown)
+                    // reserve a loop slot (push -> reserve_slots(1)) that
+                    // only the CQE-completion path ever releases. Teardown
+                    // performs no CQE harvest, so an outstanding .none task
+                    // at loop close drifted reserved_slots upward.
+                    // Released slots are indistinguishable by `data` alone
+                    // (reset() poisons them to .none), so guard on the
+                    // liveness flag. Deliberately NOT popping the slot:
+                    // pop can hit active_tasks == 0 and free the set node
+                    // we are iterating; the whole set dies with the IO.
+                    if (task.live) {
+                        self.loop.reserved_slots -= 1;
+                        task.live = false;
+                    }
+                },
             }
         }
     }
@@ -237,6 +259,7 @@ pub const BlockingTasksSet = struct {
         // GC Safety (Mandate #5): Initialize data BEFORE advancing self.index or active_tasks
         data_slot.data = if (callback) |v| .{ .callback = v.* } else .none;
         data_slot.operation = operation;
+        data_slot.live = true;
 
         if (is_bump) {
             @atomicStore(u16, &self.index, slot_idx + 1, .release);

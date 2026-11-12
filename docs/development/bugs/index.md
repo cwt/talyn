@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 424 |
-| Open | 7 |
+| Fixed | 425 |
+| Open | 6 |
 | False Positive | 14 |
 | **Total** | **447** |
 
@@ -470,7 +470,7 @@ Sorted by bug number. See individual bug files for details.
 | [432](432.md) | `CancelByFd` queued then immediate `close(fd)` race | Medium | False Positive |
 | [433](433.md) | DNS response-count modulo can resolve early and drop AAAA records | Medium | Open |
 | [434](434.md) | `InlineQueue.append` promotion never clears `inline_len` | Medium | Fixed |
-| [435](435.md) | `cancel_all` skips `.none` tasks, leaking their reserved slot | Medium | Open |
+| [435](435.md) | `cancel_all` skips `.none` tasks, leaking their reserved slot | Medium | Fixed |
 | [436](436.md) | Parser strictness gaps: `parseIp4` trailing dot; `parse_name` empty name | Low | Fixed |
 | [437](437.md) | `pseudosocket.getsockopt` int-vs-bytes keyed off the wrong condition | Low | Fixed |
 | [438](438.md) | `accept_callback` uses a stale `should_reenqueue` after `connection_made` may close the server | Low | Fixed |
