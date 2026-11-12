@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 409 |
-| Open | 22 |
+| Fixed | 410 |
+| Open | 21 |
 | False Positive | 14 |
 | **Total** | **447** |
 
@@ -469,7 +469,7 @@ Sorted by bug number. See individual bug files for details.
 | [431](431.md) | `datagram_close` does not release the receive buffer | Medium | Open |
 | [432](432.md) | `CancelByFd` queued then immediate `close(fd)` race | Medium | False Positive |
 | [433](433.md) | DNS response-count modulo can resolve early and drop AAAA records | Medium | Open |
-| [434](434.md) | `InlineQueue.append` promotion never clears `inline_len` | Medium | Open |
+| [434](434.md) | `InlineQueue.append` promotion never clears `inline_len` | Medium | Fixed |
 | [435](435.md) | `cancel_all` skips `.none` tasks, leaking their reserved slot | Medium | Open |
 | [436](436.md) | Parser strictness gaps: `parseIp4` trailing dot; `parse_name` empty name | Low | Fixed |
 | [437](437.md) | `pseudosocket.getsockopt` int-vs-bytes keyed off the wrong condition | Low | Fixed |

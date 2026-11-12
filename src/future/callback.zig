@@ -85,6 +85,11 @@ pub fn InlineQueue(comptime T: type, comptime N: usize) type {
             heap.appendSliceAssumeCapacity(self.inline_buf[0..self.inline_len]);
             heap.appendAssumeCapacity(value);
             self.heap = heap;
+            // BUG-434: clear the inline span — items()/itemsMut() are only
+            // heap-authoritative while heap.items.len > 0; with a stale
+            // inline_len the drained heap fell back to the already-owned
+            // inline entries (double-pop / double-decref).
+            self.inline_len = 0;
         }
 
         pub fn pop(self: *Self) T {
@@ -410,6 +415,10 @@ test "InlineQueue span discipline across promotion and heap drain" {
     // append 2: PROMOTES (inline_len must be cleared here)
     try q.append(testing.allocator, b_ptr);
     try testing.expect(q.heap.items.len > 0);
+    // BUG-434 regression: the promotion must clear the inline span
+    // structurally (the old test only caught the stale span transitively,
+    // via pop()'s phantom decrement).
+    try testing.expectEqual(@as(usize, 0), q.inline_len);
     // append 3: still heap-authoritative
     try q.append(testing.allocator, c_ptr);
     try testing.expectEqual(@as(usize, 3), q.items().len);
@@ -432,6 +441,10 @@ test "InlineQueue span discipline across promotion and heap drain" {
     // tuple-owned exception -> Future.release py_xdecref's it again.
     try testing.expectEqual(@as(usize, 0), q.items().len);
     try testing.expectEqual(@as(usize, 0), q.itemsMut().len);
+    // Structural assertions (not transitively via pop()'s phantom
+    // decrement): both the heap and the inline span are empty.
+    try testing.expectEqual(@as(usize, 0), q.heap.items.len);
+    try testing.expectEqual(@as(usize, 0), q.inline_len);
 }
 
 test "InlineQueue promotion while heap mode stays authoritative" {
