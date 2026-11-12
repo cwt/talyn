@@ -4,7 +4,7 @@
 [![Python Compatibility](https://img.shields.io/pypi/pyversions/talyn)](#-requirements)
 [![PyPI Version](https://img.shields.io/pypi/v/talyn.svg)](https://pypi.org/project/talyn/)
 [![Linux Compatibility](https://img.shields.io/badge/linux-7.0+%20%7C%20Fedora%2043--45-orange.svg)](#-requirements)
-[![Zig Compatibility](https://img.shields.io/badge/zig-0.16.0%20%7C%200.17.1-red.svg)](#-requirements)
+[![Zig Compatibility](https://img.shields.io/badge/zig-0.16.0%20%7C%200.17.1-F7A41D.svg)](#-requirements)
 [![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-blue)](https://deepwiki.com/cwt/talyn)
 <!-- [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/cwt/talyn) -->
 
