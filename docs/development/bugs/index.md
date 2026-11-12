@@ -1,8 +1,8 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 417 bugs (numbered 1–418) discovered across audit passes."
-timestamp: "2026-11-01T00:00:00Z"
+description: "Individual bug entries for talyn, one file per bug. 447 bugs (numbered 1–448) discovered across audit passes."
+timestamp: "2026-11-12T00:00:00Z"
 ---
 
 # Bugs — talyn
@@ -15,23 +15,23 @@ Sorted by bug number. See individual bug files for details.
 
 | Severity | Count |
 |---|---:|
-| Critical | 62 |
-| High | 135 |
+| Critical | 63 |
+| High | 146 |
 | Medium-High | 37 |
-| Medium | 77 |
+| Medium | 86 |
 | Medium-Mid | 11 |
 | Medium-Low | 22 |
-| Low | 72 |
-| **Total** | **417** |
+| Low | 82 |
+| **Total** | **447** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
 | Fixed | 401 |
-| Open | 3 |
-| False Positive | 13 |
-| **Total** | **417** |
+| Open | 32 |
+| False Positive | 14 |
+| **Total** | **447** |
 
 ## All Bugs
 
@@ -430,7 +430,7 @@ Sorted by bug number. See individual bug files for details.
 | [392](392.md) | `LRUCache.put` dangling key slice on key overwrite, `Address.parseIp6` accepting `":::1"`, `execute_task_send` running coroutine on cancelled loop shutdown, `enter_or_leave_task` partial failure corrupting `_current_tasks`, and `talyn.install()` globally disabling Python GC on 3.13t/3.14t | Medium | Fixed |
 | [393](393.md) | `talyn/loop.py` & `talyn/runner.py` API compliance bugs: ignored `start_serving=False`, ignored `subprocess_exec` `**kwargs`, premature `_subprocess_popens.pop`, and incomplete `Runner.close()` | Medium | Fixed |
 | [394](394.md) | Build & AST linter bugs: missing `build_options` import on `utils_unit_tests` in `build.zig`, untested `sqe_pointer_lifetime` rule in `test_rules.zig`, and whole-file substring false negatives in linter rules | Medium | Fixed |
-| [395](395.md) | Dead code across the codebase: 5 `.orig` backup files, dead `RingBuffer(N)` in `callback_manager.zig`, dead `write_buf`/`read_buf` in `DatagramTransport`, dead `PseudoSocket` in `talyn/loop.py`, empty placeholder Zig files, and unused fields/helpers | Low | Fixed |
+| [395](395.md) | Dead code across the codebase: dead `RingBuffer(N)` in `callback_manager.zig`, dead `write_buf`/`read_buf` in `DatagramTransport`, dead `PseudoSocket` in `talyn/loop.py`, empty placeholder Zig files, and unused fields/helpers | Low | Fixed |
 | [396](396.md) | Duplicate code and unoptimized algorithms across the codebase: 5 copy-pasted SSL protocol classes & $O(N^2)$ buffer pops in `talyn/loop.py`, pre-cache heap allocations on DNS hits, per-hostname `getrandom` syscalls in `build_queries`, and duplicated linked-timeout SQE prep | Low | Fixed |
 | [397](397.md) | Duplicate `PySet_Discard` of task from `asyncio_tasks_set` in `set_result()` — `discard_from_asyncio_tasks_set` already does it | Low | Fixed |
 | [398](398.md) | `register_asyncio_task()` never invokes pure-Python task registry when C accelerator is absent | Medium | Fixed |
@@ -454,4 +454,34 @@ Sorted by bug number. See individual bug files for details.
 | [416](416.md) | `Loop.get_exception_handler` missing - prompt_toolkit et al. crash at boot with `NotImplementedError` (three sibling exception-handler APIs implemented, the getter fell through to the abstract stub) | High | Fixed |
 | [417](417.md) | `add_reader` wake-up quantization ~100 us under sporadic single-byte reads (min 3.2 us exists; most wakes land on a tick - reader completion wait path) | Low | Open |
 | [418](418.md) | Chained `run_in_executor` hand-off slower than stdloop (77 us vs 32 us on the audit host; locally confirmed 3x) - executor-completion wake integration | Low | Open |
+| [419](419.md) | `execute_task_throw` cancelled arm double-decrefs the `Task` (errdefer + manager `cleanup_task`) | Critical | Open |
+| [420](420.md) | `task_clear` decrefs `result` before nulling (re-entrant finalizer UAF) | High | Open |
+| [421](421.md) | DNS resolv.conf short `read()` parses uninitialized bytes | High | Open |
+| [422](422.md) | BTree split OOM leaves an overfull node (next insert out-of-bounds) | High | Open |
+| [423](423.md) | `interleave_address_list` integer underflow (panic / mis-order) | High | Open |
+| [424](424.md) | `stream_clear` frees the loop reference before unregistering the fixed file | High | Open |
+| [425](425.md) | `transport_force_close` never settles `connection_lost` directly (latent hardening gap) | High | Open |
+| [426](426.md) | Stream transport init error paths miss `PyObject_GC_UnTrack` | High | Open |
+| [427](427.md) | Pseudo-socket aliases the transport fd without `dup` | High | Open |
+| [428](428.md) | `IO.deinit` frees the task pool/registered buffers before closing the ring | High | Open |
+| [429](429.md) | `queue_eof` deferred `SocketShutdown` races the fd close | Medium | Open |
+| [430](430.md) | Datagram `sendto` low-water check runs before the `buffer_size` decrement | Medium | Open |
+| [431](431.md) | `datagram_close` does not release the receive buffer | Medium | Open |
+| [432](432.md) | `CancelByFd` queued then immediate `close(fd)` race | Medium | False Positive |
+| [433](433.md) | DNS response-count modulo can resolve early and drop AAAA records | Medium | Open |
+| [434](434.md) | `InlineQueue.append` promotion never clears `inline_len` | Medium | Open |
+| [435](435.md) | `cancel_all` skips `.none` tasks, leaking their reserved slot | Medium | Open |
+| [436](436.md) | Parser strictness gaps: `parseIp4` trailing dot; `parse_name` empty name | Low | Open |
+| [437](437.md) | `pseudosocket.getsockopt` int-vs-bytes keyed off the wrong condition | Low | Open |
+| [438](438.md) | `accept_callback` uses a stale `should_reenqueue` after `connection_made` may close the server | Low | Open |
+| [439](439.md) | Cancelled read completions do not release `protocol_buffer` | Low | Open |
+| [440](440.md) | `Future.get_loop()` returns NULL without an exception on a `tp_new`-only Future | Low | Open |
+| [441](441.md) | `future.cancel(positional, msg=...)` leaks the positional message reference | Low | Open |
+| [442](442.md) | `add_done_callback` no-op leaks caller-transferred references | Low | Open |
+| [443](443.md) | `MultiConnectState.init` leaks the struct on `PyList_New` failure | Low | Open |
+| [444](444.md) | io/scheduling dead code and micro-issues | Low | Open |
+| [445](445.md) | Dead `Record.hostname` field (written but never read in production) | Low | Open |
+| [446](446.md) | `handle_talyn_future_object` unwraps `future.py_loop.?` with no released/null guard (BUG-440 sibling) | Medium | Open |
+| [447](447.md) | Pseudo-socket `close()` never invalidates the transport — teardown closes a possibly-reused fd (mirror of BUG-427) | High | Open |
+| [448](448.md) | BTree `replace()` shares BUG-422's swallow (`insert_in_node(...) catch return null`) | Medium | Open |
 

@@ -11,6 +11,19 @@ timestamp: "2026-10-07T00:00:00Z"
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
 
+## [2026-11-12] — Open-bug revalidation audit: BUG-419..445 validated — 22 confirmed, 3 amended, 1 false positive, 3 new (BUG-446..448)
+
+Full re-analysis of all 30 open bugs against the current tree (audit record only — no code changes; `hg status` showed only the bug docs pending, so every claim was checked against exactly the code it was filed against). Each claim re-verified against current sources with line references re-located:
+
+- **Confirmed as filed (22)**: BUG-419 (cancelled-arm double-decref via errdefer + manager `cleanup_task`), 420 (`task_clear` decref-before-null), 421 (resolv.conf short read parses uninitialized bytes), 422 (BTree split OOM leaves an overfull node), 423 (interleave underflow — panic reproduced empirically on the BUG-212 input; tests provably outside the `zig build test` graph), 424, 426, 427, 429, 430, 431, 433, 435, 436 (both parser gaps), 437 (CPython `getsockopt` contract verified against the official docs), 441, 442, 443, 444 (all six sub-findings), 445. Older characterization opens stand as recorded: BUG-414 (gate `tests/test_longrun_leak_gate.py` present), BUG-418 (machine-confirmed locally), BUG-417 (correctly Open pending consumer-host revalidation).
+- **Amended (3)**: BUG-425 (asymmetry real, but "connection_lost never fires" overstated — in-flight read cancellations settle asynchronously; latent hardening gap), BUG-428 (ordering confirmed, kernel-UAF overstated — READ_FIXED pages are kernel-pinned, zero-copy msghdr/iov imported at submit; real hazard is async-retried plain I/O EFAULT; fix direction unchanged), BUG-440 (null check confirmed, but `Py_IncRef(NULL)` is documented NULL-safe → `SystemError`, not a segfault).
+- **False positive (1)**: BUG-432 — `io.queue` force-submits cancel SQEs before returning (`io/main.zig:850-853`) and the kernel resolves `IORING_ASYNC_CANCEL_FD` to the target file (fget) at consumption; the deferred-cancel/fd-reuse race does not exist.
+- **New (3), found during validation**: BUG-446 (Medium: `handle_talyn_future_object` unwraps `future.py_loop.?` with no released/null guard — BUG-440 sibling), BUG-447 (High: mirrored BUG-427 — app `sock.close()` leaves `transport.fd` stale, teardown closes a possibly-reused fd), BUG-448 (Medium: BTree `replace()` shares BUG-422's swallow; fix subsumed by the BUG-422 fix).
+- **Precision notes**: BUG-434 (latent — the sole production pop caller self-heals the stale span), BUG-436 (an empty PTR name really does reach the cache), BUG-439 (a re-arm leaks the old `protocol_buffer` permanently), BUG-424/426 (leak/errdefer-site scoping).
+- **`.orig` scrub**: `.orig` files are standard Mercurial working-copy backups (never tracked) — dropped from BUG-445 and from the historical BUG-395 record.
+
+Tracker now 447 bugs (1–448): **401 Fixed / 14 FP / 32 Open**; severity 63 Critical / 146 High / 37 Medium-High / 86 Medium / 11 Medium-Mid / 22 Medium-Low / 82 Low.
+
 ## [2026-11-04] — v0.11.4 Release: BUG-415 — the wormhole ad-block update freeze (runner parking integrity)
 
 BUG-415 closed: a user report froze `wormhole --update-ad-block-db` indefinitely at the final ~150k-row aiosqlite write after upgrading v0.10.x → v0.11.x. Two coupled defects in the runner's blocking wait (`src/loop/runner.zig`), both machine-confirmed (py-spy, strace, gdb, diagnostic wheel, era-wheel A/B):
