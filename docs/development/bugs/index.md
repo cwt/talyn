@@ -1,7 +1,7 @@
 ---
 type: index
 title: "Bug Tracker — talyn"
-description: "Individual bug entries for talyn, one file per bug. 447 bugs (numbered 1–448) discovered across audit passes."
+description: "Individual bug entries for talyn, one file per bug. 449 bugs (numbered 1–450) discovered across audit passes."
 timestamp: "2026-11-12T00:00:00Z"
 ---
 
@@ -16,22 +16,22 @@ Sorted by bug number. See individual bug files for details.
 | Severity | Count |
 |---|---:|
 | Critical | 63 |
-| High | 146 |
+| High | 148 |
 | Medium-High | 37 |
 | Medium | 86 |
 | Medium-Mid | 11 |
 | Medium-Low | 22 |
 | Low | 82 |
-| **Total** | **447** |
+| **Total** | **449** |
 
 ## Summary by Status
 
 | Status | Count |
 |---|---:|
-| Fixed | 429 |
+| Fixed | 432 |
 | Open | 2 |
 | False Positive | 14 |
-| **Total** | **447** |
+| **Total** | **449** |
 
 ## All Bugs
 
@@ -484,4 +484,6 @@ Sorted by bug number. See individual bug files for details.
 | [446](446.md) | `handle_talyn_future_object` unwraps `future.py_loop.?` with no released/null guard (BUG-440 sibling) | Medium | Fixed |
 | [447](447.md) | Pseudo-socket `close()` never invalidates the transport — teardown closes a possibly-reused fd (mirror of BUG-427) | High | Fixed |
 | [448](448.md) | BTree `replace()` shares BUG-422's swallow (`insert_in_node(...) catch return null`) | Medium | Fixed |
+| [449](449.md) | `import talyn` fails outright on Python 3.13/3.13t (`_py_all_tasks` is 3.14+) | High | Fixed |
+| [450](450.md) | `enter_or_leave_task` double-syncs the shared 3.13 current-task registry | High | Fixed |
 

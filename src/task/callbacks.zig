@@ -8,13 +8,11 @@ const PyObject = *python_c.PyObject;
 /// stdlib switched to the pure-Python fallbacks (e.g. the free-threading
 /// tests), so talyn must keep both consistent — see BUG-268.
 ///
-/// Python 3.13's C and pure-Python variants share the same `_current_tasks`
-/// dict (the default call already updates it), while 3.14 keeps separate
-/// registries. The per-task `_py_current_task` probe historically skipped
-/// the second call when already in sync, but on 3.14+/3.15 the dicts are
-/// separate BY DESIGN (the C call never touches the pure dict), so the
-/// probe always triggered the update anyway while paying one extra Python
-/// frame per step (P23 stage 3: 2 pure-Python frames per task removed).
+/// Registry shapes: 3.14/3.15 keep the C and pure dicts SEPARATE (both
+/// need maintenance); 3.13 shares ONE dict between them — the C call
+/// already updates it, and BUG-450's identity check skips the pure sync
+/// there (running it raised "Cannot enter into task X while another task
+/// X is being executed" on every task step).
 fn enter_or_leave_task(loop: PyObject, task: PyObject, comptime entering: bool) ?PyObject {
     const args = [2]PyObject{ loop, task };
     const func = if (entering) utils.PythonImports.get("enter_task_func") else utils.PythonImports.get("leave_task_func");
@@ -38,12 +36,26 @@ fn enter_or_leave_task(loop: PyObject, task: PyObject, comptime entering: bool) 
         // the stdlib would raise it.
         // captured at import: the pure `asyncio.tasks._current_tasks` dict.
         const pure_dict = utils.PythonImports.get("py_current_tasks_dict");
-
         // PyDict_GetItemWithError borrows its result; absent keys return a
         // raw NULL without an exception (identity-hashed talyn Loop key).
         const existing_raw = python_c.PyDict_GetItemWithError(pure_dict, loop);
         if (python_c.PyErr_Occurred() != null) return null;
         const existing: ?PyObject = if (existing_raw == null) null else existing_raw.?;
+
+        // BUG-450: on Python 3.13 the C accelerator and the pure
+        // `_py_enter_task`/`_py_leave_task` share ONE `_current_tasks` dict,
+        // so the C call above already made the change visible here — the
+        // "already in sync" state is not a registry mismatch and the pure
+        // call would raise "Cannot enter into task X while another task X
+        // is being executed" on every task step (3.14/3.15 keep separate
+        // dicts, where these states are handled by the fast path below).
+        // Shape-independent check: skip when this dict already reflects the
+        // operation the C call just performed.
+        const already_synced = if (entering)
+            (existing != null and existing.? == task) // the C enter already recorded us
+        else
+            (existing == null); // the C leave already removed the entry
+        if (already_synced) return python_c.get_py_none();
 
         const fast_path = if (entering)
             existing == null // no other task is current: plain SetItem
@@ -61,7 +73,6 @@ fn enter_or_leave_task(loop: PyObject, task: PyObject, comptime entering: bool) 
         // mismatch -> stdlib raises; fall through to the pure function call
         // so its RuntimeError (message included) propagates unchanged.
     }
-
     // v0.11.2 review finding: this fallback must be GUARDED — when the
     // accelerator is ABSENT (the BUG-398 pure-only configuration), the two
     // bindings are the SAME object: the default call above IS the pure

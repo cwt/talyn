@@ -142,10 +142,22 @@ pub fn initialize_python_imports() !void {
             const accel_all_tasks = python_c.PyObject_GetAttrString(a_mod, "all_tasks\x00") orelse return error.PythonError;
             defer python_c.py_decref(accel_all_tasks);
             // original `_py_all_tasks` for restore-on-release (owned here)
-            py_all_tasks_original.store(python_c.PyObject_GetAttrString(tasks_mod, "_py_all_tasks\x00") orelse return error.PythonError, .release);
-            if (python_c.PyObject_SetAttrString(tasks_mod, "_py_all_tasks\x00", accel_all_tasks) < 0) {
-                std.log.err("talyn: asyncio.tasks._py_all_tasks rebind failed; the dual-registry contract degrades to C-registry-only (BUG-268 narrowed registration stays active)", .{});
+            // BUG-449: `_py_all_tasks` does not exist before Python 3.14 —
+            // on 3.13 the hard `orelse return` failed the whole
+            // initialize_python_imports and broke `import talyn` outright.
+            // On <= 3.13 the accelerator's C registry is already the reader
+            // of asyncio.all_tasks() (the pure-Python registry split was
+            // introduced in 3.14), so the rebind is simply skipped.
+            const py_all_tasks_orig = python_c.PyObject_GetAttrString(tasks_mod, "_py_all_tasks\x00") orelse blk: {
                 python_c.PyErr_Clear();
+                break :blk null;
+            };
+            if (py_all_tasks_orig) |orig_ref| {
+                py_all_tasks_original.store(orig_ref, .release);
+                if (python_c.PyObject_SetAttrString(tasks_mod, "_py_all_tasks\x00", accel_all_tasks) < 0) {
+                    std.log.err("talyn: asyncio.tasks._py_all_tasks rebind failed; the dual-registry contract degrades to C-registry-only (BUG-268 narrowed registration stays active)", .{});
+                    python_c.PyErr_Clear();
+                }
             }
         }
     }
