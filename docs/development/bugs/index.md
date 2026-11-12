@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 419 |
-| Open | 12 |
+| Fixed | 420 |
+| Open | 11 |
 | False Positive | 14 |
 | **Total** | **447** |
 
@@ -473,7 +473,7 @@ Sorted by bug number. See individual bug files for details.
 | [435](435.md) | `cancel_all` skips `.none` tasks, leaking their reserved slot | Medium | Open |
 | [436](436.md) | Parser strictness gaps: `parseIp4` trailing dot; `parse_name` empty name | Low | Fixed |
 | [437](437.md) | `pseudosocket.getsockopt` int-vs-bytes keyed off the wrong condition | Low | Fixed |
-| [438](438.md) | `accept_callback` uses a stale `should_reenqueue` after `connection_made` may close the server | Low | Open |
+| [438](438.md) | `accept_callback` uses a stale `should_reenqueue` after `connection_made` may close the server | Low | Fixed |
 | [439](439.md) | Cancelled read completions do not release `protocol_buffer` | Low | Open |
 | [440](440.md) | `Future.get_loop()` returns NULL without an exception on a `tp_new`-only Future | Low | Fixed |
 | [441](441.md) | `future.cancel(positional, msg=...)` leaks the positional message reference | Low | Fixed |

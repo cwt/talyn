@@ -173,12 +173,14 @@ fn accept_callback(data: *const CallbackManager.CallbackData) !void {
 
     if (data.cancelled() or server.closed) return;
 
-    // BUG-33: Track whether we should re-enqueue locally. The defer block must
-    // skip re-enqueueing when a fatal error (EMFILE/ENFILE) pauses the accept
-    // loop, otherwise the server spins at 100% CPU.
-    var should_reenqueue = !server.closed and server.loop != null;
+    // BUG-33: Skip re-enqueueing when a fatal error (EMFILE/ENFILE) pauses
+    // the accept loop, otherwise the server spins at 100% CPU.
     defer {
-        if (should_reenqueue and !server.accept_paused) {
+        // BUG-438 (extending BUG-33): re-evaluate at defer time —
+        // protocol_factory() / connection_made() may have closed the server
+        // (server_fd -> -1, closed = true); the pre-computed flag then
+        // queued a WaitReadable on fd -1 (bad SQE) and burned a retry.
+        if (!server.closed and server.server_fd >= 0 and server.loop != null and !server.accept_paused) {
             // A re-arm failure here (e.g. transient SQ-ring or blocking-task
             // pool exhaustion) must NOT be silently dropped — otherwise the
             // listening socket loses its watcher permanently and the proxy
@@ -214,7 +216,8 @@ fn accept_callback(data: *const CallbackManager.CallbackData) !void {
         const enfile = @intFromEnum(std.os.linux.E.NFILE);
         if (errno_val == emfile or errno_val == enfile) {
             server.accept_paused = true;
-            should_reenqueue = false;
+            // BUG-438: no local re-enqueue flag anymore — the defer
+            // re-checks accept_paused at run time.
             // Schedule a retry instead of propagating an error: the listener
             // must not be lost, and surfacing this as a callback exception
             // would spam the log (and, in the stock loop, terminate it).
