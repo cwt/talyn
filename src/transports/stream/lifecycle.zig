@@ -270,6 +270,14 @@ pub fn transport_force_close(self: ?*StreamTransportObject, exc: ?PyObject) call
     // method only guarantees the fd teardown is complete (idempotent).
     cancel_and_close_fd(instance);
 
+    // BUG-425: the read side's force_close never settles and the write
+    // side's early-returns when already closed — in the write-closed /
+    // read-open abort case, neither reached the maybe_close_fd /
+    // schedule path and the protocol could be left without
+    // connection_lost. Fire the once-only notification explicitly (the
+    // at-most-once guard makes a redundant earlier settlement harmless).
+    schedule_connection_lost_once(instance);
+
     return python_c.get_py_none();
 }
 

@@ -245,3 +245,46 @@ def test_connection_lost_receives_error_on_reset() -> None:
             await server.wait_closed()
 
     talyn.run(main())
+
+
+def test_bug425_abort_after_write_eof_fires_connection_lost() -> None:
+    """BUG-425: transport_force_close (abort) on a half-closed transport
+    (write side already closed via write_eof) must still fire
+    connection_lost. Pre-fix, the read side's force_close never settled and
+    the write side's early-returned, so the protocol was left in limbo."""
+    lost: list[BaseException | None] = []
+
+    class Proto(asyncio.Protocol):
+        def __init__(self) -> None:
+            self.transport = None
+
+        def connection_made(self, transport) -> None:
+            self.transport = transport
+
+        def connection_lost(self, exc) -> None:
+            lost.append(exc)
+
+        def data_received(self, data) -> None:
+            pass
+
+    async def main() -> None:
+        loop = asyncio.get_running_loop()
+        server = await loop.create_server(asyncio.Protocol, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        proto = Proto()
+        transport, _ = await loop.create_connection(lambda: proto, "127.0.0.1", port)
+        try:
+            transport.write_eof()
+            await asyncio.sleep(0.05)
+            transport.abort()
+            for _ in range(200):
+                if lost:
+                    break
+                await asyncio.sleep(0.01)
+            assert lost, "connection_lost never fired after abort on a half-closed transport"
+        finally:
+            transport.close()
+            server.close()
+            await server.wait_closed()
+
+    talyn.run(main())

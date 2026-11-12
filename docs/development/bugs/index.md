@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 418 |
-| Open | 13 |
+| Fixed | 419 |
+| Open | 12 |
 | False Positive | 14 |
 | **Total** | **447** |
 
@@ -460,7 +460,7 @@ Sorted by bug number. See individual bug files for details.
 | [422](422.md) | BTree split OOM leaves an overfull node (next insert out-of-bounds) | High | Fixed |
 | [423](423.md) | `interleave_address_list` integer underflow (panic / mis-order) | High | Fixed |
 | [424](424.md) | `stream_clear` frees the loop reference before unregistering the fixed file | High | Fixed |
-| [425](425.md) | `transport_force_close` never settles `connection_lost` directly (latent hardening gap) | High | Open |
+| [425](425.md) | `transport_force_close` never settles `connection_lost` directly (latent hardening gap) | High | Fixed |
 | [426](426.md) | Stream transport init error paths miss `PyObject_GC_UnTrack` | High | Fixed |
 | [427](427.md) | Pseudo-socket aliases the transport fd without `dup` | High | Fixed |
 | [428](428.md) | `IO.deinit` frees the task pool/registered buffers before closing the ring | High | Open |
