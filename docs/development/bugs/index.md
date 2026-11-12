@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 415 |
-| Open | 16 |
+| Fixed | 416 |
+| Open | 15 |
 | False Positive | 14 |
 | **Total** | **447** |
 
@@ -461,7 +461,7 @@ Sorted by bug number. See individual bug files for details.
 | [423](423.md) | `interleave_address_list` integer underflow (panic / mis-order) | High | Fixed |
 | [424](424.md) | `stream_clear` frees the loop reference before unregistering the fixed file | High | Fixed |
 | [425](425.md) | `transport_force_close` never settles `connection_lost` directly (latent hardening gap) | High | Open |
-| [426](426.md) | Stream transport init error paths miss `PyObject_GC_UnTrack` | High | Open |
+| [426](426.md) | Stream transport init error paths miss `PyObject_GC_UnTrack` | High | Fixed |
 | [427](427.md) | Pseudo-socket aliases the transport fd without `dup` | High | Open |
 | [428](428.md) | `IO.deinit` frees the task pool/registered buffers before closing the ring | High | Open |
 | [429](429.md) | `queue_eof` deferred `SocketShutdown` races the fd close | Medium | Open |

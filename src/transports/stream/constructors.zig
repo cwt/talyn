@@ -219,7 +219,14 @@ pub fn unregister_fixed_file(self: *StreamTransportObject, loop_data: *Loop) voi
 
 pub fn new_stream_transport(protocol: PyObject, loop: *LoopObject, fd: std.posix.fd_t, zero_copying: bool) !*StreamTransportObject {
     const instance: *StreamTransportObject = @ptrCast(Stream.StreamType.tp_alloc.?(Stream.StreamType, 0) orelse return error.PythonError);
-    errdefer Stream.StreamType.tp_free.?(instance);
+    // BUG-426: PyType_GenericAlloc GC-tracks the instance (the type has
+    // Py_TPFLAGS_HAVE_GC); on an init failure the errdefer freed a
+    // still-tracked object the GC could visit. Untrack first, mirroring
+    // stream_dealloc and the datagram constructor (BUG-283).
+    errdefer {
+        python_c.PyObject_GC_UnTrack(instance);
+        Stream.StreamType.tp_free.?(instance);
+    }
 
     python_c.initialize_object_fields(instance, &.{ "ob_base", "fd", "family", "protocol_type", "is_closing", "closed" });
     instance.owns_fd = true;
@@ -237,7 +244,11 @@ pub fn new_stream_transport_with_owns_fd(protocol: PyObject, loop: *LoopObject, 
 
 inline fn z_stream_new(@"type": *python_c.PyTypeObject) !*StreamTransportObject {
     const instance: *StreamTransportObject = @ptrCast(@"type".tp_alloc.?(@"type", 0) orelse return error.PythonError);
-    errdefer @"type".tp_free.?(instance);
+    // BUG-426: untrack before the errdefer tp_free (see new_stream_transport).
+    errdefer {
+        python_c.PyObject_GC_UnTrack(instance);
+        @"type".tp_free.?(instance);
+    }
 
     python_c.initialize_object_fields(instance, &.{ "ob_base", "fd", "family", "protocol_type", "is_closing", "closed" });
 
