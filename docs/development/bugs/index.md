@@ -29,7 +29,7 @@ Sorted by bug number. See individual bug files for details.
 | Status | Count |
 |---|---:|
 | Fixed | 406 |
-| Open | 27 |
+| Open | 25 |
 | False Positive | 14 |
 | **Total** | **447** |
 
@@ -457,7 +457,7 @@ Sorted by bug number. See individual bug files for details.
 | [419](419.md) | `execute_task_throw` cancelled arm double-decrefs the `Task` (errdefer + manager `cleanup_task`) | Critical | Open |
 | [420](420.md) | `task_clear` decrefs `result` before nulling (re-entrant finalizer UAF) | High | Open |
 | [421](421.md) | DNS resolv.conf short `read()` parses uninitialized bytes | High | Fixed |
-| [422](422.md) | BTree split OOM leaves an overfull node (next insert out-of-bounds) | High | Open |
+| [422](422.md) | BTree split OOM leaves an overfull node (next insert out-of-bounds) | High | Fixed |
 | [423](423.md) | `interleave_address_list` integer underflow (panic / mis-order) | High | Open |
 | [424](424.md) | `stream_clear` frees the loop reference before unregistering the fixed file | High | Open |
 | [425](425.md) | `transport_force_close` never settles `connection_lost` directly (latent hardening gap) | High | Open |
@@ -483,5 +483,5 @@ Sorted by bug number. See individual bug files for details.
 | [445](445.md) | Dead `Record.hostname` field (written but never read in production) | Low | Fixed |
 | [446](446.md) | `handle_talyn_future_object` unwraps `future.py_loop.?` with no released/null guard (BUG-440 sibling) | Medium | Open |
 | [447](447.md) | Pseudo-socket `close()` never invalidates the transport — teardown closes a possibly-reused fd (mirror of BUG-427) | High | Open |
-| [448](448.md) | BTree `replace()` shares BUG-422's swallow (`insert_in_node(...) catch return null`) | Medium | Open |
+| [448](448.md) | BTree `replace()` shares BUG-422's swallow (`insert_in_node(...) catch return null`) | Medium | Fixed |
 

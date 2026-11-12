@@ -149,7 +149,9 @@ pub fn BTree(comptime Key: type, comptime Value: type, comptime Degree: usize) t
             node.nkeys = @intCast(keys.len);
         }
 
-        fn do_insertion(node: *Node, key: Key, value: Value, new_child: ?*Node) !void {
+        /// BUG-422: returns the index the (key, value) pair was inserted at,
+        /// so a failed split can undo the committed insertion.
+        fn do_insertion(node: *Node, key: Key, value: Value, new_child: ?*Node) !usize {
             if (new_child) |ch| {
                 ch.parent = node;
             }
@@ -158,7 +160,7 @@ pub fn BTree(comptime Key: type, comptime Value: type, comptime Degree: usize) t
             if (nkeys == 0) {
                 try insert_in_empty_node(node, &.{key}, &.{value});
                 node.childs[1] = new_child;
-                return;
+                return 0;
             }
 
             defer node.nkeys += 1;
@@ -182,7 +184,7 @@ pub fn BTree(comptime Key: type, comptime Value: type, comptime Degree: usize) t
                         keys[index] = key;
                         values[index] = value;
                         childs[index + 1] = new_child;
-                        return;
+                        return index;
                     }
                 }
             } else {
@@ -198,7 +200,7 @@ pub fn BTree(comptime Key: type, comptime Value: type, comptime Degree: usize) t
                         keys[index] = key;
                         values[index] = value;
                         childs[index + 1] = new_child;
-                        return;
+                        return index;
                     }
                 }
             }
@@ -206,6 +208,24 @@ pub fn BTree(comptime Key: type, comptime Value: type, comptime Degree: usize) t
             keys[nkeys] = key;
             values[nkeys] = value;
             childs[nkeys + 1] = new_child;
+            return nkeys;
+        }
+
+        /// BUG-422: exact inverse of `do_insertion`'s commit for an insertion
+        /// with no new child (`new_child == null`): shift the entries at and
+        /// right of `insertion_index` back left by one and drop nkeys. All
+        /// reads stay inside the committed span (nkeys ≤ Degree, childs ≤
+        /// Degree), so this is memory-safe even on an overfull node.
+        inline fn undo_insertion(node: *Node, insertion_index: usize) void {
+            const nkeys = node.nkeys;
+            var i: usize = insertion_index;
+            while (i + 1 < nkeys) : (i += 1) {
+                node.keys[i] = node.keys[i + 1];
+                node.values[i] = node.values[i + 1];
+                node.childs[i + 1] = node.childs[i + 2];
+            }
+            node.childs[nkeys] = null;
+            node.nkeys = nkeys - 1;
         }
 
         inline fn change_parent(new_parent: *Node) void {
@@ -247,36 +267,40 @@ pub fn BTree(comptime Key: type, comptime Value: type, comptime Degree: usize) t
             change_parent(new_child);
 
             @memset(childs[middle_index_plus_one..], null);
-            try do_insertion(parent, keys[middle_index], values[middle_index], new_child);
+            _ = try do_insertion(parent, keys[middle_index], values[middle_index], new_child);
         }
 
-        fn split_nodes(allocator: std.mem.Allocator, node: *Node) !void {
+        /// BUG-422: the split cascade no longer allocates. Every node it
+        /// needs is pre-allocated by `insert_in_node` (which simulates the
+        /// cascade exactly) and handed out through `spare`/`taken`. A
+        /// hand-out is returned to the pool (`taken -= 1`) on the vestigial
+        /// `insert_in_empty_node` failure paths, so the caller's errdefer
+        /// destroys exactly the nodes that never made it into the tree.
+        fn split_nodes(node: *Node, spare: []*Node, taken: *usize) !void {
             var current_node = node;
             while (current_node.nkeys == Degree) {
                 const keys = &current_node.keys;
                 const values = &current_node.values;
                 const childs = &current_node.childs;
 
-                const new_node1 = try create_node(allocator);
+                const new_node1 = spare[taken.*];
+                taken.* += 1;
                 const parent = current_node.parent;
                 if (parent) |p_node| {
-                    // BUG-368: the split helpers can fail after new_node1
-                    // was allocated — without this errdefer it leaked on
-                    // OOM. (The statements after the try are infallible,
-                    // so the errdefer is exactly scoped to the failure
-                    // window.)
-                    errdefer allocator.destroy(new_node1);
+                    // BUG-368 (pool-adapted): the helper can only fail on its
+                    // vestigial `insert_in_empty_node` try, before the node is
+                    // linked — return it to the pool so the caller's errdefer
+                    // destroys it exactly once.
+                    errdefer taken.* -= 1;
                     try split_node(keys, values, childs, p_node, new_node1);
                     change_parent(current_node);
                     new_node1.parent = p_node;
                     current_node.nkeys = (Degree - 1) / 2;
                 } else {
-                    // BUG-368: failing the new_node2 allocation or the
-                    // split_root_node body leaked new_node1 (and its own
-                    // node).
-                    errdefer allocator.destroy(new_node1);
-                    const new_node2 = try create_node(allocator);
-                    errdefer allocator.destroy(new_node2);
+                    errdefer taken.* -= 1;
+                    const new_node2 = spare[taken.*];
+                    taken.* += 1;
+                    errdefer taken.* -= 1;
                     try split_root_node(keys, values, childs, new_node1, new_node2);
                     new_node1.parent = current_node;
                     new_node2.parent = current_node;
@@ -287,9 +311,64 @@ pub fn BTree(comptime Key: type, comptime Value: type, comptime Degree: usize) t
             }
         }
 
+        /// BUG-422 (also covers BUG-448's replace() path): commit the
+        /// insertion, then split. The split cascade used to allocate its
+        /// nodes with `try` AFTER the insertion committed — an OOM left an
+        /// overfull node (`nkeys == Degree`) in the tree, and since both
+        /// insert() and replace() swallow the error, the next insert
+        /// descending into that node wrote keys[Degree] / childs[Degree+1]
+        /// out of bounds (panic in Debug/ReleaseSafe, heap corruption in
+        /// ReleaseFast).
+        ///
+        /// Fix: simulate the cascade first (exact — each reached ancestor is
+        /// evaluated with the nkeys it will have when the real cascade
+        /// reaches it), pre-allocate every node it needs, and only then run
+        /// the now allocation-free split. If pre-allocation fails, undo the
+        /// committed insertion (the exact inverse of do_insertion's shift)
+        /// and propagate the error, leaving the tree unchanged.
         inline fn insert_in_node(allocator: std.mem.Allocator, node: *Node, key: Key, value: Value) !void {
-            try do_insertion(node, key, value, null);
-            try split_nodes(allocator, node);
+            const index = try do_insertion(node, key, value, null);
+            errdefer undo_insertion(node, index);
+
+            // --- simulate the split cascade to count the nodes it needs ---
+            var needed: usize = 0;
+            var cur = node;
+            // `node` just received the committed insertion: it splits iff it
+            // is now full. An ancestor reached by the cascade holds
+            // Degree - 1 keys at simulation time and becomes full when the
+            // middle key is delivered, so `p.nkeys + 1 == Degree` decides
+            // whether it splits too.
+            var cur_is_full = cur.nkeys == Degree;
+            while (cur_is_full) {
+                if (cur.parent) |p| {
+                    needed += 1;
+                    if (p.nkeys + 1 == Degree) {
+                        cur = p;
+                    } else {
+                        cur_is_full = false;
+                    }
+                } else {
+                    // Root split: two fresh children, no further propagation.
+                    needed += 2;
+                    cur_is_full = false;
+                }
+            }
+            if (needed == 0) return;
+
+            const spare = try allocator.alloc(*Node, needed);
+            defer allocator.free(spare);
+            var filled: usize = 0;
+            var taken: usize = 0;
+            errdefer {
+                // Destroy the nodes that never made it into the tree
+                // (split_nodes' errdefers hand failed ones back via `taken`).
+                for (spare[taken..filled]) |n| allocator.destroy(n);
+            }
+            while (filled < needed) : (filled += 1) {
+                spare[filled] = try create_node(allocator);
+            }
+
+            try split_nodes(node, spare, &taken);
         }
 
         pub fn insert(self: *@This(), key: Key, value: Value) bool {
@@ -811,6 +890,120 @@ test "BUG-368: OOM while splitting does not leak nodes" {
             // insert() swallows internal OOM and returns false.
             if (!tree.insert(loaded, loaded)) break;
         }
+
+        var key: u32 = 0;
+        while (tree.get_min_value_ptr(&key, null) != null) {
+            _ = tree.delete(key);
+        }
+        tree.deinit() catch unreachable;
+    }
+}
+
+test "BUG-422: failed split leaves no overfull node and the tree unchanged" {
+    const Tree = BTree(u32, u32, 3);
+
+    const S = struct {
+        // The invariant the fix restores: no node may sit at
+        // nkeys == Degree — the next insert into it would write
+        // keys[Degree] / childs[Degree+1] out of bounds.
+        fn check_no_overfull(t_node: *Tree.Node) anyerror!void {
+            if (t_node.nkeys >= 3) return error.OverfullNode;
+            for (t_node.childs[0 .. @as(usize, t_node.nkeys) + 1]) |child| {
+                if (child) |c| try check_no_overfull(c);
+            }
+        }
+
+        fn check_sorted(t_node: *Tree.Node, out: *std.ArrayList(u32)) anyerror!void {
+            for (t_node.childs[0 .. @as(usize, t_node.nkeys) + 1], 0..) |child, i| {
+                if (child) |c| try check_sorted(c, out);
+                if (i < t_node.nkeys) try out.append(std.testing.allocator, t_node.keys[i]);
+            }
+        }
+    };
+
+    // Fail every allocation index in turn. Once the fail point is reached
+    // the allocator keeps failing, so the insert sequence stops at the
+    // first OOM; post-fix the tree must come out structurally clean.
+    for (1..12) |fail_index| {
+        var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = fail_index });
+        var tree = try Tree.init(failing.allocator());
+
+        var loaded: u32 = 0;
+        while (loaded < 24) : (loaded += 1) {
+            // insert() swallows internal OOM and returns false.
+            if (!tree.insert(loaded, loaded)) break;
+        }
+
+        try S.check_no_overfull(tree.parent);
+
+        // Everything loaded before the OOM is still present, read back in
+        // sorted order with no residue from the interrupted insert.
+        var keys_read: std.ArrayList(u32) = .empty;
+        defer keys_read.deinit(std.testing.allocator);
+        try S.check_sorted(tree.parent, &keys_read);
+        try std.testing.expectEqual(loaded, keys_read.items.len);
+        for (keys_read.items, 0..) |k, i| {
+            try std.testing.expectEqual(@as(u32, @intCast(i)), k);
+        }
+
+        // Finish the load with a working allocator (drives fresh splits
+        // through the pre-allocation path), re-check, drain, teardown.
+        tree.allocator = std.testing.allocator;
+        while (loaded < 24) : (loaded += 1) {
+            try std.testing.expect(tree.insert(loaded, loaded));
+        }
+        try S.check_no_overfull(tree.parent);
+
+        var key: u32 = 0;
+        while (tree.get_min_value_ptr(&key, null) != null) {
+            _ = tree.delete(key);
+        }
+        tree.deinit() catch unreachable;
+    }
+}
+
+test "BUG-448: replace() survives split OOM the same way (BUG-422 fix covers it)" {
+    const Tree = BTree(u32, u32, 3);
+
+    const S = struct {
+        fn check_no_overfull(t_node: *Tree.Node) anyerror!void {
+            if (t_node.nkeys >= 3) return error.OverfullNode;
+            for (t_node.childs[0 .. @as(usize, t_node.nkeys) + 1]) |child| {
+                if (child) |c| try check_no_overfull(c);
+            }
+        }
+    };
+
+    // replace() shares insert()'s swallow (`catch return null`); the same
+    // fix covers it. Drive the OOM through replace(), then verify the
+    // invariant and complete the load through replace() as well.
+    for (1..12) |fail_index| {
+        var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = fail_index });
+        var tree = try Tree.init(failing.allocator());
+
+        for (0..24) |k| {
+            // Fresh keys insert and return null; OOM also returns null.
+            _ = tree.replace(@intCast(k), @intCast(k));
+        }
+
+        try S.check_no_overfull(tree.parent);
+
+        tree.allocator = std.testing.allocator;
+        for (0..24) |k| {
+            // Presence must be checked BEFORE the replace: for a key the
+            // OOM window dropped, this replace() call is the insert that
+            // brings it back (and returns null).
+            const existed = tree.get_value(@intCast(k), null) != null;
+            const prev = tree.replace(@intCast(k), @intCast(k));
+            if (existed) {
+                // Existing key: replace() must hand back the old value.
+                try std.testing.expectEqual(@as(u32, @intCast(k)), prev.?);
+            }
+        }
+        for (0..24) |k| {
+            try std.testing.expectEqual(@as(u32, @intCast(k)), tree.get_value(@intCast(k), null).?);
+        }
+        try S.check_no_overfull(tree.parent);
 
         var key: u32 = 0;
         while (tree.get_min_value_ptr(&key, null) != null) {
