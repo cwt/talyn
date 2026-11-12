@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 416 |
-| Open | 15 |
+| Fixed | 418 |
+| Open | 13 |
 | False Positive | 14 |
 | **Total** | **447** |
 
@@ -462,7 +462,7 @@ Sorted by bug number. See individual bug files for details.
 | [424](424.md) | `stream_clear` frees the loop reference before unregistering the fixed file | High | Fixed |
 | [425](425.md) | `transport_force_close` never settles `connection_lost` directly (latent hardening gap) | High | Open |
 | [426](426.md) | Stream transport init error paths miss `PyObject_GC_UnTrack` | High | Fixed |
-| [427](427.md) | Pseudo-socket aliases the transport fd without `dup` | High | Open |
+| [427](427.md) | Pseudo-socket aliases the transport fd without `dup` | High | Fixed |
 | [428](428.md) | `IO.deinit` frees the task pool/registered buffers before closing the ring | High | Open |
 | [429](429.md) | `queue_eof` deferred `SocketShutdown` races the fd close | Medium | Open |
 | [430](430.md) | Datagram `sendto` low-water check runs before the `buffer_size` decrement | Medium | Open |
@@ -482,6 +482,6 @@ Sorted by bug number. See individual bug files for details.
 | [444](444.md) | io/scheduling dead code and micro-issues | Low | Open |
 | [445](445.md) | Dead `Record.hostname` field (written but never read in production) | Low | Fixed |
 | [446](446.md) | `handle_talyn_future_object` unwraps `future.py_loop.?` with no released/null guard (BUG-440 sibling) | Medium | Fixed |
-| [447](447.md) | Pseudo-socket `close()` never invalidates the transport — teardown closes a possibly-reused fd (mirror of BUG-427) | High | Open |
+| [447](447.md) | Pseudo-socket `close()` never invalidates the transport — teardown closes a possibly-reused fd (mirror of BUG-427) | High | Fixed |
 | [448](448.md) | BTree `replace()` shares BUG-422's swallow (`insert_in_node(...) catch return null`) | Medium | Fixed |
 

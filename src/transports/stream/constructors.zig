@@ -11,6 +11,8 @@ const LoopObject = Loop.Python.LoopObject;
 const Stream = @import("main.zig");
 const StreamTransportObject = Stream.StreamTransportObject;
 
+const extra_info = @import("extra_info.zig");
+
 const Read = @import("read.zig");
 const Write = @import("write.zig");
 const Lifecyle = @import("lifecycle.zig");
@@ -353,6 +355,10 @@ pub fn stream_clear(self: ?*StreamTransportObject) callconv(.c) c_int {
     // table is gone with the loop.)
     const fd = py_transport.fd;
     if (fd >= 0) {
+        // BUG-427/447: the cached pseudo-socket owns a dup of this fd —
+        // close it and mark it closed (the GC path for transports that
+        // never went through cancel_and_close_fd).
+        extra_info.invalidate_socket(py_transport);
         if (py_transport.fixed_file_index != 0) {
             if (py_transport.loop) |loop_obj| {
                 const loop_data = utils.get_data_ptr(Loop, @as(*LoopObject, @ptrCast(loop_obj)));

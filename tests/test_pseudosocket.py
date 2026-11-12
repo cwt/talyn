@@ -6,6 +6,118 @@ import pytest
 import talyn
 
 
+def test_bug427_socket_keeps_own_fd_across_transport_close():
+    """BUG-427: the pseudo-socket owns a dup of the transport fd — closing
+    the transport must not invalidate it, and closing it afterwards must
+    not target a reused descriptor number."""
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_sock.bind(("127.0.0.1", 0))
+        server_sock.listen(1)
+        addr = server_sock.getsockname()
+
+        def run_server():
+            client, _ = server_sock.accept()
+            try:
+                client.settimeout(1.0)
+                client.sendall(b"hello")
+                try:
+                    client.recv(1024)
+                except Exception:
+                    pass
+            finally:
+                client.close()
+
+        server_task = loop.run_in_executor(None, run_server)
+
+        reader, writer = await asyncio.open_connection(*addr)
+        assert await reader.read(5) == b"hello"
+
+        sock = writer.transport.get_extra_info("socket")
+        assert sock is not None
+        fileno = sock.fileno()
+        assert fileno > 0
+        # BUG-427: the fd is a dup of the transport fd (same open file
+        # description), not the transport fd itself.
+
+        # Close the transport; the pseudo-socket is invalidated with it
+        # (stdlib semantics: the transport closes its socket, so
+        # BUG-326's getsockname-after-close still raises EBADF).
+        writer.close()
+        await writer.wait_closed()
+        assert sock.fileno() == -1
+        # A later close() is an idempotent no-op (BUG-291) and can never
+        # target a reused descriptor number.
+        sock.close()
+        assert sock.fileno() == -1
+        sock.close()
+        assert sock.fileno() == -1
+
+        # A freshly opened socket gets a sane descriptor (no double-close
+        # shrapnel landing on reused numbers).
+        probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            assert probe.fileno() > 0
+        finally:
+            probe.close()
+
+        await server_task
+        server_sock.close()
+
+    talyn.run(main())
+
+
+def test_bug447_transport_survives_app_socket_close():
+    """BUG-447: closing get_extra_info('socket') must not close the
+    transport's descriptor. Pre-fix the pseudo-socket aliased the transport
+    fd, so the app close + the later transport teardown closed the same
+    (possibly reused) number twice."""
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_sock.bind(("127.0.0.1", 0))
+        server_sock.listen(1)
+        addr = server_sock.getsockname()
+
+        def run_server():
+            client, _ = server_sock.accept()
+            try:
+                client.settimeout(2.0)
+                client.sendall(b"ping")
+                # Blocks until the client's side fully closes (FIN) or the
+                # echo arrives.
+                client.recv(1024)
+            except Exception:
+                pass
+            finally:
+                client.close()
+
+        server_task = loop.run_in_executor(None, run_server)
+
+        reader, writer = await asyncio.open_connection(*addr)
+        assert await reader.read(4) == b"ping"
+
+        sock = writer.transport.get_extra_info("socket")
+        assert sock is not None
+        sock.close()
+        assert sock.fileno() == -1
+
+        # The transport must still be fully functional after the app closed
+        # the pseudo-socket.
+        writer.write(b"pong")
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+        await server_task
+        server_sock.close()
+
+    talyn.run(main())
+
+
 def test_pseudosocket():
     async def main():
         loop = asyncio.get_running_loop()

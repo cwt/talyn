@@ -15,11 +15,41 @@ fn create_socket_instance(self: *StreamTransportObject) !PyObject {
     const loop_data = utils.get_data_ptr(Loop, loop_obj);
     _ = loop_data;
 
-    // Use PseudoSocket instead of real socket
-    const py_sock = try utils.PseudoSocket.fast_new_pseudosocket(self.fd, self.family, std.posix.SOCK.STREAM, 0);
+    // Use PseudoSocket instead of real socket.
+    // BUG-427 / BUG-447: the pseudo-socket used to alias the transport's
+    // raw fd. Whichever side closed first, the other side later closed the
+    // same descriptor number — by then possibly reused by an unrelated
+    // socket (transport teardown closing the app's `sock.close()` number,
+    // or the app close dangling the transport's). dup() gives each side
+    // its own descriptor; both directions of the hazard are closed, and
+    // option/name operations keep working through the shared file
+    // description.
+    const dup_ret = std.os.linux.dup(self.fd);
+    if (@as(isize, @bitCast(dup_ret)) < 0) {
+        python_c.raise_python_value_error("get_extra_info('socket'): fd dup failed\x00");
+        return error.PythonError;
+    }
+    const dup_fd: std.posix.fd_t = @intCast(dup_ret);
+    const py_sock = utils.PseudoSocket.fast_new_pseudosocket(dup_fd, self.family, std.posix.SOCK.STREAM, 0) catch {
+        _ = std.os.linux.close(dup_fd);
+        return error.PythonError;
+    };
 
     self.socket = @ptrCast(py_sock);
     return @ptrCast(py_sock);
+}
+
+/// BUG-427 / BUG-447: transport-owned teardown of the cached pseudo-socket.
+/// The pseudo-socket owns a dup of the transport fd; when the transport
+/// tears down, both descriptors must go away and the object must become
+/// inert, so a later app close() is a no-op and can never target a reused
+/// number (and RST/FIN semantics keep firing on the last close, matching
+/// the single-fd behavior).
+pub fn invalidate_socket(self: *StreamTransportObject) void {
+    if (self.socket) |sock_obj| {
+        const sock: *utils.PseudoSocket.PseudoSocketObject = @ptrCast(@alignCast(sock_obj));
+        utils.PseudoSocket.invalidate_and_close(sock);
+    }
 }
 
 inline fn z_transport_get_extra_info(self: *StreamTransportObject, args: []?PyObject, knames: ?PyObject) !PyObject {

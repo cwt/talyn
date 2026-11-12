@@ -13,6 +13,8 @@ const StreamTransportObject = Stream.StreamTransportObject;
 
 const Constructors = @import("constructors.zig");
 
+const extra_info = @import("extra_info.zig");
+
 const WriteTransport = @import("../write_transport.zig");
 const ReadTransport = @import("../read_transport.zig");
 
@@ -278,6 +280,10 @@ pub fn transport_abort(self: ?*StreamTransportObject) callconv(.c) ?PyObject {
 pub fn cancel_and_close_fd(self: *StreamTransportObject) void {
     const fd = self.fd;
     if (fd >= 0) {
+        // BUG-427/447: the cached pseudo-socket owns a dup of this fd —
+        // close it and mark it closed so a later app close() is a no-op and
+        // the transport's close keeps the last-close (FIN/RST) semantics.
+        extra_info.invalidate_socket(self);
         if (self.loop) |loop_obj| {
             const loop_data = utils.get_data_ptr(Loop, @as(*LoopObject, @ptrCast(loop_obj)));
             if (loop_data.initialized) {

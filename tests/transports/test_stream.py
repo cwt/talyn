@@ -758,11 +758,14 @@ async def _test_stream_transport_extra_info() -> None:
         # Test socket info
         socket_info = server_transport.get_extra_info("socket")
         assert socket_info is not None
-        assert socket_info.fileno() == server_socket.fileno()
+        # BUG-427: the pseudo-socket owns a dup of the transport fd (same
+        # open file description) — a distinct descriptor number that stays
+        # valid and can never be double-closed by either side.
+        assert socket_info.fileno() > 0
 
         socket_info = client_transport.get_extra_info("socket")
         assert socket_info is not None
-        assert socket_info.fileno() == client_socket.fileno()
+        assert socket_info.fileno() > 0
 
         # Test peername
         peername = server_transport.get_extra_info("peername")

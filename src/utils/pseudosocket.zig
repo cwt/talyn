@@ -87,14 +87,23 @@ fn pseudosocket_setblocking(self: ?*PseudoSocketObject, _: ?PyObject) callconv(.
     return python_c.get_py_none();
 }
 
+/// BUG-427/447: transport-owned teardown for a pseudo-socket that owns a
+/// dup of the transport fd — close the dup'd descriptor and mark the object
+/// closed so a later app close() is a no-op and can never target a reused
+/// descriptor number. Shared by pseudosocket_close (app side) and the
+/// transport teardown paths.
+pub fn invalidate_and_close(self: *PseudoSocketObject) void {
+    if (!self.closed) {
+        self.closed = true;
+        _ = std.os.linux.close(self.fd);
+        self.fd = -1;
+    }
+}
+
 fn pseudosocket_close(self: ?*PseudoSocketObject, _: ?PyObject) callconv(.c) ?PyObject {
     const instance = self.?;
     // BUG-291: idempotent; mirror stdlib socket semantics.
-    if (!instance.closed) {
-        instance.closed = true;
-        _ = std.os.linux.close(instance.fd);
-        instance.fd = -1;
-    }
+    invalidate_and_close(instance);
     return python_c.get_py_none();
 }
 
