@@ -192,6 +192,12 @@ fn pseudosocket_getsockopt(self: ?*PseudoSocketObject, args: ?PyObject) callconv
     };
     var buf: [256]u8 = undefined;
     var buflen: std.c.socklen_t = 256;
+    // BUG-437: CPython contract — `getsockopt(level, optname)` returns an
+    // int; `getsockopt(level, optname, buflen)` returns a bytes object of
+    // the option's length. The decision must key off whether the caller
+    // supplied the length argument, not off the post-call option size (a
+    // caller passing buflen == 4 used to get an int).
+    const has_buflen = argc >= 3;
     if (argc >= 3) {
         const bl = python_c.PyLong_AsLong(python_c.PyTuple_GetItem(arg_tuple, 2));
         if (python_c.PyErr_Occurred() != null) return null;
@@ -202,9 +208,10 @@ fn pseudosocket_getsockopt(self: ?*PseudoSocketObject, args: ?PyObject) callconv
         python_c.raise_python_value_error("getsockopt() failed\x00");
         return null;
     }
-    // If the option fits in a single integer (typical for flags like
-    // TCP_NODELAY), return it as an int; otherwise return the raw bytes.
-    if (buflen == 4) {
+    // If no length argument was supplied and the option fits in a single
+    // integer (typical for flags like TCP_NODELAY), return it as an int;
+    // otherwise return the raw bytes.
+    if (!has_buflen and buflen == 4) {
         const int_val: i32 = @bitCast(buf[0..4].*);
         return python_c.PyLong_FromLong(@intCast(int_val));
     }

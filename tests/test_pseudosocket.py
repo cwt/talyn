@@ -155,6 +155,48 @@ def test_pseudosocket_getsockopt_invalid_buflen():
     talyn.run(main())
 
 
+def test_pseudosocket_getsockopt_buflen_returns_bytes():
+    """BUG-437: getsockopt(level, optname, buflen) must return bytes even
+    when the option is exactly 4 bytes wide.
+
+    The old code keyed the int-vs-bytes decision off the post-call option
+    size, so an explicit buflen == 4 returned an int instead of the bytes
+    object CPython returns for a supplied length argument.
+    """
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_sock.bind(("127.0.0.1", 0))
+        server_sock.listen(1)
+        addr = server_sock.getsockname()
+
+        def run_server():
+            client, _ = server_sock.accept()
+            client.close()
+
+        server_task = loop.run_in_executor(None, run_server)
+
+        reader, writer = await asyncio.open_connection(*addr)
+        sock = writer.transport.get_extra_info("socket")
+        assert sock is not None
+
+        # No buflen: a 4-byte option (SO_TYPE) is returned as an int.
+        assert isinstance(sock.getsockopt(socket.SOL_SOCKET, socket.SO_TYPE), int)
+
+        # Explicit buflen for the same option: CPython returns a bytes object.
+        raw = sock.getsockopt(socket.SOL_SOCKET, socket.SO_TYPE, 4)
+        assert isinstance(raw, bytes)
+        assert len(raw) == 4
+
+        writer.close()
+        await writer.wait_closed()
+        await server_task
+        server_sock.close()
+
+    talyn.run(main())
+
+
 def test_pseudosocket_close_is_idempotent():
     """BUG-291: a second close() must be a no-op instead of closing
     whatever fd number now occupies the slot (stdlib socket semantics)."""
