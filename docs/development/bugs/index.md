@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 420 |
-| Open | 11 |
+| Fixed | 421 |
+| Open | 10 |
 | False Positive | 14 |
 | **Total** | **447** |
 
@@ -464,7 +464,7 @@ Sorted by bug number. See individual bug files for details.
 | [426](426.md) | Stream transport init error paths miss `PyObject_GC_UnTrack` | High | Fixed |
 | [427](427.md) | Pseudo-socket aliases the transport fd without `dup` | High | Fixed |
 | [428](428.md) | `IO.deinit` frees the task pool/registered buffers before closing the ring | High | Open |
-| [429](429.md) | `queue_eof` deferred `SocketShutdown` races the fd close | Medium | Open |
+| [429](429.md) | `queue_eof` deferred `SocketShutdown` races the fd close | Medium | Fixed |
 | [430](430.md) | Datagram `sendto` low-water check runs before the `buffer_size` decrement | Medium | Open |
 | [431](431.md) | `datagram_close` does not release the receive buffer | Medium | Open |
 | [432](432.md) | `CancelByFd` queued then immediate `close(fd)` race | Medium | False Positive |

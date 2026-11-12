@@ -402,6 +402,12 @@ fn write_operation_completed(data: *const CallbackManager.CallbackData) !void {
         if (self.eof_pending) {
             self.eof_pending = false;
             _ = try self.loop.io.queue(.{ .SocketShutdown = .{ .socket_fd = self.fd, .how = std.os.linux.SHUT.WR } });
+            // BUG-429: io.queue defers submission (it only force-flushes
+            // cancel ops or a nearly-full ring), so the FIN SQE could sit
+            // pending while the settle below closed the fd — the shutdown
+            // then ran against a closed or reused descriptor. Flush so
+            // the FIN is submitted while the fd is still valid.
+            _ = try self.loop.io.flush_pending_sqes();
         }
 
         if (self.is_closing) {
@@ -466,6 +472,12 @@ pub fn queue_eof(self: *WriteTransport) !void {
     // down through maybe_close_fd when the read side is already gone,
     // and the old code queued .SocketShutdown on the just-closed fd.
     _ = try self.loop.io.queue(.{ .SocketShutdown = .{ .socket_fd = self.fd, .how = std.os.linux.SHUT.WR } });
+    // BUG-429: io.queue defers submission (it only force-flushes cancel
+    // ops or a nearly-full ring), so the FIN SQE could still be pending
+    // when close() tears the fd down below. Flush so the FIN is
+    // submitted while the fd is valid. (The old comment claiming
+    // queueing alone submits it was wrong.)
+    _ = try self.loop.io.flush_pending_sqes();
     try self.close();
 }
 
