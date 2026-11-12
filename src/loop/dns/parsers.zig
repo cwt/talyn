@@ -88,9 +88,17 @@ pub fn parse_name(full_data: []const u8, initial_offset: usize, allocator: std.m
         if ((byte & 0xC0) == 0xC0) {
             if (visited_pointers >= max_pointers) return error.MalformedDnsResponse;
             if (offset + 1 >= full_data.len) return error.MalformedDnsResponse;
+            // BUG-436: Validate the 14-bit pointer target before following
+            // it. An out-of-range target used to make the scan loop exit
+            // immediately and the function return the (possibly empty)
+            // accumulated slice instead of erroring — for a PTR record an
+            // empty name was cached rather than the malformed response
+            // rejected.
+            const target = (@as(usize, byte & 0x3F) << 8) | full_data[offset + 1];
+            if (target >= full_data.len) return error.MalformedDnsResponse;
             if (jump_offset == null) jump_offset = offset + 2;
             visited_pointers += 1;
-            offset = (@as(usize, byte & 0x3F) << 8) | full_data[offset + 1];
+            offset = target;
             continue;
         }
 
@@ -555,6 +563,25 @@ test "resolve_address invalid hostname" {
     var out: [2]utils.Address = undefined;
     const result = resolve_address("-invalid-domain", false, &out);
     try std.testing.expectError(error.InvalidHostname, result);
+}
+
+test "parse_name rejects an out-of-range compression pointer (BUG-436)" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    // Pointer target 0x40 = 64 is beyond this 2-byte message.
+    try testing.expectError(error.MalformedDnsResponse, parse_name(&[_]u8{ 0xC0, 0x40 }, 0, allocator));
+
+    // Same shape with a label prefix: the pointer is still out of range.
+    const msg = &[_]u8{ 3, 'f', 'o', 'o', 0xC0, 0x40 };
+    try testing.expectError(error.MalformedDnsResponse, parse_name(msg, 0, allocator));
+
+    // A valid in-range pointer still resolves: "\x03foo" + ptr->offset 6,
+    // offset 6 holds "\x02ba\x00".
+    const valid = &[_]u8{ 3, 'f', 'o', 'o', 0xC0, 0x06, 2, 'b', 'a', 0 };
+    const name = try parse_name(valid, 0, allocator);
+    defer allocator.free(name);
+    try testing.expectEqualStrings("foo.ba", name);
 }
 
 test "resolve_address concurrent callers (BUG-48)" {

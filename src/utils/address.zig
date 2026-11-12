@@ -144,7 +144,13 @@ pub const Address = extern union {
             if (i == octet_start) return error.InvalidIPAddressFormat;
             bytes[octet_i] = @intCast(val);
             octet_i += 1;
-            if (i < host.len) i += 1;
+            // BUG-436: A dot after the 4th octet is a trailing dot
+            // ("1.2.3.4.") and must be rejected like inet_pton /
+            // Python's ipaddress do; the old code consumed it and
+            // silently accepted the address.
+            if (i == host.len) break;
+            if (octet_i == 4) return error.InvalidIPAddressFormat;
+            i += 1;
         }
         if (octet_i != 4) return error.InvalidIPAddressFormat;
         return initIp4(bytes, port);
@@ -387,6 +393,21 @@ test "parseIp4 octet overflow rejection (BUG-257)" {
     try testing.expectError(error.InvalidIPAddressFormat, Address.parseIp4("1.2.3.999", 80));
     const addr = try Address.parseIp4("1.2.3.4", 80);
     try testing.expectEqual(std.mem.nativeToBig(u16, 80), addr.in.sa.port);
+}
+
+test "parseIp4 rejects a trailing dot (BUG-436)" {
+    const testing = std.testing;
+    // inet_pton and Python's ipaddress reject a trailing dot; the old
+    // code consumed it and silently returned the address.
+    try testing.expectError(error.InvalidIPAddressFormat, Address.parseIp4("1.2.3.4.", 80));
+    try testing.expectError(error.InvalidIPAddressFormat, Address.parseIp4("1.2.3.4..", 80));
+    try testing.expectError(error.InvalidIPAddressFormat, Address.parseIp4("1.2.3.4.5.", 80));
+    // A dot-free address still parses, and a dot before the 4th octet
+    // keeps its existing (error) behavior.
+    const addr = try Address.parseIp4("1.2.3.4", 80);
+    try testing.expectEqual(std.mem.nativeToBig(u16, 80), addr.in.sa.port);
+    try testing.expectError(error.InvalidIPAddressFormat, Address.parseIp4(".1.2.3.4", 80));
+    try testing.expectError(error.InvalidIPAddressFormat, Address.parseIp4("1..2.3.4", 80));
 }
 
 test "parseIp6 accepts valid full address" {

@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 402 |
-| Open | 31 |
+| Fixed | 403 |
+| Open | 30 |
 | False Positive | 14 |
 | **Total** | **447** |
 
@@ -471,7 +471,7 @@ Sorted by bug number. See individual bug files for details.
 | [433](433.md) | DNS response-count modulo can resolve early and drop AAAA records | Medium | Open |
 | [434](434.md) | `InlineQueue.append` promotion never clears `inline_len` | Medium | Open |
 | [435](435.md) | `cancel_all` skips `.none` tasks, leaking their reserved slot | Medium | Open |
-| [436](436.md) | Parser strictness gaps: `parseIp4` trailing dot; `parse_name` empty name | Low | Open |
+| [436](436.md) | Parser strictness gaps: `parseIp4` trailing dot; `parse_name` empty name | Low | Fixed |
 | [437](437.md) | `pseudosocket.getsockopt` int-vs-bytes keyed off the wrong condition | Low | Open |
 | [438](438.md) | `accept_callback` uses a stale `should_reenqueue` after `connection_made` may close the server | Low | Open |
 | [439](439.md) | Cancelled read completions do not release `protocol_buffer` | Low | Open |
