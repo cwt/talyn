@@ -54,6 +54,14 @@ pub inline fn queue_read_operation(transport: *StreamTransportObject, read_trans
             const buffer_to_read: [*]u8 = @ptrCast(py_buffer.buf.?);
             try read_transport.perform(buffer_to_read[0..@intCast(py_buffer.len)]);
 
+            // BUG-439: release any still-exported previous buffer before
+            // overwriting the field — after a cancelled read (whose release
+            // used to be skipped entirely) the old export leaked
+            // permanently, since dealloc later released only the new one.
+            if (transport.protocol_buffer.buf != null) {
+                python_c.PyBuffer_Release(&transport.protocol_buffer);
+                transport.protocol_buffer = comptime std.mem.zeroes(python_c.Py_buffer);
+            }
             transport.protocol_buffer = py_buffer;
         },
         .Legacy => {

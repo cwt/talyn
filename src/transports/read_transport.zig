@@ -134,6 +134,19 @@ fn cleanup_resources_callback(ptr: ?*anyopaque) void {
 
 pub fn read_operation_completed(data: *const CallbackManager.CallbackData) !void {
     if (data.cancelled()) {
+        // BUG-439: the stream-level read callback owns the
+        // protocol_buffer release (take-and-zero + PyBuffer_Release) and
+        // never runs on the cancelled path — the exported Py_buffer stayed
+        // pinned until a re-arm overwrote it (or dealloc). Take-and-zero
+        // and release it here, before the generic cleanup runs.
+        const self: *ReadTransport = @ptrCast(@alignCast(data.user_data.?));
+        const StreamMain = @import("stream/main.zig");
+        const parent: *StreamMain.StreamTransportObject = @ptrCast(@alignCast(self.parent_transport));
+        var stale_buffer = parent.protocol_buffer;
+        parent.protocol_buffer = comptime std.mem.zeroes(python_c.Py_buffer);
+        if (stale_buffer.buf != null) {
+            python_c.PyBuffer_Release(&stale_buffer);
+        }
         cleanup_resources_callback(data.user_data);
         return;
     }
