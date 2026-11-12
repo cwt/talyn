@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 403 |
-| Open | 30 |
+| Fixed | 404 |
+| Open | 29 |
 | False Positive | 14 |
 | **Total** | **447** |
 
@@ -480,7 +480,7 @@ Sorted by bug number. See individual bug files for details.
 | [442](442.md) | `add_done_callback` no-op leaks caller-transferred references | Low | Open |
 | [443](443.md) | `MultiConnectState.init` leaks the struct on `PyList_New` failure | Low | Open |
 | [444](444.md) | io/scheduling dead code and micro-issues | Low | Open |
-| [445](445.md) | Dead `Record.hostname` field (written but never read in production) | Low | Open |
+| [445](445.md) | Dead `Record.hostname` field (written but never read in production) | Low | Fixed |
 | [446](446.md) | `handle_talyn_future_object` unwraps `future.py_loop.?` with no released/null guard (BUG-440 sibling) | Medium | Open |
 | [447](447.md) | Pseudo-socket `close()` never invalidates the transport — teardown closes a possibly-reused fd (mirror of BUG-427) | High | Open |
 | [448](448.md) | BTree `replace()` shares BUG-422's swallow (`insert_in_node(...) catch return null`) | Medium | Open |

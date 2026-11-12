@@ -26,7 +26,10 @@ const RecordState = union(enum) {
 };
 
 pub const Record = struct {
-    hostname: []u8,
+    // BUG-445: no `hostname` field — the LRU key (un-duped into the map,
+    // freed once by `evict_record`) is the authoritative name. The old
+    // duplicate field aliased the same allocation and was never read in
+    // production.
     state: RecordState,
     expire_at: i64,
 
@@ -108,7 +111,7 @@ pub fn create_new_record(self: *Cache, hostname: []const u8, control_data: *Reso
     const record = try allocator.create(Record);
     errdefer allocator.destroy(record);
 
-    record.* = Record{ .hostname = new_hostname, .expire_at = std.math.maxInt(i64), .state = .{ .pending = control_data } };
+    record.* = Record{ .expire_at = std.math.maxInt(i64), .state = .{ .pending = control_data } };
 
     try self.cache.put(new_hostname, record);
     return record;
@@ -130,7 +133,7 @@ pub fn create_new_record_from_resolved(
     const record = try allocator.create(Record);
     errdefer allocator.destroy(record);
 
-    record.* = Record{ .hostname = new_hostname, .expire_at = expire_at, .state = .{ .resolved = address_list } };
+    record.* = Record{ .expire_at = expire_at, .state = .{ .resolved = address_list } };
 
     try self.cache.put(new_hostname, record);
     return record;
@@ -173,7 +176,9 @@ test "create_new_record" {
 
     const record = try cache.create_new_record("example.com", control_data);
 
-    try testing.expectEqualStrings("example.com", record.hostname);
+    // BUG-445: the record no longer carries its own hostname field — the
+    // LRU key is the authoritative name, so look the record up by it.
+    try testing.expect(cache.get("example.com") == record);
     try testing.expect(record.state == .pending);
     try testing.expect(record.expire_at == std.math.maxInt(i64));
 
@@ -244,7 +249,9 @@ test "get record from cache" {
     record.set_resolved_data(addresses, 300);
 
     const retrieved_record = cache.get("example.com").?;
-    try testing.expectEqualStrings("example.com", retrieved_record.hostname);
+    // BUG-445: identity check via the LRU key instead of the removed
+    // record.hostname field.
+    try testing.expect(retrieved_record == record);
     try testing.expect(retrieved_record.state == .resolved);
     try testing.expectEqual(@as(usize, 2), retrieved_record.get_address_list().?.len);
 
