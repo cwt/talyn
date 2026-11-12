@@ -186,9 +186,11 @@ pub fn process_dns_response(data: *const CallbackManager.CallbackData) !void {
     const response = server_data.recv_buf[0..bytes];
 
     // Validate the response ID against all pending query IDs.
+    // BUG-433: hoisted to function scope — the per-candidate completion
+    // check below needs the matched slot even after the parse block.
+    var matched_slot: ?*QuerySlot = null;
     if (bytes >= 2) {
         const response_id = std.mem.readInt(u16, response[0..2], .big);
-        var matched_slot: ?*QuerySlot = null;
         for (server_data.queries) |*slot| {
             if (response_id == slot.id) {
                 matched_slot = slot;
@@ -335,12 +337,17 @@ pub fn process_dns_response(data: *const CallbackManager.CallbackData) !void {
 
     server_data.responses_received += 1;
 
-    // BUG-384: Dual-stack (A + AAAA) queries send multiple queries per candidate
-    // hostname (types_per_host == 2). We must not prematurely resolve on the first
-    // packet (e.g. A) if companion queries (e.g. AAAA) for this candidate are still
-    // in flight; otherwise IPv6 addresses are dropped.
-    const types_per_host: usize = if (server_data.hostnames_array.len > 0 and server_data.queries.len >= server_data.hostnames_array.len * 2) 2 else 1;
-    const current_candidate_done = (server_data.responses_received % types_per_host) == 0;
+    // BUG-433: per-hostname completion tracking instead of a global modulo
+    // counter. The old `responses_received % types_per_host == 0` assumed
+    // responses arrive in send order; with interleaved replies
+    // (a.A, b.A, a.AAAA, b.AAAA) it declared a candidate done after any
+    // two responses and resolved with a partial/mixed result set (dropping
+    // AAAA addresses). A candidate is done when all of its own query
+    // types have been answered, matched per QuerySlot.
+    const current_candidate_done = if (matched_slot) |slot|
+        server_data.credit_response_and_check_candidate_done(slot)
+    else
+        false;
 
     if (server_data.results.items.len > 0 or server_data.ptr_results.items.len > 0) {
         if (current_candidate_done or server_data.responses_received >= server_data.queries.len) {

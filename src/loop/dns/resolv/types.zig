@@ -120,6 +120,12 @@ pub const ServerQueryData = struct {
     send_idx: u32 = 0,
     /// Number of individual DNS responses received so far.
     responses_received: u32 = 0,
+    /// BUG-433: per-hostname response credit. The old global modulo
+    /// (`responses_received % types_per_host == 0`) assumed responses
+    /// arrive in send order; interleaved replies (a.A, b.A, a.AAAA,
+    /// b.AAAA) completed the wrong candidate and resolved with a
+    /// partial/mixed result set. Indexed by slot_index / types_per_host.
+    responses_per_hostname: []u16 = &.{},
     /// Stable 512-byte buffer reused for every response read.
     recv_buf: [512]u8 = undefined,
 
@@ -142,6 +148,22 @@ pub const ServerQueryData = struct {
             _ = std.os.linux.close(socket_fd);
             self.socket_fd = -1;
         }
+    }
+
+    /// BUG-433: credit the response for the candidate the matched query
+    /// slot belongs to and report whether that candidate is now complete
+    /// (all of its per-host query types answered). Slots are built
+    /// hostname-major (parse.build_queries), so slot_index / types_per_host
+    /// is the candidate index. Unmatched/malformed responses are never
+    /// credited — the global `responses_received` backstop still resolves
+    /// once every query is accounted for.
+    pub inline fn credit_response_and_check_candidate_done(self: *ServerQueryData, slot: *QuerySlot) bool {
+        const types_per_host: usize = if (self.hostnames_array.len > 0 and self.queries.len >= self.hostnames_array.len * 2) 2 else 1;
+        const slot_index = (@intFromPtr(slot) - @intFromPtr(self.queries.ptr)) / @sizeOf(QuerySlot);
+        const hostname_index = slot_index / types_per_host;
+        if (hostname_index >= self.responses_per_hostname.len) return false;
+        self.responses_per_hostname[hostname_index] += 1;
+        return self.responses_per_hostname[hostname_index] >= types_per_host;
     }
 
     pub fn release(self: *ServerQueryData) void {
@@ -324,4 +346,50 @@ test "should_fail_resolution_on_server_finish decision table (BUG-317)" {
 pub fn cleanup_server_query_data(ptr: ?*anyopaque) void {
     const server_data: *ServerQueryData = @ptrCast(@alignCast(ptr.?));
     server_data.release();
+}
+
+test "BUG-433: interleaved responses complete the right candidate" {
+    // 2 candidates x 2 query types (A, AAAA); responses arrive interleaved
+    // (b.A, a.A, a.AAAA, b.AAAA). The old global modulo
+    // (responses_received % 2 == 0) declared a candidate done after any
+    // two responses and resolved with a partial/mixed result set. The
+    // per-hostname credit completes exactly the candidate the response
+    // belongs to.
+    var slots: [4]QuerySlot = .{ .{}, .{}, .{}, .{} };
+    slots[0].id = 1; // a.A
+    slots[1].id = 2; // a.AAAA
+    slots[2].id = 3; // b.A
+    slots[3].id = 4; // b.AAAA
+
+    var counters: [2]u16 = .{ 0, 0 };
+    var hostnames: [2]Hostname = undefined;
+
+    var server_data: ServerQueryData = .{
+        .loop = undefined,
+        .socket_fd = -1,
+        .hostnames_array = .{ .array = &hostnames, .len = 2 },
+        .control_data = undefined,
+        .queries = &slots,
+        .responses_per_hostname = &counters,
+        .results = .empty,
+        .ptr_results = .empty,
+    };
+
+    // b.A: candidate b half-answered - not done (the old modulo would have
+    // called response #2 done here).
+    try std.testing.expect(!server_data.credit_response_and_check_candidate_done(&slots[2]));
+    try std.testing.expectEqual(@as(u16, 1), counters[1]);
+
+    // a.A: candidate a half-answered - not done.
+    try std.testing.expect(!server_data.credit_response_and_check_candidate_done(&slots[0]));
+    try std.testing.expectEqual(@as(u16, 1), counters[0]);
+
+    // a.AAAA: candidate a fully answered - done (the response the old code
+    // would have mis-attributed to "the second packet of some candidate").
+    try std.testing.expect(server_data.credit_response_and_check_candidate_done(&slots[1]));
+    try std.testing.expectEqual(@as(u16, 2), counters[0]);
+
+    // b.AAAA: candidate b fully answered - done.
+    try std.testing.expect(server_data.credit_response_and_check_candidate_done(&slots[3]));
+    try std.testing.expectEqual(@as(u16, 2), counters[1]);
 }

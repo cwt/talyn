@@ -131,6 +131,11 @@ pub fn build_queries(
     const queries = try allocator.alloc(QuerySlot, total_queries);
     errdefer allocator.free(queries);
 
+    // BUG-433: one response-credit counter per candidate hostname.
+    const responses_per_hostname = try allocator.alloc(u16, hostnames_array.len);
+    errdefer allocator.free(responses_per_hostname);
+    @memset(responses_per_hostname, 0);
+
     var id_buf_stack: [32]u16 = undefined;
     const id_buf = if (total_queries <= 32)
         id_buf_stack[0..total_queries]
@@ -172,6 +177,7 @@ pub fn build_queries(
         .control_data = control_data,
         .hostnames_array = hostnames_array,
         .queries = queries,
+        .responses_per_hostname = responses_per_hostname,
         .results = .empty,
         .ptr_results = .empty,
         // BUG-358: the struct-literal assignment reset dns_timeout back to
@@ -450,7 +456,9 @@ test "BUG-358: build_queries preserves the configured dns_timeout" {
     try std.testing.expectEqual(timeout, server_data.dns_timeout);
 
     // The test owns the built query state (on success the queue flow owns
-    // it): release the query slots and the UDP socket.
+    // it): release the query slots, the per-hostname credit counters and
+    // the UDP socket.
+    allocator.free(server_data.responses_per_hostname);
     allocator.free(server_data.queries);
     _ = std.os.linux.close(server_data.socket_fd);
 }

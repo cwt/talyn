@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 427 |
-| Open | 4 |
+| Fixed | 428 |
+| Open | 3 |
 | False Positive | 14 |
 | **Total** | **447** |
 
@@ -468,7 +468,7 @@ Sorted by bug number. See individual bug files for details.
 | [430](430.md) | Datagram `sendto` low-water check runs before the `buffer_size` decrement | Medium | Fixed |
 | [431](431.md) | `datagram_close` does not release the receive buffer | Medium | Fixed |
 | [432](432.md) | `CancelByFd` queued then immediate `close(fd)` race | Medium | False Positive |
-| [433](433.md) | DNS response-count modulo can resolve early and drop AAAA records | Medium | Open |
+| [433](433.md) | DNS response-count modulo can resolve early and drop AAAA records | Medium | Fixed |
 | [434](434.md) | `InlineQueue.append` promotion never clears `inline_len` | Medium | Fixed |
 | [435](435.md) | `cancel_all` skips `.none` tasks, leaking their reserved slot | Medium | Fixed |
 | [436](436.md) | Parser strictness gaps: `parseIp4` trailing dot; `parse_name` empty name | Low | Fixed |
