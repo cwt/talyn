@@ -52,7 +52,16 @@ inline fn z_future_add_done_callback(self: *PythonFutureObject, args: []?PyObjec
     }
 
     switch (future_data.status) {
-        .pending => try Future.Callback.add_done_callback(future_data, .{ .PythonGeneric = .{ .callback = py_callback, .context = context.? } }),
+        .pending => {
+            // BUG-442: a released future makes add_done_callback a silent
+            // no-op — release the transferred py_callback/context
+            // references instead of leaking them (the call still returns
+            // None, mirroring the inert-mutation contract of BUG-369).
+            if (!(try Future.Callback.add_done_callback(future_data, .{ .PythonGeneric = .{ .callback = py_callback, .context = context.? } }))) {
+                python_c.py_decref(context.?);
+                python_c.py_decref(py_callback);
+            }
+        },
         else => {
             const loop_data = future_data.loop;
             if (!loop_data.initialized) {

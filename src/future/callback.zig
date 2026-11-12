@@ -278,8 +278,13 @@ pub fn release_callbacks_queue(queue: *CallbacksSetData) void {
     }
 }
 
-pub inline fn add_done_callback(self: *Future, callback_data: Data) !void {
-    if (self.status != .pending or self.released) return;
+/// BUG-442: returns whether the entry was actually stored. A released
+/// future (released == true with status still .pending — e.g. resurrected
+/// after tp_clear) makes this a silent no-op; callers transfer ownership of
+/// the callback/context references only when this returns true, so the
+/// no-op path must not leak them.
+pub inline fn add_done_callback(self: *Future, callback_data: Data) !bool {
+    if (self.status != .pending or self.released) return false;
 
     try self.callbacks_queue.append(self.loop.allocator, .{
         .data = callback_data,
@@ -293,6 +298,7 @@ pub inline fn add_done_callback(self: *Future, callback_data: Data) !void {
     // ~32 B of never-reused native arena per task-spawn and is why RSS grew
     // linearly on the task lifecycle. Appends grow the queue on demand
     // instead; every consumer iterates values, none index positionally.
+    return true;
 }
 
 /// BUG-370: Python callbacks are compared by PyObject equality (Py_EQ),

@@ -410,8 +410,12 @@ inline fn handle_talyn_future_object(task: *Task.PythonTaskObject, future: *Futu
             return;
         }
 
-        try Future.Callback.add_done_callback(future_data, .{ .ZigGeneric = .{ .callback = &wakeup_task, .ptr = task } });
-        python_c.py_incref(@ptrCast(task));
+        // BUG-442: only take the wakeup-task reference when the callback
+        // entry was actually stored — a released future makes the call a
+        // no-op and the incref would leak the task reference.
+        if (try Future.Callback.add_done_callback(future_data, .{ .ZigGeneric = .{ .callback = &wakeup_task, .ptr = task } })) {
+            python_c.py_incref(@ptrCast(task));
+        }
 
         try set_fut_waiter(task, @ptrCast(future));
         future.blocking = 0;
