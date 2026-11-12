@@ -31,7 +31,11 @@ fn sendto_completed(data: *const CallbackManager.CallbackData) !void {
     const self = sd.transport;
     // BUG-408: every terminal outcome must release the bytes reserved by
     // buffer_watermark_check(), not only the success path.
-    defer self.buffer_size -= @min(self.buffer_size, sd.buf.len);
+    // BUG-430: release BEFORE the low-water comparison below — the old
+    // scope-defer ran at function exit, so the just-completed datagram's
+    // bytes were still counted when `buffer_size <= low_water_mark` was
+    // evaluated and the resume_writing transition could be missed.
+    self.buffer_size -= @min(self.buffer_size, sd.buf.len);
 
     if (data.cancelled() or self.closed) {
         success = true;
