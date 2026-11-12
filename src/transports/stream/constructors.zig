@@ -157,7 +157,9 @@ fn stream_init_configuration(self: *StreamTransportObject, protocol: PyObject, l
     errdefer write_transport_data.deinit();
 
     const read_transport_data = utils.get_data_ptr2(ReadTransport, "read_transport", self);
-    try read_transport_data.init(loop_data, fd, &Read.read_operation_completed, @ptrCast(self), exception_handler, &Lifecyle.connection_lost_callback, zero_copying);
+    // BUG-444 (2): no zero_copying argument — io_uring has no zero-copy
+    // receive; the read-side flag was forwarded and silently ignored.
+    try read_transport_data.init(loop_data, fd, &Read.read_operation_completed, @ptrCast(self), exception_handler, &Lifecyle.connection_lost_callback);
     errdefer read_transport_data.deinit();
 
     const protocol_type = try set_protocol(self, protocol);

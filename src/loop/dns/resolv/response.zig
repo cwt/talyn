@@ -101,7 +101,6 @@ pub fn queue_next_response_read(server_data: *ServerQueryData) !void {
             },
             .data = .{ .buffer = &server_data.recv_buf },
             .fd = server_data.socket_fd,
-            .zero_copy = true,
             .timeout = if (server_data.dns_timeout) |t| dns_timeout_to_kernel_timespec(t) else DEFAULT_TIMEOUT,
         },
     });

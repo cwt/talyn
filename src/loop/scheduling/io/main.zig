@@ -99,18 +99,13 @@ pub const BlockingTask = struct {
                     else => std.log.warn("WaitTimer: unexpected io_uring result {s}", .{@tagName(result)}),
                 }
             },
-            // BUG-64: Cancel operations are fire-and-forget by
-            // design, but log unexpected result codes. -ENOENT
-            // is expected (the task already completed), but other
-            // errors may indicate a problem.
-            .CancelIO, .CancelTimer => switch (result) {
-                .SUCCESS, .NOENT => {},
-                else => std.log.warn("Cancel: unexpected result {s}", .{@tagName(result)}),
-            },
-            .CancelByFd => switch (result) {
-                .SUCCESS, .NOENT => {},
-                else => std.log.warn("CancelByFd: unexpected result {s}", .{@tagName(result)}),
-            },
+            // BUG-444 (1): no .CancelIO/.CancelTimer/.CancelByFd/.SocketShutdown
+            // arms here — they were dead code. check_result runs only from
+            // the runner's `.callback` completion arm, and cancel operations
+            // never push a BlockingTask (their CQEs carry user_data 0),
+            // while SocketShutdown pushes with a null callback (the `.none`
+            // arm). Non-pushed/unreachable operations fall through to the
+            // generic arm below.
             .PerformWriteV, .PerformWrite, .PerformSendMsg => {
                 switch (result) {
                     .SUCCESS => {},
@@ -125,14 +120,6 @@ pub const BlockingTask = struct {
                     .CANCELED, .BADF, .BADMSG, .INTR, .INVAL, .IO, .ISDIR, .OVERFLOW, .SPIPE, .CONNRESET, .NOTCONN, .TIMEDOUT, .NOBUFS, .NOMEM, .NXIO => {},
                     .AGAIN => {},
                     else => std.log.warn("PerformRead/RecvMsg: unexpected io_uring result {s}", .{@tagName(result)}),
-                }
-            },
-            .SocketShutdown => {
-                switch (result) {
-                    .SUCCESS => {},
-                    .CANCELED, .INVAL, .NOTCONN, .NOTSOCK, .BADF, .NOBUFS => {},
-                    .AGAIN => {},
-                    else => std.log.warn("SocketShutdown: unexpected io_uring result {s}", .{@tagName(result)}),
                 }
             },
             .SocketConnect, .SocketAccept => {
@@ -867,7 +854,16 @@ pub fn flush_pending_sqes(self: *IO) !u32 {
 pub fn queue_unlocked(self: *IO, event: BlockingOperationData) !usize {
     if (self.ring.fd < 0) return error.LoopDeinitialized;
 
-    const set = try self.get_blocking_tasks_set();
+    // BUG-444 (5): only the task-pushing variants need a blocking-tasks
+    // set; the cancel arms ignore it. The old unconditional
+    // get_blocking_tasks_set() could needlessly allocate a fresh ~80 KB
+    // node (or disattach the current one on a full set) just to submit a
+    // cancel.
+    var set: *BlockingTasksSet = undefined;
+    switch (event) {
+        .CancelIO, .CancelTimer, .CancelByFd => {},
+        else => set = try self.get_blocking_tasks_set(),
+    }
 
     const data_ptr = try switch (event) {
         .WaitReadable => |data| Read.wait_ready(&self.ring, set, data),

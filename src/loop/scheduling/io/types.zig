@@ -62,6 +62,11 @@ pub const RegisteredBufferPool = struct {
     iovecs: []std.posix.iovec = &.{},
     free_slots: []u16 = &.{},
     free_count: usize = 0,
+    /// BUG-444 (3): per-slot leased state. The old overflow guard only
+    /// caught a duplicate release into a COMPLETELY full pool; a duplicate
+    /// release while free_count < SlotCount inserted the same index twice,
+    /// handing the same buffer to two leases.
+    leased: [SlotCount]bool = @splat(false),
 
     pub fn init(self: *RegisteredBufferPool, allocator: std.mem.Allocator) !void {
         self.buffer_memory = try allocator.alloc(u8, SlotSize * SlotCount);
@@ -95,6 +100,7 @@ pub const RegisteredBufferPool = struct {
         if (self.free_slots.len == 0 or self.free_count == 0) return null;
         self.free_count -= 1;
         const index = self.free_slots[self.free_count];
+        self.leased[index] = true;
         const offset = @as(usize, index) * SlotSize;
         return .{
             .index = index,
@@ -108,7 +114,10 @@ pub const RegisteredBufferPool = struct {
         // returns 0..SlotCount-1. Anything else (e.g. a corrupted or stale index)
         // must not be written into free_slots, which has exactly SlotCount entries.
         if (index >= SlotCount) return;
-        if (self.free_count >= SlotCount) return; // Overflow guard: prevent double-release
+        // BUG-444 (3): per-slot leased guard — a duplicate release is a no-op
+        // in every pool state, not just the completely-full case.
+        if (!self.leased[index]) return;
+        self.leased[index] = false;
         self.free_slots[self.free_count] = index;
         self.free_count += 1;
     }
@@ -137,13 +146,21 @@ test "RegisteredBufferPool lease/release/deinit guards (BUG-117 basis)" {
     try std.testing.expectEqual(leased[0].index, reclaimed.?.index);
     pool.release(reclaimed.?.index);
 
+    // BUG-444 (3): duplicate release while NOT full must not double-insert
+    // (the old overflow guard only caught the completely-full case, so two
+    // leases could receive the same buffer).
+    pool.release(leased[1].index);
+    pool.release(leased[1].index);
+    try std.testing.expectEqual(@as(usize, 2), pool.free_count);
+
     // Release the rest back.
     for (leased[1..]) |*slot| {
         pool.release(slot.*.index);
     }
     try std.testing.expectEqual(RegisteredBufferPool.SlotCount, pool.free_count);
 
-    // Releasing an already-free index is a safe no-op (overflow guard).
+    // Releasing an already-free index is a safe no-op (per-slot leased
+    // state, BUG-444 (3)).
     pool.release(leased[0].index);
     try std.testing.expectEqual(RegisteredBufferPool.SlotCount, pool.free_count);
 

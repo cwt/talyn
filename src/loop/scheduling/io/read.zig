@@ -3,7 +3,7 @@ const std = @import("std");
 const CallbackManager = @import("callback_manager");
 const IO = @import("main.zig");
 
-pub const PerformData = struct { fd: std.posix.fd_t, fixed_file_index: ?u16 = null, fixed_buffer_index: ?u16 = null, callback: CallbackManager.Callback, data: std.os.linux.IoUring.ReadBuffer, offset: usize = 0, timeout: ?std.os.linux.kernel_timespec = null, zero_copy: bool = false };
+pub const PerformData = struct { fd: std.posix.fd_t, fixed_file_index: ?u16 = null, fixed_buffer_index: ?u16 = null, callback: CallbackManager.Callback, data: std.os.linux.IoUring.ReadBuffer, offset: usize = 0, timeout: ?std.os.linux.kernel_timespec = null };
 
 pub const RecvMsgData = struct {
     fd: std.posix.fd_t,
@@ -78,17 +78,15 @@ pub fn perform(ring: *std.os.linux.IoUring, set: *IO.BlockingTasksSet, data: Per
             sqe.flags |= ff_flag;
             break :blk sqe;
         }
-        if (data.zero_copy) {
-            // BUG-335: io_uring has no zero-copy receive (MSG.ZEROCOPY is
-            // transmit-only), and this branch used to point msg_storage.iov
-            // at the caller's — possibly stack-allocated — iovec array,
-            // which the kernel dereferences at submit time (BUG-30/BUG-334
-            // class). The branch was unreachable (every caller passes
-            // .buffer) and unsound, so non-.buffer selectors reject instead.
-            switch (data.data) {
-                .buffer_selection, .iovecs => return error.NotImplemented,
-                .buffer => {},
-            }
+        // BUG-444 (6): reject non-.buffer selectors unconditionally — the
+        // .iovecs variant maps to prep_readv, which stages the caller's
+        // array pointer for kernel-read at deferred submit (the BUG-335 /
+        // BUG-30 pointer-lifetime class). No production caller uses it;
+        // multi-iovec reads go through Read.recvmsg with a heap-resident
+        // msghdr instead.
+        switch (data.data) {
+            .buffer => {},
+            .buffer_selection, .iovecs => return error.NotImplemented,
         }
         const sqe = try ring.read(@intCast(@intFromPtr(data_ptr)), fd_arg, data.data, data.offset);
         sqe.flags |= ff_flag;

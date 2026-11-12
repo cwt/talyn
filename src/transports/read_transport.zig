@@ -32,7 +32,6 @@ fd: std.posix.fd_t,
 
 blocking_task_id: usize = 0,
 
-zero_copying: bool,
 closed: bool = false,
 is_closing: bool = false,
 cancelling: bool = false,
@@ -41,7 +40,7 @@ batch_dispatched: bool = false,
 fixed_file_index: ?u16 = null,
 fixed_buffer_index: ?u16 = null,
 
-pub fn init(self: *ReadTransport, loop: *Loop, fd: std.posix.fd_t, callback: ReadCompletedCallback, parent_transport: PyObject, exception_handler: PyObject, connection_lost_callback: ConnectionLostCallback, zero_copying: bool) !void {
+pub fn init(self: *ReadTransport, loop: *Loop, fd: std.posix.fd_t, callback: ReadCompletedCallback, parent_transport: PyObject, exception_handler: PyObject, connection_lost_callback: ConnectionLostCallback) !void {
     const allocator = loop.allocator;
 
     var fixed_buffer_index: ?u16 = null;
@@ -60,7 +59,7 @@ pub fn init(self: *ReadTransport, loop: *Loop, fd: std.posix.fd_t, callback: Rea
         }
     }
 
-    self.* = .{ .loop = loop, .parent_transport = parent_transport, .exception_handler = exception_handler, .connection_lost_callback = connection_lost_callback, .read_completed_callback = callback, .buffer = buffer, .fixed_buffer_index = fixed_buffer_index, .buffer_to_read = undefined, .zero_copying = zero_copying, .fd = fd, .initialized = true };
+    self.* = .{ .loop = loop, .parent_transport = parent_transport, .exception_handler = exception_handler, .connection_lost_callback = connection_lost_callback, .read_completed_callback = callback, .buffer = buffer, .fixed_buffer_index = fixed_buffer_index, .buffer_to_read = undefined, .fd = fd, .initialized = true };
 }
 
 pub fn close(self: *ReadTransport) !void {
@@ -224,9 +223,12 @@ pub inline fn perform(self: *ReadTransport, buffer: ?[]u8) !void {
     const buffer_to_read = buffer orelse self.buffer;
     const fixed_buffer_idx = if (buffer == null) self.fixed_buffer_index else null;
 
+    // BUG-444 (2): no .zero_copy field — io_uring has no zero-copy receive
+    // (MSG.ZEROCOPY is transmit-only); the read-side flag was forwarded
+    // from the transport and silently ignored.
     self.blocking_task_id = try self.loop.io.queue(.{ .PerformRead = .{ .callback = .{ .func = &read_operation_completed, .cleanup = &cleanup_resources_callback, .data = .{
         .user_data = self,
-    } }, .fd = self.fd, .fixed_file_index = self.fixed_file_index, .fixed_buffer_index = fixed_buffer_idx, .data = .{ .buffer = buffer_to_read }, .zero_copy = self.zero_copying } });
+    } }, .fd = self.fd, .fixed_file_index = self.fixed_file_index, .fixed_buffer_index = fixed_buffer_idx, .data = .{ .buffer = buffer_to_read } } });
 
     self.buffer_to_read = buffer_to_read;
     python_c.py_incref(self.parent_transport);
@@ -260,7 +262,7 @@ test "BUG-351: ReadTransport.close() after cancel() must not queue a second Canc
     var dummy_parent: python_c.PyObject = std.mem.zeroes(python_c.PyObject);
 
     var rt: ReadTransport = undefined;
-    try rt.init(loop, -1, &testBug351ReadCallback, @ptrCast(&dummy_parent), @ptrCast(&dummy_parent), &testBug351ConnectionLost, false);
+    try rt.init(loop, -1, &testBug351ReadCallback, @ptrCast(&dummy_parent), @ptrCast(&dummy_parent), &testBug351ConnectionLost);
     defer rt.deinit();
 
     // Simulate an in-flight read.
@@ -301,7 +303,7 @@ test "BUG-351: batch-dispatched read completion must not clobber a re-armed bloc
     defer loop.release();
 
     var rt: ReadTransport = undefined;
-    try rt.init(loop, -1, &testBug351ReadCallback, parent, parent, &testBug351ConnectionLost, false);
+    try rt.init(loop, -1, &testBug351ReadCallback, parent, parent, &testBug351ConnectionLost);
     defer rt.deinit();
     rt.buffer_to_read = rt.buffer;
 

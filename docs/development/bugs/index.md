@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 426 |
-| Open | 5 |
+| Fixed | 427 |
+| Open | 4 |
 | False Positive | 14 |
 | **Total** | **447** |
 
@@ -479,7 +479,7 @@ Sorted by bug number. See individual bug files for details.
 | [441](441.md) | `future.cancel(positional, msg=...)` leaks the positional message reference | Low | Fixed |
 | [442](442.md) | `add_done_callback` no-op leaks caller-transferred references | Low | Fixed |
 | [443](443.md) | `MultiConnectState.init` leaks the struct on `PyList_New` failure | Low | Fixed |
-| [444](444.md) | io/scheduling dead code and micro-issues | Low | Open |
+| [444](444.md) | io/scheduling dead code and micro-issues | Low | Fixed |
 | [445](445.md) | Dead `Record.hostname` field (written but never read in production) | Low | Fixed |
 | [446](446.md) | `handle_talyn_future_object` unwraps `future.py_loop.?` with no released/null guard (BUG-440 sibling) | Medium | Fixed |
 | [447](447.md) | Pseudo-socket `close()` never invalidates the transport — teardown closes a possibly-reused fd (mirror of BUG-427) | High | Fixed |
