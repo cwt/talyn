@@ -771,14 +771,12 @@ pub fn traverse(self: *const IO, visit: python_c.visitproc, arg: ?*anyopaque) c_
 
 pub fn deinit(self: *IO) void {
     self.set.cancel_all(self.loop) catch |err| std.log.warn("cancel_all failed: {s}", .{@errorName(err)});
-    self.set.deinit();
     var node: ?BlockingTasksSetLinkedList.Node = self.busy_sets.first;
     while (node) |n| {
         node = n.next;
 
         const set = &n.data;
         set.cancel_all(self.loop) catch |err| std.log.warn("cancel_all failed: {s}", .{@errorName(err)});
-        set.deinit();
     }
 
     // The ring may have been handed off to another thread (BUG-267). Kernel
@@ -790,13 +788,31 @@ pub fn deinit(self: *IO) void {
             self.ring.unregister_buffers() catch |err| std.log.warn("unregister_buffers failed: {s}", .{@errorName(err)});
         }
     }
-    self.buffer_pool.deinit(self.busy_sets.allocator);
-    @atomicStore([*]u8, &self.buffer_pool.buffer_memory.ptr, @ptrFromInt(0xDEADBEEF), .seq_cst); // HARD-04
 
+    // BUG-428: close the ring BEFORE freeing anything the kernel may still
+    // reference — the BlockingTasksSet nodes (inline msghdr/iovec storage
+    // for deferred submits), the registered-buffer region (pinned pages
+    // for in-flight READ_FIXED), and the fixed-file table were all freed
+    // while in-flight SQEs could still be consumed. After ring.deinit the
+    // kernel is provably done: unsubmitted SQEs are dropped without
+    // processing and every registration/pin dies with the ring.
     if (self.ring.fd >= 0) {
         self.ring.deinit();
         self.ring.fd = -1;
     }
+
+    self.set.deinit();
+    node = self.busy_sets.first;
+    while (node) |n| {
+        node = n.next;
+
+        const set = &n.data;
+        set.deinit();
+    }
+
+    self.buffer_pool.deinit(self.busy_sets.allocator);
+    @atomicStore([*]u8, &self.buffer_pool.buffer_memory.ptr, @ptrFromInt(0xDEADBEEF), .seq_cst); // HARD-04
+
     self.busy_sets.allocator.free(self.blocking_ready_tasks);
     self.fixed_file_free.deinit(self.busy_sets.allocator);
     self.busy_sets.allocator.free(self.fixed_file_table);
