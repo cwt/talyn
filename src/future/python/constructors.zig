@@ -138,7 +138,16 @@ pub fn future_init(self: ?*PythonFutureObject, args: ?PyObject, kwargs: ?PyObjec
 }
 
 pub fn future_get_loop(self: ?*PythonFutureObject) callconv(.c) ?PyObject {
-    return python_c.py_newref(self.?.py_loop);
+    // BUG-440: a `tp_new`-only Future (no __init__) has py_loop == null.
+    // py_newref(NULL) is documented NULL-safe in CPython, so the method
+    // returned NULL without an exception set -> Python raised SystemError.
+    // Raise a proper error instead: a bare Future carries no loop until
+    // init binds one.
+    if (self.?.py_loop) |py_loop| {
+        return python_c.py_newref(py_loop);
+    }
+    python_c.raise_python_runtime_error("Future object is not initialized\x00");
+    return null;
 }
 
 pub fn future_iter(self: ?*PythonFutureObject) callconv(.c) ?PyObject {

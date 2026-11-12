@@ -56,6 +56,18 @@ def test_bug369_zombie_set_exception_raises_invalid_state(zombie_future):
         zombie_future.set_exception(ValueError("x"))
 
 
+def test_bug440_zombie_get_loop_raises_instead_of_null_return(zombie_future):
+    """BUG-440: get_loop() on a tp_new-only Future (py_loop == null).
+
+    Pre-fix the method returned py_newref(NULL) — NULL-safe in CPython, so
+    it returned NULL *without setting an exception* and Python raised
+    SystemError: "... returned NULL without setting an error". It now
+    raises a proper RuntimeError instead.
+    """
+    with pytest.raises(RuntimeError):
+        zombie_future.get_loop()
+
+
 def test_bug369_gc_cycle_with_del_partner_collects_cleanly():
     """The report's reproduction skeleton: a cycle containing a finished
     Future and a __del__-bearing partner. CPython clears every cycle
