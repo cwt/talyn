@@ -327,18 +327,27 @@ pub fn stream_clear(self: ?*StreamTransportObject) callconv(.c) c_int {
         python_c.PyBuffer_Release(&py_transport.protocol_buffer);
     }
 
-    python_c.deinitialize_object_fields(py_transport, &.{"protocol_buffer"});
-    if (python_c.has_managed_dict(@ptrCast(py_transport))) {
-        python_c.PyObject_ClearManagedDict(@ptrCast(py_transport));
-    }
-    py_transport.protocol_type = undefined;
-
+    // BUG-424: run the fd/fixed-file cleanup BEFORE
+    // deinitialize_object_fields — that call decrefs and nulls every
+    // ?PyObject field including `loop`, so the cleanup used to see
+    // loop == null, skipped unregister_fixed_file, and still zeroed
+    // fixed_file_index: the bounded-table slot and its kernel fget
+    // leaked permanently on every transport that reached stream_clear
+    // without a prior cancel_and_close_fd.
+    //
+    // The unregister must still be gated on the loop's IO being alive:
+    // after Loop.release() the fixed-file table and its free list are
+    // freed, and writing into them from a GC'd transport corrupted the
+    // heap. (The slot itself is meaningless in that state — the whole
+    // table is gone with the loop.)
     const fd = py_transport.fd;
     if (fd >= 0) {
         if (py_transport.fixed_file_index != 0) {
             if (py_transport.loop) |loop_obj| {
                 const loop_data = utils.get_data_ptr(Loop, @as(*LoopObject, @ptrCast(loop_obj)));
-                loop_data.io.unregister_fixed_file(py_transport.fixed_file_index);
+                if (loop_data.initialized) {
+                    loop_data.io.unregister_fixed_file(py_transport.fixed_file_index);
+                }
             }
             py_transport.fixed_file_index = 0;
         }
@@ -347,6 +356,12 @@ pub fn stream_clear(self: ?*StreamTransportObject) callconv(.c) c_int {
         }
         py_transport.fd = -1;
     }
+
+    python_c.deinitialize_object_fields(py_transport, &.{"protocol_buffer"});
+    if (python_c.has_managed_dict(@ptrCast(py_transport))) {
+        python_c.PyObject_ClearManagedDict(@ptrCast(py_transport));
+    }
+    py_transport.protocol_type = undefined;
 
     return 0;
 }
