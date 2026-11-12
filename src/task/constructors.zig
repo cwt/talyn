@@ -128,10 +128,17 @@ pub fn task_clear(self: ?*PythonTaskObject) callconv(.c) c_int {
 
     const future_data = utils.get_data_ptr(Future, fut);
     if (!future_data.released) {
+        // BUG-420: detach BEFORE decref. The decref can synchronously run
+        // the result object's finalizer, which may re-enter Task.result()
+        // / task_clear from the GC (tp_clear re-entrancy); while
+        // future_data.result still pointed at the dying object, the
+        // re-entrant reader saw a finished future with a non-null,
+        // already-freed result. This is the same detach-first ordering
+        // future_clear was given for BUG-369.
         const _result = future_data.result;
+        future_data.result = null;
         if (_result) |res| {
             python_c.py_decref(@ptrCast(@alignCast(res)));
-            future_data.result = null;
         }
         future_data.release();
     }

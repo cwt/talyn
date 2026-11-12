@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 408 |
-| Open | 23 |
+| Fixed | 409 |
+| Open | 22 |
 | False Positive | 14 |
 | **Total** | **447** |
 
@@ -455,7 +455,7 @@ Sorted by bug number. See individual bug files for details.
 | [417](417.md) | `add_reader` wake-up quantization ~100 us under sporadic single-byte reads (min 3.2 us exists; most wakes land on a tick - reader completion wait path) | Low | Open |
 | [418](418.md) | Chained `run_in_executor` hand-off slower than stdloop (77 us vs 32 us on the audit host; locally confirmed 3x) - executor-completion wake integration | Low | Open |
 | [419](419.md) | `execute_task_throw` cancelled arm double-decrefs the `Task` (errdefer + manager `cleanup_task`) | Critical | Fixed |
-| [420](420.md) | `task_clear` decrefs `result` before nulling (re-entrant finalizer UAF) | High | Open |
+| [420](420.md) | `task_clear` decrefs `result` before nulling (re-entrant finalizer UAF) | High | Fixed |
 | [421](421.md) | DNS resolv.conf short `read()` parses uninitialized bytes | High | Fixed |
 | [422](422.md) | BTree split OOM leaves an overfull node (next insert out-of-bounds) | High | Fixed |
 | [423](423.md) | `interleave_address_list` integer underflow (panic / mis-order) | High | Fixed |
