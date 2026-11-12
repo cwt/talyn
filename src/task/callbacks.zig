@@ -633,7 +633,13 @@ pub fn execute_task_throw(data: *const CallbackManager.CallbackData) !void {
             return;
         };
         const fut = utils.get_data_ptr(Future, &task.fut);
-        errdefer python_c.py_decref(@ptrCast(task));
+        // BUG-419: no errdefer here — the executor contract is
+        // self-release on success only; on error the manager's cleanup_task
+        // owns the single decref (exactly what BUG-273 established for the
+        // non-cancelled arm below). The old errdefer double-freed the
+        // PythonTaskObject whenever future_fast_set_exception failed during
+        // the loop-shutdown drain (call_done_callbacks refuses once
+        // !loop.initialized, or the future is already resolved).
         try Future.Python.Result.future_fast_set_exception(&task.fut, fut, exception);
         python_c.py_decref(@ptrCast(task));
         return;
