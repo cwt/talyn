@@ -271,9 +271,14 @@ pub const DynamicRingBuffer = struct {
     }
 
     pub fn reset(self: *Self) void {
-        for (self.executed) |*e| {
-            e.store(false, .release);
-        }
+        // BUG-418: O(1) reset. The old implementation swept the executed
+        // flags across the WHOLE capacity (~524288 slots by default,
+        // ~100µs of atomic stores per call) and ran on every idle tick —
+        // the dominant cost of the executor-completion wake path. The
+        // flags are only ever read for the live span [read_idx,
+        // write_idx) (traverse/grow), which is empty after the index
+        // reset, and every push re-initializes its own slot's flag, so
+        // the sweep was pure waste.
         @atomicStore(usize, &self.read_idx, 0, .release);
         @atomicStore(usize, &self.write_idx, 0, .release);
     }
@@ -308,6 +313,7 @@ pub const DynamicRingBuffer = struct {
 };
 
 pub const ReadyTasksQueueCapacity = 524288;
+
 
 inline fn get_adaptive_yield_threshold(initial_count: usize) usize {
     if (initial_count <= 64) {
@@ -505,11 +511,45 @@ test "DynamicRingBuffer push and execute" {
     rb.reset();
     try std.testing.expectEqual(@as(usize, 0), rb.read_idx);
     try std.testing.expectEqual(@as(usize, 0), rb.write_idx);
-    var set_count: usize = 0;
-    for (rb.executed) |*e| {
-        if (e.load(.acquire)) set_count += 1;
+    // BUG-418: reset() is O(1) — only the indices reset. The stale
+    // `executed` flags outside the (now empty) live span are never read:
+    // traverse() visits only [read_idx, write_idx) and every push
+    // re-initializes its own slot's flag. Verify traverse observes
+    // nothing after the reset.
+    var visit_count: usize = 0;
+    const vret = rb.traverse(mock_visit, @ptrCast(&visit_count));
+    try std.testing.expectEqual(@as(c_int, 0), vret);
+    try std.testing.expectEqual(@as(usize, 0), visit_count);
+}
+
+test "BUG-418: ready-queue reset is O(1), not a capacity sweep" {
+    // The ready-tasks queues default to ReadyTasksQueueCapacity (524288)
+    // slots. The old reset() swept every `executed` flag across the whole
+    // capacity on every idle tick (~100µs per call) — the dominant cost of
+    // the executor-completion wake path. 1000 resets must stay in the
+    // millisecond range.
+    var dummy_count: usize = 0;
+    var rb: DynamicRingBuffer = undefined;
+    try rb.init(std.testing.allocator, 256);
+    defer rb.deinit();
+    while (rb.capacity < ReadyTasksQueueCapacity) try rb.grow();
+
+    const callback = Callback{ .func = &test_callback, .cleanup = null, .data = .{ .user_data = @ptrCast(@alignCast(&dummy_count)) } };
+    try rb.push(callback);
+    _ = try execute_dynamic_ring_buffer(&rb, null, null, false, null, null);
+
+    var ts0: std.os.linux.timespec = undefined;
+    _ = std.os.linux.clock_gettime(.MONOTONIC, &ts0);
+    const t0_ns: i64 = @as(i64, @intCast(ts0.sec)) * 1_000_000_000 + @as(i64, @intCast(ts0.nsec));
+    for (0..1000) |_| {
+        rb.reset();
     }
-    try std.testing.expectEqual(@as(usize, 0), set_count);
+    var ts1: std.os.linux.timespec = undefined;
+    _ = std.os.linux.clock_gettime(.MONOTONIC, &ts1);
+    const t1_ns: i64 = @as(i64, @intCast(ts1.sec)) * 1_000_000_000 + @as(i64, @intCast(ts1.nsec));
+
+    // Pre-fix: 1000 x ~120µs ≈ 120ms. Post-fix: microseconds.
+    try std.testing.expect((t1_ns - t0_ns) < 50_000_000);
 }
 
 test "DynamicRingBuffer handle exceptions" {
