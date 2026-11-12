@@ -182,6 +182,12 @@ pub const MultiConnectState = struct {
 
     pub fn init(allocator: std.mem.Allocator, connection_data: *SocketConnectionData, all_errors: bool) !*MultiConnectState {
         const self = try allocator.create(MultiConnectState);
+        // BUG-443: if the PyList_New below fails (all_errors mode), the
+        // freshly allocated struct used to leak — no destroy on the error
+        // return. The payload only stores borrowed pointers and
+        // `exceptions` is still null here, so destroying the struct is the
+        // complete cleanup for this window.
+        errdefer allocator.destroy(self);
         self.* = .{ .connection_data = connection_data, .pending = 0, .succeeded = false, .timer_scheduled = false, .timer_fired = false, .failed_count = 0, .task_ids = .empty, .all_errors = all_errors, .python_payload = .{
             .module_ptr = @ptrCast(connection_data.creation_data.loop.?),
             .callback_ptr = @ptrCast(connection_data.creation_data.future.?),

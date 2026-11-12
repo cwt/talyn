@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 404 |
-| Open | 29 |
+| Fixed | 405 |
+| Open | 28 |
 | False Positive | 14 |
 | **Total** | **447** |
 
@@ -478,7 +478,7 @@ Sorted by bug number. See individual bug files for details.
 | [440](440.md) | `Future.get_loop()` returns NULL without an exception on a `tp_new`-only Future | Low | Open |
 | [441](441.md) | `future.cancel(positional, msg=...)` leaks the positional message reference | Low | Open |
 | [442](442.md) | `add_done_callback` no-op leaks caller-transferred references | Low | Open |
-| [443](443.md) | `MultiConnectState.init` leaks the struct on `PyList_New` failure | Low | Open |
+| [443](443.md) | `MultiConnectState.init` leaks the struct on `PyList_New` failure | Low | Fixed |
 | [444](444.md) | io/scheduling dead code and micro-issues | Low | Open |
 | [445](445.md) | Dead `Record.hostname` field (written but never read in production) | Low | Fixed |
 | [446](446.md) | `handle_talyn_future_object` unwraps `future.py_loop.?` with no released/null guard (BUG-440 sibling) | Medium | Open |
