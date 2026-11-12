@@ -35,6 +35,7 @@ pub fn future_cancel(self: ?*PythonFutureObject, args: ?[*]?PyObject, nargs: isi
     const future_data = utils.get_data_ptr(Future, instance);
 
     var cancel_msg_py_object: ?PyObject = null;
+    var cancel_msg_kwarg: ?PyObject = null;
     if (nargs > 1) {
         python_c.raise_python_value_error("Invalid number of arguments\x00");
         return null;
@@ -48,11 +49,27 @@ pub fn future_cancel(self: ?*PythonFutureObject, args: ?[*]?PyObject, nargs: isi
         knames,
         args.? + kwargs_start,
         &.{"msg\x00"},
-        &.{&cancel_msg_py_object},
+        &.{&cancel_msg_kwarg},
     ) catch |err| {
         python_c.py_xdecref(cancel_msg_py_object);
         return utils.handle_zig_function_error(err, null);
     };
+
+    // BUG-441: parse_vector_call_kwargs unconditionally newrefs into its
+    // slot, so feeding it the positional slot overwrote (leaked) the owned
+    // positional message reference. Use a separate slot and reject the
+    // positional+keyword collision exactly like CPython
+    // (TypeError: got multiple values for argument 'msg').
+    if (cancel_msg_kwarg != null and cancel_msg_py_object != null) {
+        python_c.py_xdecref(cancel_msg_py_object);
+        python_c.py_xdecref(cancel_msg_kwarg);
+        python_c.raise_python_type_error("cancel() got multiple values for argument 'msg'\x00");
+        return null;
+    }
+    if (cancel_msg_kwarg != null) {
+        cancel_msg_py_object = cancel_msg_kwarg;
+        cancel_msg_kwarg = null;
+    }
 
     const ret = future_fast_cancel(instance, future_data, cancel_msg_py_object) catch |err| {
         python_c.py_xdecref(cancel_msg_py_object);

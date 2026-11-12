@@ -510,6 +510,31 @@ def test_future_cancel_msg_no_reference_leak() -> None:
         loop.close()
 
 
+def test_future_cancel_positional_and_keyword_msg_collision() -> None:
+    """BUG-441: future.cancel(x, msg=y) used to overwrite the owned
+    positional message reference with the kwarg newref (one reference
+    leaked per call) instead of rejecting the duplicate argument the way
+    CPython does."""
+    loop = Loop()
+    try:
+        future = Future(loop=loop)
+        sentinel = "positional-msg"
+        ref_before = sys.getrefcount(sentinel)
+
+        with pytest.raises(TypeError):
+            future.cancel(sentinel, msg="kwarg-msg")
+
+        # The owned positional reference must not leak across the failed
+        # call.
+        assert sys.getrefcount(sentinel) == ref_before
+
+        # The failed call leaves the future pending and cancelable.
+        future.cancel(msg="kwarg-msg")
+        assert future.cancelled()
+    finally:
+        loop.close()
+
+
 def test_future_cancelled_error_args() -> None:
     loop = Loop()
     try:

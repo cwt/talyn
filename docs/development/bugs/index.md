@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 412 |
-| Open | 19 |
+| Fixed | 413 |
+| Open | 18 |
 | False Positive | 14 |
 | **Total** | **447** |
 
@@ -476,7 +476,7 @@ Sorted by bug number. See individual bug files for details.
 | [438](438.md) | `accept_callback` uses a stale `should_reenqueue` after `connection_made` may close the server | Low | Open |
 | [439](439.md) | Cancelled read completions do not release `protocol_buffer` | Low | Open |
 | [440](440.md) | `Future.get_loop()` returns NULL without an exception on a `tp_new`-only Future | Low | Fixed |
-| [441](441.md) | `future.cancel(positional, msg=...)` leaks the positional message reference | Low | Open |
+| [441](441.md) | `future.cancel(positional, msg=...)` leaks the positional message reference | Low | Fixed |
 | [442](442.md) | `add_done_callback` no-op leaks caller-transferred references | Low | Open |
 | [443](443.md) | `MultiConnectState.init` leaks the struct on `PyList_New` failure | Low | Fixed |
 | [444](444.md) | io/scheduling dead code and micro-issues | Low | Open |
