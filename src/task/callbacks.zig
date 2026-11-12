@@ -389,7 +389,16 @@ inline fn handle_talyn_future_object(task: *Task.PythonTaskObject, future: *Futu
     const allocator = loop_data.allocator;
     const future_data = utils.get_data_ptr(Future, future);
 
-    const py_loop: *Loop.Python.LoopObject = @ptrCast(future.py_loop.?);
+    // BUG-446: a tp_new-only (or tp_cleared) Future has py_loop == null;
+    // the unchecked .? unwrap panicked (Debug/ReleaseSafe) or read garbage
+    // (ReleaseFast) inside the task-stepping path instead of raising.
+    // Route it through the same error-event machinery the cross-loop case
+    // uses below.
+    const py_loop_raw = future.py_loop orelse {
+        try create_new_py_exception_and_add_event(loop_data, allocator, "Task {s} got a Future {s} that is not attached to a loop\x00", task, @as(PyObject, @ptrCast(future)));
+        return;
+    };
+    const py_loop: *Loop.Python.LoopObject = @ptrCast(py_loop_raw);
     if (loop_data != utils.get_data_ptr(Loop, py_loop)) {
         try create_new_py_exception_and_add_event(loop_data, allocator, "Task {s} and Future {s} are not in the same loop\x00", task, @as(PyObject, @ptrCast(future)));
         return;

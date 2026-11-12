@@ -68,6 +68,22 @@ def test_bug440_zombie_get_loop_raises_instead_of_null_return(zombie_future):
         zombie_future.get_loop()
 
 
+def test_bug446_task_awaiting_zombie_future_raises_instead_of_crash(zombie_future):
+    """BUG-446: handle_talyn_future_object unwrapped future.py_loop.? with
+    no released/null guard — awaiting a tp_new-only Future from a task
+    panicked inside the task-stepping path (unwrap panic in
+    Debug/ReleaseSafe, UB in ReleaseFast) instead of raising."""
+    async def main():
+        async def waiter():
+            await zombie_future
+
+        task = asyncio.create_task(waiter())
+        outcome = await asyncio.gather(task, return_exceptions=True)
+        assert isinstance(outcome[0], RuntimeError), outcome
+
+    talyn.run(main())
+
+
 def test_bug369_gc_cycle_with_del_partner_collects_cleanly():
     """The report's reproduction skeleton: a cycle containing a finished
     Future and a __del__-bearing partner. CPython clears every cycle

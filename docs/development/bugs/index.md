@@ -28,8 +28,8 @@ Sorted by bug number. See individual bug files for details.
 
 | Status | Count |
 |---|---:|
-| Fixed | 411 |
-| Open | 20 |
+| Fixed | 412 |
+| Open | 19 |
 | False Positive | 14 |
 | **Total** | **447** |
 
@@ -481,7 +481,7 @@ Sorted by bug number. See individual bug files for details.
 | [443](443.md) | `MultiConnectState.init` leaks the struct on `PyList_New` failure | Low | Fixed |
 | [444](444.md) | io/scheduling dead code and micro-issues | Low | Open |
 | [445](445.md) | Dead `Record.hostname` field (written but never read in production) | Low | Fixed |
-| [446](446.md) | `handle_talyn_future_object` unwraps `future.py_loop.?` with no released/null guard (BUG-440 sibling) | Medium | Open |
+| [446](446.md) | `handle_talyn_future_object` unwraps `future.py_loop.?` with no released/null guard (BUG-440 sibling) | Medium | Fixed |
 | [447](447.md) | Pseudo-socket `close()` never invalidates the transport — teardown closes a possibly-reused fd (mirror of BUG-427) | High | Open |
 | [448](448.md) | BTree `replace()` shares BUG-422's swallow (`insert_in_node(...) catch return null`) | Medium | Fixed |
 
