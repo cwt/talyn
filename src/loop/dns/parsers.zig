@@ -77,11 +77,13 @@ pub fn parse_name(full_data: []const u8, initial_offset: usize, allocator: std.m
     var offset = initial_offset;
     var jump_offset: ?usize = null;
     var visited_pointers: usize = 0;
+    var terminated = false;
     const max_pointers = 10;
 
     while (offset < full_data.len) {
         const byte = full_data[offset];
         if (byte == 0) {
+            terminated = true;
             offset += 1;
             break;
         }
@@ -101,6 +103,9 @@ pub fn parse_name(full_data: []const u8, initial_offset: usize, allocator: std.m
             offset = target;
             continue;
         }
+        // RFC 1035: bits 7..6 of a label length byte must be 00 (standard label)
+        // or 11 (compression pointer); 01 and 10 are extended/reserved.
+        if ((byte & 0xC0) != 0) return error.MalformedDnsResponse;
 
         if (offset + 1 + byte > full_data.len) return error.MalformedDnsResponse;
         if (result.items.len > 0) try result.append(allocator, '.');
@@ -108,7 +113,35 @@ pub fn parse_name(full_data: []const u8, initial_offset: usize, allocator: std.m
         offset += @as(usize, byte) + 1;
     }
 
+    if (!terminated) return error.MalformedDnsResponse;
+
     return try result.toOwnedSlice(allocator);
+}
+
+test "parse_name rejects missing terminator and reserved label bits (BUG-436)" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    // Missing 0x00 root terminator at end of input.
+    try testing.expectError(error.MalformedDnsResponse, parse_name("\x03foo", 0, allocator));
+    // Initial offset at/past EOF.
+    try testing.expectError(error.MalformedDnsResponse, parse_name("\x00", 1, allocator));
+    // Valid root label is accepted and returns empty slice.
+    const root_name = try parse_name("\x00", 0, allocator);
+    defer allocator.free(root_name);
+    try testing.expectEqual(@as(usize, 0), root_name.len);
+
+    // Reserved/extended label types (01xx_xxxx / 10xx_xxxx) must be rejected
+    // even when enough trailing bytes exist to satisfy the low 6 bits.
+    var reserved_40 = std.mem.zeroes([70]u8);
+    reserved_40[0] = 0x41;
+    reserved_40[66] = 0x00;
+    try testing.expectError(error.MalformedDnsResponse, parse_name(&reserved_40, 0, allocator));
+
+    var reserved_80 = std.mem.zeroes([140]u8);
+    reserved_80[0] = 0x81;
+    reserved_80[130] = 0x00;
+    try testing.expectError(error.MalformedDnsResponse, parse_name(&reserved_80, 0, allocator));
 }
 
 /// Resolve a hostname to one or more addresses synchronously.

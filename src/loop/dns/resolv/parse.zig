@@ -23,6 +23,8 @@ pub fn skip_name(data: []const u8, initial_offset: usize) ?usize {
             if (offset + 2 > data.len) return null;
             return offset + 2;
         }
+        if ((byte & 0xC0) != 0) return null;
+        if (offset + 1 + byte > data.len) return null;
         offset += @as(usize, byte) + 1;
     }
     return null;
@@ -289,6 +291,15 @@ test "skip_name: malformed" {
     // Truncated compression pointer
     const data3 = "\xC0";
     try std.testing.expectEqual(@as(?usize, null), skip_name(data3, 0));
+
+    // Reserved / extended label bits (01xx_xxxx / 10xx_xxxx)
+    var data4 = std.mem.zeroes([70]u8);
+    data4[0] = 0x41;
+    try std.testing.expectEqual(@as(?usize, null), skip_name(&data4, 0));
+
+    var data5 = std.mem.zeroes([140]u8);
+    data5[0] = 0x81;
+    try std.testing.expectEqual(@as(?usize, null), skip_name(&data5, 0));
 }
 
 test "parse_individual_dns_result: truncated record" {
