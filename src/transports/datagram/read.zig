@@ -86,16 +86,18 @@ fn read_completed(data: *const CallbackManager.CallbackData) !void {
     const rd: *ReadData = @ptrCast(@alignCast(data.user_data.?));
     const self = rd.transport;
     if (data.cancelled() or self.closed) {
-        cleanup_read(@ptrCast(@alignCast(rd)));
         // BUG-431: datagram_close only cancels the in-flight read; the
         // receive buffer / registered-buffer lease used to be held until
         // dealloc, accumulating 64 KiB buffers and pool slots for every
         // closed-but-not-collected endpoint. The kernel is done with the
         // buffer now (the terminal completion just arrived) and a closed
         // transport never re-arms, so release the lease / heap buffer
-        // here. cleanup_resources is idempotent (indices are zeroed after
+        // here BEFORE cleanup_read drops the read's reference to `self`
+        // (which can trigger datagram_dealloc and free `self`).
+        // cleanup_resources is idempotent (indices are zeroed after
         // release), so the later dealloc/clear call is a no-op.
         DatagramTransport.cleanup_resources(self);
+        cleanup_read(@ptrCast(@alignCast(rd)));
         return;
     }
 

@@ -596,3 +596,32 @@ def test_bug361_datagram_endpoint_port_bounds():
             )
 
     talyn.run(main())
+
+
+def test_bug431_close_releases_resources_before_last_ref_drop():
+    """BUG-431: read_completed on cancelled/closed read used to call
+    cleanup_read (dropping the read's ref to transport -> datagram_dealloc ->
+    tp_free) BEFORE DatagramTransport.cleanup_resources(self) (UAF when the
+    read arm held the last strong reference to the transport)."""
+    import gc
+
+    class MinimalProtocol(asyncio.DatagramProtocol):
+        pass
+
+    async def main():
+        loop = asyncio.get_running_loop()
+        # Exceed the 16-slot registered-buffer pool across repeated closes
+        # where Python drops every reference to the transport immediately.
+        for _ in range(32):
+            t, _ = await loop.create_datagram_endpoint(
+                MinimalProtocol, local_addr=("127.0.0.1", 0)
+            )
+            t.close()
+            del t
+            gc.collect()
+            await asyncio.sleep(0)
+
+        await asyncio.sleep(0.05)
+        gc.collect()
+
+    talyn.run(main())
