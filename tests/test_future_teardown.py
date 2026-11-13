@@ -68,6 +68,16 @@ def test_bug440_zombie_get_loop_raises_instead_of_null_return(zombie_future):
         zombie_future.get_loop()
 
 
+def test_bug440_zombie_task_get_name_returns_none():
+    """BUG-440 sibling: Task.__new__(Task).get_name() unwrapped
+    fut.py_loop.? when no explicit name was set, crashing with SIGSEGV.
+    Match CPython _CTask.__new__(_CTask).get_name() -> None."""
+    from talyn.talyn_zig import Task as ZigTask
+
+    zombie_task = ZigTask.__new__(ZigTask)
+    assert zombie_task.get_name() is None
+
+
 def test_bug446_task_awaiting_zombie_future_raises_instead_of_crash(zombie_future):
     """BUG-446: handle_talyn_future_object unwrapped future.py_loop.? with
     no released/null guard — awaiting a tp_new-only Future from a task
