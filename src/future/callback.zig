@@ -55,21 +55,21 @@ pub fn InlineQueue(comptime T: type, comptime N: usize) type {
         heap: Heap = .empty,
 
         pub inline fn items(self: *const Self) []const T {
-            return if (self.heap.items.len > 0)
+            return if (self.heap.capacity > 0)
                 self.heap.items
             else
                 self.inline_buf[0..self.inline_len];
         }
 
         pub inline fn itemsMut(self: *Self) []T {
-            return if (self.heap.items.len > 0)
+            return if (self.heap.capacity > 0)
                 self.heap.items
             else
                 self.inline_buf[0..self.inline_len];
         }
 
         pub fn append(self: *Self, alloc: std.mem.Allocator, value: T) !void {
-            if (self.heap.items.len > 0) {
+            if (self.heap.capacity > 0) {
                 try self.heap.append(alloc, value);
                 return;
             }
@@ -85,17 +85,16 @@ pub fn InlineQueue(comptime T: type, comptime N: usize) type {
             heap.appendSliceAssumeCapacity(self.inline_buf[0..self.inline_len]);
             heap.appendAssumeCapacity(value);
             self.heap = heap;
-            // BUG-434: clear the inline span — items()/itemsMut() are only
-            // heap-authoritative while heap.items.len > 0; with a stale
-            // inline_len the drained heap fell back to the already-owned
-            // inline entries (double-pop / double-decref).
+            // BUG-434: once promoted (`self.heap.capacity > 0`), heap mode
+            // stays authoritative even across drains to empty (`items.len == 0`)
+            // so future appends do not fall back inline and leak `self.heap`.
             self.inline_len = 0;
         }
 
         pub fn pop(self: *Self) T {
             const items_mut = self.itemsMut();
             const value = items_mut[items_mut.len - 1];
-            if (self.heap.items.len > 0) {
+            if (self.heap.capacity > 0) {
                 self.heap.items.len -= 1;
             } else {
                 self.inline_len -= 1;
@@ -478,4 +477,36 @@ test "InlineQueue promotion while heap mode stays authoritative" {
         seen += 1;
     }
     try testing.expectEqual(@as(usize, 3), seen);
+}
+
+test "InlineQueue stays in heap mode after draining to empty (BUG-434)" {
+    const testing = std.testing;
+    const Q = InlineQueue(u32, 2);
+    var q: Q = .empty;
+    defer q.deinit(testing.allocator);
+
+    // Promote from inline (cap 2) to heap.
+    try q.append(testing.allocator, 10);
+    try q.append(testing.allocator, 20);
+    try q.append(testing.allocator, 30);
+    try testing.expect(q.heap.capacity >= 3);
+
+    // Drain completely to empty.
+    try testing.expectEqual(@as(u32, 30), q.pop());
+    try testing.expectEqual(@as(u32, 20), q.pop());
+    try testing.expectEqual(@as(u32, 10), q.pop());
+    try testing.expectEqual(@as(usize, 0), q.items().len);
+    try testing.expect(q.heap.capacity >= 3);
+
+    // Re-appending 1 item and then >N items must stay in the existing heap
+    // rather than falling back to inline_buf and leaking the old heap buffer
+    // on a second promotion (`testing.allocator` verifies zero leaks).
+    try q.append(testing.allocator, 40);
+    try testing.expectEqual(@as(usize, 0), q.inline_len);
+    try testing.expectEqual(@as(usize, 1), q.heap.items.len);
+    try testing.expectEqualSlices(u32, &.{40}, q.items());
+
+    try q.append(testing.allocator, 50);
+    try q.append(testing.allocator, 60);
+    try testing.expectEqualSlices(u32, &.{ 40, 50, 60 }, q.items());
 }
