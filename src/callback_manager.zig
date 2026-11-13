@@ -314,7 +314,6 @@ pub const DynamicRingBuffer = struct {
 
 pub const ReadyTasksQueueCapacity = 524288;
 
-
 inline fn get_adaptive_yield_threshold(initial_count: usize) usize {
     if (initial_count <= 64) {
         return 64;

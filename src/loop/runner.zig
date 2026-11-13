@@ -13,7 +13,6 @@ const lock = @import("../utils/lock.zig");
 // tasks are heap pointers and can never be 1.
 const watchdog_user_data: u64 = 1;
 
-
 const CallbackManager = @import("callback_manager");
 const Loop = @import("main.zig");
 const Future = @import("../future/main.zig");
