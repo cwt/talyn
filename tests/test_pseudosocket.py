@@ -372,6 +372,86 @@ def test_pseudosocket_getsockname_after_close_raises():
     talyn.run(main())
 
 
+def test_pseudosocket_dup_dealloc_closes_fd():
+    """BUG-427/BUG-447 follow-up: PseudoSocketType previously had no tp_dealloc,
+    so dropping a sock.dup() object without explicit .close() leaked its
+    dup'd file descriptor forever."""
+    import errno
+    import gc
+    import os
+
+    async def main():
+        loop = asyncio.get_running_loop()
+        server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_sock.bind(("127.0.0.1", 0))
+        server_sock.listen(1)
+        addr = server_sock.getsockname()
+
+        def run_server():
+            client, _ = server_sock.accept()
+            client.close()
+
+        server_task = loop.run_in_executor(None, run_server)
+        _, writer = await asyncio.open_connection(*addr)
+        try:
+            sock = writer.transport.get_extra_info("socket")
+            dup_fds = []
+            for _ in range(8):
+                d = sock.dup()
+                fd = d.fileno()
+                assert fd > 0
+                os.fstat(fd)
+                dup_fds.append(fd)
+                del d
+            gc.collect()
+            for fd in dup_fds:
+                with pytest.raises(OSError) as exc_info:
+                    os.fstat(fd)
+                assert exc_info.value.errno == errno.EBADF
+        finally:
+            writer.close()
+            await writer.wait_closed()
+            await server_task
+            server_sock.close()
+
+    talyn.run(main())
+
+
+def test_stream_transport_closed_get_extra_info_socket_returns_default():
+    """BUG-427 follow-up: StreamTransport.get_extra_info('socket') on a
+    closed transport where no socket had been cached previously ran dup(-1)
+    and raised ValueError instead of returning the default value."""
+
+    async def main():
+        loop = asyncio.get_running_loop()
+        server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_sock.bind(("127.0.0.1", 0))
+        server_sock.listen(1)
+        addr = server_sock.getsockname()
+
+        def run_server():
+            client, _ = server_sock.accept()
+            client.close()
+
+        server_task = loop.run_in_executor(None, run_server)
+        _, writer = await asyncio.open_connection(*addr)
+        transport = writer.transport
+        writer.close()
+        await writer.wait_closed()
+        await server_task
+        server_sock.close()
+
+        assert transport.get_extra_info("socket") is None
+        assert transport.get_extra_info("peername") is None
+        assert transport.get_extra_info("sockname") is None
+        sentinel = object()
+        assert transport.get_extra_info("socket", sentinel) is sentinel
+        assert transport.get_extra_info("peername", sentinel) is sentinel
+        assert transport.get_extra_info("sockname", sentinel) is sentinel
+
+    talyn.run(main())
+
+
 def test_pseudosocket_setsockopt_out_of_range_raises():
     """BUG-324: out-of-range level/optname/value integers must raise
     ValueError instead of panicking (Debug/ReleaseSafe) or silently

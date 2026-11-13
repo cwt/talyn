@@ -95,8 +95,10 @@ fn pseudosocket_setblocking(self: ?*PseudoSocketObject, _: ?PyObject) callconv(.
 pub fn invalidate_and_close(self: *PseudoSocketObject) void {
     if (!self.closed) {
         self.closed = true;
-        _ = std.os.linux.close(self.fd);
-        self.fd = -1;
+        if (self.fd >= 0) {
+            _ = std.os.linux.close(self.fd);
+            self.fd = -1;
+        }
     }
 }
 
@@ -282,10 +284,18 @@ const PseudoSocketMethods = [_]python_c.PyMethodDef{ .{ .ml_name = "fileno\x00",
 
 const PseudoSocketGetSet = [_]python_c.PyGetSetDef{ .{ .name = "family\x00", .get = @ptrCast(&pseudosocket_get_family), .set = null, .doc = "Socket family\x00", .closure = null }, .{ .name = "type\x00", .get = @ptrCast(&pseudosocket_get_type), .set = null, .doc = "Socket type\x00", .closure = null }, .{ .name = "proto\x00", .get = @ptrCast(&pseudosocket_get_proto), .set = null, .doc = "Socket protocol\x00", .closure = null }, .{ .name = null, .get = null, .set = null, .doc = null, .closure = null } };
 
+fn pseudosocket_dealloc(self: ?*PseudoSocketObject) callconv(.c) void {
+    const instance = self.?;
+    invalidate_and_close(instance);
+    const @"type" = python_c.get_type(@ptrCast(instance)) orelse return;
+    @"type".tp_free.?(@ptrCast(instance));
+}
+
 pub var PseudoSocketType = python_c.PyTypeObject{
     .tp_name = "talyn.PseudoSocket\x00",
     .tp_basicsize = @sizeOf(PseudoSocketObject),
     .tp_flags = python_c.Py_TPFLAGS_DEFAULT,
+    .tp_dealloc = @ptrCast(&pseudosocket_dealloc),
     .tp_methods = @constCast(&PseudoSocketMethods),
     .tp_getset = @constCast(&PseudoSocketGetSet),
 };

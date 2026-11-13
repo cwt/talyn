@@ -52,6 +52,27 @@ pub fn invalidate_socket(self: *StreamTransportObject) void {
     }
 }
 
+fn get_or_query_sockaddr(
+    self: *StreamTransportObject,
+    cached: *?PyObject,
+    method_name: [:0]const u8,
+    default_value: PyObject,
+) !PyObject {
+    if (cached.*) |py_val| {
+        return python_c.py_newref(py_val);
+    }
+    if (self.fd < 0) {
+        return python_c.py_newref(default_value);
+    }
+    const socket = self.socket orelse try create_socket_instance(self);
+    const func = python_c.PyObject_GetAttrString(socket, method_name.ptr) orelse return error.PythonError;
+    defer python_c.py_decref(func);
+
+    const result = python_c.PyObject_CallNoArgs(func) orelse return error.PythonError;
+    cached.* = python_c.py_newref(result);
+    return result;
+}
+
 inline fn z_transport_get_extra_info(self: *StreamTransportObject, args: []?PyObject, knames: ?PyObject) !PyObject {
     if (args.len < 1) {
         python_c.raise_python_type_error("get_extra_info() missing required argument 'name'");
@@ -89,44 +110,18 @@ inline fn z_transport_get_extra_info(self: *StreamTransportObject, args: []?PyOb
     if (std.mem.eql(u8, name, "socket")) {
         if (self.socket) |py_sock| {
             result = python_c.py_newref(py_sock);
+        } else if (self.fd < 0) {
+            // BUG-427: transport already closed its fd before any caller
+            // cached a PseudoSocket — return default instead of dup(-1).
+            result = python_c.py_newref(default_value);
         } else {
             result = try create_socket_instance(self);
             python_c.py_incref(result);
         }
     } else if (std.mem.eql(u8, name, "peername")) {
-        if (self.peername) |py_peername| {
-            result = python_c.py_newref(py_peername);
-        } else {
-            var socket: PyObject = undefined;
-            if (self.socket) |py_sock| {
-                socket = py_sock;
-            } else {
-                socket = try create_socket_instance(self);
-            }
-
-            const getpeername_func = python_c.PyObject_GetAttrString(socket, "getpeername\x00") orelse return error.PythonError;
-            defer python_c.py_decref(getpeername_func);
-
-            result = python_c.PyObject_CallNoArgs(getpeername_func) orelse return error.PythonError;
-            self.peername = python_c.py_newref(result);
-        }
+        result = try get_or_query_sockaddr(self, &self.peername, "getpeername\x00", default_value);
     } else if (std.mem.eql(u8, name, "sockname")) {
-        if (self.sockname) |py_sockname| {
-            result = python_c.py_newref(py_sockname);
-        } else {
-            var socket: PyObject = undefined;
-            if (self.socket) |py_sock| {
-                socket = py_sock;
-            } else {
-                socket = try create_socket_instance(self);
-            }
-
-            const getsockname_func = python_c.PyObject_GetAttrString(socket, "getsockname\x00") orelse return error.PythonError;
-            defer python_c.py_decref(getsockname_func);
-
-            result = python_c.PyObject_CallNoArgs(getsockname_func) orelse return error.PythonError;
-            self.sockname = python_c.py_newref(result);
-        }
+        result = try get_or_query_sockaddr(self, &self.sockname, "getsockname\x00", default_value);
     } else if (std.mem.eql(u8, name, "writev_count")) {
         const write_transport = utils.get_data_ptr2(@import("../write_transport.zig"), "write_transport", self);
         result = python_c.PyLong_FromUnsignedLongLong(@intCast(write_transport.writev_count)) orelse return error.PythonError;
