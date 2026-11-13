@@ -155,6 +155,29 @@ pub fn on_query_sent(data: *const CallbackManager.CallbackData) !void {
     }
 }
 
+/// Continue reading responses for `server_data`, or finish resolution once
+/// all queries on this nameserver are accounted for (only marking the lookup
+/// resolved when this server has answers or is the last outstanding server).
+fn finish_or_continue_response_read(server_data: *ServerQueryData) !void {
+    const control_data = server_data.control_data;
+    if (server_data.responses_received < server_data.queries.len and !control_data.resolved) {
+        try queue_next_response_read(server_data);
+    } else {
+        if (server_data.results.items.len > 0 or server_data.ptr_results.items.len > 0 or should_fail_resolution_on_server_finish(control_data)) {
+            try mark_resolved_and_execute_user_callbacks(server_data);
+        }
+        server_data.release();
+    }
+}
+
+/// Consume at most one response credit for an error/malformed packet on
+/// `matched_slot` and either wait for the remaining queries or finalize.
+fn reject_slot_response_and_continue(server_data: *ServerQueryData, matched_slot: ?*QuerySlot) !void {
+    if (matched_slot) |slot| slot.answered = true;
+    server_data.responses_received += 1;
+    try finish_or_continue_response_read(server_data);
+}
+
 pub fn process_dns_response(data: *const CallbackManager.CallbackData) !void {
     const io_uring_err = data.io_uring_err();
     const io_uring_res = data.io_uring_res();
@@ -198,6 +221,21 @@ pub fn process_dns_response(data: *const CallbackManager.CallbackData) !void {
             }
         }
 
+        if (matched_slot) |slot| {
+            if (slot.answered) {
+                // BUG-433: ignore duplicate/retransmitted UDP replies for an
+                // already-answered QuerySlot so they cannot append duplicate
+                // records, credit the candidate twice, or prematurely advance
+                // `responses_received` to `queries.len`.
+                try finish_or_continue_response_read(server_data);
+                return;
+            }
+        }
+
+        if (matched_slot != null and bytes < 12) {
+            try reject_slot_response_and_continue(server_data, matched_slot);
+            return;
+        }
         if (matched_slot != null and bytes >= 12) {
             // BUG-46: Validate the response flags.
             //   - QR bit (bit 7 of byte 2) must be 1 (this is a response, not a query).
@@ -212,18 +250,8 @@ pub fn process_dns_response(data: *const CallbackManager.CallbackData) !void {
             const opcode = (flags >> 11) & 0x0F;
             const rcode = flags & 0x000F;
             if (!qr or opcode != 0 or rcode != 0) {
-                // Invalid flags: silently drop this response. We still
-                // count it as received (so the wait loop can proceed),
-                // but we don't try to parse answers.
-                server_data.responses_received += 1;
-                if (server_data.responses_received < server_data.queries.len and !control_data.resolved) {
-                    try queue_next_response_read(server_data);
-                } else {
-                    if (server_data.results.items.len > 0 or server_data.ptr_results.items.len > 0 or should_fail_resolution_on_server_finish(control_data)) {
-                        try mark_resolved_and_execute_user_callbacks(server_data);
-                    }
-                    server_data.release();
-                }
+                // Invalid flags: consume this slot once without parsing answers.
+                try reject_slot_response_and_continue(server_data, matched_slot);
                 return;
             }
 
@@ -234,15 +262,7 @@ pub fn process_dns_response(data: *const CallbackManager.CallbackData) !void {
             // to the next server / treat as empty.
             const tc = (flags & 0x0200) != 0;
             if (tc) {
-                // Truncated: drop and continue waiting for more responses
-                // (or fall through to error handling below).
-                server_data.responses_received += 1;
-                if (server_data.responses_received < server_data.queries.len and !control_data.resolved) {
-                    try queue_next_response_read(server_data);
-                } else {
-                    try mark_resolved_and_execute_user_callbacks(server_data);
-                    server_data.release();
-                }
+                try reject_slot_response_and_continue(server_data, matched_slot);
                 return;
             }
 
@@ -254,13 +274,7 @@ pub fn process_dns_response(data: *const CallbackManager.CallbackData) !void {
             // check, a forged response for a different domain (or a
             // different QTYPE) could be accepted.
             if (qdcount != 1) {
-                server_data.responses_received += 1;
-                if (server_data.responses_received < server_data.queries.len and !control_data.resolved) {
-                    try queue_next_response_read(server_data);
-                } else {
-                    try mark_resolved_and_execute_user_callbacks(server_data);
-                    server_data.release();
-                }
+                try reject_slot_response_and_continue(server_data, matched_slot);
                 return;
             }
 
@@ -271,26 +285,14 @@ pub fn process_dns_response(data: *const CallbackManager.CallbackData) !void {
             const slot = matched_slot.?;
             const question_len = slot.len - 12;
             if (bytes < 12 + question_len) {
-                server_data.responses_received += 1;
-                if (server_data.responses_received < server_data.queries.len and !control_data.resolved) {
-                    try queue_next_response_read(server_data);
-                } else {
-                    try mark_resolved_and_execute_user_callbacks(server_data);
-                    server_data.release();
-                }
+                try reject_slot_response_and_continue(server_data, matched_slot);
                 return;
             }
             const response_question = response[12 .. 12 + question_len];
             const query_question = slot.buf[12..slot.len];
             if (!std.mem.eql(u8, response_question, query_question)) {
                 // Question mismatch: forged response for a different query.
-                server_data.responses_received += 1;
-                if (server_data.responses_received < server_data.queries.len and !control_data.resolved) {
-                    try queue_next_response_read(server_data);
-                } else {
-                    try mark_resolved_and_execute_user_callbacks(server_data);
-                    server_data.release();
-                }
+                try reject_slot_response_and_continue(server_data, matched_slot);
                 return;
             }
 
@@ -357,18 +359,10 @@ pub fn process_dns_response(data: *const CallbackManager.CallbackData) !void {
         }
     }
 
-    // Wait for more responses if there are queries outstanding.
-    if (server_data.responses_received < server_data.queries.len and !control_data.resolved) {
-        try queue_next_response_read(server_data);
-        return;
-    }
-
-    // All responses received (or already resolved elsewhere).
-    // BUG-384 / BUG-317: Only fail resolution if this was the last outstanding server.
-    if (server_data.results.items.len > 0 or server_data.ptr_results.items.len > 0 or should_fail_resolution_on_server_finish(control_data)) {
-        try mark_resolved_and_execute_user_callbacks(server_data);
-    }
-    server_data.release();
+    // Wait for more responses if queries remain outstanding; otherwise
+    // resolve if answers are present or this was the last outstanding server
+    // (BUG-384 / BUG-317), then release.
+    try finish_or_continue_response_read(server_data);
 }
 
 test "mark_resolved_and_execute_user_callbacks is idempotent (BUG-316)" {
@@ -406,4 +400,108 @@ test "mark_resolved_and_execute_user_callbacks is idempotent (BUG-316)" {
 
     try mark_resolved_and_execute_user_callbacks(&server_data);
     try std.testing.expect(control_data.resolved);
+}
+
+test "BUG-433 / BUG-317: finish_or_continue_response_read with empty results defers failure while another server is pending" {
+    var stub_loop: Loop = undefined;
+    stub_loop.initialized = false;
+
+    const control_data = try std.testing.allocator.create(ControlData);
+    defer std.testing.allocator.destroy(control_data);
+    control_data.* = ControlData{
+        .allocator = std.testing.allocator,
+        .arena = std.heap.ArenaAllocator.init(std.testing.allocator),
+        .loop = &stub_loop,
+        .user_callbacks = .empty,
+        .record = undefined,
+        .queries_data = undefined,
+        .tasks_finished = 0,
+        .resolved = false,
+        .record_evicted = false,
+        .node = null,
+    };
+    defer control_data.arena.deinit();
+
+    var slots: [1]QuerySlot = .{.{ .id = 7, .len = 17 }};
+    const server0: ServerQueryData = .{
+        .loop = &stub_loop,
+        .socket_fd = -1,
+        .hostnames_array = undefined,
+        .control_data = control_data,
+        .queries = &slots,
+        .results = .empty,
+        .ptr_results = .empty,
+        .responses_received = 0,
+    };
+    var servers: [2]ServerQueryData = .{ server0, server0 };
+    control_data.queries_data = servers[0..];
+
+    // Server 0 receives a rejected (e.g. TC=1 / qdcount!=1) response matching
+    // its only query slot while server 1 is still active: slot must be marked
+    // answered, server 0 released, and `control_data.resolved` must stay
+    // false so server 1 can still resolve the lookup.
+    try reject_slot_response_and_continue(&servers[0], &slots[0]);
+    try std.testing.expect(slots[0].answered);
+    try std.testing.expectEqual(@as(u32, 1), servers[0].responses_received);
+    try std.testing.expect(servers[0].finished);
+    try std.testing.expectEqual(@as(usize, 1), control_data.tasks_finished);
+    try std.testing.expect(!control_data.resolved);
+}
+
+test "BUG-433: process_dns_response ignores duplicate reply for already-answered QuerySlot" {
+    var stub_loop: Loop = undefined;
+    stub_loop.initialized = false;
+
+    const control_data = try std.testing.allocator.create(ControlData);
+    defer std.testing.allocator.destroy(control_data);
+    control_data.* = ControlData{
+        .allocator = std.testing.allocator,
+        .arena = std.heap.ArenaAllocator.init(std.testing.allocator),
+        .loop = &stub_loop,
+        .user_callbacks = .empty,
+        .record = undefined,
+        .queries_data = undefined,
+        .tasks_finished = 0,
+        .resolved = false,
+        .record_evicted = false,
+        .node = null,
+    };
+    defer control_data.arena.deinit();
+
+    // Build one already-answered QuerySlot matching a minimal response packet
+    // (id=0x1234, QR=1, qdcount=1, ancount=1, QNAME="a.", QTYPE=A, QCLASS=IN, A=127.0.0.1).
+    var slots: [1]QuerySlot = .{.{ .id = 0x1234, .len = 19, .answered = true }};
+    const question = [_]u8{ 0x01, 'a', 0x00, 0x00, 0x01, 0x00, 0x01 };
+    @memcpy(slots[0].buf[12..19], &question);
+
+    const server0: ServerQueryData = .{
+        .loop = &stub_loop,
+        .socket_fd = -1,
+        .hostnames_array = undefined,
+        .control_data = control_data,
+        .queries = &slots,
+        .results = .empty,
+        .ptr_results = .empty,
+        .responses_received = 1,
+    };
+    var servers: [2]ServerQueryData = .{ server0, server0 };
+    control_data.queries_data = servers[0..];
+
+    const pkt = [_]u8{
+        0x12, 0x34, 0x81, 0x80, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+        0x01, 'a',  0x00, 0x00, 0x01, 0x00, 0x01, // question
+        0xC0, 0x0C, 0x00, 0x01, 0x00, 0x01, 0x00,
+        0x00, 0x00, 0x3C, 0x00, 0x04,
+        127, 0, 0, 1, // A record answer
+    };
+    @memcpy(servers[0].recv_buf[0..pkt.len], &pkt);
+
+    var cb_data: CallbackManager.CallbackData = .{ .user_data = &servers[0] };
+    cb_data.set_io(@intCast(pkt.len), .SUCCESS);
+    try process_dns_response(&cb_data);
+
+    // Must NOT parse the duplicate A record or bump responses_received past 1.
+    try std.testing.expectEqual(@as(usize, 0), servers[0].results.items.len);
+    try std.testing.expectEqual(@as(u32, 1), servers[0].responses_received);
+    try std.testing.expect(!control_data.resolved);
 }

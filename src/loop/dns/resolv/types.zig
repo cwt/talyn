@@ -103,6 +103,7 @@ pub const QuerySlot = struct {
     buf: [512]u8 = undefined,
     len: u16 = 0,
     id: u16 = 0,
+    answered: bool = false,
 };
 
 pub const ServerQueryData = struct {
@@ -158,6 +159,8 @@ pub const ServerQueryData = struct {
     /// credited — the global `responses_received` backstop still resolves
     /// once every query is accounted for.
     pub inline fn credit_response_and_check_candidate_done(self: *ServerQueryData, slot: *QuerySlot) bool {
+        if (slot.answered) return false;
+        slot.answered = true;
         const types_per_host: usize = if (self.hostnames_array.len > 0 and self.queries.len >= self.hostnames_array.len * 2) 2 else 1;
         const slot_index = (@intFromPtr(slot) - @intFromPtr(self.queries.ptr)) / @sizeOf(QuerySlot);
         const hostname_index = slot_index / types_per_host;
@@ -383,6 +386,11 @@ test "BUG-433: interleaved responses complete the right candidate" {
     // a.A: candidate a half-answered - not done.
     try std.testing.expect(!server_data.credit_response_and_check_candidate_done(&slots[0]));
     try std.testing.expectEqual(@as(u16, 1), counters[0]);
+
+    // Duplicate/retransmitted b.A replay must NOT double-credit candidate b
+    // as done with 2 A records while b.AAAA is still pending.
+    try std.testing.expect(!server_data.credit_response_and_check_candidate_done(&slots[2]));
+    try std.testing.expectEqual(@as(u16, 1), counters[1]);
 
     // a.AAAA: candidate a fully answered - done (the response the old code
     // would have mis-attributed to "the second packet of some candidate").
