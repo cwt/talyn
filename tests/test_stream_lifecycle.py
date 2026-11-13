@@ -189,3 +189,84 @@ async def test_bug378_eof_with_pending_writes_still_settles():
         "(cancelled in-flight write stranded the drain)"
     )
     server.close()
+
+
+def test_bug439_gc_cycle_buffered_protocol_releases_buffer_once():
+    import gc
+    import socket
+    import weakref
+
+    release_events = []
+
+    class TrackedBuffer:
+        def __init__(self, size):
+            self._data = bytearray(size)
+            self.cycle = None
+
+        def __buffer__(self, flags):
+            return memoryview(self._data)
+
+        def __release_buffer__(self, view):
+            release_events.append(1)
+
+    class CycleBufferedProtocol(asyncio.BufferedProtocol):
+        def __init__(self, loop, ready_fut):
+            self.loop = loop
+            self.ready_fut = ready_fut
+            self.transport = None
+
+        def connection_made(self, transport):
+            self.transport = transport
+
+        def get_buffer(self, sizehint):
+            buf = TrackedBuffer(max(sizehint, 64))
+            buf.cycle = self
+            if not self.ready_fut.done():
+                self.loop.call_soon(self.ready_fut.set_result, buf)
+            return buf
+
+        def buffer_updated(self, nbytes):
+            pass
+
+        def connection_lost(self, exc):
+            pass
+
+    def run_and_drop():
+        loop = talyn.Loop()
+        ready = loop.create_future()
+        s1, s2 = socket.socketpair()
+        try:
+            s1.setblocking(False)
+            s2.setblocking(False)
+            proto = CycleBufferedProtocol(loop, ready)
+
+            def make_proto():
+                return proto
+
+            async def setup():
+                transport, _ = await loop.create_connection(make_proto, sock=s1)
+                buf = await ready
+                return transport, buf
+
+            transport, buf = loop.run_until_complete(setup())
+            p_ref = weakref.ref(proto)
+            b_ref = weakref.ref(buf)
+            # Break external strong refs while the read SQE / protocol_buffer
+            # is still populated; only the reference cycle keeps them alive.
+            del transport, buf, proto, ready, setup
+            return loop, p_ref, b_ref
+        finally:
+            s2.close()
+
+    loop, p_ref, b_ref = run_and_drop()
+    loop.close()
+    del loop
+
+    gc.collect()
+    gc.collect()
+
+    assert release_events == [1], (
+        f"expected protocol_buffer to be released exactly once, got {release_events}"
+    )
+    assert p_ref() is None
+    assert b_ref() is None

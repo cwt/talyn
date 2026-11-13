@@ -338,8 +338,13 @@ pub fn stream_clear(self: ?*StreamTransportObject) callconv(.c) c_int {
         read_transport_data.deinit();
     }
 
-    if (py_transport.protocol_buffer.buf != null) {
-        python_c.PyBuffer_Release(&py_transport.protocol_buffer);
+    // BUG-439: PyBuffer_Release clears view.obj but leaves view.buf intact;
+    // take-and-zero before releasing so GC tp_clear -> tp_dealloc or re-entrant
+    // buffer release callbacks cannot double-release the stale Py_buffer.
+    var protocol_buffer = py_transport.protocol_buffer;
+    py_transport.protocol_buffer = comptime std.mem.zeroes(python_c.Py_buffer);
+    if (protocol_buffer.buf != null) {
+        python_c.PyBuffer_Release(&protocol_buffer);
     }
 
     // BUG-424: run the fd/fixed-file cleanup BEFORE

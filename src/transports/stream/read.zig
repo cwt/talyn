@@ -58,11 +58,11 @@ pub inline fn queue_read_operation(transport: *StreamTransportObject, read_trans
             // overwriting the field — after a cancelled read (whose release
             // used to be skipped entirely) the old export leaked
             // permanently, since dealloc later released only the new one.
-            if (transport.protocol_buffer.buf != null) {
-                python_c.PyBuffer_Release(&transport.protocol_buffer);
-                transport.protocol_buffer = comptime std.mem.zeroes(python_c.Py_buffer);
-            }
+            var stale_buffer = transport.protocol_buffer;
             transport.protocol_buffer = py_buffer;
+            if (stale_buffer.buf != null) {
+                python_c.PyBuffer_Release(&stale_buffer);
+            }
         },
         .Legacy => {
             try read_transport.perform(null);
