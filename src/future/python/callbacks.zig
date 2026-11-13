@@ -51,18 +51,25 @@ inline fn z_future_add_done_callback(self: *PythonFutureObject, args: []?PyObjec
         }
     }
 
+    if (future_data.released) {
+        // BUG-442: a released future (tp_new-only or cleared after finishing)
+        // must be an inert no-op and drop its owned callback/context refs
+        // before touching `future_data.loop` (which may dangle after tp_clear).
+        python_c.py_decref(context.?);
+        python_c.py_decref(py_callback);
+        return python_c.get_py_none();
+    }
+
     switch (future_data.status) {
         .pending => {
-            // BUG-442: a released future makes add_done_callback a silent
-            // no-op — release the transferred py_callback/context
-            // references instead of leaking them (the call still returns
-            // None, mirroring the inert-mutation contract of BUG-369).
+            // BUG-442: release the transferred py_callback/context references
+            // if add_done_callback still reports no-op.
             if (!(try Future.Callback.add_done_callback(future_data, .{ .PythonGeneric = .{ .callback = py_callback, .context = context.? } }))) {
                 python_c.py_decref(context.?);
                 python_c.py_decref(py_callback);
             }
         },
-        else => {
+        .finished, .canceled => {
             const loop_data = future_data.loop;
             if (!loop_data.initialized) {
                 python_c.py_decref(context.?);
@@ -99,7 +106,8 @@ inline fn z_future_add_done_callback(self: *PythonFutureObject, args: []?PyObjec
 }
 
 pub fn future_add_done_callback(self: ?*PythonFutureObject, args: ?[*]?PyObject, nargs: isize, knames: ?PyObject) callconv(.c) ?PyObject {
-    return utils.execute_zig_function(z_future_add_done_callback, .{ self.?, args.?[0..@as(usize, @intCast(nargs))], knames });
+    const pos_args: []?PyObject = if (args) |a| a[0..@as(usize, @intCast(nargs))] else &.{};
+    return utils.execute_zig_function(z_future_add_done_callback, .{ self.?, pos_args, knames });
 }
 
 pub fn future_remove_done_callback(self: ?*PythonFutureObject, callback: ?PyObject) callconv(.c) ?PyObject {

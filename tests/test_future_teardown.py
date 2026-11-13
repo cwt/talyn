@@ -120,3 +120,30 @@ def test_bug369_gc_cycle_with_del_partner_collects_cleanly():
     talyn.run(main())
 
     assert ran == [True]
+
+
+def test_bug442_released_future_add_done_callback_no_leak_or_uaf(zombie_future):
+    """BUG-442: add_done_callback on a released future (including missing args)
+    must neither leak callback/context references nor unwrap NULL args."""
+    import contextvars
+    import sys
+
+    called = []
+
+    def cb(f):
+        called.append(f)
+
+    ctx = contextvars.copy_context()
+
+    with pytest.raises((TypeError, ValueError)):
+        zombie_future.add_done_callback()
+
+    # Warmup / settle interning, then verify zero refcount leak across repeats.
+    assert zombie_future.add_done_callback(cb, context=ctx) is None
+    cb_refs = sys.getrefcount(cb)
+    ctx_refs = sys.getrefcount(ctx)
+    for _ in range(10):
+        assert zombie_future.add_done_callback(cb, context=ctx) is None
+    assert sys.getrefcount(cb) == cb_refs
+    assert sys.getrefcount(ctx) == ctx_refs
+    assert called == []
