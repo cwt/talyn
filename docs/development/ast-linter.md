@@ -7,7 +7,7 @@ sources:
   - build.zig
 verified: machine-confirmed
 tags: [static-analysis, ast, linter, bug-prevention, zig-ast]
-timestamp: "2026-08-16T14:10:00Z"
+timestamp: "2026-11-13T00:00:00Z"
 ---
 
 [⬅️ Back to Development Index](index.md)
@@ -16,7 +16,7 @@ timestamp: "2026-08-16T14:10:00Z"
 
 The **Talyn AST Linter** (`zig build lint`) is a native, offline static analysis tool designed to proactively detect anti-patterns, architectural mandate violations, and regression risks across all Zig and Python source files before compilation or commit.
 
-Because domain-specific bugs (such as unhandled completion operations, panics in the IO loop, unchecked syscall return values, and unmanaged container regressions) are 100% syntactically valid to standard compilers, this tool hooks directly into **`std.zig.Ast`** and Python's standard **`ast`** module to enforce project invariants in **under 100ms** without any external dependencies or AI/LLMs.
+Because domain-specific bugs (such as unhandled completion operations, panics in the IO loop, unchecked syscall return values, and unmanaged container regressions) are 100% syntactically valid to standard compilers, this tool hooks directly into **`std.zig.Ast`** and Python's standard **`ast`** module to enforce project invariants in **under a second (~0.3s)** without any external dependencies or AI/LLMs.
 
 ---
 
@@ -66,6 +66,7 @@ python3 tools/linter/rules/python_rules.py
 | `TALYN-016` | `STALE_CANCEL_BULK` | [BUG-336](bugs/336.md) | Bulk `CancelIO`/`CancelTimer` over a `task_ids` collection without completed-ID removal (`swapRemove` / `removeTaskId` / `fetchRemove`). Cancelling a completed task hits a freed `BlockingTask` slot that may have been reused (raw pointer IDs, no generation), killing the new occupant. |
 | `TALYN-017` | `CLEAR_BEFORE_PYTHON` | [BUG-336](bugs/336.md) | A `CallbackData` completion callback that runs Python (`PyObject_Call*`, `Soon.dispatch`, `dispatch_event`, `dispatch_subprocess_exit_callbacks`) while an ID slot (`.blocking_task_id`, `.read_task_id`, `.pidfd_task_id`, `.inotify_task_id`, `.task_id`, re-arm via `enqueue_*`/`queue_read(`/`schedule_*`) is still stale. The ID must be released (`= 0` / `= null` / `removeTaskId` / `swapRemove` / `fetchRemove`) before the first Python call; `defer`red cleanups run last and do not count. Scope: `src/transports/`, `src/loop/`. Opt out per function with `// TALYN-017-EXEMPT: <reason>`. |
 | `TALYN-018` | `TIMER_IO_MIXING` | [BUG-336](bugs/336.md) | A `task_ids` list appended while the file also queues `WaitTimer` without `happy_timer_id` separation. Timer IDs mixed into an IO cancel list are cancelled as connects/reads; after slot reuse the cancel kills an unrelated timer. Fix: track the timer in a separate `?usize happy_timer_id`, cleared on fire/cancel. |
+| `TALYN-019` | `NO_BUILTIN_MODE_IN_SRC` | [BUG-365](bugs/365.md), Mandate #2 | Prohibits direct `builtin.mode` checks inside `src/` domain modules because `std.builtin.OptimizeMode` tag naming differs between Zig 0.16 and 0.17+. Expose `build_options.is_debug` in `build.zig` and read `utils.is_debug` instead. |
 
 ### Python AST Rules
 
@@ -101,6 +102,7 @@ tools/linter/
     ├── stale_cancel_bulk.zig          # Rule TALYN-016
     ├── clear_before_python.zig        # Rule TALYN-017
     ├── timer_io_mixing.zig            # Rule TALYN-018
+    ├── no_builtin_mode_in_src.zig     # Rule TALYN-019
     └── python_rules.py       # Python AST rules (TALYN-PY01, TALYN-PY02)
 ```
 

@@ -3,7 +3,7 @@ type: article
 title: Talyn Development Journey
 description: The complete historical narrative and timeline of developing Talyn, sorted chronologically from the latest release back to the project's inception.
 tags: [history, documentation, journey, roadmap]
-timestamp: 2026-10-07T00:00:00Z
+timestamp: 2026-11-13T00:00:00Z
 ---
 
 # Talyn Development Journey
@@ -32,6 +32,21 @@ Rather than maintaining separate version forks, Talyn adopted a portable common-
 - **Build-Level C Translation**: Defined `src/c_python.h` containing all necessary C definitions and configured `build.zig` to translate it using `b.addTranslateC` for both compilers, maintaining strict adherence to TALYN-001.
 - **Strictly Confined Version Branching**: All compiler-specific branching is confined to `build.zig` (for `OptimizeMode` casing) and `tools/linter/` (for AST parsing options). Zero version checks leak into core domain code.
 - **Validation**: All 66 Zig unit tests, AST linter rules, and the complete 4-interpreter test matrix (`./scripts/test_all.sh --starburst --verbose`) pass with zero regressions on both Zig 0.16.0 and Zig 0.17.0.
+
+---
+
+## v0.11.5 — Open-Bug Fix Sweep (BUG-416, BUG-418..450) & Python 3.13 Matrix Recovery
+
+**v0.11.5** is a broad stability, conformance, and memory-safety release covering 54 commits since `v0.11.4` (`rev 1240` → `rev 1294`), driving the tracker to **433 Fixed / 14 False Positive / 2 Open** (`BUG-414` and `BUG-417`) across **449** tracked issues (`1–450`, skipping `97`):
+
+- **Consumer Compatibility (`BUG-416`)**: Implemented `Loop.get_exception_handler()` (returning `_user_exception_handler`, `None` while the default handler is active) and `Loop.slow_callback_duration = 0.1` in `talyn/loop.py`, resolving `prompt_toolkit` / `pyvim` boot crashes (`NotImplementedError` / `AttributeError`) with regression coverage in `tests/test_exception_handler_api.py`.
+- **Executor Hand-Off Latency (`BUG-418`)**: Changed `DynamicRingBuffer.reset()` in `src/callback_manager.zig` from sweeping `executed` across all `524,288` slots on idle ticks to an $O(1)$ index reset, dropping chained `run_in_executor` hand-off cost from `0.077–0.11 ms/hop` to `0.016–0.020 ms/hop` (`stdloop` parity / faster).
+- **Audit Revalidation & Fix Sweep (`BUG-419..448`, `BUG-432` confirmed False Positive)**:
+  - *Task & Future*: Removed double-decref on the cancelled arm of `execute_task_throw` (`BUG-419`); detached `result` before decref in `task_clear` (`BUG-420`); enforced `InlineQueue.heap.capacity > 0` as the authoritative heap-mode invariant (`BUG-434`); guarded null `py_loop`, null vectorcall `args`, duplicate `msg`, and released futures across `Future.get_loop()`, `Task.get_name()`, `handle_talyn_future_object`, `future_cancel`, and `add_done_callback` (`BUG-440`, `BUG-441`, `BUG-442`, `BUG-446`).
+  - *Transports, Sockets, Server & `io_uring`*: Fixed `stream_clear` fixed-file cleanup ordering (`BUG-424`), `transport_force_close` `connection_lost` settlement (`BUG-425`), stream init `PyObject_GC_UnTrack` (`BUG-426`), `PseudoSocket` `dup()` ownership + `tp_dealloc` + closed `get_extra_info` fallback (`BUG-427`, `BUG-447`), `IO.deinit()` closing `ring` before freeing `BlockingTasksSet`/registered buffers (`BUG-428`), `queue_eof` SQE flush (`BUG-429`), datagram low-water and receive-buffer release ordering (`BUG-430`, `BUG-431`), `BlockingTask.live` accounting in `cancel_all` (`BUG-435`), `pseudosocket.getsockopt` CPython `0 <= buflen <= 1024` bounds (`BUG-437`), `accept_callback` runtime re-arm check (`BUG-438`), `protocol_buffer` take-and-zero before `PyBuffer_Release` (`BUG-439`), and six `io`/scheduling fixes (`BUG-444`).
+  - *DNS, Network & Containers*: Added short-read accumulation for `resolv.conf` (`BUG-421`), preallocated `BTree` split cascade + rollback for `insert()`/`replace()` (`BUG-422`, `BUG-448`), `interleave_address_list` underflow guard (`BUG-423`), per-candidate `responses_per_hostname` + `QuerySlot.answered` dedup + `.{}` initialization + multi-server gating (`BUG-433`), `parseIp4` trailing-dot & `parse_name` root-terminator/reserved-label/pointer checks (`BUG-436`), `MultiConnectState.init` `errdefer` (`BUG-443`), and removal of dead `Record.hostname` (`BUG-445`).
+- **Python 3.13 / 3.13t Compatibility (`BUG-449`, `BUG-450`)**: Tolerated missing `asyncio.tasks._py_all_tasks` on Python `≤ 3.13` and added a pure-sync guard for the shared `_current_tasks` dict on Python `3.13`.
+- **Verification**: Full six-interpreter `./scripts/test_all.sh --starburst` matrix green at `rev 1294` (`14 passed, 0 failed`); post-bump verification green for `zig fmt --check`, `zig build`, `zig build lint` (`0` violations), `zig build test` (`0.16.0` `153/153`, `0.17.0`, `0.17.1`), and Python `3.15` Starburst (`4 passed, 0 failed`: `zig-0.16`, `zig-0.17`, `512 passed, 1 xfailed` pytest + stdlib asyncio).
 
 ---
 

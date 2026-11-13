@@ -4,12 +4,23 @@ title: "Chronological Update Log — Talyn Documentation Bundle"
 description: "Tracks modifications, releases, and architectural changes across the Talyn documentation bundle."
 status: stable
 verified: human-reviewed
-timestamp: "2026-10-07T00:00:00Z"
+timestamp: "2026-11-13T00:00:00Z"
 ---
 
 # Chronological Update Log — Talyn Documentation Bundle
 
 This log tracks modifications to the Talyn Documentation OKF bundle.
+
+## [2026-11-13] — v0.11.5 Release: Open-Bug Sweep (BUG-416, BUG-418..450) & Python 3.13 Recovery
+
+Release bump covering all 54 changesets since `v0.11.4` (`revs 1241–1294`: consumer/executor fixes, open-bug fix sweep, post-sweep hardenings, and Python 3.13 recovery):
+
+- **Consumer compatibility (`BUG-416`, `rev 1246`)**: Added `Loop.get_exception_handler()` and `Loop.slow_callback_duration = 0.1` in [talyn/loop.py](../../talyn/loop.py), fixing `prompt_toolkit` / `pyvim` boot failures (`tests/test_exception_handler_api.py`).
+- **Executor latency (`BUG-418`, `rev 1279`)**: Converted `DynamicRingBuffer.reset()` to $O(1)$ index reset in [src/callback_manager.zig](../../src/callback_manager.zig), fixing the chained `run_in_executor` hand-off regression (`0.016–0.020 ms/hop` vs pre-fix `0.077–0.11`).
+- **Audit sweep & follow-up hardenings (`BUG-419..448`, `revs 1251..1278`, `1282..1294`)**: Resolved Future/Task refcount & teardown bugs (`BUG-419`, `BUG-420`, `BUG-434`, `BUG-440`, `BUG-441`, `BUG-442`, `BUG-446`), transport/socket/server/io_uring bugs (`BUG-424`, `BUG-425`, `BUG-426`, `BUG-427`, `BUG-428`, `BUG-429`, `BUG-430`, `BUG-431`, `BUG-435`, `BUG-437`, `BUG-438`, `BUG-439`, `BUG-444`, `BUG-447`), and DNS/network/BTree bugs (`BUG-421`, `BUG-422`, `BUG-423`, `BUG-433`, `BUG-436`, `BUG-443`, `BUG-445`, `BUG-448`); `BUG-432` confirmed False Positive.
+- **Python 3.13 / 3.13t compatibility (`BUG-449`, `BUG-450`, `rev 1280`)**: Tolerant `asyncio.tasks._py_all_tasks` lookup (3.14+) and pure-sync guard for shared `_current_tasks` on 3.13.
+- **Version bump & documentation refresh**: Bumped version to **`0.11.5`** in [pyproject.toml](../../pyproject.toml), [build.zig.zon](../../build.zig.zon), and [tools/linter/main.zig](../../tools/linter/main.zig) (`v0.11.5-dev`); reconciled [bugs/index.md](bugs/index.md) status count (`433 Fixed / 14 FP / 2 Open` of `449` total); added `TALYN-019` to [ast-linter.md](ast-linter.md); refreshed [README.md](../../README.md) bug counts, Zig `0.17.0`/`0.17.1` & six-interpreter notes, and [development-journey.md](development-journey.md).
+- **Validation**: Full six-interpreter Starburst matrix (`3.13`, `3.13t`, `3.14`, `3.14t`, `3.15`, `3.15t`) green on `rev 1294` (`14 passed, 0 failed`); post-bump build/packaging tree green on `zig fmt --check`, `zig build`, `zig build lint` (`0` violations across `126` Zig and `6` Python files), `zig build test` across Zig `0.16.0` (`153/153`), `0.17.0`, and `0.17.1`, plus `./scripts/test_all.sh --starburst --verbose --python=3.15 --zig17=/opt/zig/0.17.1/zig` (`4 passed, 0 failed`; `512 passed, 1 xfailed` pytest + stdlib asyncio).
 
 ## [2026-11-12] — Open-bug revalidation audit: BUG-419..445 validated — 22 confirmed, 3 amended, 1 false positive, 3 new (BUG-446..448)
 
@@ -23,6 +34,19 @@ Full re-analysis of all 30 open bugs against the current tree (audit record only
 - **`.orig` scrub**: `.orig` files are standard Mercurial working-copy backups (never tracked) — dropped from BUG-445 and from the historical BUG-395 record.
 
 Tracker now 447 bugs (1–448): **401 Fixed / 14 FP / 32 Open**; severity 63 Critical / 146 High / 37 Medium-High / 86 Medium / 11 Medium-Mid / 22 Medium-Low / 82 Low.
+
+## [2026-11-06] — AUDIT VERIFICATION + BUG-416 FIXED (measured-first triage of the three filings)
+
+- **BUG-416 → FIXED in the same pass.** Static: the sibling surface (`set` @ loop.py:352 / `default` @ 319 / `call` @ 333, `_exception_handler` pre-bound default @ 269) confirmed; `get_exception_handler` absent everywhere. Dynamic: the two-line repro raises the abstract `NotImplementedError` on BOTH py3.14 and py3.15 wheels. Fix: `_user_exception_handler` mirror (recorded by `set_exception_handler`, including the `None` reset) + a concrete `get_exception_handler` honoring `BaseEventLoop` semantics (None while default is in use — required by PTK's snapshot-and-restore shape). **Canary amendment**: with only the getter fixed, the pyvim boot stops at prompt_toolkit's `set_callback_duration` reading `loop.slow_callback_duration` (`AttributeError`, application.py:840) — the "getter is the only blocker" claim amends to "getter + this attribute"; the mirror attribute (`0.1`, asyncio default) is added. Post-fix: pyvim full Editor (boot → `:w` → `:q`) exits cleanly with NO shim; new regression gate `tests/test_exception_handler_api.py` (5 tests) green on py3.14 + py3.15; `zig build test` 84/84 dual toolchain; lint 0; battery medians unchanged (no scheduling-path impact).
+- **BUG-417 → verification: the ~100 µs quantization does NOT reproduce on our host** (kernel 6.x, BUG-415-fixed 0.11.4-content wheel): min 3.9 µs / median 10.9 µs vs stdloop 3.1/7.1 and uvloop 2.3/7.5 (audit: talyn ≈100 µs vs refs ≈3 µs on kernel 7.2.15). The BUG-415 drain-first park collapses the tick hypotheses (1–3) locally; the residual is a small ~3–4 µs constant. Kept Open pending one consumer-host revalidation with this wheel; doc cleaned (frontmatter quote, garbled phrases) + local numbers recorded.
+- **BUG-418 → verified REPRODUCIBLE on our host** and stronger than filed: chained executor hop **0.081 ms/op vs stdloop 0.022–0.027 (3×)** / uvloop 0.023–0.024 across interleaved rounds. The shared-root-cause reading with BUG-417's tick is retired (that tick didn't reproduce); the finding stands as an executor-completion→loop-wake integration issue while talyn rides the stdlib `run_in_executor` binding (`loop.py:472` — `ThreadPoolExecutor.submit` + `asyncio.wrap_future`). Kept Open: Low severity, off the critical path; fix scope sketched in the file.
+
+## [2026-11-06] — BUG-416/417/418 filed from a consumer audit (pyvim + prompt_toolkit 3.0.53 host workload)
+
+- **[BUG-416](bugs/416.md) (High, Open)**: `Loop.get_exception_handler` is missing from `talyn/loop.py`; it falls through to `asyncio.events.AbstractEventLoop`'s abstract stub (`NotImplementedError`) on Python 3.15, so every prompt_toolkit-based TUI crashes at boot (`set_exception_handler_ctx` at PTK `application.py:827`). The three sibling APIs (`set`/`default`/`call`) are implemented — this is one missing override. Consumer proof: with a two-line shim implementing only the getter, a full pyvim Editor boots and exits cleanly under talyn.
+- **[BUG-417](bugs/417.md) (Low, Open)**: `add_reader` reader-wake quantization: min ≈3.2 µs but median ≈100 µs on sporadic single-byte pipe reads (stdloop/uvloop both medians ≈3 µs). Suspects: conservative wait timeout / completion batching / spin-then-sleep quantum in the read-completion path.
+- **[BUG-418](bugs/418.md) (Low, Open)**: chained `run_in_executor` hand-off 2.4× stdloop (77 µs vs 32 µs) while pipelined batches are parity-fast and the `call_soon_threadsafe` hop is the fastest of all three loops measured — isolating the executor-completion→loop-wake integration; likely the same tick as BUG-417.
+- Not fixed in this changeset: filed as the audit record only (Zig/wheel v0.11.4 host: Python 3.15.2, kernel 7.2.15, io_uring enabled; uvloop 0.23.0 used as the reference loop).
 
 ## [2026-11-04] — v0.11.4 Release: BUG-415 — the wormhole ad-block update freeze (runner parking integrity)
 
@@ -492,16 +516,3 @@ This release fixes 9 bugs (BUG-122 through BUG-130) discovered by a Zig 0.16.0 c
 
 ## [2026-07-15] — OKF Bundle Cleanup
 - Removed 16 zero-byte `docs/priorities/*.orig` backup files left over from the 2026-07-07 OKF conversion. These were empty artifacts and not valid OKF documents.
-
-## [2026-11-06] — BUG-416/417/418 filed from a consumer audit (pyvim + prompt_toolkit 3.0.53 host workload)
-
-- **[BUG-416](bugs/416.md) (High, Open)**: `Loop.get_exception_handler` is missing from `talyn/loop.py`; it falls through to `asyncio.events.AbstractEventLoop`'s abstract stub (`NotImplementedError`) on Python 3.15, so every prompt_toolkit-based TUI crashes at boot (`set_exception_handler_ctx` at PTK `application.py:827`). The three sibling APIs (`set`/`default`/`call`) are implemented — this is one missing override. Consumer proof: with a two-line shim implementing only the getter, a full pyvim Editor boots and exits cleanly under talyn.
-- **[BUG-417](bugs/417.md) (Low, Open)**: `add_reader` reader-wake quantization: min ≈3.2 µs but median ≈100 µs on sporadic single-byte pipe reads (stdloop/uvloop both medians ≈3 µs). Suspects: conservative wait timeout / completion batching / spin-then-sleep quantum in the read-completion path.
-- **[BUG-418](bugs/418.md) (Low, Open)**: chained `run_in_executor` hand-off 2.4× stdloop (77 µs vs 32 µs) while pipelined batches are parity-fast and the `call_soon_threadsafe` hop is the fastest of all three loops measured — isolating the executor-completion→loop-wake integration; likely the same tick as BUG-417.
-- Not fixed in this changeset: filed as the audit record only (Zig/wheel v0.11.4 host: Python 3.15.2, kernel 7.2.15, io_uring enabled; uvloop 0.23.0 used as the reference loop).
-
-## [2026-11-06] — AUDIT VERIFICATION + BUG-416 FIXED (measured-first triage of the three filings)
-
-- **BUG-416 → FIXED in the same pass.** Static: the sibling surface (`set` @ loop.py:352 / `default` @ 319 / `call` @ 333, `_exception_handler` pre-bound default @ 269) confirmed; `get_exception_handler` absent everywhere. Dynamic: the two-line repro raises the abstract `NotImplementedError` on BOTH py3.14 and py3.15 wheels. Fix: `_user_exception_handler` mirror (recorded by `set_exception_handler`, including the `None` reset) + a concrete `get_exception_handler` honoring `BaseEventLoop` semantics (None while default is in use — required by PTK's snapshot-and-restore shape). **Canary amendment**: with only the getter fixed, the pyvim boot stops at prompt_toolkit's `set_callback_duration` reading `loop.slow_callback_duration` (`AttributeError`, application.py:840) — the "getter is the only blocker" claim amends to "getter + this attribute"; the mirror attribute (`0.1`, asyncio default) is added. Post-fix: pyvim full Editor (boot → `:w` → `:q`) exits cleanly with NO shim; new regression gate `tests/test_exception_handler_api.py` (5 tests) green on py3.14 + py3.15; `zig build test` 84/84 dual toolchain; lint 0; battery medians unchanged (no scheduling-path impact).
-- **BUG-417 → verification: the ~100 µs quantization does NOT reproduce on our host** (kernel 6.x, BUG-415-fixed 0.11.4-content wheel): min 3.9 µs / median 10.9 µs vs stdloop 3.1/7.1 and uvloop 2.3/7.5 (audit: talyn ≈100 µs vs refs ≈3 µs on kernel 7.2.15). The BUG-415 drain-first park collapses the tick hypotheses (1–3) locally; the residual is a small ~3–4 µs constant. Kept Open pending one consumer-host revalidation with this wheel; doc cleaned (frontmatter quote, garbled phrases) + local numbers recorded.
-- **BUG-418 → verified REPRODUCIBLE on our host** and stronger than filed: chained executor hop **0.081 ms/op vs stdloop 0.022–0.027 (3×)** / uvloop 0.023–0.024 across interleaved rounds. The shared-root-cause reading with BUG-417's tick is retired (that tick didn't reproduce); the finding stands as an executor-completion→loop-wake integration issue while talyn rides the stdlib `run_in_executor` binding (`loop.py:472` — `ThreadPoolExecutor.submit` + `asyncio.wrap_future`). Kept Open: Low severity, off the critical path; fix scope sketched in the file.
