@@ -564,3 +564,22 @@ def test_future_cancelled_error_with_msg_args() -> None:
     finally:
         loop.close()
 
+
+def test_future_cancel_zero_args_vectorcall_null_args() -> None:
+    """BUG-441 follow-up: calling future.cancel() via C vectorcall with
+    args=NULL, nargs=0, knames=NULL (e.g. PyObject_CallNoArgs) used to
+    unwrap `args.?` in future_cancel and panic."""
+    import ctypes
+
+    call_no_args = ctypes.pythonapi.PyObject_CallNoArgs
+    call_no_args.argtypes = [ctypes.py_object]
+    call_no_args.restype = ctypes.py_object
+
+    loop = Loop()
+    try:
+        future = Future(loop=loop)
+        assert call_no_args(future.cancel) is True
+        assert future.cancelled()
+    finally:
+        loop.close()
+

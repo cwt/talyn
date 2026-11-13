@@ -36,24 +36,27 @@ pub fn future_cancel(self: ?*PythonFutureObject, args: ?[*]?PyObject, nargs: isi
 
     var cancel_msg_py_object: ?PyObject = null;
     var cancel_msg_kwarg: ?PyObject = null;
-    if (nargs > 1) {
+    const pos_len: usize = if (nargs > 0) @intCast(nargs) else 0;
+    const pos_args: []?PyObject = if (args) |a| a[0..pos_len] else &.{};
+    if (nargs > 1 or pos_args.len > 1) {
         python_c.raise_python_value_error("Invalid number of arguments\x00");
         return null;
     }
-    if (nargs == 1) {
-        cancel_msg_py_object = python_c.py_newref(args.?[0]);
+    if (pos_args.len == 1) {
+        cancel_msg_py_object = python_c.py_newref(pos_args[0].?);
     }
 
-    const kwargs_start: usize = if (nargs > 0) @intCast(nargs) else 0;
-    python_c.parse_vector_call_kwargs(
-        knames,
-        args.? + kwargs_start,
-        &.{"msg\x00"},
-        &.{&cancel_msg_kwarg},
-    ) catch |err| {
-        python_c.py_xdecref(cancel_msg_py_object);
-        return utils.handle_zig_function_error(err, null);
-    };
+    if (knames != null and args != null) {
+        python_c.parse_vector_call_kwargs(
+            knames,
+            pos_args.ptr + pos_args.len,
+            &.{"msg\x00"},
+            &.{&cancel_msg_kwarg},
+        ) catch |err| {
+            python_c.py_xdecref(cancel_msg_py_object);
+            return utils.handle_zig_function_error(err, null);
+        };
+    }
 
     // BUG-441: parse_vector_call_kwargs unconditionally newrefs into its
     // slot, so feeding it the positional slot overwrote (leaked) the owned
