@@ -301,6 +301,24 @@ def test_pseudosocket_getsockopt_buflen_returns_bytes():
         assert isinstance(raw, bytes)
         assert len(raw) == 4
 
+        # CPython parity: buflen=0 returns int; valid sizes up to 1024 work;
+        # negative or >1024 raises OSError('getsockopt buflen out of range').
+        zero_val = sock.getsockopt(socket.SOL_SOCKET, socket.SO_TYPE, 0)
+        assert isinstance(zero_val, int)
+        raw_512 = sock.getsockopt(socket.SOL_SOCKET, socket.SO_TYPE, 512)
+        assert isinstance(raw_512, bytes)
+        assert len(raw_512) == 4
+        raw_1024 = sock.getsockopt(socket.SOL_SOCKET, socket.SO_TYPE, 1024)
+        assert isinstance(raw_1024, bytes)
+        assert len(raw_1024) == 4
+
+        with pytest.raises(OSError, match="getsockopt buflen out of range"):
+            sock.getsockopt(socket.SOL_SOCKET, socket.SO_TYPE, -1)
+        with pytest.raises(OSError, match="getsockopt buflen out of range"):
+            sock.getsockopt(socket.SOL_SOCKET, socket.SO_TYPE, 1025)
+        with pytest.raises(TypeError):
+            sock.getsockopt(socket.SOL_SOCKET, socket.SO_TYPE, 4, 0)
+
         writer.close()
         await writer.wait_closed()
         await server_task
