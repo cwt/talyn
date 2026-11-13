@@ -132,6 +132,11 @@ pub fn build_queries(
 
     const queries = try allocator.alloc(QuerySlot, total_queries);
     errdefer allocator.free(queries);
+    // allocator.alloc skips QuerySlot field defaults; initialize every slot
+    // so `answered` starts false even over reused arena memory.
+    for (queries) |*slot| {
+        slot.* = .{};
+    }
 
     // BUG-433: one response-credit counter per candidate hostname.
     const responses_per_hostname = try allocator.alloc(u16, hostnames_array.len);
@@ -465,6 +470,9 @@ test "BUG-358: build_queries preserves the configured dns_timeout" {
     // null, silently discarding the user-configured timeout for every
     // response read and subsequent query send.
     try std.testing.expectEqual(timeout, server_data.dns_timeout);
+    for (server_data.queries) |slot| {
+        try std.testing.expect(!slot.answered);
+    }
 
     // The test owns the built query state (on success the queue flow owns
     // it): release the query slots, the per-hostname credit counters and
@@ -472,4 +480,46 @@ test "BUG-358: build_queries preserves the configured dns_timeout" {
     allocator.free(server_data.responses_per_hostname);
     allocator.free(server_data.queries);
     _ = std.os.linux.close(server_data.socket_fd);
+}
+
+test "BUG-433: build_queries initializes QuerySlot.answered to false over dirty allocator memory" {
+    var dirty_buf: [8192]u8 = @splat(0xAA);
+    var fba = std.heap.FixedBufferAllocator.init(&dirty_buf);
+    const allocator = fba.allocator();
+
+    var stub_loop: Loop = undefined;
+    stub_loop.initialized = false;
+
+    const control_data = try allocator.create(ControlData);
+    control_data.* = ControlData{
+        .allocator = allocator,
+        .arena = std.heap.ArenaAllocator.init(allocator),
+        .loop = &stub_loop,
+        .user_callbacks = .empty,
+        .record = undefined,
+        .queries_data = undefined,
+        .tasks_finished = 0,
+        .resolved = false,
+        .record_evicted = false,
+        .node = null,
+    };
+
+    var hostname_storage: [1]Hostname = undefined;
+    hostname_storage[0] = .{ .hostname = undefined, .hostname_len = 0, .original_hostname_len = 0 };
+    const host = "example.com";
+    @memcpy(hostname_storage[0].hostname[0..host.len], host);
+    hostname_storage[0].hostname_len = @intCast(host.len);
+    hostname_storage[0].original_hostname_len = @intCast(host.len);
+    const hostnames_array: HostnamesArray = .{ .array = hostname_storage[0..], .len = 1 };
+
+    var server_data: ServerQueryData = undefined;
+    const server_address = utils.Address.initIp4(.{ 127, 0, 0, 1 }, 5353);
+
+    try build_queries(allocator, &stub_loop, control_data, &server_data, true, hostnames_array, &server_address, null, null);
+    defer _ = std.os.linux.close(server_data.socket_fd);
+
+    try std.testing.expectEqual(@as(usize, 2), server_data.queries.len);
+    for (server_data.queries) |slot| {
+        try std.testing.expect(!slot.answered);
+    }
 }
